@@ -24,7 +24,7 @@
  {"command": "pcb.port", "params": {"name": "3", "segment": "p3", "end": "end"}},
  {"command": "pcb.element", "params": {"name": "R1", "layer": "F.Cu", "from": ["=l_feed + run + 0.6", "=-half_gap + w/2"], "to": ["=l_feed + run + 0.6", "=half_gap - w/2"], "resistance": "=r_iso", "width": 0.6}},
  {"command": "mesh.generate", "params": {"size": 2.5, "strip_edge": 0.25}},
- {"command": "project.frequency", "params": {"start": 1, "stop": 3}},
  {"command": "project.analysis", "params": {"kind": "frequency"}},
+ {"command": "project.setup", "params": {"kind": "frequency", "start": 1, "stop": 3, "points": 41, "order": 2}},
  {"command": "solve.frequency", "params": {"start": 1, "stop": 3, "points": 41, "order": 2}}
 ]

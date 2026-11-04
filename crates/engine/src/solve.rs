@@ -31,9 +31,9 @@ fn frequencies(s: &Session, p: &Params) -> Result<Vec<f64>> {
             .collect::<Result<Vec<f64>>>()?
     } else {
         // The job's band when neither is given.
-        let hint = "give `frequencies`, or `start` and `stop`, or set the band: project.frequency";
-        let start = p.frequency("start").or_maybe(s.model.band.map(|b| b.start.get())).required_or(hint)?;
-        let stop = p.frequency("stop").or_maybe(s.model.band.map(|b| b.stop.get())).required_or(hint)?;
+        let hint = "give `frequencies`, or `start` and `stop`, or confirm the run's settings: project.setup";
+        let start = p.frequency("start").or_maybe(s.model.job.range().map(|b| b.start.get())).required_or(hint)?;
+        let stop = p.frequency("stop").or_maybe(s.model.job.range().map(|b| b.stop.get())).required_or(hint)?;
         let n = p.integer("points", 1..=s.limits.frequencies).or(DEFAULT_POINTS)?;
         if stop < start {
             return Err(p.error("stop", "must not be below `start`"));

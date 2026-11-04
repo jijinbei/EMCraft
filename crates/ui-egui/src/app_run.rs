@@ -24,7 +24,7 @@ impl EmcraftApp {
         find_command(id)?;
         if commands::is_long(id) {
             // How long it should take, from the model (cheap), for the time left while it runs.
-            let asked = if id == "solve.rerun" { json!({}) } else { json!({"command": id, "params": params}) };
+            let asked = if matches!(id, "solve.rerun" | "solve.run") { json!({}) } else { json!({"command": id, "params": params}) };
             let estimate = self.session.execute("project.estimate", &asked).ok().and_then(|e| e.get("seconds").and_then(Value::as_f64));
             let mut job = worker::Job::start(&self.session, id, params, self.ctx.clone());
             job.view = Some(self.view);

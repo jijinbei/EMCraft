@@ -76,7 +76,7 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
 
 /// Why step `step` does nothing for the job's kind of analysis, when it does nothing for it.
 pub fn not_needed(app: &EmcraftApp, step: Step) -> Option<String> {
-    let chosen = app.session.model().analysis?;
+    let chosen = app.session.model().job.chosen()?;
     emcraft_engine::workflow::not_needed(Some(chosen))
         .contains(&step)
         .then(|| trf("Not needed for {kind}", args!(kind = tr(crate::kinds::kind_card(chosen).name))))
@@ -117,8 +117,8 @@ fn checks(ui: &mut egui::Ui, s: &StepState, t: &Tokens, out: &mut Actions) {
             } else {
                 status_color(s.status, t)
             }));
-            // A fix that only leads back to this step is left out.
-            let here = m.command.as_deref().is_some_and(|c| is_solve(c) && Step::of_command(c) == Some(s.step));
+            // A fix that only leads back to this step (its solve, Setup's own button) is left out.
+            let here = m.command.as_deref().is_some_and(|c| (is_solve(c) || c == "project.setup") && Step::of_command(c) == Some(s.step));
             if let Some(c) = m.command.as_ref().filter(|_| !here) {
                 let hint = format!("{c}: {}", crate::label(c));
                 ui.act(true, egui::Button::new(fix_label(c)).small(), Handle::StepFix(i), &hint, || Action::Fix(c.clone()), out);
@@ -131,7 +131,6 @@ fn checks(ui: &mut egui::Ui, s: &StepState, t: &Tokens, out: &mut Actions) {
 fn fix_label(command: &str) -> String {
     match Step::of_command(command) {
         Some(step) if is_solve(command) => trf("Go to {step}", args!(step = shown(step))),
-        Some(Step::Intent) if command == "project.frequency" => tr("Set the band").to_owned(),
         Some(Step::Intent) if command == "project.analysis" => tr("Choose the analysis").to_owned(),
         _ => trf("Fix: {command}", args!(command = crate::commands::button_label(command))),
     }
@@ -177,7 +176,6 @@ pub(crate) fn fmt(v: f64) -> String {
 fn body(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, step: Step, states: &[StepState], has_dialog: bool, t: &Tokens, out: &mut Actions) {
     let fu = app.session.display().frequency.symbol();
     let lu = app.session.display().length.symbol();
-    follow_band(app, f);
     match step {
         // The step bar's switch.
         Step::Intent => {}

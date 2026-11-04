@@ -8,5 +8,6 @@
  {"command": "model.open", "params": {"thickness": 15}},
  {"command": "mesh.generate", "params": {"per_wavelength": 4, "frequency": 10}},
  {"command": "model.port.lumped", "params": {"name": "feed", "from": [30.0, 30.0, "=30 - gap/2"], "to": [30.0, 30.0, "=30 + gap/2"], "impedance": 73, "radius": "=r_wire"}},
+ {"command": "project.setup", "params": {"kind": "radiation", "frequency": 10}},
  {"command": "solve.radiation", "params": {"frequency": 10}}
 ]

@@ -324,7 +324,7 @@ pub const SWITCH_WIDTH: f32 = 200.0;
 pub fn switch(app: &crate::EmcraftApp, ui: &mut egui::Ui, r: Rect, out: &mut crate::Actions) {
     let t = &Tokens::get();
     let m = app.session.model();
-    let (current, chosen) = (m.analysis(), m.analysis);
+    let (current, chosen) = (m.analysis(), m.job.chosen());
     let enabled = !app.busy();
     let resp = ui.hit(r, Handle::Step(crate::steps::Step::Intent), if enabled { Sense::click() } else { Sense::hover() });
     let KindCard { glyph, name, detail, .. } = kind_card(current);

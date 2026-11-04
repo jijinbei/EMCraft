@@ -19,13 +19,13 @@ pitfalls they name: skipping the mesh convergence check, and wrong boundary cond
 
 | # | Step | What the engineer decides | What goes wrong |
 |---|---|---|---|
-| 0 | **Home** (the job's intent) | the kind of problem (guided-wave component, planar circuit, antenna, scatterer, resonator), units, **the frequency range** | a range that does not match the ports' cut-offs or the mesh |
+| 0 | **Home** (the job's intent) | the kind of problem (guided-wave component, planar circuit, antenna, scatterer, resonator), units | a kind that does not fit the model |
 | 1 | **Geometry** | shapes, Booleans, imported surfaces (a SolidCraft design with its parameters, 3MF, STL: chosen, dropped on the window or begun from the start page and the empty step; the dialog shows the file's bodies, size and parameters, and what importing makes of them), layers and strips | non-closed or overlapping bodies, features flush with walls |
 | 2 | **Materials** | εr, μr, loss tangent per body; wall conductivity | lossy material at a port; wrong units |
 | 3 | **Excitation** | waveguide ports (and how many modes), lumped ports and their impedance, plane waves, dipoles; reference impedances | a port off its face, the first mode cut off in the band, too few modes near a discontinuity |
 | 4 | **Boundaries** | conducting walls (perfect or finite σ), the open boundary (PML thickness, reflection), symmetry | the bodies touching the PML, the Huygens box crossing them |
-| 5 | **Mesh** | element size (or elements per wavelength at the top frequency), grading at edges, element order | too coarse at the top of the band, singular edges unresolved |
-| 6 | **Solver setup** | the solver (frequency domain, eigenmodes, radiation, time domain), the sweep (points, fast or full), the order | a sweep too coarse for a resonance |
+| 5 | **Solver setup** | **the frequency range** (or the one frequency), the sweep's points, the order — confirmed with its button (`project.setup`) | a range that does not match the ports' cut-offs; a sweep too coarse for a resonance |
+| 6 | **Mesh** | element size (or elements per wavelength at the top frequency), grading at edges | too coarse at the top of the band, singular edges unresolved |
 | 7 | **Run** | — (watch progress, cancel) | runs that take too long without telling why |
 | 8 | **Results** | S-parameters (dB, phase, Smith), fields on planes and surfaces, port modes and impedances, far field and RCS, Touchstone export | reading results of a model that changed since |
 | 9 | **Verification** | convergence (order 1 → 2, a finer mesh), passivity and reciprocity, comparison with a closed form or a benchmark | trusting one unconverged run |
@@ -57,8 +57,14 @@ and the UI should make the same habits easy for the user's own models.
    about: materials coloured (2), ports and their faces highlighted with their modes'
    arrows (3), walls and the PML shaded (4), the mesh's edges and its size (5), fields and
    patterns on the model (8). Standard views, orbit, pan, zoom, fit.
-3. **The frequency range is set once, early,** and drives defaults: the mesh size by elements
-   per wavelength at its top, the sweep, the port-mode preview frequency.
+3. **The run's settings are confirmed, not assumed** (`project.setup`, one type per kind of
+   analysis: a sweep's band, points and order; the eigenmodes' frequency, count and order; a
+   radiation solve's frequency and order; the time domain's band, points and cell). Until the
+   Setup step's button confirms them the step is to do and the mesh and Run wait; a field
+   changed afterwards makes it to do again. Choosing another kind takes them back. Confirmed
+   before the mesh, their band drives its defaults: the mesh size by elements per wavelength at
+   its top, the port-mode preview frequency. A proposal (the band a PCB route's model is made
+   for) only fills the form.
 4. **A project opens on its Home** (step 0, the viewport's first tab, "Home"): what the job is
    for, said in plain words rather than as an "intent". Four large cards, one per kind of
    analysis, each with a small picture of what it gives (an S-parameter chart, resonance peaks,
@@ -68,7 +74,7 @@ and the UI should make the same habits easy for the user's own models.
    cut-off; `emcraft_engine::guides`); the project's units; and the project at a glance —
    geometry, excitation, mesh and results, each with its step's mark (a click opens the step) —
    with the next step's button. Each choice runs the same command as elsewhere
-   (`project.analysis`, `project.frequency`, `units.set`). A template, a new project or one
+   (`project.analysis`, `units.set`). A template, a new project or one
    opened without results lands here; one with results opens on them. Home takes the whole
    viewport: the step panel shows beside it only for a dialog docked there.
 5. **See before solving.** Port modes (patterns, β, ε_eff, impedance, cut-offs) show as soon as
@@ -120,8 +126,8 @@ What was built is changed where it is listed: a browser row of a material, a por
 source has a right-click menu (Edit, Delete, Show in 3D); a double-click edits, Delete deletes the
 selected row's item (undoable; a refusal is an error message). Every dialog of something the
 model already has opens on its values (`project.values`), and OK with them unchanged runs
-nothing. An opened project's Setup step shows its last run (`project.runs`); while the fields
-stay so, Run and Re-run repeat that run whole (`solve.rerun`).
+nothing. An opened project's Setup step shows its confirmed settings; Run and Re-run run them
+(`solve.run`).
 Work is not lost: closing the window with unsaved changes asks Save / Don't save / Cancel (with a
 job running, whether to stop it first); unsaved changes are copied aside every minute and
 offered on the start page after a crash (Recover, or dismiss).
@@ -174,8 +180,10 @@ their frames', and `Harness::settle` waits for the end).
   run marks Run) and messages,
   each naming the command or field that fixes it. Computed from the model, the mesh and the
   results; cheap (no solve).
-- `project.frequency`: the frequency range (start, stop) of the job, stored in the model, the
-  default for meshing by wavelength, sweeps and port-mode previews.
+- `project.setup`: the run's settings for the job's kind, checked and stored in the model as the
+  job's `Ready` state (`Job::Open` → `Chosen(kind)` → `Ready(Setup)`); the Setup step is done
+  exactly when the job is ready. Its band is the default for meshing by wavelength and port-mode
+  previews. `solve.run` runs them as their solve.
 - `project.analysis`: the kind of analysis chosen at the start (`frequency`, `eigenmodes`,
   `radiation`, `time_domain`), stored in the model; inferred from it until one is chosen. The
   checks follow it: a resonator needs no excitation (its ports are a warning), radiation wants

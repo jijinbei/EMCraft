@@ -29,7 +29,7 @@ pub use bar::bar;
 pub(crate) use bar::{Look, Pill, pills};
 pub(crate) use panel::fmt;
 pub use panel::{export_touchstone, not_needed, panel};
-pub use run::{Preflight, preflight, run_params, start_run};
+pub use run::{Preflight, confirm_setup, preflight, setup_params, start_run};
 
 /// What the 3D view puts forward in a step.
 pub fn overlay(step: Step) -> Overlay {
@@ -93,19 +93,22 @@ pub fn solver(app: &EmcraftApp) -> Solver {
     app.session.model().analysis()
 }
 
-/// The text fields of the step panels, with each one's error.
+/// The text fields of the step panels, with each one's error. The Setup step's are a form of
+/// the run's settings: loaded from the confirmed ones (`project.setup`) whenever those change,
+/// confirmed by its button.
 #[derive(Clone, Debug, Default)]
 pub struct Fields {
     pub start: String,
     pub stop: String,
-    /// The band the start and stop fields were last filled from.
-    pub band_seen: Option<(f64, f64)>,
-    /// Cached analysis for restoring/repeating a matching run, never a solver selector.
-    pub solver: Option<Solver>,
     pub points: String,
     pub order: String,
     pub count: String,
     pub frequency: String,
+    pub cell: String,
+    /// The time domain's ports to excite, as confirmed (no field: kept through the form).
+    pub excite: Vec<String>,
+    /// The confirmed settings the form was last loaded from (`project.values`).
+    pub seen: Option<Value>,
     pub touchstone: String,
     pub format: String,
     pub errors: Vec<(&'static str, String)>,
@@ -114,36 +117,12 @@ pub struct Fields {
     /// What the Setup panel's band diagram last drew: the cut-offs' labels and the solve's
     /// frequencies.
     pub diagram: Option<Value>,
-    /// The fields as the project's last run left them (restored on opening it): while they
-    /// stay so, Run runs that run again (`solve.rerun`), its parameters whole.
-    pub from_run: Option<Setup>,
-}
-
-/// The Setup step's fields that make a run.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Setup {
-    solver: Option<Solver>,
-    points: String,
-    order: String,
-    count: String,
-    frequency: String,
 }
 
 impl Fields {
-    /// The fields that make a run, as they stand.
-    pub fn setup(&self) -> Setup {
-        Setup {
-            solver: self.solver,
-            points: self.points.clone(),
-            order: self.order.clone(),
-            count: self.count.clone(),
-            frequency: self.frequency.clone(),
-        }
-    }
-
     /// Empty fields take their defaults, as the Setup panel shows them.
     fn fill_defaults(&mut self) {
-        for (field, default) in [(&mut self.points, "101"), (&mut self.order, "2"), (&mut self.count, "5")] {
+        for (field, default) in [(&mut self.points, "101"), (&mut self.order, "2"), (&mut self.count, "5"), (&mut self.cell, "1")] {
             if field.is_empty() {
                 *field = default.to_owned();
             }
@@ -159,6 +138,30 @@ impl Fields {
         if let Some(e) = e {
             self.errors.push((name, e));
         }
+    }
+
+    /// The form filled from settings as `project.setup` takes them (a confirmed run's, or a
+    /// proposal's: the band a PCB route's model is made for).
+    pub fn load(&mut self, v: &Value) {
+        let text = |k: &str| v.get(k).map(dialogs::value_text);
+        for (field, key) in [
+            (&mut self.start, "start"),
+            (&mut self.stop, "stop"),
+            (&mut self.points, "points"),
+            (&mut self.order, "order"),
+            (&mut self.count, "count"),
+            (&mut self.frequency, "frequency"),
+            (&mut self.cell, "cell"),
+        ] {
+            if let Some(t) = text(key) {
+                *field = t;
+            }
+        }
+        if let Some(list) = v.get("excite").and_then(Value::as_array) {
+            self.excite = list.iter().filter_map(Value::as_str).map(str::to_owned).collect();
+        }
+        self.fill_defaults();
+        self.errors.clear();
     }
 }
 
@@ -202,6 +205,8 @@ pub struct Workflow {
     /// Run was refused for blocking problems: the steps still in the way show as needing
     /// attention, until a run starts or another project opens.
     pub blocked: bool,
+    /// The Setup form differs from the confirmed settings, or none are ([`unconfirmed`]).
+    pub unconfirmed: bool,
 }
 
 /// `project.estimate`'s reply, with the revision and the request it was asked for.
@@ -237,21 +242,20 @@ pub struct ModeFocus {
 /// devices in the Setup step.
 pub fn prepare(app: &mut EmcraftApp) {
     let key = app.revision;
+    sync_setup(app);
+    check_form(app);
     if app.workflow.status.as_ref().is_none_or(|(k, _)| *k != key) {
         app.workflow.status = Some((key, emcraft_engine::workflow::steps(&app.session)));
     }
-    // What the step's estimate is of: one solve at the Setup's order (Mesh), the run as set up
-    // (Setup, Run).
+    // What the step's estimate is of: one solve at the Setup's order (Mesh), the run as the
+    // form sets it up (Setup, Run).
     let asked = match app.workflow.step {
         Some(Step::Mesh) => {
             let order = app.workflow.fields.order.trim().parse::<u64>().ok().filter(|o| (1..=2).contains(o)).unwrap_or(2);
             Some(json!({"command": "solve.frequency", "params": {"points": 1}, "order": order}))
         }
         Some(Step::Setup | Step::Run) => {
-            let session = &app.session;
-            run::run_params(session, &mut app.workflow.fields.clone())
-                .ok()
-                .map(|(solver, params)| json!({"command": command(solver), "params": params}))
+            run::setup_params(&app.session, &mut app.workflow.fields.clone()).ok().map(|params| json!({"command": "solve.run", "params": params}))
         }
         _ => None,
     };
@@ -348,8 +352,21 @@ pub fn statuses_now(app: &EmcraftApp) -> [StepState; 9] {
         Some((k, v)) if *k == app.revision => v.clone(),
         _ => emcraft_engine::workflow::steps(&app.session),
     };
+    // Settings changed in the form but not confirmed: Setup is to do again, and Run waits.
+    if app.session.model().job.setup().is_some() && unconfirmed(app) {
+        let text = "the settings changed: confirm them again".to_owned();
+        if let Some(setup) = states.get_mut(Step::Setup.index()) {
+            setup.status = setup.status.min(Status::Todo);
+            setup.messages.push(Check { text, command: Some("project.setup".into()) });
+        }
+        if let Some(run) = states.get_mut(Step::Run.index()).filter(|r| r.status > Status::Waiting) {
+            run.status = Status::Waiting;
+            run.messages = vec![Check { text: format!("waits for {}", Step::Setup.id()), command: None }];
+        }
+    }
     if app.workflow.blocked {
-        for s in states.iter_mut().filter(|s| run::required(s.step, None) && s.status == Status::Todo) {
+        let solver = app.session.model().analysis();
+        for s in states.iter_mut().filter(|s| run::required(s.step, solver) && s.status == Status::Todo) {
             s.status = Status::Missing;
         }
     }
@@ -386,8 +403,8 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "solver": solver(app).id(),
         "analysis": emcraft_engine::workflow::analysis_reply(app.session.model()),
         "not_needed": Step::ALL.into_iter().filter(|s| not_needed(app, *s).is_some()).map(Step::id).collect::<Vec<_>>(),
-        "setup": {"points": f.points, "order": f.order, "count": f.count, "frequency": f.frequency},
-        "rerun": reruns(app),
+        "setup": {"start": f.start, "stop": f.stop, "points": f.points, "order": f.order, "count": f.count, "frequency": f.frequency, "cell": f.cell},
+        "confirmed": !unconfirmed(app),
         "check": app.workflow.check.as_ref().map(|c| c.1.clone()),
         "diagram": f.diagram,
         "device": app.session.compute().device().id(),
@@ -398,54 +415,48 @@ pub fn inspect(app: &EmcraftApp) -> Value {
     })
 }
 
-/// The Setup step's fields from the project's latest run of a solver it starts
-/// (`project.runs`, in display units now), as after opening a project; none: left as they are.
-pub fn restore_setup(app: &mut EmcraftApp) {
-    let chosen = app.session.model().analysis();
+/// The form follows the confirmed settings when they change (a confirmation, undo, a project
+/// opened); settings taken back (another kind chosen) leave the form as typed.
+pub fn sync_setup(app: &mut EmcraftApp) {
+    let confirmed = app.session.execute("project.values", &json!({"command": "project.setup"})).unwrap_or_else(|_| json!({}));
     let f = &mut app.workflow.fields;
-    f.from_run = None;
-    let Ok(v) = app.session.execute("project.runs", &json!({})) else { return };
-    let runs = v.get("runs").and_then(Value::as_array).map_or(&[][..], Vec::as_slice);
-    let found = runs.iter().rev().find_map(|r| {
-        let command = r.get("command").and_then(Value::as_str)?;
-        let solver = Solver::ALL.into_iter().find(|s| self::command(*s) == command)?;
-        // Home's effective analysis restores only a matching solver's run.
-        if chosen != solver {
-            return None;
-        }
-        Some((solver, r.get("params")?))
-    });
-    let Some((solver, p)) = found else { return };
-    let text = |k: &str| p.get(k).map(dialogs::value_text).unwrap_or_default();
-    f.solver = Some(solver);
-    f.order = text("order");
-    match solver {
-        Solver::Frequency | Solver::TimeDomain => {
-            let listed = p.get("frequencies").and_then(Value::as_array).map(Vec::len);
-            f.points = listed.map_or_else(|| text("points"), |n| n.to_string());
-        }
-        Solver::Eigenmodes => {
-            f.count = text("count");
-            f.frequency = text("near");
-        }
-        Solver::Radiation => f.frequency = text("frequency"),
-        Solver::Pcb => {}
+    if f.seen.as_ref() == Some(&confirmed) {
+        return;
     }
-    f.fill_defaults();
-    f.errors.clear();
-    f.from_run = Some(f.setup());
+    if confirmed.as_object().is_some_and(|o| !o.is_empty()) {
+        f.load(&confirmed);
+    } else {
+        f.fill_defaults();
+    }
+    f.seen = Some(confirmed);
 }
 
-/// Whether Run runs the project's last run again (`solve.rerun`): the Setup step's fields are
-/// as that run left them.
-pub fn reruns(app: &EmcraftApp) -> Option<&'static str> {
+/// Whether the form differs from the confirmed settings (or none are confirmed), as of the
+/// frame's start ([`prepare`]; the panel borrows the form while it draws).
+pub fn unconfirmed(app: &EmcraftApp) -> bool {
+    app.workflow.unconfirmed
+}
+
+/// Works out [`unconfirmed`] from the form as it stands.
+pub fn check_form(app: &mut EmcraftApp) {
     let f = &app.workflow.fields;
-    let restored = f.solver?;
-    if restored != solver(app) {
-        return None;
+    let confirmed = f.seen.as_ref().filter(|v| v.as_object().is_some_and(|o| !o.is_empty()));
+    app.workflow.unconfirmed = match (confirmed, run::setup_params(&app.session, &mut f.clone())) {
+        (Some(c), Ok(p)) => !same(c, &p),
+        _ => true,
+    };
+}
+
+/// Two settings alike, numbers to a part in 10⁹ (a unit's round trip).
+fn same(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Object(x), Value::Object(y)) => x.len() == y.len() && x.iter().all(|(k, v)| y.get(k).is_some_and(|w| same(v, w))),
+        (Value::Number(x), Value::Number(y)) => match (x.as_f64(), y.as_f64()) {
+            (Some(x), Some(y)) => (x - y).abs() <= 1e-9 * x.abs().max(y.abs()),
+            _ => x == y,
+        },
+        _ => a == b,
     }
-    let command = self::command(restored);
-    (f.from_run.as_ref() == Some(&f.setup()) && app.session.runs().iter().any(|r| r.command == command)).then_some(command)
 }
 
 /// The solve's estimate (`project.estimate`), as `prepare` left it for this revision.
@@ -506,7 +517,7 @@ pub fn fix(app: &mut EmcraftApp, command: &str) -> Result<(), UiError> {
     if step.is_some() {
         open_step(app, step);
     }
-    if !matches!(command, "project.frequency" | "project.analysis") && !is_run(command) {
+    if !matches!(command, "project.setup" | "project.analysis") && !is_run(command) {
         app.open_dialog(command)?;
     }
     Ok(())
@@ -532,38 +543,10 @@ fn integer(text: &str, lo: u64, hi: u64) -> Result<u64, String> {
     Ok(v)
 }
 
-/// The band's fields follow the session's band when it changes.
-pub(crate) fn follow_band(app: &EmcraftApp, f: &mut Fields) {
-    let b = band(&app.session);
-    if f.band_seen != b {
-        if let Some((a, z)) = b {
-            f.start = fmt(a);
-            f.stop = fmt(z);
-        }
-        f.band_seen = b;
-    }
-}
-
-/// Checks the band's fields one by one and sets the band (`project.frequency`).
-pub fn apply_band(app: &mut EmcraftApp) {
-    let f = &mut app.workflow.fields;
-    let (a, z) = (positive(&f.start), positive(&f.stop));
-    f.set_error("start", a.as_ref().err().cloned());
-    f.set_error("stop", z.as_ref().err().cloned());
-    let (Ok(a), Ok(z)) = (a, z) else { return };
-    if z < a {
-        f.set_error("stop", Some(crate::lang::tr("must not be below the start").into()));
-        return;
-    }
-    if let Err(e) = app.run("project.frequency", json!({"start": a, "stop": z})) {
-        app.workflow.fields.set_error("stop", Some(e.to_string()));
-    }
-}
-
 /// The band (display units) the session holds.
 fn band(s: &emcraft_engine::Session) -> Option<(f64, f64)> {
     let f = s.display().frequency;
-    s.model().band.map(|b| (f.from_si(b.start.get()), f.from_si(b.stop.get())))
+    s.model().job.range().map(|b| (f.from_si(b.start.get()), f.from_si(b.stop.get())))
 }
 
 /// Prefer the available CUDA accelerator with double precision, preserving an explicit user

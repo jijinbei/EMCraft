@@ -240,7 +240,7 @@ pub fn inspect(s: &mut Session, p: &Params) -> Result<Value> {
     if !(0.1..=10000.0).contains(&reference) {
         return Err(p.error("reference", "must be 0.1..10000 ohms"));
     }
-    let stop = p.frequency("stop").or(s.model.band.map_or(1e9, |b| b.stop.get()))?;
+    let stop = p.frequency("stop").or(1e9)?;
     if stop > 1e12 {
         return Err(p.error("stop", "must be at most 1 THz"));
     }

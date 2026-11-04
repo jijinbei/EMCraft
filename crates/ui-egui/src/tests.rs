@@ -410,7 +410,7 @@ fn file_and_edit_menus() {
     let mut h = Harness::new();
     let steps = json!([
         {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
-        {"call": "engine.execute", "params": {"command": "project.frequency", "params": {"start": 5, "stop": 9}}},
+        {"call": "engine.execute", "params": {"command": "project.setup", "params": {"kind": "frequency", "start": 6, "stop": 9}}},
         {"click": "menu:file"},
         {"click": "file:export"},
         {"expect": {"inspect": {"export": "emcraft-history.json"}, "handles": ["export:path", "export:ok"]}},
@@ -429,17 +429,17 @@ fn file_and_edit_menus() {
         {"text": project.with_extension("").to_str().unwrap()},
         {"click": "file:ok"},
         {"expect": {"status": "Saved", "inspect": {"project.dirty": false, "project.name": "project", "recent.0": project.to_str().unwrap()}}},
-        {"note": "Undo the band from the Edit menu, then redo it"},
+        {"note": "Undo the settings from the Edit menu (the sample's come back to the form), then redo them"},
         {"click": "menu:edit"},
         {"click": "edit:undo"},
-        {"expect": {"status": "Undone", "inspect": {"workflow.steps.intent": "todo"}}},
+        {"expect": {"status": "Undone", "inspect": {"workflow.setup.start": "5", "workflow.steps.setup": "done"}}},
         {"click": "menu:edit"},
         {"click": "edit:redo"},
-        {"expect": {"status": "Redone", "inspect": {"workflow.steps.intent": "done"}}},
+        {"expect": {"status": "Redone", "inspect": {"workflow.setup.start": "6"}}},
         {"note": "A file that is not a project is refused; the project opens"},
         {"call": "engine.execute", "params": {"command": "file.open", "params": {"path": script.to_str().unwrap()}}, "fail": true},
         {"call": "engine.execute", "params": {"command": "file.open", "params": {"path": project.to_str().unwrap()}}},
-        {"expect": {"status": "Opened", "inspect": {"workflow.steps.intent": "done", "model.mesh.tetrahedra": {"min": 100}}}}
+        {"expect": {"status": "Opened", "inspect": {"workflow.setup.start": "6", "workflow.steps.setup": "done", "model.mesh.tetrahedra": {"min": 100}}}}
     ]);
     if let Err(e) = h.run(&steps) {
         panic!("{e}\nlast messages: {:?}", h.app.messages.iter().rev().take(5).collect::<Vec<_>>());
@@ -449,7 +449,7 @@ fn file_and_edit_menus() {
     let mut s = emcraft_engine::Session::new();
     s.run_script(&serde_json::from_str::<Value>(&text).unwrap()).unwrap();
     assert_eq!(s.model().waveguide, h.app.session.model().waveguide);
-    assert_eq!(s.model().band, h.app.session.model().band);
+    assert_eq!(s.model().job.range(), h.app.session.model().job.range());
     let _ = std::fs::remove_dir_all(&dir);
 }
 

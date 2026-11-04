@@ -8,24 +8,23 @@ use emcraft_engine::{Device, Precision};
 pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &str, t: &Tokens, out: &mut Actions) {
     // Home is the sole authority for the analysis, including its inferred (auto) choice.
     let solver = app.session.model().analysis();
-    f.solver = Some(solver);
-    if f.points.is_empty() {
-        f.points = "101".into();
-    }
-    if f.order.is_empty() {
-        f.order = "2".into();
-    }
-    if f.count.is_empty() {
-        f.count = "5".into();
-    }
+    f.fill_defaults();
     ui_kit::section(ui, "Settings");
     let solves = solve_frequencies(app, f, solver);
-    f.diagram = band_diagram(app, ui, &solves, t);
+    f.diagram = band_diagram(app, f, ui, &solves, t);
     let e = |f: &Fields, k: &str| f.error(k).map(str::to_owned);
+    let lu = app.session.display().length.symbol();
     match solver {
         Solver::Frequency | Solver::TimeDomain => {
+            let (es, ez) = (e(f, "start"), e(f, "stop"));
+            field(ui, "start", &mut f.start, fu, es.as_deref(), Fixed::SetupStart);
+            field(ui, "stop", &mut f.stop, fu, ez.as_deref(), Fixed::SetupStop);
             let ep = e(f, "points");
             field(ui, "Frequency points", &mut f.points, "", ep.as_deref(), Fixed::SetupPoints);
+            if solver == Solver::TimeDomain {
+                let ec = e(f, "cell");
+                field(ui, "cell", &mut f.cell, lu, ec.as_deref(), Fixed::SetupCell);
+            }
         }
         Solver::Eigenmodes => {
             let ec = e(f, "count");
@@ -53,10 +52,26 @@ pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &st
     if let Some(e) = run_estimate(app) {
         super::super::estimate_line(ui, e, Fixed::SetupEstimate);
     }
-    device(app, ui, solver, t, out);
-    ui_kit::caption(ui, "Run (step 7) starts this solve after checking the model.");
     // The fields' errors as typed.
-    let _ = run_params(&app.session, f);
+    let ok = setup_params(&app.session, f).is_ok();
+    confirm(app, ui, ok, t, out);
+    device(app, ui, solver, t, out);
+}
+
+/// The button that confirms the form (`project.setup`): the accent while the settings are not
+/// confirmed as they stand — the step, and Run after it, wait for it — and a check once they are.
+fn confirm(app: &EmcraftApp, ui: &mut egui::Ui, ok: bool, t: &Tokens, out: &mut Actions) {
+    ui.add_space(8.0);
+    let pending = super::super::unconfirmed(app);
+    if pending {
+        let label = format!("✔ {}", tr("Confirm settings"));
+        let r = ui.act(ok && !app.busy(), ui_kit::styled(Raw(&label), true), Fixed::SetupConfirm.into(), "", || Action::ConfirmSetup, out);
+        let _ = r.hint_disabled("put the marked fields right first");
+        ui_kit::small(ui, "Not confirmed: the mesh and Run wait for these settings.", t.warning);
+    } else {
+        let r = ui.label(egui::RichText::new(format!("✔ {}", tr("Settings confirmed"))).size(t.font_body).color(t.success));
+        scenario::publish_target(Fixed::SetupConfirm, r.rect);
+    }
 }
 
 /// Where the solve runs: the devices `solve.devices` lists (those this machine cannot run
@@ -136,20 +151,14 @@ fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens, out: 
 /// The frequencies (display units) the solve will work at, as the panel's fields stand: the
 /// sweep's points over the band, or the one frequency of an eigenmode or radiation solve.
 fn solve_frequencies(app: &EmcraftApp, f: &Fields, solver: Solver) -> Vec<f64> {
-    let Some((a, z)) = band(&app.session) else { return Vec::new() };
     match solver {
         Solver::Frequency | Solver::TimeDomain => {
+            let Some((a, z)) = form_band(f) else { return Vec::new() };
             let Ok(n) = integer(&f.points, 1, app.session.limits().frequencies as u64) else { return Vec::new() };
             (0..n).map(|k| if n == 1 { a } else { a + (z - a) * k as f64 / (n - 1) as f64 }).collect()
         }
         Solver::Pcb => Vec::new(),
-        Solver::Eigenmodes | Solver::Radiation => {
-            if f.frequency.trim().is_empty() {
-                vec![0.5 * (a + z)]
-            } else {
-                positive(&f.frequency).map(|v| vec![v]).unwrap_or_default()
-            }
-        }
+        Solver::Eigenmodes | Solver::Radiation => positive(&f.frequency).map(|v| vec![v]).unwrap_or_default(),
     }
 }
 
@@ -160,13 +169,10 @@ const MAX_SOLVE_TICKS: usize = 400;
 /// ports' modes and the guide's sections near it as dashed lines (a port's first mode in the
 /// warning colour: below it no power enters), and the frequencies the solve will work at as
 /// ticks. What it drew, for `ui.inspect`.
-fn band_diagram(app: &EmcraftApp, ui: &mut egui::Ui, solves: &[f64], t: &Tokens) -> Option<Value> {
+fn band_diagram(app: &EmcraftApp, f: &Fields, ui: &mut egui::Ui, solves: &[f64], t: &Tokens) -> Option<Value> {
     let unit = app.session.display().frequency;
     let fu = unit.symbol();
-    let Some((a, z)) = band(&app.session) else {
-        ui_kit::small(ui, "band: not set (step 0)", t.error);
-        return None;
-    };
+    let (a, z) = form_band(f).or_else(|| solves.first().map(|x| (*x, *x)))?;
     let span = (z - a).max(z.abs() * 1e-3).max(1e-12);
     let cuts: Vec<(f64, String, bool)> = emcraft_engine::workflow::cutoffs(&app.session)
         .into_iter()
@@ -231,4 +237,10 @@ fn band_diagram(app: &EmcraftApp, ui: &mut egui::Ui, solves: &[f64], t: &Tokens)
     }
     resp.on_hover_text(tip);
     Some(json!({"cutoffs": cuts.iter().map(|c| c.1.clone()).collect::<Vec<_>>(), "solves": n}))
+}
+
+/// The band (display units) the form's start and stop give, when they do.
+fn form_band(f: &Fields) -> Option<(f64, f64)> {
+    let (a, z) = (positive(&f.start).ok()?, positive(&f.stop).ok()?);
+    (a <= z).then_some((a, z))
 }

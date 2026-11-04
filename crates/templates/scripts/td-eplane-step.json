@@ -6,5 +6,6 @@
  {"command": "mesh.generate", "params": {"size": 4}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 1}},
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 1}},
+ {"command": "project.setup", "params": {"kind": "time_domain", "start": 8.2, "stop": 12.4, "points": 101, "cell": 1}},
  {"command": "solve.time_domain", "params": {"start": 8.2, "stop": 12.4, "points": 101, "cell": 1}}
 ]

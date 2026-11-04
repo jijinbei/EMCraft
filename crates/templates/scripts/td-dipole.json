@@ -7,5 +7,6 @@
  {"command": "geometry.inclusion", "params": {"shape": "box", "size": ["=t", "=t", "=arm"], "at": ["=30 - t/2", "=30 - t/2", "=30 + gap/2"]}},
  {"command": "model.open", "params": {"thickness": 15}},
  {"command": "model.port.lumped", "params": {"name": "feed", "from": [30, 30, "=30 - gap/2"], "to": [30, 30, "=30 + gap/2"], "impedance": 50}},
+ {"command": "project.setup", "params": {"kind": "time_domain", "start": 6, "stop": 14, "points": 41, "cell": 1}},
  {"command": "solve.time_domain", "params": {"start": 6, "stop": 14, "points": 41, "cell": 1}}
 ]

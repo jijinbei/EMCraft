@@ -223,7 +223,10 @@ fn time_domain(s: &Session, p: &Params) -> Result<Cost> {
     let cells: f64 = (0..3).map(|k| (size[k] / cell).ceil().max(1.0) + pad[k]).product();
     let low = match p.list("frequencies", s.limits.frequencies).optional()? {
         Some(list) => list.iter().filter_map(|v| p.number_of("frequencies", v).ok()).fold(f64::INFINITY, f64::min) * s.display.frequency.to_si(1.0),
-        None => p.frequency("start").or_maybe(s.model.band.map(|b| b.start.get())).required_or("set the band (project.frequency) or give `start`")?,
+        None => p
+            .frequency("start")
+            .or_maybe(s.model.job.range().map(|b| b.start.get()))
+            .required_or("confirm the run's settings (project.setup) or give `start`")?,
     };
     if !(low.is_finite() && low > 0.0) {
         return Err(p.error("frequencies", "must be above 0"));
@@ -262,9 +265,23 @@ fn time_domain(s: &Session, p: &Params) -> Result<Cost> {
 pub fn estimate(s: &mut Session, p: &Params) -> Result<Value> {
     let order = p.integer("order", 1..=2).optional()?;
     let empty = json!({});
-    let (command, given, units) = match p.string("command").optional()? {
-        Some(c) => (c, p.raw("params").unwrap_or(&empty), s.display),
-        None => match s.runs.last() {
+    // The confirmed settings' run (solve.run, or by default once they are confirmed).
+    let confirmed = crate::job::run_of(s).ok();
+    // solve.run with `params`: the settings as project.setup would take them, not confirmed yet.
+    let proposed = match (p.string("command").optional()?, p.raw("params")) {
+        (Some("solve.run"), Some(given)) => {
+            let inner = Params::new(given, s.display).with_variables(&s.variables);
+            Some(crate::job::solve_of(s, &crate::job::parse(s, &inner)?))
+        }
+        _ => None,
+    };
+    let (command, given, units) = match (p.string("command").optional()?, &proposed, &confirmed) {
+        (Some("solve.run"), Some((c, given)), _) | (Some("solve.run"), None, Some((c, given))) | (None, _, Some((c, given))) => {
+            (*c, given, s.display)
+        }
+        (Some("solve.run"), None, None) => return Err(p.error("command", "solve.run: the run's settings are not confirmed yet (project.setup)")),
+        (Some(c), _, _) => (c, p.raw("params").unwrap_or(&empty), s.display),
+        (None, _, None) => match s.runs.last() {
             Some(run) => (run.command.as_str(), &run.params, run.units),
             None => ("solve.frequency", &empty, s.display),
         },

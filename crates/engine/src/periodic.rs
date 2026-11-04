@@ -53,7 +53,7 @@ pub fn dispersion(s: &mut Session, p: &Params) -> Result<Value> {
         None if periodic.x => 0,
         None => 1,
     };
-    let near = crate::args::frequency_or_band_top(s, p, "near", "give `near`, or set the band: project.frequency")?;
+    let near = crate::args::frequency_or_band_top(s, p, "near", "give `near`, or confirm the run's settings: project.setup")?;
     let from = p.number("from").or(0.0)?;
     let to = p.number("to").or(180.0)?;
     if !(from.is_finite() && to.is_finite() && from.abs() <= 360.0 && to.abs() <= 360.0) {

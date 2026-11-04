@@ -27,7 +27,7 @@ fn display_units_convert_at_the_boundary() {
 /// when it succeeds, not when it fails.
 #[test]
 fn every_model_change_drops_the_results_it_makes_wrong() {
-    let keeps = ["project.frequency", "units.set", "model.material.create", "model.material.edit"];
+    let keeps = ["project.setup", "units.set", "model.material.create", "model.material.edit"];
     for c in COMMANDS.iter().filter(|c| c.effect == Effect::Record) {
         assert_eq!(c.invalidates.is_none(), keeps.contains(&c.id), "{}", c.id);
     }
@@ -36,7 +36,7 @@ fn every_model_change_drops_the_results_it_makes_wrong() {
     // Failed: the sweep stays.
     assert!(s.execute("geometry.body", &json!({"shape": "sphere", "radius": -1, "material": "metal"})).is_err());
     assert!(s.results.sweep.is_some());
-    s.execute("project.frequency", &json!({"start": 5, "stop": 9})).unwrap();
+    s.execute("project.setup", &json!({"kind": "frequency", "start": 5, "stop": 9})).unwrap();
     assert!(s.results.sweep.is_some());
     s.execute("model.walls", &json!({"conductivity": 5.8e7})).unwrap();
     assert!(s.results.sweep.is_none());
@@ -48,12 +48,12 @@ fn undo_states_share_the_mesh_and_are_bounded() {
     let mut s = small();
     let mesh = s.model.mesh.clone().unwrap();
     for k in 0..project::UNDO_DEPTH + 5 {
-        s.execute("project.frequency", &json!({"start": 5 + k, "stop": 100})).unwrap();
+        s.execute("project.setup", &json!({"kind": "frequency", "start": 5 + k, "stop": 100})).unwrap();
     }
     assert_eq!(s.undo.len(), project::UNDO_DEPTH);
     assert!(s.undo.iter().all(|u| u.model.mesh.as_ref().is_some_and(|m| std::sync::Arc::ptr_eq(m, &mesh))));
     // The oldest left: the state before the sixth change, the fifth band.
-    assert_eq!(s.undo.front().and_then(|u| u.model.band).map(|b| b.start.get()), Some(9e9));
+    assert_eq!(s.undo.front().and_then(|u| u.model.job.range()).map(|b| b.start.get()), Some(9e9));
 }
 
 #[test]
@@ -169,16 +169,16 @@ fn the_workflow_status_guides_a_job_and_undo_saves_and_exports_work() {
         r["steps"].as_array().unwrap().iter().map(|x| (x["step"].as_str().unwrap().to_owned(), x["status"].as_str().unwrap().to_owned())).collect()
     };
     let of = |v: &[(String, String)], step: &str| v.iter().find(|(n, _)| n == step).map(|x| x.1.clone()).unwrap();
-    // An empty session: the geometry and the band to do, the steps after the geometry and
+    // An empty session: the geometry and the run's settings to do, the steps after the geometry and
     // Run waiting for it, nothing wrong.
     let st = status(&mut s);
     assert_eq!(of(&st, "geometry"), "todo");
-    assert_eq!(of(&st, "intent"), "todo");
+    assert_eq!((of(&st, "intent"), of(&st, "setup")), ("done".into(), "waiting".into()));
     assert_eq!((of(&st, "materials"), of(&st, "boundaries"), of(&st, "mesh")), ("waiting".into(), "waiting".into(), "waiting".into()));
     assert_eq!((of(&st, "run"), of(&st, "results")), ("waiting".into(), "waiting".into()));
     // The band below WR-90's cut-off is noted at the port (the wave decays there), the step
     // still done.
-    s.execute("project.frequency", &json!({"start": 5, "stop": 12})).unwrap();
+    s.execute("project.setup", &json!({"kind": "frequency", "start": 5, "stop": 12})).unwrap();
     s.execute("geometry.waveguide", &json!({"width": 22.86, "height": 10.16, "sections": [{"length": 20, "material": "vacuum"}]})).unwrap();
     s.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
     s.execute("model.port.create", &json!({"name": "2", "end": "end"})).unwrap();
@@ -187,7 +187,7 @@ fn the_workflow_status_guides_a_job_and_undo_saves_and_exports_work() {
     let r = s.execute("project.status", &json!({})).unwrap();
     assert!(r.to_string().contains("decays (evanescent)"), "{r}");
     assert_eq!((of(&st, "mesh"), of(&st, "run")), ("todo".into(), "waiting".into()));
-    s.execute("project.frequency", &json!({"start": 8, "stop": 12})).unwrap();
+    s.execute("project.setup", &json!({"kind": "frequency", "start": 8, "stop": 12})).unwrap();
     s.execute("mesh.generate", &json!({"per_wavelength": 6})).unwrap();
     let st = status(&mut s);
     assert_eq!(of(&st, "excitation"), "done", "{st:?}");
@@ -216,14 +216,14 @@ fn the_workflow_status_guides_a_job_and_undo_saves_and_exports_work() {
     s.execute("file.save", &json!({"path": path})).unwrap();
     let mut t = Session::new();
     t.execute("file.open", &json!({"path": path})).unwrap();
-    assert_eq!(t.model.band, s.model.band);
+    assert_eq!(t.model.job.range(), s.model.job.range());
     assert_eq!(t.model.mesh.as_ref().map(|m| m.tets.len()), s.model.mesh.as_ref().map(|m| m.tets.len()));
     // Back to the empty session before the open.
     t.execute("edit.undo", &json!({})).unwrap();
     assert!(t.model.waveguide.is_none());
     // Hostile input is refused.
-    assert!(s.execute("project.frequency", &json!({"start": 9, "stop": 2})).is_err());
-    assert!(s.execute("project.frequency", &json!({"start": -1, "stop": 2})).is_err());
+    assert!(s.execute("project.setup", &json!({"kind": "frequency", "start": 9, "stop": 2})).is_err());
+    assert!(s.execute("project.setup", &json!({"kind": "frequency", "start": -1, "stop": 2})).is_err());
     assert!(s.execute("file.open", &json!({"path": ts})).is_err());
     assert!(s.execute("results.touchstone", &json!({"path": ts, "format": "db"})).is_err());
     assert!(Session::new().execute("edit.undo", &json!({})).is_err());
@@ -266,20 +266,20 @@ fn projects_save_as_emcraft_files_and_know_when_they_changed() {
     assert_eq!(r["path"], json!(path));
     assert!(!s.is_dirty() && s.name() == "filter" && std::path::Path::new(&path).exists());
     // Changed, then saved again to its own file; undo back to the saved state is clean.
-    s.execute("project.frequency", &json!({"start": 5, "stop": 9})).unwrap();
+    s.execute("project.setup", &json!({"kind": "frequency", "start": 5, "stop": 9})).unwrap();
     assert!(s.is_dirty());
     s.execute("edit.undo", &json!({})).unwrap();
     assert!(!s.is_dirty());
-    s.execute("project.frequency", &json!({"start": 5, "stop": 9})).unwrap();
+    s.execute("project.setup", &json!({"kind": "frequency", "start": 5, "stop": 9})).unwrap();
     s.execute("file.save", &json!({})).unwrap();
     assert!(!s.is_dirty());
     // Open: the same model, clean, with its path; new: empty and untitled, units kept.
     let mut t = Session::new();
     t.execute("file.open", &json!({"path": path})).unwrap();
-    assert!(!t.is_dirty() && t.path.as_deref() == Some(path.as_str()) && t.model.band.is_some());
+    assert!(!t.is_dirty() && t.path.as_deref() == Some(path.as_str()) && t.model.job.range().is_some());
     t.execute("units.set", &json!({"frequency": "MHz"})).unwrap();
     t.execute("file.new", &json!({})).unwrap();
-    assert!(t.path.is_none() && !t.is_dirty() && t.model.band.is_none());
+    assert!(t.path.is_none() && !t.is_dirty() && t.model.job.range().is_none());
     assert_eq!(t.display.frequency, emcraft_model::units::Frequency::Megahertz);
     // The package's project.json: the format, the version, the EMCraft that wrote it, the
     // history and the model.
@@ -349,7 +349,7 @@ fn a_sample_opened_with_its_solve_has_current_results() {
     assert!(s.results.sweep.is_some());
     assert_eq!(s.solved_revision, Some(s.revision));
     // A change after it makes them stale.
-    s.execute("project.frequency", &json!({"start": 5, "stop": 9})).unwrap();
+    s.execute("project.setup", &json!({"kind": "frequency", "start": 5, "stop": 9})).unwrap();
     assert_ne!(s.solved_revision, Some(s.revision));
 }
 

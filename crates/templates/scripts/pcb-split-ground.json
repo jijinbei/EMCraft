@@ -31,14 +31,6 @@
     }
   },
   {
-    "command": "project.variable",
-    "params": {
-      "name": "fmax",
-      "value": 10,
-      "quantity": "frequency"
-    }
-  },
-  {
     "command": "pcb.sample",
     "params": {
       "split": true,
@@ -47,13 +39,6 @@
       "width": "=w",
       "height": "=h",
       "er": "=er"
-    }
-  },
-  {
-    "command": "project.frequency",
-    "params": {
-      "start": "=fmax/1000",
-      "stop": "=fmax"
     }
   },
   {

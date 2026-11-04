@@ -38,7 +38,7 @@ pub const TABS: &[(RibbonTab, &[(&str, &[&str])])] = &[
         RibbonTab::Model,
         &[
             ("GEOMETRY", &["geometry.import", "geometry.waveguide", "geometry.solid", "geometry.body", "geometry.inclusion"]),
-            ("SETTINGS", &["units.set", "project.frequency"]),
+            ("SETTINGS", &["units.set"]),
             ("PCB", &["pcb.import", "pcb.sample", "pcb.segment", "pcb.via", "pcb.pour", "pcb.element"]),
         ],
     ),
@@ -57,7 +57,7 @@ pub const TABS: &[(RibbonTab, &[(&str, &[&str])])] = &[
     (
         RibbonTab::Simulate,
         &[
-            // The solve itself is Run's (step 7), its device Setup's (step 6).
+            // The solve itself is Run's (step 7), its device Setup's (step 5).
             ("PERIODIC", &["solve.dispersion"]),
             ("STUDY", &["project.variable", "study.sweep", "study.optimize"]),
         ],
@@ -270,7 +270,7 @@ impl Panel {
 /// The tab's panels and their commands; SIMULATE's with the solve of the kind of analysis chosen
 /// at step 0 first (its panel first, the solve first in it).
 fn chosen_kind(app: &EmcraftApp) -> Option<crate::steps::Solver> {
-    app.session.model().analysis.or_else(|| app.session.model().pcb.as_ref().map(|_| crate::steps::Solver::Pcb))
+    app.session.model().job.chosen().or_else(|| app.session.model().pcb.as_ref().map(|_| crate::steps::Solver::Pcb))
 }
 
 fn ordered(app: &EmcraftApp, panels: &'static [(&'static str, &'static [&'static str])]) -> Vec<Panel> {
@@ -300,9 +300,7 @@ fn ready(app: &EmcraftApp, id: &str) -> bool {
 pub fn fits(kind: crate::steps::Solver, id: &str) -> bool {
     use crate::steps::Solver::{Eigenmodes, Frequency, Pcb, Radiation, TimeDomain};
     if kind == Pcb {
-        return id.starts_with("pcb.")
-            || id.starts_with("file.")
-            || matches!(id, "project.variable" | "project.analysis" | "project.frequency" | "units.set");
+        return id.starts_with("pcb.") || id.starts_with("file.") || matches!(id, "project.variable" | "project.analysis" | "units.set");
     }
     if id.starts_with("pcb.") {
         return false;
@@ -738,7 +736,7 @@ mod tests {
         let pcb = ordered(&h.app, simulate);
         assert!(pcb.iter().flat_map(|p| &p.commands).all(|id| *id == "project.variable"));
         h.app.session.execute("pcb.sample", &serde_json::json!({})).unwrap();
-        assert!(h.app.session.model().analysis.is_none());
+        assert!(h.app.session.model().job.chosen().is_none());
         assert_eq!(chosen_kind(&h.app), Some(crate::steps::Solver::Pcb));
         assert_eq!(ordered(&h.app, simulate), pcb);
     }

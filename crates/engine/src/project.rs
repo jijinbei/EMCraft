@@ -4,8 +4,8 @@
 
 use std::collections::VecDeque;
 
+use emcraft_model::Model;
 use emcraft_model::units::Display;
-use emcraft_model::{Band, Model};
 use emcraft_solver::Complex64 as C;
 use serde_json::{Value, json};
 
@@ -138,19 +138,6 @@ pub enum Effect {
     /// project, not in its history; no undo.
     View,
     None,
-}
-
-pub fn frequency(s: &mut Session, p: &Params) -> Result<Value> {
-    let (start, stop) = (p.hertz("start").required()?, p.hertz("stop").required()?);
-    s.model.set_band(Some(Band::new(start, stop)?));
-    Ok(json!({"start": s.show_frequency(start.get()), "stop": s.show_frequency(stop.get()), "unit": s.display.frequency.symbol()}))
-}
-
-/// `project.analysis`: the kind of analysis the job is set up for.
-pub fn analysis(s: &mut Session, p: &Params) -> Result<Value> {
-    let kind: emcraft_model::Analysis = p.pick("kind").required()?;
-    s.model.set_analysis(Some(kind));
-    Ok(crate::workflow::analysis_reply(&s.model))
 }
 
 pub fn units(s: &mut Session, p: &Params) -> Result<Value> {
@@ -368,7 +355,7 @@ pub fn status(s: &mut Session, _: &Params) -> Result<Value> {
     let not_needed: Vec<&str> = crate::workflow::not_needed(if s.model.analysis() == emcraft_model::Analysis::Pcb {
         Some(emcraft_model::Analysis::Pcb)
     } else {
-        s.model.analysis
+        s.model.job.chosen()
     })
     .iter()
     .map(|x| x.id())
@@ -379,7 +366,7 @@ pub fn status(s: &mut Session, _: &Params) -> Result<Value> {
         "analysis": crate::workflow::analysis_reply(&s.model),
         "not_needed": not_needed,
     });
-    if let Some(b) = s.model.band {
+    if let Some(b) = s.model.job.range() {
         reply["frequency"] =
             json!({"start": s.show_frequency(b.start.get()), "stop": s.show_frequency(b.stop.get()), "unit": s.display.frequency.symbol()});
     }

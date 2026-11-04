@@ -22,7 +22,12 @@ impl Sizes {
             let default = p.metres("size").required_or("or `per_wavelength` with `frequency`")?;
             return Ok(Sizes { default, per_material: Vec::new() });
         };
-        let f = crate::args::frequency_or_band_top(s, p, "frequency", "the frequency the mesh must resolve, or the band: project.frequency")?;
+        let f = crate::args::frequency_or_band_top(
+            s,
+            p,
+            "frequency",
+            "the frequency the mesh must resolve, or confirm the run's settings: project.setup",
+        )?;
         let per_material: Vec<Option<Metres>> = s
             .model
             .materials

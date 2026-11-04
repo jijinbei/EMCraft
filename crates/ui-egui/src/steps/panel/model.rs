@@ -87,7 +87,7 @@ pub(super) fn mesh(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens) {
     let volume: f64 = (0..m.tets.len()).filter_map(|i| m.volume(i)).sum();
     let h = (6.0 * std::f64::consts::SQRT_2 * volume / m.tets.len().max(1) as f64).cbrt();
     kv(ui, "mean element", format!("{:.3} {lu}", l.from_si(h)), t);
-    if let Some(b) = app.session.model().band {
+    if let Some(b) = app.session.model().job.range() {
         let index = app.session.model().materials.iter().map(|x| (x.eps_r.get() * x.mu_r.get()).sqrt()).fold(1.0, f64::max);
         let lambda = emcraft_model::units::C0 / (b.stop.get() * index);
         kv(ui, "per wavelength", trf("{n} at the band's top", args!(n = format!("{:.1}", lambda / h.max(1e-300)))), t);

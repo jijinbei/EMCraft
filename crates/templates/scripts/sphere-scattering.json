@@ -7,5 +7,6 @@
  {"command": "model.open", "params": {"thickness": 12}},
  {"command": "mesh.generate", "params": {"per_wavelength": 6, "frequency": 10}},
  {"command": "source.plane_wave", "params": {"direction": [0, 0, 1], "polarization": [1, 0, 0]}},
+ {"command": "project.setup", "params": {"kind": "radiation", "frequency": 10}},
  {"command": "solve.radiation", "params": {"frequency": 10}}
 ]

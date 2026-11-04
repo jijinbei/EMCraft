@@ -266,7 +266,7 @@ fn options(s: &Session, p: &Params) -> Result<(Options, Refine)> {
         return Err(EngineError::failed("nothing to mesh: create a waveguide or a solid first"));
     }
     let sizes = crate::meshing::Sizes::read(s, p)?;
-    let frequency = crate::args::frequency_or_band_top(s, p, "frequency", "the frequency to adapt at, or set the band: project.frequency")?;
+    let frequency = crate::args::frequency_or_band_top(s, p, "frequency", "the frequency to adapt at, or confirm the run's settings: project.setup")?;
     let passes = p.integer("passes", 1..=MAX_PASSES).or(6)?;
     let tolerance = p.positive("tolerance").check(|t| *t <= 1.0, "at most 1").or(0.02)?;
     let theta = p.positive("fraction").check(|t| *t <= 1.0, "at most 1").or(0.3)?;

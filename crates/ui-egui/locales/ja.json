@@ -50,9 +50,7 @@
     "BROWSER": "ブラウザー",
     "Back (Escape)": "戻る (Escape)",
     "Back to the port's face": "ポートの面に戻す",
-    "Band": "帯域",
     "Band pass": "バンドパス",
-    "Band {start} to {stop} {unit}.": "帯域 {start}〜{stop} {unit}。",
     "Blank": "空のプロジェクト",
     "Bodies": "物体",
     "Body": "物体",
@@ -267,7 +265,7 @@
     "No GPU: the 3D view needs a graphics adapter (or a software one, such as Mesa's llvmpipe).": "GPU がありません：3D ビューにはグラフィックスアダプター（または Mesa の llvmpipe などのソフトウェア版）が必要です。",
     "No S-parameters yet: Run (step 7).": "Sパラメータはまだありません：実行（ステップ 7）。",
     "No command matches.": "一致するコマンドはありません。",
-    "No dispersion diagram yet: periodic boundaries (step 4), then Dispersion (step 6).": "分散図はまだありません：周期境界（ステップ 4）の後、分散（ステップ 6）。",
+    "No dispersion diagram yet: periodic boundaries (step 4), then Dispersion (step 5).": "分散図はまだありません：周期境界（ステップ 4）の後、分散（ステップ 5）。",
     "No eigenmodes yet: Run (step 7).": "固有モードはまだありません：実行（ステップ 7）。",
     "No far field yet: Run (step 7) on an open model with sources or lumped ports.": "遠方界はまだありません：波源または集中定数ポートのある開放モデルで実行（ステップ 7）。",
     "No fields yet: solve a sweep, eigenmodes or an open problem first.": "電磁界はまだありません：まず掃引、固有モード、開放問題のいずれかを解析してください。",
@@ -275,7 +273,7 @@
     "No geometry yet: open a sample or start at step 1, Geometry.": "形状はまだありません：サンプルを開くか、ステップ 1「形状」から始めてください。",
     "No port modes yet: they need a meshed model with ports.": "ポートモードはまだありません：ポートのあるメッシュ済みモデルが必要です。",
     "No results yet: Run (step 7). The view tabs over the viewport show them.": "結果はまだありません：実行（ステップ 7）。ビューポート上のビュータブで表示します。",
-    "No study yet: define a variable, then Sweep or Optimize (step 6).": "スタディはまだありません：変数を定義し、掃引 または 最適化（ステップ 6）。",
+    "No study yet: define a variable, then Sweep or Optimize (step 5).": "スタディはまだありません：変数を定義し、掃引 または 最適化（ステップ 5）。",
     "No sweep yet: Run (step 7) (a harmonic sweep, f = k Δf, for low pass).": "掃引はまだありません：実行（ステップ 7）（ローパスには調和掃引 f = k Δf）。",
     "None yet.": "まだありません。",
     "Not meshed": "メッシュなし",
@@ -402,7 +400,6 @@
     "Route is branched, disconnected or closed": "配線が分岐、途切れ、または閉じている",
     "Route segments": "配線のセグメント",
     "Run": "実行",
-    "Run (step 7) starts this solve after checking the model.": "実行（ステップ 7）でモデルをチェックしてからこの解析を開始します。",
     "Run diagnosis": "診断の実行",
     "Run refused: {n} problem to fix first": "実行を拒否：先に修正が必要な問題 {n} 件",
     "Run refused: {n} problems to fix first": "実行を拒否：先に修正が必要な問題 {n} 件",
@@ -449,7 +446,6 @@
     "Selected net: {net}; routed length {length} {unit}": "選択したネット：{net}、配線長 {length} {unit}",
     "Sepia": "セピア",
     "Set conditions": "条件の設定",
-    "Set the band": "帯域を設定",
     "Set up mesh convergence": "メッシュ収束の確認",
     "Settings": "設定",
     "Settings changed; inspect the route again.": "設定が変わりました。配線をもう一度診断してください。",
@@ -575,7 +571,6 @@
     "band {a} to {z} {unit}; the solve works at {n} frequencies": "帯域 {a}〜{z} {unit}。{n} 周波数で解析します",
     "band {a} to {z} {unit}; the solve works at {n} frequency": "帯域 {a}〜{z} {unit}。{n} 周波数で解析します",
     "band {n} ({unit})": "バンド {n} ({unit})",
-    "band: not set (step 0)": "帯域：未設定（ステップ 0）",
     "best": "最良",
     "best {at} (goal {goal})": "最良 {at}（目的関数 {goal}）",
     "boundary faces": "境界面",
@@ -611,7 +606,6 @@
     "from a reference machine; a sweep here measures this one": "基準マシンの値。ここで掃引すればこのマシンで測ります",
     "gap {gap} {unit}": "間隔 {gap} {unit}",
     "give a file": "ファイルを指定してください",
-    "give a frequency (or set the band, step 0)": "周波数を指定してください（またはステップ 0 で帯域を設定）",
     "goal": "目的関数",
     "goal ({unit})": "目的関数 ({unit})",
     "grid": "グリッド",
@@ -651,7 +645,6 @@
     "needs attention": "要対応",
     "no": "いいえ",
     "no configuration folder": "設定フォルダーなし",
-    "no frequency band: set it on Home (step 0)": "周波数帯域がありません：ホーム（ステップ 0）で設定してください",
     "no legend": "凡例なし",
     "nodes": "節点",
     "none": "なし",
@@ -760,20 +753,38 @@
     "θ cut": "θ カット",
     "θ varies at an azimuth φ": "方位角 φ で θ を変える",
     "φ cut": "φ カット",
-    "φ varies at a polar angle θ": "天頂角 θ で φ を変える"
+    "φ varies at a polar angle θ": "天頂角 θ で φ を変える",
+    "Confirm settings": "設定を確定",
+    "Not confirmed: the mesh and Run wait for these settings.": "未確定：メッシュと実行はこの設定を待っています。",
+    "Settings confirmed": "設定は確定済み",
+    "Settings confirmed.": "設定を確定しました。",
+    "put the marked fields right first": "先に印の付いた欄を直してください",
+    "the PCB diagnosis has no run settings": "PCB 診断には実行設定はありません",
+    "cell": "セル",
+    "order": "次数",
+    "points": "点数",
+    "start": "開始",
+    "stop": "終了"
   },
   "commands": {
-    "project.frequency": {
-      "label": "周波数帯域",
-      "doc": "解析対象の周波数帯域。波長基準のメッシュ分割（その上端）、掃引、ポートモードのプレビューの既定値になる。",
+    "project.setup": {
+      "label": "解析設定の確定",
+      "doc": "ジョブの解析の種類（または `kind`）の実行設定を、Setup ステップに表示されたとおりに確定する。掃引は帯域（`start`、`stop`）・`points`・要素次数 `order`、時間領域は帯域・`points`・`cell`・励振するポート `excite`、固有モードは `frequency` の近くの `count` 個と `order`、放射解析は `frequency` と `order`。確定するとジョブは実行可能になる：Setup ステップは完了になり、Run（solve.run）がこの設定で実行する。別の種類を選ぶ（project.analysis）と確定は取り消される。帯域は波長基準のメッシュ分割（その上端）とポートモードのプレビューにも使う。元に戻せる。",
       "params": {
-        "start": "帯域の開始",
-        "stop": "帯域の終了"
+        "kind": "解析の種類（既定はジョブのもの）：`frequency`、`eigenmodes`、`radiation`、`time_domain`。project.analysis と同じく選ぶ",
+        "start": "帯域の開始（掃引、時間領域）",
+        "stop": "帯域の終了（掃引、時間領域）",
+        "points": "周波数点数（既定 101）",
+        "order": "要素次数、1 または 2（既定 2）",
+        "count": "求める固有モードの数、1〜50（既定 5）",
+        "frequency": "固有モードの探索周波数（near）または放射解析の周波数",
+        "cell": "時間領域のセルの大きさ（既定 1 mm）",
+        "excite": "時間領域で励振するポートの名前（既定は最初のポート）"
       }
     },
     "project.analysis": {
       "label": "解析の種類",
-      "doc": "ジョブの解析の種類を最初に選ぶ: `frequency`（帯域にわたるポート間の S パラメータ、solve.frequency）、`eigenmodes`（何も励振しない閉じた共振器のモード、solve.eigenmodes）、`radiation`（開放境界の中のアンテナや散乱体、solve.radiation）、`time_domain`（帯域にわたるパルス、solve.time_domain）。ワークフローのチェック（project.status）はこれに従う: 共振器は励振を必要とせずポートは除かれる、放射は開放境界と波源または集中定数ポートを求める、掃引と時間領域はポートを求める。選ぶまでは種類をモデルから推定する（励振がなければ固有モード、波源・集中定数ポート・開放境界があれば放射、それ以外は掃引）。結果はそのまま残る。元に戻せる。",
+      "doc": "ジョブの解析の種類を最初に選ぶ: `frequency`（帯域にわたるポート間の S パラメータ、solve.frequency）、`eigenmodes`（何も励振しない閉じた共振器のモード、solve.eigenmodes）、`radiation`（開放境界の中のアンテナや散乱体、solve.radiation）、`time_domain`（帯域にわたるパルス、solve.time_domain）。ワークフローのチェック（project.status）はこれに従う: 共振器は励振を必要とせずポートは除かれる、放射は開放境界と波源または集中定数ポートを求める、掃引と時間領域はポートを求める。選ぶまでは種類をモデルから推定する（励振がなければ固有モード、波源・集中定数ポート・開放境界があれば放射、それ以外は掃引）。確定した設定と違う種類を選ぶと、確定は取り消される（project.setup をもう一度）。結果はそのまま残る。元に戻せる。",
       "params": {
         "kind": "`frequency`、`eigenmodes`、`radiation`、`time_domain`、`pcb`（PCB の信号と帰路）"
       }
@@ -785,7 +796,7 @@
     },
     "project.estimate": {
       "label": "解析の見積もり",
-      "doc": "実行の所要時間を開始前に見積もる：`params` を与えた `command`（解析、mesh.adapt、study.sweep または study.optimize）、なければプロジェクトの最新の実行、それもなければ帯域の掃引。合計の `seconds`（掃引の周波数 — 高速掃引は一部だけを完全に解く —、固有モード、適応パス、時間領域のセル数とステップ数、パラメータスタディの点数）、何を数えたか（`what`）、周波数領域の解析ではメッシュの `order` での未知数、分解のメモリ、1 回の解析の秒数。`basis` は数値の出所：`measured`（このセッションの直前の掃引、このマシンから換算）または `reference`（基準マシン）。モデルを読むだけで軽く、同じ設定なら同じ値。",
+      "doc": "実行の所要時間を開始前に見積もる：`params` を与えた `command`（解析、solve.run、mesh.adapt、study.sweep または study.optimize）、なければ確定した設定の実行（project.setup）、それもなければプロジェクトの最新の実行、それもなければ掃引。合計の `seconds`（掃引の周波数 — 高速掃引は一部だけを完全に解く —、固有モード、適応パス、時間領域のセル数とステップ数、パラメータスタディの点数）、何を数えたか（`what`）、周波数領域の解析ではメッシュの `order` での未知数、分解のメモリ、1 回の解析の秒数。`basis` は数値の出所：`measured`（このセッションの直前の掃引、このマシンから換算）または `reference`（基準マシン）。モデルを読むだけで軽く、同じ設定なら同じ値。",
       "params": {
         "order": "要素次数、1 または 2（既定は実行のもの、なければ 2）",
         "command": "見積もる実行：解析コマンド、mesh.adapt、study.sweep または study.optimize（既定は最新の実行）",
@@ -1515,6 +1526,11 @@
       "params": {
         "name": "ポート"
       }
+    },
+    "solve.run": {
+      "label": "実行",
+      "doc": "ジョブの確定した設定（project.setup）を、その解析コマンドとして実行する：solve.frequency、solve.eigenmodes、solve.radiation または solve.time_domain（応答はそのコマンドのもので、`run` に実行したコマンドとパラメータが入る）。設定を確定するまでは実行しない。",
+      "params": {}
     },
     "solve.rerun": {
       "label": "再実行",

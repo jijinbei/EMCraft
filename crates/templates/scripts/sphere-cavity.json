@@ -3,5 +3,6 @@
  {"command": "geometry.solid", "params": {"shape": "sphere", "radius": "=r"}},
  {"command": "model.walls", "params": {"thickness": 1.27, "conductivity": 58000000.0}},
  {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "project.setup", "params": {"kind": "eigenmodes", "count": 3, "order": 2, "frequency": 13}},
  {"command": "solve.eigenmodes", "params": {"near": 13, "count": 3, "order": 2}}
 ]

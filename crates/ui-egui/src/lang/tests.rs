@@ -150,7 +150,7 @@ const MODELS: &[Model] = &[
             {"command": "model.material.create", "params": {"name": "ptfe-like", "eps_r": 2.0}},
             {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [
               {"length": 15, "material": "ptfe-like"}, {"length": "=l", "material": "vacuum"}, {"length": 15, "material": "ptfe-like"}]}},
-            {"command": "project.frequency", "params": {"start": 7, "stop": 9}},
+            {"command": "project.setup", "params": {"kind": "frequency", "start": 7, "stop": 9}},
             {"command": "model.symmetry", "params": {"axis": "x", "kind": "magnetic"}},
             {"command": "mesh.generate", "params": {"size": 8}},
             {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 1}},
@@ -208,7 +208,7 @@ const MODELS: &[Model] = &[
             {"command": "source.dipole", "params": {"at": [30.1, 30.2, 29.9], "direction": [0, 0, 1], "length": 1, "current": 1}},
             {"command": "model.port.lumped", "params": {"name": "L1", "from": [30, 30, 25], "to": [30, 30, 35], "impedance": 50}},
             {"command": "source.plane_wave", "params": {"direction": [0, 0, 1], "polarization": [1, 0, 0]}},
-            {"command": "project.frequency", "params": {"start": 9, "stop": 11}},
+            {"command": "project.setup", "params": {"kind": "frequency", "start": 9, "stop": 11}},
             {"command": "solve.radiation", "params": {"frequency": 10, "order": 1}}]"#,
         "[]",
         &["intent", "excitation", "boundaries", "run"],
@@ -223,7 +223,7 @@ const MODELS: &[Model] = &[
     (
         r#"[{"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [{"length": 10, "material": "vacuum"}]}},
             {"command": "mesh.generate", "params": {"size": 5}},
-            {"command": "model.periodic", "params": {"x": false, "y": false, "z": true}}, {"command": "project.frequency", "params": {"start": 5, "stop": 6}},
+            {"command": "model.periodic", "params": {"x": false, "y": false, "z": true}}, {"command": "project.setup", "params": {"kind": "frequency", "start": 5, "stop": 6}},
             {"command": "solve.dispersion", "params": {"from": 0, "to": 180, "points": 3, "bands": 1, "near": 15, "order": 1}}]"#,
         "[]",
         &["boundaries", "run"],
@@ -312,7 +312,7 @@ fn tour() -> Record {
             let _ = h.call("engine.execute", json!({"command": c["command"], "params": c["params"]}));
         }
         let _ = crate::status::text("file.sample", &json!({"name": "highpass"}), &json!({}), &h.app.session);
-        h.app.workflow.fields.solver = None;
+        h.app.workflow.fields = crate::steps::Fields::default();
         let views: Vec<View> = View::ALL.into_iter().filter(|v| i == 0 || v.available(&h.app)).collect();
         for v in views {
             if v == View::Field {
@@ -422,7 +422,7 @@ fn tour() -> Record {
         }
         // Results of a model changed after their run: out of date in their view and the browser.
         if h.app.session.results().any() {
-            let _ = h.call("engine.execute", json!({"command": "project.frequency", "params": {"start": 7, "stop": 9.5}}));
+            let _ = h.call("engine.execute", json!({"command": "project.setup", "params": {"kind": "frequency", "start": 7, "stop": 9.5}}));
             if let Some(v) = View::ALL.into_iter().find(|v| v.is_result() && v.available(&h.app)) {
                 call(&mut h, "ui.set", json!({"view": v.id()}));
                 h.frames(2);
@@ -446,9 +446,11 @@ fn tour() -> Record {
         call(&mut h, "ui.set", json!({"step": "setup"}));
         for s in Solver::ALL {
             call(&mut h, "engine.execute", json!({"command":"project.analysis","params":{"kind":s.id()}}));
+            // A frequency for the kinds that work at one.
+            h.app.workflow.fields.frequency = "9".into();
             h.frames(2);
         }
-        h.app.workflow.fields.solver = None;
+        h.app.workflow.fields = crate::steps::Fields::default();
         for m in ["menu:file", "menu:edit"] {
             step(&mut h, json!({"click": m}));
             step(&mut h, json!({"key": "Escape"}));
@@ -603,13 +605,13 @@ fn tour() -> Record {
     call(&mut h, "engine.execute", json!({"command":"project.analysis","params":{"kind":"radiation"}}));
     let f = &mut h.app.workflow.fields;
     (f.start, f.stop, f.points, f.order, f.frequency) = ("x".into(), "0".into(), "many".into(), "7".into(), String::new());
-    apply(&mut h, [Action::ApplyBand, Action::StartRun]);
+    apply(&mut h, [Action::ConfirmSetup, Action::StartRun]);
     h.app.workflow.step = Some(Step::Run);
     h.frames(2);
     call(&mut h, "engine.execute", json!({"command":"project.analysis","params":{"kind":"frequency"}}));
     let f = &mut h.app.workflow.fields;
     (f.start, f.stop) = ("9".into(), "8".into());
-    apply(&mut h, [Action::ApplyBand]);
+    apply(&mut h, [Action::ConfirmSetup]);
     h.app.workflow.fields.touchstone = " ".into();
     apply(&mut h, [Action::ExportTouchstone]);
     h.app.workflow.step = Some(Step::Setup);

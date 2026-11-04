@@ -686,13 +686,6 @@
     }
   },
   {
-    "command": "project.frequency",
-    "params": {
-      "start": 0.01,
-      "stop": 5
-    }
-  },
-  {
     "command": "project.analysis",
     "params": {
       "kind": "pcb"

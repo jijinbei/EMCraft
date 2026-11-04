@@ -454,10 +454,9 @@ fn field_value(f: &Field) -> Result<Option<Value>, String> {
 }
 
 /// The commands whose dialogs open on the model's current state (`project.values`) when it has
-/// one, before the examples of [`initial`]: the band, the units, the device, the boundaries, the
+/// one, before the examples of [`initial`]: the units, the device, the boundaries, the
 /// geometry, the mesh and the solves (their last run).
 pub const ON_VALUES: &[&str] = &[
-    "project.frequency",
     "units.set",
     "solve.device",
     "model.walls",
@@ -491,7 +490,7 @@ pub fn initial(command: &str, s: &Session) -> Value {
     let ports = s.model().ports.len();
     let fu = s.display().frequency;
     // The job's band, and the frequency in its middle.
-    let band = s.model().band.map(|b| (fu.from_si(b.start.get()), fu.from_si(b.stop.get())));
+    let band = s.model().job.range().map(|b| (fu.from_si(b.start.get()), fu.from_si(b.stop.get())));
     let middle = band.map_or(10.0, |(a, z)| 0.5 * (a + z));
     match command {
         // The model: its own guide or the next names, else a working example.
@@ -532,10 +531,6 @@ pub fn initial(command: &str, s: &Session) -> Value {
         "solve.port_modes" => json!({"frequency": band.map_or(10.0, |(_, z)| z), "order": 2}),
         "solve.dispersion" => json!({"from": 0, "to": 180, "points": 11, "bands": 4, "near": band.map_or(15.0, |(_, z)| z), "order": 2}),
         "solve.device" => json!({"device": s.compute().device().id(), "precision": s.compute().precision.id()}),
-        "project.frequency" => match band {
-            Some((a, z)) => json!({"start": a, "stop": z}),
-            None => json!({"start": 8, "stop": 12}),
-        },
         // Results and pictures.
         "results.touchstone" => json!({"path": format!("emcraft.s{}p", ports.max(1)), "format": "ri"}),
         "results.compare" => json!({"modes": 160}),
@@ -652,7 +647,7 @@ fn route_size(s: &Session) -> Option<f64> {
     let m = s.model();
     let board = m.pcb.as_ref().filter(|b| b.region.is_some())?;
     let net = s.views().pcb_net.as_deref()?;
-    let stop = m.band?.stop.get();
+    let stop = m.job.range()?.stop.get();
     let size = emcraft_engine::pcb_fem::route_size(board, net, stop);
     (size.is_finite() && size > 0.0).then(|| s.display().length.from_si(size))
 }

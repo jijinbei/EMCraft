@@ -9,8 +9,12 @@ use crate::{EmcraftApp, View, files, status, steps};
 impl EmcraftApp {
     /// What follows a command's success: the view it calls for, its message.
     pub(crate) fn after(&mut self, id: &str, params: &Value, reply: &Value) {
-        // A run again is the run it repeats.
-        let rerun = reply.get("rerun").filter(|_| id == "solve.rerun");
+        // A run again, or the confirmed settings' run, is the solve it runs.
+        let rerun = match id {
+            "solve.rerun" => reply.get("rerun"),
+            "solve.run" => reply.get("run"),
+            _ => None,
+        };
         let (id, params) = match rerun.and_then(|r| Some((r.get("command")?.as_str()?, r.get("params")?))) {
             Some((command, p)) => (command, p),
             None => (id, params),
@@ -59,9 +63,6 @@ impl EmcraftApp {
             }
             "project.variable" if self.session.model().pcb.is_some() && self.session.model().analysis() == crate::steps::Solver::Pcb => {
                 self.replies.pcb = None;
-                if let Some(band) = self.session.model().band {
-                    self.views.pcb.stop = self.session.display().frequency.from_si(band.stop.get()).to_string();
-                }
                 self.view = View::Pcb;
                 self.workflow.step = None;
             }
@@ -97,9 +98,7 @@ impl EmcraftApp {
                     self.view = View::Model;
                 }
             }
-            // A kind chosen at step 0: Setup starts on its solver.
             "project.analysis" => {
-                self.workflow.fields.solver = None;
                 // Away from the PCB diagnosis its stages go; the board is the model's.
                 if self.view == View::Pcb && !View::Pcb.available(self) {
                     self.view = View::Model;
@@ -137,9 +136,10 @@ impl EmcraftApp {
             self.home.open = false;
             self.settings = None;
         }
-        // The Setup step as the project's last run left it.
+        // The Setup step's form: the opened project's confirmed settings, else empty.
         if matches!(id, "file.open" | "file.sample" | "file.new") {
-            steps::restore_setup(self);
+            self.workflow.fields = steps::Fields::default();
+            steps::sync_setup(self);
         }
         // An open problem's fields read best as |E| (a source's own component may vanish on
         // the planes through it); a guide's as Ey, its TE10 field.
@@ -152,9 +152,6 @@ impl EmcraftApp {
         self.view = chosen.or_else(|| results.kinds().find(|k| k.of_the_model())).map_or(View::Model, View::of);
         self.replies.pcb = None;
         if self.session.model().pcb.is_some() && self.session.model().analysis() == crate::steps::Solver::Pcb {
-            if let Some(band) = self.session.model().band {
-                self.views.pcb.stop = self.session.display().frequency.from_si(band.stop.get()).to_string();
-            }
             if let Some(c) = &self.session.views().pcb_conditions {
                 self.views.pcb.ground = c.ground.clone();
                 self.views.pcb.reference = c.reference.to_string();

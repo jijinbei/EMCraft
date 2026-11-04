@@ -15,5 +15,6 @@
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4, "axis": "x", "face": ["=2*l+a", 0, 0, "=a", "=b"]}},
  {"command": "model.port.create", "params": {"name": "3", "end": "start", "modes": 4, "axis": "y", "face": ["=-l", "=l", "=b+t", "=a", "=b"]}},
  {"command": "model.port.create", "params": {"name": "4", "end": "end", "modes": 4, "axis": "y", "face": ["=a+l", "=l", "=b+t", "=a", "=b"]}},
+ {"command": "project.setup", "params": {"kind": "frequency", "start": "=187.37/a", "stop": "=283.3/a", "points": 101, "order": 2}},
  {"command": "solve.frequency", "params": {"start": "=187.37/a", "stop": "=283.3/a", "points": 101, "order": 2}}
 ]

@@ -35,6 +35,7 @@ pub mod expr;
 mod geometry;
 pub mod guides;
 mod items;
+pub mod job;
 mod meshing;
 mod numbers;
 pub mod open;

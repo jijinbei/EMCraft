@@ -7,5 +7,6 @@
  {"command": "geometry.body", "params": {"material": "metal", "shape": "cylinder", "radius": "=r_post", "length": "=l - gap", "at": [0, 0, 0]}},
  {"command": "model.walls", "params": {"thickness": 1.27, "conductivity": 58000000.0}},
  {"command": "mesh.generate", "params": {"size": 2.5}},
+ {"command": "project.setup", "params": {"kind": "eigenmodes", "count": 2, "order": 2, "frequency": 3}},
  {"command": "solve.eigenmodes", "params": {"near": 3, "count": 2, "order": 2}}
 ]

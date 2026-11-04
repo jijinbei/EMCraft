@@ -25,8 +25,10 @@ emcraft_macros::named_enum! {
         Materials = "materials" => "Materials",
         Excitation = "excitation" => "Excitation",
         Boundaries = "boundaries" => "Boundaries",
-        Mesh = "mesh" => "Mesh",
+        /// The run's settings, the band among them: confirmed before the mesh, which the band's
+        /// top sizes.
         Setup = "setup" => "Setup",
+        Mesh = "mesh" => "Mesh",
         Run = "run" => "Run",
         Results = "results" => "Results",
     }
@@ -47,7 +49,8 @@ impl Step {
             Step::Excitation => &["model.port.create", "model.port.lumped", "source.dipole", "source.plane_wave", "source.clear"],
             Step::Boundaries => &["model.walls", "model.open", "model.symmetry"],
             Step::Mesh => &["mesh.generate"],
-            Step::Setup | Step::Run => &[],
+            Step::Setup => &["project.setup"],
+            Step::Run => &["solve.run"],
             Step::Results => &["results.compare", "view.sparameters", "view.field", "view.animation", "view.pattern"],
         }
     }
@@ -55,7 +58,8 @@ impl Step {
     /// The step a command belongs to.
     pub fn of_command(id: &str) -> Option<Step> {
         Some(match id {
-            "project.frequency" | "project.analysis" | "units.set" => Step::Intent,
+            "project.analysis" | "units.set" => Step::Intent,
+            "project.setup" => Step::Setup,
             _ if id.starts_with("geometry.") || id == "file.sample" => Step::Geometry,
             "model.material.create" => Step::Materials,
             _ if id.starts_with("model.port.") || id.starts_with("source.") || id == "solve.port_modes" => Step::Excitation,
@@ -149,28 +153,28 @@ pub const ANALYSES: [AnalysisSpec; Analysis::COUNT] = {
         AnalysisSpec {
             analysis: Analysis::Frequency,
             solve: "solve.frequency",
-            required: &[Geometry, Excitation, Mesh],
+            required: &[Geometry, Excitation, Setup, Mesh],
             not_needed: &[],
             results: &[R::Sweep],
         },
         AnalysisSpec {
             analysis: Analysis::Eigenmodes,
             solve: "solve.eigenmodes",
-            required: &[Geometry, Mesh],
+            required: &[Geometry, Setup, Mesh],
             not_needed: &[Excitation],
             results: &[R::Eigen, R::Dispersion],
         },
         AnalysisSpec {
             analysis: Analysis::Radiation,
             solve: "solve.radiation",
-            required: &[Geometry, Excitation, Boundaries, Mesh],
+            required: &[Geometry, Excitation, Boundaries, Setup, Mesh],
             not_needed: &[],
             results: &[R::Radiation],
         },
         AnalysisSpec {
             analysis: Analysis::TimeDomain,
             solve: "solve.time_domain",
-            required: &[Geometry, Excitation],
+            required: &[Geometry, Excitation, Setup],
             not_needed: &[Mesh],
             results: &[R::TimeDomain, R::TdRadiation],
         },
@@ -214,13 +218,13 @@ pub const fn solve_command(a: Analysis) -> &'static str {
 /// let mut m = Model::default();
 /// let inferred = emcraft_engine::workflow::analysis_reply(&m);
 /// assert_eq!((inferred["kind"].as_str(), inferred["chosen"].as_bool()), (Some("eigenmodes"), Some(false)));
-/// m.set_analysis(Some(Analysis::Radiation));
+/// m.set_job(m.job.choose(Some(Analysis::Radiation)));
 /// let chosen = emcraft_engine::workflow::analysis_reply(&m);
 /// assert_eq!((chosen["solve"].as_str(), chosen["chosen"].as_bool()), (Some("solve.radiation"), Some(true)));
 /// ```
 pub fn analysis_reply(m: &emcraft_model::Model) -> Value {
     let a = m.analysis();
-    json!({"kind": a.id(), "chosen": m.analysis.is_some(), "solve": solve_command(a)})
+    json!({"kind": a.id(), "chosen": m.job.chosen().is_some(), "solve": solve_command(a)})
 }
 
 /// A cut-off frequency to mark beside the band: a port mode's or a guide section's.
@@ -302,18 +306,18 @@ pub fn steps(s: &Session) -> [StepState; 9] {
         );
         return states;
     }
-    let above = [intent(s), geometry(s), materials(s), excitation(s), boundaries(s), mesh(s), setup(s)];
+    let above = [intent(s), geometry(s), materials(s), excitation(s), boundaries(s), setup(s), mesh(s)];
     let (run, results) = run_and_results(s, &above);
-    let [intent, geometry, materials, excitation, boundaries, mesh, setup] = above;
-    [intent, geometry, materials, excitation, boundaries, mesh, setup, run, results]
+    let [intent, geometry, materials, excitation, boundaries, setup, mesh] = above;
+    [intent, geometry, materials, excitation, boundaries, setup, mesh, run, results]
 }
 
-/// The steps a run cannot do without: the geometry and the mesh; once a kind of analysis is
+/// The steps a run cannot do without: the geometry, the confirmed settings and the mesh; once a kind of analysis is
 /// chosen that is driven, the excitation too (a resonator needs none), for radiation the open
 /// boundary, and the time domain no mesh (it grids the model itself).
 pub fn required(chosen: Option<Analysis>) -> &'static [Step] {
     match chosen {
-        None => &[Step::Geometry, Step::Mesh],
+        None => &[Step::Geometry, Step::Setup, Step::Mesh],
         Some(a) => spec(a).required,
     }
 }
@@ -330,9 +334,10 @@ pub fn not_needed(chosen: Option<Analysis>) -> &'static [Step] {
     chosen.map_or(&[], |a| spec(a).not_needed)
 }
 
-/// The command that runs the job: the chosen kind's solve, else a sweep.
+/// The command that runs the job: its confirmed settings (solve.run), else the command that
+/// confirms them.
 fn run_command(s: &Session) -> &'static str {
-    s.model.analysis.map_or("solve.frequency", solve_command)
+    if s.model.job.setup().is_some() { "solve.run" } else { "project.setup" }
 }
 
 /// Whether anything was solved: a solver's results or a parameter study's.
@@ -344,17 +349,9 @@ fn has_geometry(s: &Session) -> bool {
     s.model.waveguide.is_some() || s.model.solid.is_some()
 }
 
-fn intent(s: &Session) -> StepState {
-    let mut st = StepState::new(Step::Intent);
-    // Once something is solved, the band has done its work.
-    if s.model.band.is_none() && !solved(s) {
-        st.note(
-            Status::Todo,
-            "no frequency band yet: set the job's band first, it sets the mesh, the sweep and the port previews",
-            Some("project.frequency"),
-        );
-    }
-    st
+fn intent(_: &Session) -> StepState {
+    // The kind is chosen, or inferred from the model while it is not.
+    StepState::new(Step::Intent)
 }
 
 fn geometry(s: &Session) -> StepState {
@@ -408,7 +405,7 @@ fn excitation(s: &Session) -> StepState {
     let mut st = StepState::new(Step::Excitation);
     // A cell periodic along z is solved for its dispersion, with nothing driving it.
     let bloch = m.periodic.is_some_and(|p| p.z);
-    let chosen = m.analysis;
+    let chosen = m.job.chosen();
     // A resonator's eigenmodes need nothing to drive them.
     let resonator = s.results.eigen.is_some() || chosen == Some(Analysis::Eigenmodes);
     let driven = !(m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty());
@@ -432,7 +429,7 @@ fn excitation(s: &Session) -> StepState {
     }
     // A closed-form port's first mode against the band's start: below its cut-off the wave
     // decays (an experiment may want just that), a note that leaves the step's standing.
-    let Some(start) = m.band.map(|b| b.start.get()) else { return st };
+    let Some(start) = m.job.range().map(|b| b.start.get()) else { return st };
     for p in m.ports.iter().filter(|_| m.periodic.is_none()) {
         let (Ok(emcraft_model::PortShape::Rect { a, .. }), Ok(mat)) = (m.port_shape_of(p), m.port_material(p.end)) else { continue };
         let cutoff = C0 / (2.0 * a * (mat.eps_r.get() * mat.mu_r.get()).sqrt());
@@ -458,7 +455,7 @@ fn boundaries(s: &Session) -> StepState {
     let mut st = StepState::new(Step::Boundaries);
     if !has_geometry(s) {
         st.note(Status::Waiting, "waits for the geometry: its walls are the boundaries", Some("geometry.waveguide"));
-    } else if !open && m.analysis == Some(Analysis::Radiation) {
+    } else if !open && m.job.chosen() == Some(Analysis::Radiation) {
         st.note(Status::Todo, "radiation wants the open boundary (a perfectly matched layer) around the model", Some("model.open"));
     }
     // An antenna's sources radiate into a closed box's walls; S-parameters between lumped ports
@@ -484,7 +481,7 @@ fn mesh(s: &Session) -> StepState {
     let m = &s.model;
     let mut st = StepState::new(Step::Mesh);
     let Some(me) = &m.mesh else {
-        if not_needed(m.analysis).contains(&Step::Mesh) {
+        if not_needed(m.job.chosen()).contains(&Step::Mesh) {
             return st;
         }
         if has_geometry(s) {
@@ -495,7 +492,7 @@ fn mesh(s: &Session) -> StepState {
         return st;
     };
     // Elements per wavelength at the band's top in the densest material.
-    let Some(stop) = m.band.map(|b| b.stop.get()) else { return st };
+    let Some(stop) = m.job.range().map(|b| b.stop.get()) else { return st };
     let index = m.materials.iter().map(|x| x.index_at(stop)).fold(1.0, f64::max);
     let lambda = C0 / (stop * index);
     let volume: f64 = (0..me.tets.len()).filter_map(|t| me.volume(t)).sum();
@@ -521,8 +518,8 @@ fn setup(s: &Session) -> StepState {
     if !has_geometry(s) {
         st.note(Status::Waiting, "waits for the geometry", Some("geometry.waveguide"));
     }
-    if s.model.band.is_none() && !solved(s) {
-        st.note(Status::Todo, "no band to sweep yet: set the band, or give the sweep's frequencies when running", Some("project.frequency"));
+    if s.model.job.setup().is_none() {
+        st.note(Status::Todo, "the run's settings are not confirmed yet: check them and confirm", Some("project.setup"));
     }
     st
 }
@@ -535,7 +532,7 @@ fn run_and_results(s: &Session, above: &[StepState]) -> (StepState, StepState) {
     let mut results = StepState::new(Step::Results);
     let names = |pick: &dyn Fn(&StepState) -> bool| above.iter().filter(|x| pick(x)).map(|x| x.step.id()).collect::<Vec<_>>().join(", ");
     let wrong = names(&|x| x.status == Status::Missing);
-    let required = required(s.model.analysis);
+    let required = required(s.model.job.chosen());
     let waiting = names(&|x| required.contains(&x.step) && matches!(x.status, Status::Todo | Status::Waiting));
     let command = run_command(s);
     if !wrong.is_empty() {

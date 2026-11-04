@@ -119,6 +119,10 @@ emcraft_macros::named_enum! {
         SetupCount = "setup:count",
         SetupFrequency = "setup:frequency",
         SetupOrder = "setup:order",
+        SetupStart = "setup:start",
+        SetupStop = "setup:stop",
+        SetupCell = "setup:cell",
+        SetupConfirm = "setup:confirm",
         RunStart = "run:start",
         RunError = "run:error",
         // The run's estimate in the Setup and Run steps and under a solve's dialog.

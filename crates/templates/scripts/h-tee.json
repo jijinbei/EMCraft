@@ -9,5 +9,6 @@
  {"command": "model.port.create", "params": {"name": "3", "end": "end", "modes": 4, "axis": "y", "face": ["=l+a", "=l", 0, "=a", "=b"]}},
  {"command": "model.symmetry", "params": {"axis": "z", "kind": "electric"}},
  {"command": "mesh.generate", "params": {"size": "=a/8"}},
+ {"command": "project.setup", "params": {"kind": "frequency", "start": "=187.37/a", "stop": "=283.3/a", "points": 101, "order": 2}},
  {"command": "solve.frequency", "params": {"start": "=187.37/a", "stop": "=283.3/a", "points": 101, "order": 2}}
 ]

@@ -100,13 +100,7 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             let template = if id == "edit.undo" { "Undone ({undo} to undo, {redo} to redo)." } else { "Redone ({undo} to undo, {redo} to redo)." };
             trf(template, args!(undo = r.count("undo"), redo = r.count("redo")))
         }
-        "project.frequency" => {
-            let unit = match r.text("unit") {
-                "" => unit,
-                u => u,
-            };
-            trf("Band {start} to {stop} {unit}.", args!(start = r.num("start"), stop = r.num("stop"), unit = unit))
-        }
+        "project.setup" => tr("Settings confirmed.").to_owned(),
         "results.touchstone" => trf("Wrote {path}.", args!(path = r.text("path"))),
         "results.check" => {
             let passive = tr(if r.flag("passive") { "passive" } else { "not passive" });
@@ -167,7 +161,7 @@ mod tests {
             text("mesh.adapt", &none, &json!({"quantity": "far_field", "passes": [{"delta_far_field": 0.004}]}), &s),
             "Adaptive mesh: 1 passes, 0 tetrahedra, last far-field change 4.00e-3, not converged."
         );
-        assert_eq!(text("project.frequency", &none, &json!({"start": 5.0, "stop": 9.0}), &s), "Band 5 to 9 GHz.");
+        assert_eq!(text("project.setup", &none, &json!({"start": 5.0, "stop": 9.0}), &s), "Settings confirmed.");
         assert_eq!(text("file.sample", &json!({"name": "highpass"}), &none, &s), "Opened sample highpass; Run (step 7) solves it.");
     }
 }

@@ -238,7 +238,9 @@ fn meshes_follow_the_wavelength_in_each_material() {
     let r = w.execute("mesh.generate", &json!({"per_wavelength": 10, "frequency": 9})).unwrap();
     let h = emcraft_model::units::C0 / 9e9 / 2f64.sqrt() / 10.0 * 1e3;
     assert!((r["size"].as_f64().unwrap() - h).abs() < 1e-9, "{}", r["size"]);
-    assert!(w.execute("mesh.generate", &json!({"per_wavelength": 10})).is_err());
+    // Without a frequency, the confirmed run's top (the sample's 9 GHz) stands in.
+    let top = w.execute("mesh.generate", &json!({"per_wavelength": 10})).unwrap();
+    assert_eq!(top["size"], r["size"]);
     assert!(w.execute("mesh.generate", &json!({"per_wavelength": 0, "frequency": 9})).is_err());
     assert!(w.execute("mesh.generate", &json!({})).is_err());
 }
@@ -495,7 +497,7 @@ fn an_open_part_gets_air_and_a_layer_a_quarter_wavelength_each() {
     let mut s = Session::new();
     // Without the band the defaults are unknown.
     assert!(s.execute("geometry.import", &json!({"path": path, "open": true})).is_err());
-    s.execute("project.frequency", &json!({"start": 5, "stop": 10})).unwrap();
+    s.execute("project.setup", &json!({"kind": "frequency", "start": 5, "stop": 10})).unwrap();
     let r = s.execute("geometry.import", &json!({"path": path, "open": true})).unwrap();
     // λ at 5 GHz is 59.96 mm: 15 mm of air, 15 mm of layer, each side.
     let t = r["open"].as_f64().unwrap();

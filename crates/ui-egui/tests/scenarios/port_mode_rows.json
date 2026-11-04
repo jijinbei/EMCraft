@@ -1,7 +1,7 @@
 [
   {"note": "The Excitation panel's port-mode table points at the 3D view: hovering a row lights that port's face (a transient highlight, the selection stays), clicking it opens the Port modes view at that mode"},
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
-  {"call": "engine.execute", "params": {"command": "project.frequency", "params": {"start": 5, "stop": 9}}},
+  {"call": "engine.execute", "params": {"command": "project.setup", "params": {"kind": "frequency", "start": 5, "stop": 9}}},
   {"click": "step:excitation"},
   {"click": "excitation:preview"},
   {"until": {"busy": false, "inspect": {"port_modes": true}}, "timeout": 60},

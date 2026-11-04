@@ -33,7 +33,7 @@ pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Toke
     };
     ui_kit::caption(ui, about);
     let busy = app.busy();
-    let hint = if ready { "" } else { "needs a mesh (step 5)" };
+    let hint = if ready { "" } else { "needs a mesh (step 6)" };
     ui.act(ready && !busy, ui_kit::styled("Preview port modes", true), Fixed::ExcitationPreview.into(), hint, || Action::PreviewPortModes, out);
     let Some(reply) = app.replies.port_modes.as_ref() else { return };
     let f = reply.get("frequency").and_then(Value::as_f64).unwrap_or(f64::NAN);

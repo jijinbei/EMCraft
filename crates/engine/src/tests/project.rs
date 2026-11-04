@@ -9,7 +9,7 @@ use crate::*;
 /// A project of a band and a material, saved at `path`.
 fn saved(path: &str, start: f64) -> Session {
     let mut s = Session::new();
-    s.execute("project.frequency", &json!({"start": start, "stop": 12})).unwrap();
+    s.execute("project.setup", &json!({"kind": "frequency", "start": start, "stop": 12})).unwrap();
     s.execute("file.save", &json!({"path": path})).unwrap();
     s
 }
@@ -29,7 +29,7 @@ fn undoing_an_open_brings_the_project_before_it_back() {
     let r = s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!((s.path(), s.is_dirty()), (Some(a.as_str()), true));
     assert_eq!((r["path"].as_str(), r["dirty"].as_bool()), (Some(a.as_str()), Some(true)));
-    assert_eq!(s.model.band.map(|x| x.start.get()), Some(5e9));
+    assert_eq!(s.model.job.range().map(|x| x.start.get()), Some(5e9));
     // The save after the undo writes A's file; B's is untouched.
     let b_bytes = std::fs::read(&b).unwrap();
     s.execute("file.save", &json!({})).unwrap();
@@ -38,7 +38,7 @@ fn undoing_an_open_brings_the_project_before_it_back() {
     assert_eq!(std::fs::read(&b).unwrap(), b_bytes);
     // Redo: B again, clean, its own file.
     s.execute("edit.redo", &json!({})).unwrap();
-    assert_eq!((s.path(), s.is_dirty(), s.model.band.map(|x| x.start.get())), (Some(b.as_str()), false, Some(7e9)));
+    assert_eq!((s.path(), s.is_dirty(), s.model.job.range().map(|x| x.start.get())), (Some(b.as_str()), false, Some(7e9)));
     // Undo again: A, now clean (it was saved after the first undo).
     s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!((s.path(), s.is_dirty()), (Some(a.as_str()), false));
@@ -53,10 +53,10 @@ fn undoing_new_or_a_sample_brings_the_file_back() {
     s.execute("file.new", &json!({})).unwrap();
     assert_eq!((s.path(), s.name().as_str()), (None, "Untitled"));
     s.execute("edit.undo", &json!({})).unwrap();
-    assert_eq!((s.path(), s.is_dirty(), s.model.band.is_some()), (Some(a.as_str()), false, true));
+    assert_eq!((s.path(), s.is_dirty(), s.model.job.range().is_some()), (Some(a.as_str()), false, true));
     // An untitled project, a sample over it, undo: untitled again, no file to save to.
     let mut t = Session::new();
-    t.execute("project.frequency", &json!({"start": 5, "stop": 9})).unwrap();
+    t.execute("project.setup", &json!({"kind": "frequency", "start": 5, "stop": 9})).unwrap();
     t.execute("file.sample", &json!({"name": "highpass"})).unwrap();
     assert_eq!((t.sample(), t.is_dirty()), (Some("highpass"), false));
     t.execute("edit.undo", &json!({})).unwrap();
@@ -196,14 +196,15 @@ fn the_analysis_kind_is_chosen_recorded_and_followed() {
         let st = s.execute("project.status", &json!({})).unwrap();
         st["steps"].as_array().unwrap().iter().find(|x| x["step"] == id).cloned().unwrap()
     };
-    // Inferred: a guide with two ports is swept; its results are current.
+    // The sample's confirmed sweep: a guide with two ports; its results are current.
     let st = s.execute("project.status", &json!({})).unwrap();
-    assert_eq!(st["analysis"], json!({"kind": "frequency", "chosen": false, "solve": "solve.frequency"}));
+    assert_eq!(st["analysis"], json!({"kind": "frequency", "chosen": true, "solve": "solve.frequency"}));
+    assert_eq!(step(&mut s, "setup")["status"], "done");
     assert_eq!(step(&mut s, "excitation")["status"], "done");
     // Eigenmodes: its ports are left out, a warning whose fix is the choice; the results stay.
     let r = s.execute("project.analysis", &json!({"kind": "eigenmodes"})).unwrap();
     assert_eq!(r, json!({"kind": "eigenmodes", "chosen": true, "solve": "solve.eigenmodes"}));
-    assert_eq!(s.model.analysis, Some(emcraft_model::Analysis::Eigenmodes));
+    assert_eq!(s.model.job.chosen(), Some(emcraft_model::Analysis::Eigenmodes));
     let ex = step(&mut s, "excitation");
     assert_eq!((ex["status"].as_str(), ex["messages"][0]["command"].as_str()), (Some("warning"), Some("project.analysis")));
     assert_eq!(step(&mut s, "results")["status"], "done");
@@ -220,16 +221,16 @@ fn the_analysis_kind_is_chosen_recorded_and_followed() {
         assert!(s.execute("project.analysis", &json!({"kind": bad})).is_err(), "{bad}");
     }
     assert!(s.execute("project.analysis", &json!({})).is_err());
-    assert_eq!(s.model.analysis, Some(emcraft_model::Analysis::Radiation));
+    assert_eq!(s.model.job.chosen(), Some(emcraft_model::Analysis::Radiation));
     // Undo goes back a choice at a time.
     s.execute("edit.undo", &json!({})).unwrap();
-    assert_eq!(s.model.analysis, Some(emcraft_model::Analysis::Eigenmodes));
+    assert_eq!(s.model.job.chosen(), Some(emcraft_model::Analysis::Eigenmodes));
     // Saved and opened: the choice comes back with the history.
     let path = scratch("analysis.emcraft");
     s.execute("file.save", &json!({"path": path})).unwrap();
     let mut t = Session::new();
     t.execute("file.open", &json!({"path": path})).unwrap();
-    assert_eq!(t.model.analysis, Some(emcraft_model::Analysis::Eigenmodes));
+    assert_eq!(t.model.job.chosen(), Some(emcraft_model::Analysis::Eigenmodes));
     // A resonator chosen with nothing driving it: nothing to do in Excitation; a sweep chosen
     // instead: Run waits for a port.
     let mut c = Session::new();
@@ -238,10 +239,20 @@ fn the_analysis_kind_is_chosen_recorded_and_followed() {
     assert_eq!(step(&mut c, "excitation")["status"], "todo");
     c.execute("project.analysis", &json!({"kind": "eigenmodes"})).unwrap();
     assert_eq!(step(&mut c, "excitation")["status"], "done");
-    assert_eq!(step(&mut c, "run")["messages"][0]["command"], "solve.eigenmodes");
+    // Run waits for the settings, which the eigenmodes' search frequency makes; then it runs them.
+    assert!(step(&mut c, "run")["messages"][0]["text"].as_str().unwrap().contains("setup"));
+    assert_eq!(step(&mut c, "setup")["messages"][0]["command"], "project.setup");
+    assert!(c.execute("project.setup", &json!({})).is_err(), "the eigenmodes want their frequency");
+    c.execute("project.setup", &json!({"frequency": 9, "count": 2})).unwrap();
+    assert_eq!(step(&mut c, "run")["messages"][0]["command"], "solve.run");
+    assert_eq!(
+        c.execute("project.values", &json!({"command": "project.setup"})).unwrap(),
+        json!({"kind": "eigenmodes", "frequency": 9.0, "count": 2, "order": 2})
+    );
     assert_eq!(c.execute("project.status", &json!({})).unwrap()["not_needed"], json!(["excitation"]));
+    // Another kind takes the settings back.
     c.execute("project.analysis", &json!({"kind": "time_domain"})).unwrap();
-    assert_eq!(step(&mut c, "run")["status"], "waiting");
+    assert_eq!((step(&mut c, "setup")["status"].as_str(), step(&mut c, "run")["status"].as_str()), (Some("todo"), Some("waiting")));
     // The time domain grids the model itself: no mesh wanted.
     let mut td = Session::new();
     td.execute("geometry.waveguide", &json!({"width": 20, "height": 10, "sections": [{"length": 20, "material": "vacuum"}]})).unwrap();
@@ -250,8 +261,12 @@ fn the_analysis_kind_is_chosen_recorded_and_followed() {
     assert_eq!(step(&mut td, "mesh")["status"], "todo");
     td.execute("project.analysis", &json!({"kind": "time_domain"})).unwrap();
     assert_eq!(step(&mut td, "mesh")["status"], "done");
+    assert_eq!(step(&mut td, "run")["status"], "waiting");
+    td.execute("project.setup", &json!({"start": 6, "stop": 9, "points": 11, "cell": 2})).unwrap();
     assert_eq!(step(&mut td, "run")["status"], "todo");
-    assert_eq!(step(&mut td, "run")["messages"][0]["command"], "solve.time_domain");
+    assert_eq!(step(&mut td, "run")["messages"][0]["command"], "solve.run");
+    let (command, params) = crate::job::run_of(&td).unwrap();
+    assert_eq!((command, params), ("solve.time_domain", json!({"start": 6.0, "stop": 9.0, "points": 11, "cell": 2.0})));
 }
 
 /// A project saved and opened again: the same history and model, its mesh read from the file
@@ -324,4 +339,36 @@ fn hostile_meshes_are_refused() {
         let r = t.execute("file.open", &json!({"path": path}));
         assert!(matches!(&r, Err(EngineError::Failed(m)) if m.contains(why)), "{why}: {r:?}");
     }
+}
+
+/// The run's settings: confirmed by project.setup (hostile values refused, nothing changed),
+/// run by solve.run as their solve runs, taken back by another kind, undone a step at a time.
+#[test]
+fn the_runs_settings_are_confirmed_then_run() {
+    let mut s = sample("highpass");
+    s.execute("project.analysis", &json!({"kind": "eigenmodes"})).unwrap();
+    s.execute("project.analysis", &json!({"kind": "frequency"})).unwrap();
+    assert!(matches!(s.execute("solve.run", &json!({})), Err(EngineError::Failed(m)) if m.contains("project.setup")));
+    let before = s.model.job.clone();
+    for bad in [
+        json!({"start": 9, "stop": 6}),
+        json!({"start": 6, "stop": 9, "points": 0}),
+        json!({"start": 6, "stop": 9, "order": 3}),
+        json!({"start": -1, "stop": 9}),
+        json!({"start": 6}),
+        json!({"kind": "pcb", "start": 6, "stop": 9}),
+        json!({"kind": "time_domain", "start": 6, "stop": 9, "excite": "1"}),
+        json!({"kind": "eigenmodes", "frequency": 9, "count": 51}),
+    ] {
+        assert!(s.execute("project.setup", &bad).is_err(), "{bad}");
+        assert_eq!(s.model.job, before, "{bad}");
+    }
+    s.execute("project.setup", &json!({"start": 6, "stop": 9, "points": 3, "order": 1})).unwrap();
+    let r = s.execute("solve.run", &json!({})).unwrap();
+    assert_eq!(r["run"], json!({"command": "solve.frequency", "params": {"start": 6.0, "stop": 9.0, "points": 3, "order": 1}}));
+    assert_eq!(s.results.sweep.as_ref().map(|w| w.results.len()), Some(3));
+    let est = s.execute("project.estimate", &json!({"command": "solve.run"})).unwrap();
+    assert_eq!(est["command"], "solve.frequency");
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(s.model.job, before);
 }

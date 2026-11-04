@@ -3,21 +3,12 @@
 use super::*;
 use crate::lang::{args, plural, shown, tr};
 
-/// The solver and its parameters from the setup's fields (`f`); each bad field is marked.
-pub fn run_params(s: &emcraft_engine::Session, f: &mut Fields) -> Result<(Solver, Value), String> {
+/// The form's settings as `project.setup` takes them, for the job's kind; each bad field is
+/// marked. The engine checks the rest when they are confirmed (a band's start above its stop).
+pub fn setup_params(s: &emcraft_engine::Session, f: &mut Fields) -> Result<Value, String> {
     let solver = s.model().analysis();
-    let band = band(s);
     let limit = s.limits().frequencies as u64;
-    if f.points.is_empty() {
-        f.points = "101".into();
-    }
-    if f.order.is_empty() {
-        f.order = "2".into();
-    }
-    if f.count.is_empty() {
-        f.count = "5".into();
-    }
-    let order = integer(&f.order, 1, 2);
+    f.fill_defaults();
     let mut bad = Vec::new();
     let mut take = |name: &'static str, r: Result<Value, String>, f: &mut Fields| match r {
         Ok(v) => {
@@ -25,55 +16,59 @@ pub fn run_params(s: &emcraft_engine::Session, f: &mut Fields) -> Result<(Solver
             Some(v)
         }
         Err(e) => {
-            bad.push(format!("{name}: {e}"));
+            bad.push(format!("{}: {e}", tr(name)));
             f.set_error(name, Some(e));
             None
         }
     };
-    // A frequency field left empty takes the band's middle.
-    let freq = |text: &str| {
-        if text.trim().is_empty() {
-            band.map(|(a, z)| 0.5 * (a + z)).ok_or_else(|| tr("give a frequency (or set the band, step 0)").to_owned())
-        } else {
-            positive(text)
+    let number = |text: &str| positive(text).map(|v| json!(v));
+    let whole = |text: &str, hi: u64| integer(text, 1, hi).map(|v| json!(v));
+    let mut p = json!({"kind": solver.id()});
+    let mut put = |key: &str, v: Option<Value>| {
+        if let Some(v) = v {
+            p[key] = v;
         }
     };
-    let params = match solver {
+    match solver {
         Solver::Frequency | Solver::TimeDomain => {
-            let points = take("points", integer(&f.points.clone(), 1, limit).map(|v| json!(v)), f);
-            let order = if solver == Solver::Frequency { take("order", order.map(|v| json!(v)), f) } else { Some(Value::Null) };
-            if band.is_none() {
-                bad.push(tr("no frequency band: set it on Home (step 0)").into());
-            }
-            match (points, order) {
-                (Some(p), Some(o)) if solver == Solver::Frequency => json!({"points": p, "order": o}),
-                (Some(p), Some(_)) => match band {
-                    Some((a, z)) => json!({"start": a, "stop": z, "points": p}),
-                    None => json!({"points": p}),
-                },
-                _ => Value::Null,
+            put("start", take("start", number(&f.start.clone()), f));
+            put("stop", take("stop", number(&f.stop.clone()), f));
+            put("points", take("points", whole(&f.points.clone(), limit), f));
+            if solver == Solver::Frequency {
+                put("order", take("order", whole(&f.order.clone(), 2), f));
+            } else {
+                put("cell", take("cell", number(&f.cell.clone()), f));
+                if !f.excite.is_empty() {
+                    put("excite", Some(json!(f.excite)));
+                }
             }
         }
         Solver::Eigenmodes => {
-            let count = take("count", integer(&f.count.clone(), 1, 50).map(|v| json!(v)), f);
-            let near = take("frequency", freq(&f.frequency.clone()).map(|v| json!(v)), f);
-            let order = take("order", order.map(|v| json!(v)), f);
-            match (count, near, order) {
-                (Some(c), Some(n), Some(o)) => json!({"near": n, "count": c, "order": o}),
-                _ => Value::Null,
-            }
+            put("frequency", take("frequency", number(&f.frequency.clone()), f));
+            put("count", take("count", whole(&f.count.clone(), emcraft_model::MAX_MODES as u64), f));
+            put("order", take("order", whole(&f.order.clone(), 2), f));
         }
-        Solver::Pcb => json!({}),
         Solver::Radiation => {
-            let fr = take("frequency", freq(&f.frequency.clone()).map(|v| json!(v)), f);
-            let order = take("order", order.map(|v| json!(v)), f);
-            match (fr, order) {
-                (Some(fr), Some(o)) => json!({"frequency": fr, "order": o}),
-                _ => Value::Null,
-            }
+            put("frequency", take("frequency", number(&f.frequency.clone()), f));
+            put("order", take("order", whole(&f.order.clone(), 2), f));
         }
-    };
-    if bad.is_empty() { Ok((solver, params)) } else { Err(bad.join("; ")) }
+        Solver::Pcb => return Err(tr("the PCB diagnosis has no run settings").into()),
+    }
+    if let (Ok(a), Ok(z)) = (positive(&f.start), positive(&f.stop))
+        && matches!(solver, Solver::Frequency | Solver::TimeDomain)
+        && z < a
+    {
+        let e = tr("must not be below the start").to_owned();
+        bad.push(format!("{}: {e}", tr("stop")));
+        f.set_error("stop", Some(e));
+    }
+    if bad.is_empty() { Ok(p) } else { Err(bad.join("; ")) }
+}
+
+/// The Setup step's button: the form's settings confirmed (`project.setup`).
+pub fn confirm_setup(app: &mut EmcraftApp) -> Result<Value, UiError> {
+    let params = setup_params(&app.session, &mut app.workflow.fields).map_err(UiError::Input)?;
+    app.run("project.setup", params)
 }
 
 /// The preflight: what blocks the run and what it may accept.
@@ -83,31 +78,20 @@ pub struct Preflight {
     pub warnings: Vec<(Step, String)>,
 }
 
-/// Whether a run of `solver` (any, when `None`) cannot go without step `step` done: the
-/// geometry, but for the time domain the mesh, but for a resonator's eigenmodes the excitation,
-/// and for radiation the open boundary.
-pub fn required(step: Step, solver: Option<Solver>) -> bool {
-    if solver == Some(Solver::Pcb) {
-        return step == Step::Geometry;
-    }
-    match step {
-        Step::Geometry => true,
-        // The time domain grids the model itself.
-        Step::Mesh => solver != Some(Solver::TimeDomain),
-        Step::Excitation => solver != Some(Solver::Eigenmodes),
-        Step::Boundaries => solver == Some(Solver::Radiation),
-        _ => false,
-    }
+/// Whether a run of `solver` cannot go without step `step` done (the kinds' table,
+/// [`emcraft_engine::workflow::required`]).
+pub fn required(step: Step, solver: Solver) -> bool {
+    emcraft_engine::workflow::required(Some(solver)).contains(&step)
 }
 
 /// What Run checks first: a step that needs attention, or one the solver cannot go without left
 /// to do, blocks it; warnings and out-of-date results are accepted by pressing Run; other steps
 /// left to do and steps waiting on another are not problems.
-pub fn preflight(s: &emcraft_engine::Session, f: &mut Fields, states: &[StepState]) -> Preflight {
+pub fn preflight(s: &emcraft_engine::Session, states: &[StepState]) -> Preflight {
     let mut out = Preflight::default();
     let solver = s.model().analysis();
-    for s in states.iter().filter(|s| s.step.index() <= Step::Setup.index()) {
-        let needed = required(s.step, Some(solver));
+    for s in states.iter().filter(|s| s.step.index() < Step::Run.index()) {
+        let needed = required(s.step, solver);
         let list = match s.status {
             Status::Missing => &mut out.blocking,
             Status::Todo if needed => &mut out.blocking,
@@ -122,9 +106,6 @@ pub fn preflight(s: &emcraft_engine::Session, f: &mut Fields, states: &[StepStat
         for m in &s.messages {
             list.push((s.step, m.text.clone()));
         }
-    }
-    if let Err(e) = run_params(s, f) {
-        out.blocking.push((Step::Setup, e));
     }
     out
 }
@@ -146,8 +127,9 @@ pub fn start_run(app: &mut EmcraftApp) -> Result<Value, UiError> {
         );
     }
 
+    super::check_form(app);
     let states = statuses_now(app);
-    let pre = preflight(&app.session, &mut app.workflow.fields, &states);
+    let pre = preflight(&app.session, &states);
     if !pre.blocking.is_empty() {
         let n = pre.blocking.len();
         let e = UiError::Refused(format!(
@@ -163,14 +145,9 @@ pub fn start_run(app: &mut EmcraftApp) -> Result<Value, UiError> {
     }
     app.workflow.fields.refused = None;
     app.workflow.blocked = false;
-    let (solver, params) = run_params(&app.session, &mut app.workflow.fields).map_err(UiError::Input)?;
     let n = pre.warnings.len();
     if n > 0 {
         app.info(plural(n, "Running with {n} accepted warning.", "Running with {n} accepted warnings.", args!(n = n)));
     }
-    // The fields as the project's last run left them: that run again, its parameters whole.
-    if let Some(command) = reruns(app) {
-        return app.run("solve.rerun", json!({"command": command}));
-    }
-    app.run(command(solver), params)
+    app.run("solve.run", json!({}))
 }

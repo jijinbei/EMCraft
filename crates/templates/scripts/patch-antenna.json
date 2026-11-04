@@ -12,5 +12,6 @@
  {"command": "model.open", "params": {"thickness": 6}},
  {"command": "mesh.generate", "params": {"size": 3.5, "strip_edge": 0.2}},
  {"command": "project.analysis", "params": {"kind": "radiation"}},
+ {"command": "project.setup", "params": {"kind": "radiation", "frequency": 10}},
  {"command": "solve.radiation", "params": {"frequency": 10}}
 ]

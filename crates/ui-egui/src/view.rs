@@ -37,8 +37,8 @@ impl View {
             View::Field => Some("No fields yet: solve a sweep, eigenmodes or an open problem first."),
             View::FarField => Some("No far field yet: Run (step 7) on an open model with sources or lumped ports."),
             View::Eigenmodes => Some("No eigenmodes yet: Run (step 7)."),
-            View::Study => Some("No study yet: define a variable, then Sweep or Optimize (step 6)."),
-            View::Dispersion => Some("No dispersion diagram yet: periodic boundaries (step 4), then Dispersion (step 6)."),
+            View::Study => Some("No study yet: define a variable, then Sweep or Optimize (step 5)."),
+            View::Dispersion => Some("No dispersion diagram yet: periodic boundaries (step 4), then Dispersion (step 5)."),
         }
     }
 

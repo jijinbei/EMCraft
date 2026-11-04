@@ -7,5 +7,6 @@
  {"command": "geometry.body", "params": {"material": "ceramic", "shape": "cylinder", "radius": "=r_puck", "length": "=h_puck", "at": [15, 15, "=10 - h_puck/2"]}},
  {"command": "model.walls", "params": {"thickness": 1.27, "conductivity": 58000000.0}},
  {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "project.setup", "params": {"kind": "eigenmodes", "count": 4, "order": 2, "frequency": 5}},
  {"command": "solve.eigenmodes", "params": {"near": 5, "count": 4, "order": 2}}
 ]

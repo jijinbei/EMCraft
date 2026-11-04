@@ -42,8 +42,8 @@ history/<id>/s.c64           a kept solve's S-parameters (complex: real then ima
   then with the mesher — with the definition's value replaced.
 - `runs` are the project's runs: the last successful solve of each solve command, the latest
   last, each with its parameters as given (expressions kept) and the display units they were
-  read in. `project.runs` lists them for the Setup step's fields and `solve.rerun` runs one
-  again. On reading, each run must name a solve command, once, with parameters that command
+  read in. `project.runs` lists them and `solve.rerun` runs one again (the Setup step's
+  form shows the model's confirmed settings, `project.setup`). On reading, each run must name a solve command, once, with parameters that command
   knows; otherwise the file is refused.
 - `views` is how the project's results are looked at, set by `view.chart.style`,
   `view.probe.*` and `view.driven` (never by the history): each chart's style by its id, and

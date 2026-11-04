@@ -157,18 +157,25 @@ Navigates the PCB workflow (board, net, settings, inspect, results) or selects a
 | `mode` | string |  | no | the mechanism the 3D view illustrates |
 | `playing` | boolean |  | no | play explanatory emphasis, not physical time |
 
-## `project.frequency` — Frequency band
+## `project.setup` — Confirm the run's settings
 
-The job's frequency band: the default for meshing by wavelength (its top), for sweeps and for port-mode previews.
+Confirms the run's settings for the job's kind of analysis (or `kind`), as the Setup step shows them: a sweep's band (`start`, `stop`), `points` and element `order`; the time domain's band, `points`, `cell` and the ports to `excite`; the eigenmodes' `count` near `frequency` and `order`; a radiation solve's `frequency` and `order`. The job is then ready: the Setup step is done and Run (solve.run) runs them. Choosing another kind (project.analysis) takes them back. The band also sets meshing by wavelength (its top) and the port previews. Undo goes back.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `start` | number | frequency | yes | the band's start |
-| `stop` | number | frequency | yes | the band's stop |
+| `kind` | string |  | no | the kind of analysis (default the job's): `frequency`, `eigenmodes`, `radiation` or `time_domain`; choosing it as project.analysis does |
+| `start` | number | frequency | no | the band's start (a sweep, the time domain) |
+| `stop` | number | frequency | no | the band's stop (a sweep, the time domain) |
+| `points` | integer |  | no | the frequency points (default 101) |
+| `order` | integer |  | no | element order, 1 or 2 (default 2) |
+| `count` | integer |  | no | the eigenmodes to find, 1 to 50 (default 5) |
+| `frequency` | number | frequency | no | the eigenmodes' search frequency (near) or the radiation solve's |
+| `cell` | number | length | no | the time domain's cell size (default 1 mm) |
+| `excite` | array |  | no | the time domain's ports to excite, by name (default the first) |
 
 ## `project.analysis` — Analysis
 
-The kind of analysis the job is set up for, chosen at its start (`pcb`: routed PCB signal-quality and return-reference inspection via pcb.inspect, without a FEM mesh or accelerator setup): `frequency` (S-parameters between ports over the band, solve.frequency), `eigenmodes` (a closed resonator's modes, nothing driving it, solve.eigenmodes), `radiation` (an antenna or a scatterer in an open boundary, solve.radiation) or `time_domain` (a pulse over the band, solve.time_domain). The workflow's checks (project.status) follow it: a resonator needs no excitation and its ports are left out, radiation wants the open boundary and a source or a lumped port, a sweep and the time domain want ports, the time domain no mesh (project.status lists the steps a kind does without under `not_needed`). Until one is chosen the kind is inferred from the model (PCB diagnosis for a loaded PCB, eigenmodes without excitation, radiation with sources, lumped ports or an open boundary, else a sweep). The results stay as they are. Undo goes back.
+The kind of analysis the job is set up for, chosen at its start (`pcb`: routed PCB signal-quality and return-reference inspection via pcb.inspect, without a FEM mesh or accelerator setup): `frequency` (S-parameters between ports over the band, solve.frequency), `eigenmodes` (a closed resonator's modes, nothing driving it, solve.eigenmodes), `radiation` (an antenna or a scatterer in an open boundary, solve.radiation) or `time_domain` (a pulse over the band, solve.time_domain). The workflow's checks (project.status) follow it: a resonator needs no excitation and its ports are left out, radiation wants the open boundary and a source or a lumped port, a sweep and the time domain want ports, the time domain no mesh (project.status lists the steps a kind does without under `not_needed`). Until one is chosen the kind is inferred from the model (PCB diagnosis for a loaded PCB, eigenmodes without excitation, radiation with sources, lumped ports or an open boundary, else a sweep). Choosing another kind than the confirmed settings' takes them back (project.setup again). The results stay as they are. Undo goes back.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -182,7 +189,7 @@ No parameters.
 
 ## `project.estimate` — Solve estimate
 
-How long a run will take, before it starts: `command` with `params` (a solve, mesh.adapt, study.sweep or study.optimize), else the project's latest run, else a sweep of the band. The total `seconds` (the frequencies of a sweep — a fast sweep solving a few in full —, the eigenmodes, the adaptive passes, the time domain's cells and steps, a study's points), what it counts (`what`), and for a frequency-domain solve the meshed model's unknowns at `order`, the factor's memory and the seconds of one solve. `basis` says where the numbers come from: `measured` (scaled from this session's own last sweep, on this machine) or `reference` (a reference machine's). Reads the model only: cheap, and the same set-up gives the same numbers.
+How long a run will take, before it starts: `command` with `params` (a solve, solve.run, mesh.adapt, study.sweep or study.optimize), else the confirmed settings' run (project.setup), else the project's latest run, else a sweep. The total `seconds` (the frequencies of a sweep — a fast sweep solving a few in full —, the eigenmodes, the adaptive passes, the time domain's cells and steps, a study's points), what it counts (`what`), and for a frequency-domain solve the meshed model's unknowns at `order`, the factor's memory and the seconds of one solve. `basis` says where the numbers come from: `measured` (scaled from this session's own last sweep, on this machine) or `reference` (a reference machine's). Reads the model only: cheap, and the same set-up gives the same numbers.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -629,6 +636,12 @@ The S-parameters (port 1 excited) by the time-domain solver: finite integration 
 | `device` | string |  | no | where the leapfrog runs: `cpu` (the CPU's threads), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them without a GPU); default solve.device's; solve.devices lists what this machine has |
 | `precision` | string |  | no | the fields' floating point on a GPU device: `single` or `double`, default solve.device's; the CPU's threads run in double |
 | `excite` | array |  | no | a solid's ports to excite, by name, one run each (default the first): the columns of S they give |
+
+## `solve.run` — Run
+
+Runs the job's confirmed settings (project.setup) as their solve runs: solve.frequency, solve.eigenmodes, solve.radiation or solve.time_domain (its reply, with `run` naming the command and parameters). Refused until the settings are confirmed.
+
+No parameters.
 
 ## `solve.rerun` — Run again
 

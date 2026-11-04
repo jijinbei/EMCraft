@@ -96,7 +96,7 @@ impl CommandSpec {
     /// assert!(!solves("solve.port_modes") && !solves("solve.device") && !solves("no.such"));
     /// ```
     pub fn solves(&self) -> bool {
-        self.effect == Effect::Solve || self.id == "solve.rerun"
+        self.effect == Effect::Solve || matches!(self.id, "solve.rerun" | "solve.run")
     }
 }
 

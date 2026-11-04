@@ -28,7 +28,7 @@ pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, sta
         return;
     }
     ui_kit::section(ui, "Preflight");
-    let pre = preflight(&app.session, f, states);
+    let pre = preflight(&app.session, states);
     if pre.blocking.is_empty() && pre.warnings.is_empty() {
         ui_kit::small(ui, "Every step is ready.", t.success);
     }

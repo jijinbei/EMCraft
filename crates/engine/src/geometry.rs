@@ -255,12 +255,12 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     // An open problem: the box of air lined by a perfectly matched layer, a quarter of the
     // band's longest wavelength of air between the parts and the layer and as much layer.
     let open = p.flag("open").or(false)?;
-    let quarter = s.model.band.map(|b| emcraft_model::units::C0 / b.start.get() / 4.0);
+    let quarter = s.model.job.range().map(|b| emcraft_model::units::C0 / b.start.get() / 4.0);
     let thickness = match (open, p.metres("thickness").optional()?) {
         (false, _) => None,
         (true, Some(t)) => Some(t),
         (true, None) => Some(quarter.and_then(|q| Metres::new(q).ok()).ok_or_else(|| {
-            p.error("thickness", "or set the band (project.frequency): the layer and the air before it are a quarter wavelength each")
+            p.error("thickness", "or confirm the run's settings (project.setup): the layer and the air before it are a quarter wavelength each")
         })?),
     };
     // The region the fields fill: one body alone (or the one named), else a box of air around

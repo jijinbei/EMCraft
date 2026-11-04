@@ -33,14 +33,6 @@
   {
     "command": "project.variable",
     "params": {
-      "name": "fmax",
-      "value": 10,
-      "quantity": "frequency"
-    }
-  },
-  {
-    "command": "project.variable",
-    "params": {
       "name": "gap",
       "value": 0.25,
       "quantity": "length"
@@ -56,13 +48,6 @@
       "height": "=h",
       "er": "=er",
       "gap": "=gap"
-    }
-  },
-  {
-    "command": "project.frequency",
-    "params": {
-      "start": "=fmax/1000",
-      "stop": "=fmax"
     }
   },
   {

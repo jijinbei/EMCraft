@@ -4,5 +4,6 @@
  {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": "=r", "length": "=l"}},
  {"command": "model.walls", "params": {"thickness": 1.27, "conductivity": 58000000.0}},
  {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "project.setup", "params": {"kind": "eigenmodes", "count": 3, "order": 2, "frequency": 11}},
  {"command": "solve.eigenmodes", "params": {"near": 11, "count": 3, "order": 2}}
 ]

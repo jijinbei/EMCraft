@@ -30,12 +30,12 @@ Three templates are available from the start page and File → Samples:
 | `pcb-parallel` | A neighbouring CLK trace; demonstrate geometric coupling screening |
 
 Each template has a top-view preview and parameters `l` (routed length), `w` (width), `h`
-(substrate thickness), `er` (relative permittivity) and `fmax` (maximum frequency). Defaults
-are 40 mm, 0.3 mm, 0.18 mm, 4.2 and 10 GHz. Edit them before opening; subsequent
+(substrate thickness) and `er` (relative permittivity). Defaults are 40 mm, 0.3 mm, 0.18 mm
+and 4.2; the maximum frequency is a diagnosis condition (`pcb.inspect`'s `stop`). Edit them before opening; subsequent
 `project.variable` changes rebuild the PCB and return to board review before another diagnosis. For example:
 
 ```json
-{"command":"file.sample","params":{"name":"pcb-microstrip","values":{"l":60,"w":0.4,"fmax":5}}}
+{"command":"file.sample","params":{"name":"pcb-microstrip","values":{"l":60,"w":0.4}}}
 ```
 
 Open **Model → Import PCB**, or drop a `.kicad_pcb` file into EMCraft. Click a routed trace
@@ -113,7 +113,7 @@ All operations use the engine. A CLI script (GHz/mm defaults) can reproduce the 
 Run it with `cargo run -p emcraft-cli -- run script.json`. Replace the first step with
 `{"command":"pcb.import","params":{"path":"board.kicad_pcb"}}` to inspect a real board.
 `pcb.inspect` can omit `net` to use the selection or first routed signal; its default maximum
-frequency comes from the project's band, or 1 GHz without a band. Replies include per-section reference layers and uncovered intervals (fractions
+frequency is 1 GHz. Replies include per-section reference layers and uncovered intervals (fractions
 along each segment), geometry findings, the model assumptions, and either `si` data or
 `si: null`. Lengths/frequencies use the current display units; `*_s` and `*_hz` are explicitly
 SI. Selection is a view change; importing/loading replaces the current model and can be undone.
@@ -161,13 +161,13 @@ view offers what its stage needs, nothing more:
 
 In step 4, **Make the FEM model** turns the route into a finite-element model and the job into
 S-parameters: its region (`pcb.region` round the net), a port at each of its two ends
-(`pcb.port`, the conditions' impedance), the band up to the maximum frequency
-(`project.frequency`) and `project.analysis` `frequency`. The S-parameter steps open on the
-mesh (step 5), the board's copper and substrates drawn in the region: the mesh's dialog starts
+(`pcb.port`, the conditions' impedance) and `project.analysis` `frequency`. The S-parameter
+steps open on Setup (step 5) with the band up to the maximum frequency proposed in its form,
+not confirmed: its button (`project.setup`) confirms it with the points and the order. Then the
+mesh (step 6), the board's copper and substrates drawn in the region: the mesh's dialog starts
 on the route's size (a tenth of the wavelength in the substrate at the band's top, at most an
-eighth of the route), its statistics and estimate show before anything is solved, Setup (step 6)
-chooses the frequencies and the order, Run (step 7) solves and Results (step 8) shows the
-S-parameters, TDR and fields. The kind of analysis's switch goes back to the PCB diagnosis.
+eighth of the route), its statistics and estimate show before anything is solved; Run (step 7)
+solves and Results (step 8) shows the S-parameters, TDR and fields. The kind of analysis's switch goes back to the PCB diagnosis.
 
 ## Editing the board
 

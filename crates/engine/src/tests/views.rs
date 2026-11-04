@@ -203,7 +203,7 @@ fn a_sweep_is_refined_and_recorded_as_one() {
         assert!((a.s[(1, 0)] - b.s[(1, 0)]).norm() < 1e-6, "{} GHz", a.frequency / 1e9);
     }
     // Not after the model changed.
-    s.execute("project.frequency", &json!({"start": 5, "stop": 9})).unwrap();
+    s.execute("project.setup", &json!({"kind": "frequency", "start": 5, "stop": 9})).unwrap();
     assert!(s.execute("solve.refine", &json!({"frequencies": [6.25]})).is_err());
     assert!(Session::new().execute("solve.refine", &json!({"frequencies": [6.25]})).is_err(), "no sweep");
 }

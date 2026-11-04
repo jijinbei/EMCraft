@@ -126,10 +126,12 @@
   {
     "call": "engine.execute",
     "params": {
-      "command": "project.frequency",
+      "command": "project.setup",
       "params": {
+        "kind": "frequency",
         "start": 5,
-        "stop": 9
+        "stop": 9,
+        "points": 3
       }
     }
   },

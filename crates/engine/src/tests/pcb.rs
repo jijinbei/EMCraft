@@ -57,7 +57,7 @@ fn board_commands_refuse_hostile_inputs_and_keep_the_model() {
 fn pcb_templates_declare_their_workflow_and_rebuild_from_parameters() {
     for (name, model, nearby) in [("pcb-microstrip", true, false), ("pcb-split-ground", false, false), ("pcb-parallel", true, true)] {
         let mut s = Session::new();
-        s.execute("file.sample", &json!({"name": name, "values": {"l": 80, "w": 0.4, "fmax": 5}})).unwrap();
+        s.execute("file.sample", &json!({"name": name, "values": {"l": 80, "w": 0.4}})).unwrap();
         assert_eq!(s.model.analysis(), emcraft_model::Analysis::Pcb);
         assert!(s.model.mesh.is_none());
         let status = s.execute("project.status", &json!({})).unwrap();
@@ -66,7 +66,7 @@ fn pcb_templates_declare_their_workflow_and_rebuild_from_parameters() {
         let r = s.execute("pcb.inspect", &json!({})).unwrap();
         assert_eq!(r["model_available"], model);
         approx::assert_abs_diff_eq!(r["length"].as_f64().unwrap(), 80., epsilon = 1e-10);
-        assert_eq!(r["stop"], 5.);
+        assert_eq!(r["stop"], 1.);
         assert_eq!(r["findings"].as_array().unwrap().iter().any(|f| f["code"] == "nearby_signal"), nearby);
         s.execute("project.variable", &json!({"name": "l", "value": 60})).unwrap();
         let r = s.execute("pcb.inspect", &json!({"net": "DATA"})).unwrap();

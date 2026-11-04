@@ -8,7 +8,7 @@
  {"command": "pcb.port", "params": {"name": "1", "segment": "in", "end": "start"}},
  {"command": "pcb.port", "params": {"name": "2", "segment": "out", "end": "end"}},
  {"command": "mesh.generate", "params": {"size": 2, "strip_edge": 0.25}},
- {"command": "project.frequency", "params": {"start": 1, "stop": 10}},
  {"command": "project.analysis", "params": {"kind": "frequency"}},
+ {"command": "project.setup", "params": {"kind": "frequency", "start": 1, "stop": 10, "points": 101, "order": 2}},
  {"command": "solve.frequency", "params": {"start": 1, "stop": 10, "points": 101, "order": 2}}
 ]

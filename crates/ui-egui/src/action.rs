@@ -84,8 +84,11 @@ pub enum Action {
     AskExport,
     /// Writes the history as a script to a path.
     ExportHistory(String),
-    /// The Intent step's band, from its fields.
-    ApplyBand,
+    /// The Setup step's form confirmed (`project.setup`).
+    ConfirmSetup,
+    /// The Setup step's form filled with proposed settings (as `project.setup` takes them),
+    /// to be checked and confirmed.
+    ProposeSetup(Value),
     /// Run: the solver from the Setup step's fields, after the preflight.
     StartRun,
     /// The Excitation step's port-mode preview.
@@ -311,10 +314,11 @@ impl EmcraftApp {
             Action::DismissRecovery(i) => self.dismiss_recovery(i),
             Action::AskExport => self.export = Some("emcraft-history.json".into()),
             Action::ExportHistory(path) => self.export_history(path),
-            Action::ApplyBand => crate::steps::apply_band(self),
+            Action::ConfirmSetup => return crate::steps::confirm_setup(self),
+            Action::ProposeSetup(v) => self.workflow.fields.load(&v),
             Action::StartRun => return crate::steps::start_run(self),
             Action::PreviewPortModes => {
-                if self.session.model().band.is_some() {
+                if self.session.model().job.range().is_some() {
                     return self.run("solve.port_modes", json!({}));
                 }
                 self.open_dialog("solve.port_modes")?;

@@ -18,5 +18,6 @@
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4, "axis": "x", "face": ["=2*l+a", 0, 0, "=a", "=b"]}},
  {"command": "model.port.create", "params": {"name": "3", "end": "end", "modes": 4, "axis": "y", "face": ["=l+a", "=l", 0, "=a", "=b"]}},
  {"command": "model.port.create", "params": {"name": "4", "end": "end", "modes": 4, "axis": "z", "face": ["=b+l", "=l+a/2-b/2", 0, "=b", "=a"]}},
+ {"command": "project.setup", "params": {"kind": "time_domain", "start": "=187.37/a", "stop": "=283.3/a", "points": 101, "cell": 1.5, "excite": ["4"]}},
  {"command": "solve.time_domain", "params": {"start": "=187.37/a", "stop": "=283.3/a", "points": 101, "cell": 1.5, "excite": ["4"]}}
 ]

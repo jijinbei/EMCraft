@@ -396,8 +396,8 @@ fn segments(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui
 }
 
 /// The route made a finite-element model: its region and a port at each end (the conditions'
-/// impedance), the band up to the maximum frequency, and the job turned to S-parameters — the
-/// mesh, the setup and the run are then the S-parameter steps', opened on the mesh.
+/// impedance) and the job turned to S-parameters — the setup (the band proposed up to the
+/// maximum frequency), the mesh and the run are then the S-parameter steps', opened on the setup.
 fn fem(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui, net: &str, out: &mut Actions) {
     let Some(board) = app.session.model().pcb.as_ref() else { return };
     ui.add_space(8.);
@@ -417,10 +417,11 @@ fn fem(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui, net: &s
                 json!({"name": name, "segment": id, "end": end.id(), "impedance": state.reference.parse::<f64>().unwrap_or(50.)}),
             ));
         }
-        list.push(("project.frequency".into(), json!({"start": f / 20., "stop": f})));
         list.push(("project.analysis".into(), json!({"kind": "frequency"})));
         out.push(Action::RunAll(list));
-        out.push(Action::OpenStep(Some(crate::steps::Step::Mesh)));
+        // The band proposed up to the maximum frequency, for Setup to check and confirm.
+        out.push(Action::ProposeSetup(json!({"start": f / 20., "stop": f})));
+        out.push(Action::OpenStep(Some(crate::steps::Step::Setup)));
     }
 }
 
