@@ -2,6 +2,7 @@
 //! rebuilt from.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use serde_json::{Value, json};
 
@@ -44,7 +45,7 @@ fn references(v: &Value, out: &mut Vec<String>) {
 /// The session's history with the definitions of `set`'s variables given their values; an error
 /// naming a variable the history does not define.
 pub(super) fn history_with(s: &Session, set: &[(String, Value)]) -> Result<Vec<Step>> {
-    let mut history = s.history.clone();
+    let mut history = s.history.to_vec();
     for (name, value) in set {
         let mut found = false;
         for params in history.iter_mut().filter(|step| step.defines(name)).filter_map(|step| step.params.as_object_mut()) {
@@ -103,7 +104,7 @@ pub fn variable(s: &mut Session, p: &Params) -> Result<Value> {
     let step = Step::new(DEFINE, params);
     if s.variables.contains_key(name) {
         // The definition changed in place: the commands after it read the new value.
-        let mut history = s.history.clone();
+        let mut history = s.history.to_vec();
         for old in history.iter_mut().filter(|st| st.defines(name)) {
             *old = step.clone();
         }
@@ -114,7 +115,7 @@ pub fn variable(s: &mut Session, p: &Params) -> Result<Value> {
             return Err(EngineError::failed(format!("a project holds at most {MAX_VARIABLES} variables")));
         }
         s.variables.insert(name.to_owned(), value);
-        s.history.push(step);
+        Arc::make_mut(&mut s.history).push(step);
     }
     Ok(json!({"name": name, "value": value, "variables": s.variables.len()}))
 }
@@ -132,7 +133,7 @@ pub fn delete(s: &mut Session, p: &Params) -> Result<Value> {
             return Err(EngineError::failed(format!("`{name}` is used by step {} ({}): change that first", i + 1, step.command)));
         }
     }
-    s.history.retain(|st| !st.defines(name));
+    Arc::make_mut(&mut s.history).retain(|st| !st.defines(name));
     s.variables.remove(name);
     Ok(json!({"name": name, "variables": s.variables.len()}))
 }
@@ -140,7 +141,7 @@ pub fn delete(s: &mut Session, p: &Params) -> Result<Value> {
 /// `project.variables`: the variables, their values, definitions and how many commands use them.
 pub fn list(s: &mut Session, _: &Params) -> Result<Value> {
     let mut uses: BTreeMap<&str, usize> = BTreeMap::new();
-    for step in &s.history {
+    for step in s.history.iter() {
         let mut names = Vec::new();
         references(&step.params, &mut names);
         names.dedup();

@@ -152,7 +152,7 @@ fn write_to(s: &Session, path: &Path, fields: bool) -> Result<bool> {
         format: FORMAT.to_owned(),
         version: VERSION.to_owned(),
         emcraft: env!("CARGO_PKG_VERSION").to_owned(),
-        history: s.history.clone(),
+        history: s.history.to_vec(),
         runs: s.runs.clone(),
         views: s.views.clone(),
         analysis_history,

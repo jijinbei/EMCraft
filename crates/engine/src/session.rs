@@ -316,8 +316,9 @@ pub struct Session {
     pub(crate) results: Results,
     pub(crate) display: Display,
     pub(crate) limits: Limits,
-    /// The commands that built the model, in order (a script that rebuilds it).
-    pub(crate) history: Vec<Step>,
+    /// The commands that built the model, in order (a script that rebuilds it); shared with
+    /// the undo states and the saved state, copied only when it changes.
+    pub(crate) history: Arc<Vec<Step>>,
     /// States to go back to (`edit.undo`) and forward again (`edit.redo`), the latest last.
     pub(crate) undo: VecDeque<project::Snapshot>,
     pub(crate) redo: VecDeque<project::Snapshot>,
@@ -369,7 +370,7 @@ pub(crate) enum Meshing {
 /// and its kept solves' ids, pins and labels — what [`Session::is_dirty`] compares with.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Saved {
-    pub history: Vec<Step>,
+    pub history: Arc<Vec<Step>>,
     pub runs: Vec<Run>,
     pub views: crate::views::Views,
     pub archive: Vec<crate::archive::Mark>,
@@ -572,7 +573,7 @@ impl Session {
 
     /// What a command with `effect` may change, as it is now.
     fn before(&self, effect: Effect) -> Before {
-        let history = if matches!(effect, Effect::None | Effect::View) { Vec::new() } else { self.history.clone() };
+        let history = if matches!(effect, Effect::None | Effect::View) { Arc::default() } else { self.history.clone() };
         // A command that replaces the project keeps the project to undo back to.
         let project = (effect == Effect::Replace).then(|| Box::new(self.identity()));
         Before { state: self.snapshot(history, project), results: self.results.clone(), revision: self.revision, views: self.views.clone() }
@@ -594,7 +595,7 @@ impl Session {
                 project::push_undo(&mut self.undo, before.state);
                 self.redo.clear();
                 if matches!(spec.effect, Effect::Record | Effect::Adjust) {
-                    self.history.push(Step::new(spec.id, params.clone()));
+                    Arc::make_mut(&mut self.history).push(Step::new(spec.id, params.clone()));
                 }
                 // (A replaced session counts its own revisions from zero.)
                 self.revision = before.revision.max(self.revision) + 1;

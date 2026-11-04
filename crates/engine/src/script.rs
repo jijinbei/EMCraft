@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 pub(crate) const DEFINE: &str = "project.variable";
 
 /// One step of a script: a command and its parameters (`{}` when a script leaves them out).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Step {
     pub command: String,
     #[serde(default = "no_params")]

@@ -19,7 +19,7 @@ use crate::{EngineError, Params, Result, Session, Step};
 pub struct Snapshot {
     pub model: Model,
     pub display: Display,
-    pub history: Vec<Step>,
+    pub history: std::sync::Arc<Vec<Step>>,
     pub variables: crate::expr::Variables,
     /// The project to go back to with the model, when the command after this state replaced it.
     pub project: Option<Box<Identity>>,
@@ -60,7 +60,7 @@ pub fn push_undo(stack: &mut VecDeque<Snapshot>, s: Snapshot) {
 
 impl Session {
     /// The undoable state now, with `history` and the `project` to go back to.
-    pub(crate) fn snapshot(&self, history: Vec<Step>, project: Option<Box<Identity>>) -> Snapshot {
+    pub(crate) fn snapshot(&self, history: std::sync::Arc<Vec<Step>>, project: Option<Box<Identity>>) -> Snapshot {
         Snapshot { model: self.model.clone(), display: self.display, history, variables: self.variables.clone(), project }
     }
 
@@ -497,7 +497,7 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
             let saved = crate::store::read(std::path::Path::new(o)).unwrap_or_else(|_| crate::store::Stored::unreadable());
             fresh.path = Some(o.to_owned());
             fresh.saved = crate::session::Saved {
-                history: saved.history,
+                history: saved.history.into(),
                 runs: saved.runs,
                 views: saved.views,
                 archive: crate::archive::marks(&saved.archive),

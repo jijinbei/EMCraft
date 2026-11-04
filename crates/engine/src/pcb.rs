@@ -249,7 +249,7 @@ fn embedded(s: &mut Session, board: Board) -> Result<Value> {
     let mut data = board.clone();
     data.map_lengths(|v| s.display.length.from_si(v));
     let reply = install(s, board)?;
-    s.history.push(Step::new("pcb.load", json!({"data": data})));
+    std::sync::Arc::make_mut(&mut s.history).push(Step::new("pcb.load", json!({"data": data})));
     Ok(reply)
 }
 

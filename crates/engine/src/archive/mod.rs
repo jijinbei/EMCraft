@@ -160,7 +160,7 @@ pub(crate) fn keep(s: &mut Session, command: &str, params: &Value, provenance: P
         a.command == command
             && a.params == *params
             && a.display == s.display
-            && *a.history == s.history
+            && a.history == s.history
             && *a.variables == variables
             && *a.kept == kept
     };
@@ -172,8 +172,8 @@ pub(crate) fn keep(s: &mut Session, command: &str, params: &Value, provenance: P
     s.archive_next = s.archive_next.saturating_add(1);
     // The same model as the solve before: its history shared.
     let history = match s.archive.last() {
-        Some(a) if *a.history == s.history => a.history.clone(),
-        _ => Arc::new(s.history.clone()),
+        Some(a) if a.history == s.history => a.history.clone(),
+        _ => s.history.clone(),
     };
     s.archive.push(Archived {
         id: s.archive_next,
@@ -300,7 +300,7 @@ pub fn restore(s: &mut Session, p: &Params) -> Result<Value> {
         Some(sv) => {
             s.model = sv.model.clone();
             s.display = a.display;
-            s.history = (*a.history).clone();
+            s.history = a.history.clone();
             s.variables = (*a.variables).clone();
             s.results = sv.results.clone();
             true
