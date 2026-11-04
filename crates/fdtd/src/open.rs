@@ -146,9 +146,6 @@ impl BoxGrid {
         if !model.ports.is_empty() {
             return Err(FdtdError::Unsupported("waveguide ports in the time domain's open problems (use lumped ports)".into()));
         }
-        if !model.elements.is_empty() {
-            return Err(FdtdError::Unsupported("lumped elements in the time domain".into()));
-        }
         let n = [0, 1, 2].map(|d| ((size[d] / h).round() as usize).max(4));
         let cells = n[0].saturating_mul(n[1]).saturating_mul(n[2]);
         if cells > MAX_CELLS {
@@ -313,14 +310,131 @@ pub(crate) struct BoxCoefficients {
 }
 
 /// A lumped port's edge with its semi-implicit coefficients (Piket-May et al. 1994):
-/// Eⁿ⁺¹ = ca Eⁿ + cb (∇ × H) − cv V_s.
+/// Eⁿ⁺¹ = ca Eⁿ + cb (∇ × H − J_L) − cv V_s, with a lumped element's inductive current density
+/// J_Lⁿ⁺½ = J_Lⁿ⁻½ + cl Eⁿ when one shares the gap.
 struct PortEdge {
     id: usize,
     ca: f64,
     cb: f64,
     cv: f64,
-    /// E on the edge before the step's plain update.
+    cl: f64,
+    /// E on the edge before the step's plain update, and the inductive current density.
     old: f64,
+    jl: f64,
+}
+
+/// What lumped elements put on an edge, per unit of its cross-section: conductance G h/A
+/// (S/m), capacitance C h/A (F/m) and the inductance's dt h/(L A) (S/m), each element's parts
+/// shared out over the edges of its gap in series.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Load {
+    g: f64,
+    c: f64,
+    l: f64,
+}
+
+/// The loads of the model's lumped elements by component and edge, for a time step `dt`.
+fn element_loads(model: &Model, grid: &BoxGrid, coef: &BoxCoefficients, dt: f64) -> Result<std::collections::BTreeMap<(usize, usize), Load>> {
+    let mut out: std::collections::BTreeMap<(usize, usize), Load> = std::collections::BTreeMap::new();
+    for e in &model.elements {
+        let parts = [e.resistance, e.inductance, e.capacitance].iter().filter(|x| **x > 0.0).count();
+        if e.arrangement == emcraft_model::Arrangement::Series && parts > 1 {
+            return Err(FdtdError::Unsupported(format!(
+                "a lumped element of parts in series in the time domain (`{}`: one part, or parts in parallel)",
+                e.name
+            )));
+        }
+        if e.across.is_some() {
+            return Err(FdtdError::Unsupported(format!("sheet lumped elements in the time domain (`{}`)", e.name)));
+        }
+        let (axis, ids, _) = gap_edges(&e.name, "lumped element", e.from, e.to, grid, coef)?;
+        let n = ids.len() as f64;
+        let (h, area) = (grid.hs[axis], grid.area(axis));
+        let load = Load {
+            g: if e.resistance > 0.0 { h / (e.resistance / n * area) } else { 0.0 },
+            c: e.capacitance * n * h / area,
+            l: if e.inductance > 0.0 { dt * h / (e.inductance / n * area) } else { 0.0 },
+        };
+        for id in ids {
+            let x = out.entry((axis, id)).or_default();
+            (x.g, x.c, x.l) = (x.g + load.g, x.c + load.c, x.l + load.l);
+        }
+    }
+    Ok(out)
+}
+
+/// The run of grid edges along the gap from `from` to `to` (a lumped port's or element's,
+/// `what` named `name`): its axis, the edges' indices and the gap's direction along the axis.
+fn gap_edges(name: &str, what: &str, from: Point3, to: Point3, grid: &BoxGrid, coef: &BoxCoefficients) -> Result<(usize, Vec<usize>, f64)> {
+    let ce = &coef.ce;
+    let (hs, n) = (grid.hs, grid.n);
+    let d = to - from;
+    let axis = d.dominant_axis();
+    if (0..3).any(|q| q != axis && d[q].abs() > 1e-6 * d[axis].abs()) {
+        return Err(invalid(what, format!("`{name}` must lie along a grid axis in the time domain")));
+    }
+    let snap = |p: Point3| [0, 1, 2].map(|q| ((p[q] / hs[q]).round().max(0.0) as usize).min(n[q]));
+    let (a, b) = (snap(from), snap(to));
+    let (mut lo, mut hi) = (a[axis].min(b[axis]), a[axis].max(b[axis]));
+    if hi == lo {
+        return Err(invalid(what, format!("`{name}`'s gap is shorter than a cell")));
+    }
+    // The staircase may leave a terminal short of its conductor (a face between two grid
+    // nodes rounds away from it): each end is carried along the gap to the first node a
+    // conductor's edge touches, at most `REACH` cells. One terminal on a conductor and the
+    // other still floating would put an empty edge in series with the gap and is refused;
+    // a gap with neither end near a conductor stands free and stays.
+    let lattice = lattices(n)[0];
+    let dims = lattice[axis];
+    if (lo..hi).any(|t| {
+        let mut c = a;
+        c[axis] = t;
+        coef.dispersion[axis].has(index(dims, c[0], c[1], c[2]))
+    }) {
+        return Err(FdtdError::Unsupported(format!(
+            "a {what} in a lossy or dispersive material in the time domain (`{name}`: put its gap in a lossless one)"
+        )));
+    }
+    let touches = |t: usize| {
+        let mut node = a;
+        node[axis] = t;
+        (0..3).any(|q| {
+            let at = |c: [usize; 3]| (0..3).all(|r| c[r] < lattice[q][r]) && ce[q][index(lattice[q], c[0], c[1], c[2])] == 0.0;
+            let mut back = node;
+            back[q] = node[q].wrapping_sub(1);
+            at(node) || (node[q] > 0 && at(back))
+        })
+    };
+    let (lo0, hi0) = (lo, hi);
+    for _ in 0..REACH {
+        if !touches(lo) && lo > 0 {
+            lo -= 1;
+        }
+        if !touches(hi) && hi < n[axis] {
+            hi += 1;
+        }
+    }
+    if !touches(lo) && !touches(hi) {
+        (lo, hi) = (lo0, hi0);
+    } else if !touches(lo) || !touches(hi) {
+        return Err(invalid(
+            what,
+            format!(
+                "one of `{name}`'s ends does not reach a conductor on the grid (within {REACH} cells of the gap): its terminals must sit on conductors, or use a smaller cell"
+            ),
+        ));
+    }
+    let ids: Vec<usize> = (lo..hi)
+        .map(|t| {
+            let mut c = a;
+            c[axis] = t;
+            index(dims, c[0], c[1], c[2])
+        })
+        .collect();
+    if ids.iter().any(|&id| ce[axis][id] == 0.0) {
+        return Err(invalid(what, format!("`{name}` crosses a conductor on the grid")));
+    }
+    Ok((axis, ids, if b[axis] > a[axis] { 1.0 } else { -1.0 }))
 }
 
 /// The most cells a lumped port's ends are carried along its gap to reach a conductor.
@@ -339,111 +453,68 @@ struct GridPort {
 }
 
 impl GridPort {
-    /// The model's lumped port `lp` as a run of edges between grid nodes.
-    fn new(lp: &emcraft_model::LumpedPort, grid: &BoxGrid, coef: &BoxCoefficients, dt: f64) -> Result<GridPort> {
-        let ce = &coef.ce;
+    /// The model's lumped port `lp` as a run of edges between grid nodes, the lumped elements
+    /// sharing its gap in `loads` taken into its edges' update.
+    fn new(
+        lp: &emcraft_model::LumpedPort,
+        grid: &BoxGrid,
+        coef: &BoxCoefficients,
+        dt: f64,
+        loads: &std::collections::BTreeMap<(usize, usize), Load>,
+    ) -> Result<GridPort> {
         if lp.voltage[1] != 0.0 {
             return Err(FdtdError::Unsupported("lumped ports with a phase in the time domain (their voltages must be real)".into()));
         }
         if lp.across.is_some() {
             return Err(FdtdError::Unsupported("sheet lumped ports in the time domain".into()));
         }
-        let (hs, n) = (grid.hs, grid.n);
-        let d = lp.to - lp.from;
-        let axis = d.dominant_axis();
-        if (0..3).any(|q| q != axis && d[q].abs() > 1e-6 * d[axis].abs()) {
-            return Err(invalid("lumped port", format!("`{}` must lie along a grid axis in the time domain", lp.name)));
-        }
-        let snap = |p: Point3| [0, 1, 2].map(|q| ((p[q] / hs[q]).round().max(0.0) as usize).min(n[q]));
-        let (a, b) = (snap(lp.from), snap(lp.to));
-        let (mut lo, mut hi) = (a[axis].min(b[axis]), a[axis].max(b[axis]));
-        if hi == lo {
-            return Err(invalid("lumped port", format!("`{}`'s gap is shorter than a cell", lp.name)));
-        }
-        // The staircase may leave a terminal short of its conductor (a face between two grid
-        // nodes rounds away from it): each end is carried along the gap to the first node a
-        // conductor's edge touches, at most `REACH` cells. One terminal on a conductor and the
-        // other still floating would put an empty edge in series with the port and is refused;
-        // a gap with neither end near a conductor is a source standing free and stays.
-        let lattice = lattices(n)[0];
-        let dims = lattice[axis];
-        if (lo..hi).any(|t| {
-            let mut c = a;
-            c[axis] = t;
-            coef.dispersion[axis].has(index(dims, c[0], c[1], c[2]))
-        }) {
-            return Err(FdtdError::Unsupported(format!(
-                "a lumped port in a lossy or dispersive material in the time domain (`{}`: put its gap in a lossless one)",
-                lp.name
-            )));
-        }
-        let touches = |t: usize| {
-            let mut node = a;
-            node[axis] = t;
-            (0..3).any(|q| {
-                let at = |c: [usize; 3]| (0..3).all(|r| c[r] < lattice[q][r]) && ce[q][index(lattice[q], c[0], c[1], c[2])] == 0.0;
-                let mut back = node;
-                back[q] = node[q].wrapping_sub(1);
-                at(node) || (node[q] > 0 && at(back))
-            })
-        };
-        let (lo0, hi0) = (lo, hi);
-        for _ in 0..REACH {
-            if !touches(lo) && lo > 0 {
-                lo -= 1;
-            }
-            if !touches(hi) && hi < n[axis] {
-                hi += 1;
-            }
-        }
-        if !touches(lo) && !touches(hi) {
-            (lo, hi) = (lo0, hi0);
-        } else if !touches(lo) || !touches(hi) {
-            return Err(invalid(
-                "lumped port",
-                format!(
-                    "one of `{}`'s ends does not reach a conductor on the grid (within {REACH} cells of the gap): its terminals must sit on conductors, or use a smaller cell",
-                    lp.name
-                ),
-            ));
-        }
-        let ids: Vec<usize> = (lo..hi)
-            .map(|t| {
-                let mut c = a;
-                c[axis] = t;
-                index(dims, c[0], c[1], c[2])
-            })
-            .collect();
-        if ids.iter().any(|&id| ce[axis][id] == 0.0) {
-            return Err(invalid("lumped port", format!("`{}` crosses a conductor on the grid", lp.name)));
-        }
+        let (axis, ids, sign) = gap_edges(&lp.name, "lumped port", lp.from, lp.to, grid, coef)?;
         let count = ids.len() as f64;
         let r_edge = lp.impedance / count;
         let area = grid.area(axis);
+        let g = grid.hs[axis] / (r_edge * area);
+        let mut port = GridPort::of(lp.name.clone(), axis, &ids, (g, 1.0 / (r_edge * area)), coef, dt, loads)?;
+        (port.r_edge, port.sign, port.voltage) = (r_edge, sign, lp.voltage[0] / count);
+        Ok(port)
+    }
+
+    /// The edges `ids` along `axis` with a source's conductance and coefficient `(g, v)` (S/m,
+    /// 1/(Ω m²); zero without a source) and the elements' `loads` there.
+    fn of(
+        name: String,
+        axis: usize,
+        ids: &[usize],
+        (g, v): (f64, f64),
+        coef: &BoxCoefficients,
+        dt: f64,
+        loads: &std::collections::BTreeMap<(usize, usize), Load>,
+    ) -> Result<GridPort> {
+        let ce = &coef.ce[axis];
         let edges = ids
-            .into_iter()
-            .map(|id| {
-                let eps = dt / ce[axis][id]; // ε (F/m)
-                let g = hs[axis] / (2.0 * r_edge * area);
-                let den = eps / dt + g;
-                PortEdge { id, ca: (eps / dt - g) / den, cb: 1.0 / den, cv: 1.0 / (r_edge * area) / den, old: 0.0 }
+            .iter()
+            .map(|&id| {
+                let load = loads.get(&(axis, id)).copied().unwrap_or_default();
+                let eps = dt / ce[id] + load.c; // ε (F/m), with the elements' capacitance
+                let half = 0.5 * (g + load.g);
+                let den = eps / dt + half;
+                PortEdge { id, ca: (eps / dt - half) / den, cb: 1.0 / den, cv: v / den, cl: load.l, old: 0.0, jl: 0.0 }
             })
             .collect();
-        let sign = if b[axis] > a[axis] { 1.0 } else { -1.0 };
-        Ok(GridPort { name: lp.name.clone(), axis: Axis::try_from(axis)?, edges, r_edge, sign, voltage: lp.voltage[0] / count })
+        Ok(GridPort { name, axis: Axis::try_from(axis)?, edges, r_edge: f64::INFINITY, sign: 1.0, voltage: 0.0 })
     }
 
     /// Redoes the port's edges semi-implicitly after the plain update, with the source at `s`;
     /// returns the terminal voltage and the current along the gap.
-    fn update(&self, e: &Field, ce: &[f64], h: f64, s: f64) -> (f64, f64) {
+    fn update(&mut self, e: &Field, ce: &[f64], h: f64, s: f64) -> (f64, f64) {
         let mut vsum = 0.0;
         let mut isum = 0.0;
-        for edge in &self.edges {
+        for edge in &mut self.edges {
             let (c, old) = (ce[edge.id], edge.old);
             // The plain update added c·curl (with the layer's ψ, zero here): recover it.
             let curl = (e.get(edge.id) - old) / c;
             let vs = self.voltage * s * self.sign;
-            let updated = edge.ca * old + edge.cb * curl - edge.cv * vs;
+            edge.jl += edge.cl * old;
+            let updated = edge.ca * old + edge.cb * (curl - edge.jl) - edge.cv * vs;
             e.set(edge.id, updated);
             let e_avg = 0.5 * (old + updated);
             isum += (vs + h * e_avg) / self.r_edge * self.sign;
@@ -930,7 +1001,22 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
     let band = Band::of(frequencies);
     let dt = time_step(o.courant, grid.hs);
     let coef = grid.coefficients(model, dt, Losses::new(band.fc))?;
-    let mut ports = model.lumped.iter().map(|lp| GridPort::new(lp, &grid, &coef, dt)).collect::<Result<Vec<_>>>()?;
+    // Lumped elements: on a port's gap, in its update; on a gap of their own, a port without a
+    // source (`loads`).
+    let element_loads = element_loads(model, &grid, &coef, dt)?;
+    let mut ports = model.lumped.iter().map(|lp| GridPort::new(lp, &grid, &coef, dt, &element_loads)).collect::<Result<Vec<_>>>()?;
+    let mut loads: Vec<GridPort> = {
+        let on_ports: std::collections::BTreeSet<(usize, usize)> =
+            ports.iter().flat_map(|p| p.edges.iter().map(|e| (p.axis.index(), e.id))).collect();
+        let mut by_axis: [Vec<usize>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+        for &(axis, id) in element_loads.keys().filter(|k| !on_ports.contains(k)) {
+            by_axis[axis].push(id);
+        }
+        (0..3)
+            .filter(|&a| !by_axis[a].is_empty())
+            .map(|a| GridPort::of(format!("elements {a}"), a, &by_axis[a], (0.0, 0.0), &coef, dt, &element_loads))
+            .collect::<Result<_>>()?
+    };
     let currents = currents(model, &grid, &coef, dt)?;
     let ce = &coef.ce;
     let wave = crate::planewave::of(model)?;
@@ -961,8 +1047,8 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
         }
         _ => None,
     };
-    // The plane wave's split runs on the CPU's threads.
-    let device = if wave.is_some() { None } else { device };
+    // The plane wave's split and lumped elements run on the CPU's threads.
+    let device = if wave.is_some() || !model.elements.is_empty() { None } else { device };
 
     let mut tr = Transforms::new(frequencies, dt, ports.len(), hbox.samples.len());
     let t_min = pulse.t0 + 4.0 * pulse.tau + 3.0 * grid.size.iter().fold(0.0f64, f64::max) / C0;
@@ -998,7 +1084,11 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
                 }
                 // Lumped ports: redo their edges semi-implicitly; then the current elements.
                 port_vi.clear();
-                port_vi.extend(ports.iter().map(|p| {
+                for l in &mut loads {
+                    let a = l.axis.index();
+                    l.update(&fields.e[a], &ce[a], grid.hs[a], 0.0);
+                }
+                port_vi.extend(ports.iter_mut().map(|p| {
                     let a = p.axis.index();
                     p.update(&fields.e[a], &ce[a], grid.hs[a], s_now)
                 }));
@@ -1020,7 +1110,7 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
                     w.correct_h(&fields);
                 }
                 checks.after(step, &port_vi, &tr)?;
-                for p in &mut ports {
+                for p in ports.iter_mut().chain(&mut loads) {
                     p.remember(&fields.e[p.axis.index()]);
                 }
                 ControlFlow::Continue(())

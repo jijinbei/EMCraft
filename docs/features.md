@@ -1004,7 +1004,7 @@ A lumped (discrete) port: the feed of an antenna, a gap from `from` to `to` (usu
 
 ## `model.element.create` — Lumped element
 
-A lumped circuit element: a resistor, an inductor and a capacitor across the gap from `from` to `to` (usually between two conductors: a chip resistor bridging two traces, a capacitor across a gap), in series or in parallel, the parts left out (0) dropping from it. A passive load, not a port: the frequency domain adds its current I = Y(ω) V (V the gap's line integral, or its mean across a sheet `width` wide) to Ampère's law as a lumped port's without a source. Its name is unique among the ports and elements. Not in eigenmode analyses (Y depends on frequency) nor yet in the time domain. Drops every result. Undo goes back.
+A lumped circuit element: a resistor, an inductor and a capacitor across the gap from `from` to `to` (usually between two conductors: a chip resistor bridging two traces, a capacitor across a gap), in series or in parallel, the parts left out (0) dropping from it. A passive load, not a port: the frequency domain adds its current I = Y(ω) V (V the gap's line integral, or its mean across a sheet `width` wide) to Ampère's law as a lumped port's without a source. Its name is unique among the ports and elements. Not in eigenmode analyses (Y depends on frequency); in the time domain's open problems one part or parts in parallel, along a grid axis (on a lumped port's gap it joins the port's update), not yet in its guides and closed solids. Drops every result. Undo goes back.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
