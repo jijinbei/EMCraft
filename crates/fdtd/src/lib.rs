@@ -63,12 +63,15 @@ pub use crate::device::{
     Axis, Cpml, CurrentPlan, NO_SLOT, OpenBatch, OpenPlan, OpenStepper, Plan, Poles, PortEdgePlan, PortPlan, SamplePlan, Stepper,
 };
 use crate::guide::{Grid, run};
+pub use crate::solid::{MAX_EXCITED, s_parameters_solid};
 use crate::yee::Settling;
 
 pub mod device;
 mod dispersion;
 mod guide;
 pub mod open;
+mod planewave;
+mod solid;
 mod surface;
 mod yee;
 
@@ -153,18 +156,52 @@ impl Options {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TdResult {
     pub frequencies: Vec<f64>,
-    /// Power waves referred to the model's end faces.
-    pub s11: Vec<C>,
-    pub s21: Vec<C>,
+    /// The model's ports, in its order.
+    pub ports: usize,
+    /// The ports excited (indices into the model's), one run each.
+    pub inputs: Vec<usize>,
+    /// Power waves referred to the ports' faces: S\[p\]\[inputs\[c\]\] at frequency k at
+    /// (c · ports + p) · frequencies + k.
+    pub s: Vec<C>,
     pub cells: usize,
     pub dt: f64,
-    /// Steps of the device run and of the reference run.
+    /// Steps of the device runs and of the reference runs.
     pub steps: usize,
     pub reference_steps: usize,
     /// Whether the transforms settled before `max_steps`.
     pub converged: bool,
     /// The frequency (Hz) at which the materials' loss tangents are matched ([`Losses`]).
     pub loss_reference: f64,
+}
+
+impl TdResult {
+    /// S\[p\]\[inputs\[c\]\] at each frequency; empty out of range.
+    pub fn column(&self, c: usize, p: usize) -> &[C] {
+        let n = self.frequencies.len();
+        let at = (c * self.ports + p) * n;
+        self.s.get(at..at + n).unwrap_or(&[])
+    }
+
+    /// S₁₁ with port 1 excited first (the guide's own run).
+    pub fn s11(&self) -> &[C] {
+        self.column(0, 0)
+    }
+
+    /// S₂₁ with port 1 excited first.
+    pub fn s21(&self) -> &[C] {
+        self.column(0, 1)
+    }
+
+    /// Whether the S-parameters hold one value per frequency, port and input, the inputs
+    /// distinct ports.
+    pub fn consistent(&self) -> bool {
+        let mut inputs = self.inputs.clone();
+        inputs.sort_unstable();
+        inputs.dedup();
+        inputs.len() == self.inputs.len()
+            && self.inputs.iter().all(|&q| q < self.ports)
+            && self.ports.checked_mul(self.inputs.len()).and_then(|x| x.checked_mul(self.frequencies.len())) == Some(self.s.len())
+    }
 }
 
 /// How the time domain realises the materials' loss tangents: as an electric and a magnetic
@@ -227,6 +264,9 @@ pub fn s_parameters_with(model: &Model, o: &Options, frequencies: &[f64], device
     if !model.symmetry.is_empty() {
         return Err(FdtdError::Unsupported("symmetry planes in the time domain (clear them: model.symmetry with clear true)".into()));
     }
+    if !model.elements.is_empty() {
+        return Err(FdtdError::Unsupported("lumped elements in the time domain".into()));
+    }
     if !w.plain() {
         return Err(FdtdError::Unsupported("layers and strips in the time domain (its ports carry TE10 only)".into()));
     }
@@ -260,26 +300,16 @@ pub fn s_parameters_with(model: &Model, o: &Options, frequencies: &[f64], device
     let mut s11 = Vec::new();
     let mut s21 = Vec::new();
     for (fi, &f) in frequencies.iter().enumerate() {
-        let (y1, y2) = (p1.admittance(f), p2.admittance(f));
-        if y1.norm() == 0.0 || y2.norm() == 0.0 {
-            return Err(below(f));
-        }
         let inc = reference.d1[fi];
         // The transform is linear: the reflected wave's is the difference of the two runs'.
-        let refl = dut.d1[fi] - inc;
-        let trans = dut.d2[fi];
-        s11.push(refl / inc);
-        // Amplitudes: V/‖e‖; power factor √((‖e₂‖ β2/μ2)/(‖e₁‖ β1/μ1)), real for lossless ports
-        // and on the principal branch otherwise.
-        let (n1, n2) = (p1.norm(), p2.norm());
-        let amp = (trans / n2) / (inc / n1);
-        let ratio = (y2 * n2) / (y1 * n1);
-        s21.push(amp * if ratio.im == 0.0 { C::new(ratio.re.sqrt(), 0.0) } else { ratio.sqrt() });
+        s11.push((dut.d1[fi] - inc) / inc);
+        s21.push(transmission(dut.d2[fi], &p2, inc, &p1, f).ok_or_else(|| below(f))?);
     }
     Ok(TdResult {
         frequencies: frequencies.to_vec(),
-        s11,
-        s21,
+        ports: 2,
+        inputs: vec![0],
+        s: s11.into_iter().chain(s21).collect(),
         cells: g.cells(),
         dt,
         steps: dut.steps,
@@ -291,11 +321,11 @@ pub fn s_parameters_with(model: &Model, o: &Options, frequencies: &[f64], device
 
 /// A port's guide: its aperture across x and y and its material, with its losses as the time
 /// domain realises them.
-struct PortGuide {
-    width: f64,
-    height: f64,
-    material: Material,
-    losses: Losses,
+pub(crate) struct PortGuide {
+    pub(crate) width: f64,
+    pub(crate) height: f64,
+    pub(crate) material: Material,
+    pub(crate) losses: Losses,
 }
 
 impl PortGuide {
@@ -309,20 +339,20 @@ impl PortGuide {
     }
 
     /// k² − (π/a)² at `f`, k² = k₀² ε μ.
-    fn kz2(&self, f: f64) -> C {
+    pub(crate) fn kz2(&self, f: f64) -> C {
         let k0 = 2.0 * PI * f / C0;
         let (eps, mu) = self.losses.eps_mu(&self.material, f);
         eps * mu * (k0 * k0) - (PI / self.width).powi(2)
     }
 
     /// Whether TE₁₀ propagates at `f`: Re(k²) above the cut-off's (k² real without losses).
-    fn propagates(&self, f: f64) -> bool {
+    pub(crate) fn propagates(&self, f: f64) -> bool {
         self.kz2(f).re > 0.0
     }
 
     /// The TE₁₀ β/μr at `f`, β = √(k² − (π/a)²) on the branch with Im β ≤ 0 (a wave that
     /// decays along +z), 0 below cut-off without losses.
-    fn admittance(&self, f: f64) -> C {
+    pub(crate) fn admittance(&self, f: f64) -> C {
         let kz2 = self.kz2(f);
         let (_, mu) = self.losses.eps_mu(&self.material, f);
         if kz2.im == 0.0 && mu.im == 0.0 {
@@ -333,9 +363,24 @@ impl PortGuide {
     }
 
     /// The TE₁₀ profile's norm ‖e‖ = width·height/2.
-    fn norm(&self) -> f64 {
+    pub(crate) fn norm(&self) -> f64 {
         0.5 * self.width * self.height
     }
+}
+
+/// The power wave out of port `out` (its TE₁₀ projection's transform `v`) per power wave in
+/// at port `inc` (`v_inc`) at `f`: amplitudes V/‖e‖, and the power factor
+/// √((‖e_out‖ β_out/μ_out)/(‖e_in‖ β_in/μ_in)), real for lossless ports and on the principal
+/// branch otherwise. `None` below either port's cut-off.
+pub(crate) fn transmission(v: C, out: &PortGuide, v_inc: C, inc: &PortGuide, f: f64) -> Option<C> {
+    let (y_in, y_out) = (inc.admittance(f), out.admittance(f));
+    if y_in.norm() == 0.0 || y_out.norm() == 0.0 {
+        return None;
+    }
+    let (n_in, n_out) = (inc.norm(), out.norm());
+    let amp = (v / n_out) / (v_inc / n_in);
+    let ratio = (y_out * n_out) / (y_in * n_in);
+    Some(amp * if ratio.im == 0.0 { C::new(ratio.re.sqrt(), 0.0) } else { ratio.sqrt() })
 }
 
 /// The largest magnitude of a transform.

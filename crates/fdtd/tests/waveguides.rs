@@ -42,9 +42,9 @@ fn filter_error(cell: f64, freqs: &[f64]) -> f64 {
     let line = Te10Line { a: A, layers: vec![Layer::lossless(0.015, 2.0, 1.0), Layer::lossless(0.02, 1.0, 1.0), Layer::lossless(0.015, 2.0, 1.0)] };
     for (i, f) in freqs.iter().enumerate() {
         let (e11, e21) = line.solve(*f).unwrap().s_power();
-        worst = worst.max((r.s11[i] - e11).norm().max((r.s21[i] - e21).norm()));
+        worst = worst.max((r.s11()[i] - e11).norm().max((r.s21()[i] - e21).norm()));
         // Passive, to the discretisation (2e-3 at 1.5 mm, 1e-4 at 0.5 mm).
-        assert!(r.s11[i].norm_sqr() + r.s21[i].norm_sqr() < 1.0 + 5e-3);
+        assert!(r.s11()[i].norm_sqr() + r.s21()[i].norm_sqr() < 1.0 + 5e-3);
     }
     worst
 }
@@ -57,9 +57,9 @@ fn high_pass_filter_runs_passive_and_passes_above_its_cut_off() {
     let r = s_parameters(&filter(), &Options::new(0.00254), &[6.0e9, 8.5e9]).unwrap();
     assert!(r.converged);
     for i in 0..2 {
-        assert!(r.s11[i].norm_sqr() + r.s21[i].norm_sqr() < 1.0 + 2e-2, "{i}: {} {}", r.s11[i], r.s21[i]);
+        assert!(r.s11()[i].norm_sqr() + r.s21()[i].norm_sqr() < 1.0 + 2e-2, "{i}: {} {}", r.s11()[i], r.s21()[i]);
     }
-    assert!(r.s21[0].norm() < 0.6 && r.s21[1].norm() > 0.85, "{:?}", r.s21);
+    assert!(r.s21()[0].norm() < 0.6 && r.s21()[1].norm() > 0.85, "{:?}", r.s21());
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn inductive_iris_matches_mode_matching() {
     let line = HPlaneLine { sections: vec![full(0.015), HSection { length: 0.002, x0: (A - 0.012) / 2.0, width: 0.012, ..full(0.0) }, full(0.015)] };
     for (i, f) in freqs.iter().enumerate() {
         let (e11, e21) = line.solve(*f, 160).unwrap();
-        let err = (r.s11[i] - e11).norm().max((r.s21[i] - e21).norm());
+        let err = (r.s11()[i] - e11).norm().max((r.s21()[i] - e21).norm());
         // The iris' edges are singular and the staircase of cells does not grade towards them:
         // about 4.5e-2 at 1 mm, first order (the FEM grades its mesh instead).
         assert!(err < 6e-2, "{f}: {err:e}");
@@ -118,7 +118,7 @@ fn an_e_plane_step_reflects_as_mode_matching_says() {
     let line = emcraft_theory::EPlaneLine { a: A, sections: vec![full, emcraft_theory::ESection { length: 0.015, height: B / 2.0, ..full }] };
     for (i, f) in freqs.iter().enumerate() {
         let (e11, _) = line.solve(*f, 160).unwrap();
-        assert!((r.s11[i].norm() - e11.norm()).abs() < 0.2 * e11.norm(), "{f}: {} {e11}", r.s11[i]);
+        assert!((r.s11()[i].norm() - e11.norm()).abs() < 0.2 * e11.norm(), "{f}: {} {e11}", r.s11()[i]);
     }
 }
 
@@ -147,9 +147,9 @@ fn dispersive_error(cell: f64, freqs: &[f64]) -> f64 {
     let mut worst: f64 = 0.0;
     for (i, f) in freqs.iter().enumerate() {
         let (e11, e21) = dispersive_exact(*f);
-        worst = worst.max((r.s11[i] - e11).norm().max((r.s21[i] - e21).norm()));
+        worst = worst.max((r.s11()[i] - e11).norm().max((r.s21()[i] - e21).norm()));
         // It absorbs.
-        assert!(r.s11[i].norm_sqr() + r.s21[i].norm_sqr() < 0.99);
+        assert!(r.s11()[i].norm_sqr() + r.s21()[i].norm_sqr() < 0.99);
     }
     worst
 }

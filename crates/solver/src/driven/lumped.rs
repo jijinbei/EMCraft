@@ -65,6 +65,34 @@ impl super::Driven {
     }
 }
 
+/// A lumped element prepared for solving: its gap's line integrals and the element.
+#[derive(Clone, Debug)]
+pub struct ElementData {
+    pub element: emcraft_model::LumpedElement,
+    pub c: Vec<(usize, f64)>,
+}
+
+impl ElementData {
+    /// The factor jωμ₀Y(ω) of the element's term jωμ₀Y c cᵀ: the current I = Y V through its gap
+    /// for the gap's voltage V = −cᵀx, as a lumped port's with no source and Y = 1/R.
+    pub(crate) fn factor(&self, frequency: f64) -> C {
+        let omega = 2.0 * PI * frequency;
+        C::new(0.0, omega * MU0) * self.element.admittance(frequency)
+    }
+}
+
+/// The model's lumped element `e`: its gap's line integrals, along the line or across its sheet.
+pub(super) fn prepare_element(e: &emcraft_model::LumpedElement, space: &Space) -> Result<ElementData> {
+    let c = match e.across {
+        Some(across) => sheet_vector(space, e.from, e.to, across)?,
+        None => line_vector(space, e.from, e.to)?,
+    };
+    if c.is_empty() {
+        return Err(invalid(format!("lumped element `{}`", e.name), "its gap lies outside the mesh (inside a conductor?)"));
+    }
+    Ok(ElementData { element: e.clone(), c })
+}
+
 /// The model's lumped port `lp`: its gap's line integrals.
 pub(super) fn prepare(lp: &LumpedPort, space: &Space) -> Result<LumpedData> {
     let c = match lp.across {

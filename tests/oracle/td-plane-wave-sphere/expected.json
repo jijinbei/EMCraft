@@ -1,0 +1,11 @@
+{
+ "title": "Plane waves on spheres in the time domain: a faint one (εr 1.0001) and a ceramic one (εr 4), radius 5 mm, at 10 GHz, on 0.5 mm cells",
+ "kind": "theory",
+ "source": "The Mie series for a sphere of size parameter ka = 1.047 and index √1.0001 and 2: the coefficients aₙ, bₙ and amplitudes S₁, S₂ (C. F. Bohren, D. R. Huffman, Absorption and Scattering of Light by Small Particles, Wiley 1983, §4.4), evaluated by emcraft-theory (which meets their BHMIE listing to 1e-5); σ_sca = (2π/k²) Σ (2n + 1)(|aₙ|² + |bₙ|²), the radar cross-section 4π|S₁|²/k² in the H-plane",
+ "quantities": [
+  {"id": "faint_sigma", "quantity": "scattering cross-section of the faint sphere at 10 GHz (mm²)", "measure": {"step": "faint", "pointer": "/points/1/scattering_cross_section"}, "value": 1.8490891552837438e-07, "tolerance": {"relative": 0.03}, "reason": "a sphere so faint scatters as its volume does (Rayleigh–Gans), so this checks the total-field/scattered-field split, which lets no incident wave leak into the scattered region (the one-dimensional incident grid has the same dispersion as the three-dimensional one along the axis), and the Huygens box in the scattered field: 1.1 % high, the staircased sphere's volume"},
+  {"id": "faint_back", "quantity": "its backscatter cross-section at 10 GHz (mm²)", "measure": {"step": "faint_far", "pointer": "/points/2/rcs"}, "value": 1.6406685273197033e-07, "tolerance": {"relative": 0.03}, "reason": "as the cross-section: 0.25 % high"},
+  {"id": "faint_forward", "quantity": "its forward-scatter cross-section at 10 GHz (mm²)", "measure": {"step": "faint_far", "pointer": "/points/0/rcs"}, "value": 4.209317447876767e-07, "tolerance": {"relative": 0.03}, "reason": "as the cross-section: 1.8 % high"},
+  {"id": "ceramic_sigma", "quantity": "scattering cross-section of the ceramic sphere at 10 GHz (mm²)", "measure": {"step": "ceramic", "pointer": "/points/1/scattering_cross_section"}, "value": 74.74153854134258, "tolerance": {"relative": 0.15}, "reason": "the sphere staircased on 0.5 mm cells and the wave inside it 15 cells to a wavelength (the grid's dispersion slows it): 10.4 % high, where the faint sphere shows the split itself is good to 1 %"}
+ ]
+}

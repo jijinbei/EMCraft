@@ -205,10 +205,24 @@ fn sparameter_chart_now(session: &Session, display: SDisplay) -> Result<Chart> {
             series.push(Series::new(FULL_SOLVES, "solved in full", Pen::Ink, Style::Markers, Vec::new()));
         }
     }
-    if let Some(td) = td.and_then(|t| crate::sdata::of_time_domain(t).ok()) {
-        let pts = |p: usize| td.curve(p, 0).map(|(f, s)| [fu.from_si(f), display.of(s)]).collect();
-        series.extend(curve("s21.td", format!("{} time domain", display.entry("21")), Pen::Series(2), pts(1), display));
-        series.extend(curve("s11.td", format!("{} time domain", display.entry("11")), Pen::Series(4), pts(0), display));
+    if let Some((t, td)) = td.and_then(|t| Some((t, crate::sdata::of_time_domain(t).ok()?))) {
+        let pts = |p: usize, q: usize| td.curve(p, q).map(|(f, s)| [fu.from_si(f), display.of(s)]).collect();
+        // Port 1's column as the guide's run gives it; a solid's other ports and columns after.
+        series.extend(curve("s21.td", format!("{} time domain", display.entry("21")), Pen::Series(2), pts(1, 0), display));
+        series.extend(curve("s11.td", format!("{} time domain", display.entry("11")), Pen::Series(4), pts(0, 0), display));
+        let n = t.ports.min(MAX_CHART_ENTRIES);
+        for &q in t.inputs.iter().filter(|q| **q < n) {
+            for p in (0..n).filter(|&p| q != 0 || p >= 2) {
+                let entry = format!("{}{}", p + 1, q + 1);
+                series.extend(curve(
+                    &format!("s{entry}.td"),
+                    format!("{} time domain", display.entry(&entry)),
+                    sparameter_pen(p),
+                    pts(p, q),
+                    display,
+                ));
+            }
+        }
     }
     let marks = section_cutoffs(session).into_iter().map(|(fc, name)| (fu.from_si(fc), format!("$f_c$ {name}"))).collect();
     let y = display.axis(&series);

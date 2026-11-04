@@ -368,9 +368,11 @@ impl Reduced {
         } else {
             None
         };
-        // Rank-one terms: lumped ports' (jωμ₀/R) c cᵀ and the port modes' factor v vᵀ.
-        let mut rank_one: Vec<RankOne> =
-            d.lumped.iter().map(|l| RankOne { factor: l.factor(frequency), v: l.c.iter().map(|&(i, x)| (i, C::new(x, 0.0))).collect() }).collect();
+        // Rank-one terms: lumped ports' (jωμ₀/R) c cᵀ, lumped elements' jωμ₀Y c cᵀ and the port
+        // modes' factor v vᵀ.
+        let gap = |factor: C, c: &[(usize, f64)]| RankOne { factor, v: c.iter().map(|&(i, x)| (i, C::new(x, 0.0))).collect() };
+        let mut rank_one: Vec<RankOne> = d.lumped.iter().map(|l| gap(l.factor(frequency), &l.c)).collect();
+        rank_one.extend(d.elements.iter().map(|e| gap(e.factor(frequency), &e.c)));
         rank_one.extend(terms.iter().flatten().map(|t: &PortTerm<'_>| RankOne { factor: t.factor, v: t.v.to_vec() }));
         let project = |v: &[(usize, C)]| -> Vec<C> { basis.v.iter().map(|b| v.iter().map(|&(i, x)| x * b[i]).sum()).collect() };
         let projected: Vec<(C, Vec<C>)> = rank_one.iter().map(|r| (r.factor, project(&r.v))).collect();

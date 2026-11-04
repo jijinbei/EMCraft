@@ -234,6 +234,20 @@ impl Exact {
     }
 }
 
+impl Exact {
+    /// The Mie series' radar cross-section (m²) toward `dir`; `None` without it.
+    fn rcs(&self, dir: Vec3) -> Option<f64> {
+        let Exact::Mie { k, incidence, polarization, coefficients } = self else { return None };
+        // The scattering angle from the incident direction, and the azimuth from its
+        // polarization in the plane across it.
+        let cos_t = incidence.dot(dir).clamp(-1.0, 1.0);
+        let (pe, ph) = (dir.dot(*polarization), dir.dot(incidence.cross(*polarization)));
+        let cphi2 = if pe * pe + ph * ph > 0.0 { pe * pe / (pe * pe + ph * ph) } else { 1.0 };
+        let (s1, s2) = emcraft_theory::radiation::amplitudes(coefficients, cos_t.acos());
+        Some(4.0 * PI * (s2.norm_sqr() * cphi2 + s1.norm_sqr() * (1.0 - cphi2)) / (k * k))
+    }
+}
+
 /// Directivity (dBi) for sources, radar cross-section (display area, and dB of m²) for a plane
 /// wave, in one direction; with the closed form's where it applies.
 fn describe(s: &Session, r: &Radiated, exact: &Exact, ff: &FarField) -> Value {
@@ -251,15 +265,10 @@ fn describe(s: &Session, r: &Radiated, exact: &Exact, ff: &FarField) -> Value {
         out["directivity_dbi"] = json!(10.0 * d.log10());
     }
     match exact {
-        Exact::Mie { k, incidence, polarization, coefficients } => {
-            // The scattering angle from the incident direction, and the azimuth from its
-            // polarization in the plane across it.
-            let cos_t = incidence.dot(dir).clamp(-1.0, 1.0);
-            let (pe, ph) = (dir.dot(*polarization), dir.dot(incidence.cross(*polarization)));
-            let cphi2 = if pe * pe + ph * ph > 0.0 { pe * pe / (pe * pe + ph * ph) } else { 1.0 };
-            let (s1, s2) = emcraft_theory::radiation::amplitudes(coefficients, cos_t.acos());
-            let rcs = 4.0 * PI * (s2.norm_sqr() * cphi2 + s1.norm_sqr() * (1.0 - cphi2)) / (k * k);
-            out["exact_rcs"] = json!(rcs * l * l);
+        Exact::Mie { .. } => {
+            if let Some(rcs) = exact.rcs(dir) {
+                out["exact_rcs"] = json!(rcs * l * l);
+            }
         }
         Exact::Dipole { moment, axis } => {
             let cos_a = axis.dot(dir).clamp(-1.0, 1.0);
@@ -339,12 +348,28 @@ fn time_domain_far_rows(s: &Session, dirs: &[(f64, f64)], frequency: Option<f64>
     let f = r.frequencies.get(fi).copied().ok_or_else(|| EngineError::failed("no frequencies"))?;
     let power = r.radiated.get(fi).copied().unwrap_or(f64::NAN);
     let lone = lone_dipole(s);
+    // A plane wave's scattered field, per volt per metre of incident field: radar cross-section
+    // with the Mie series' for a lone sphere.
+    let scattering = plane_wave(s).is_some();
+    let exact = if scattering { Exact::of(s, f) } else { Exact::None };
+    let l = s.display.length.from_si(1.0);
     let rows = dirs
         .iter()
         .map(|&(theta, phi)| {
             let (et, ep) = r.far_field(fi, theta, phi).unwrap_or_default();
+            let mut v = json!({"theta": theta.to_degrees(), "phi": phi.to_degrees(), "e_theta": phasor(et), "e_phi": phasor(ep)});
+            if scattering {
+                let rcs = 4.0 * PI * (et.norm_sqr() + ep.norm_sqr());
+                v["rcs"] = json!(rcs * l * l);
+                v["rcs_dbsm"] = json!(10.0 * rcs.log10());
+                if let Some(x) = exact.rcs(Vec3::spherical(theta, phi)[0]) {
+                    v["exact_rcs"] = json!(x * l * l);
+                }
+                return v;
+            }
             let d = r.directivity(fi, theta, phi).unwrap_or(f64::NAN);
-            let mut v = json!({"theta": theta.to_degrees(), "phi": phi.to_degrees(), "e_theta": phasor(et), "e_phi": phasor(ep), "directivity": d, "directivity_dbi": 10.0 * d.log10()});
+            v["directivity"] = json!(d);
+            v["directivity_dbi"] = json!(10.0 * d.log10());
             if let Some((_, axis)) = lone {
                 let cos_a = axis.dot(Vec3::spherical(theta, phi)[0]).clamp(-1.0, 1.0);
                 v["exact_directivity"] = json!(1.5 * (1.0 - cos_a * cos_a));
@@ -384,6 +409,10 @@ pub fn solve_time_domain_open(s: &mut Session, freqs: &[f64], cell: f64, device:
             let mut v = json!({"frequency": s.show_frequency(*f), "radiated_power": r.radiated[fi], "ports": ports});
             if input > 0.0 {
                 v["radiation_efficiency"] = json!(r.radiated[fi] / input);
+            }
+            // A plane wave's: the power scattered per volt per metre incident.
+            if plane_wave(s).is_some() {
+                scattered(s, *f, r.radiated[fi], &mut v);
             }
             v
         })

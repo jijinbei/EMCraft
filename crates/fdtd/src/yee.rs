@@ -211,6 +211,14 @@ impl Pulse {
         Pulse::with_tau(1.5 / (PI * 0.5 * bw), band.fc)
     }
 
+    /// The pulse over `band` fed into guides cut off at `cutoff` (Hz): its spectrum down to
+    /// `floor` there, since energy near a cut-off travels ever more slowly and would linger in
+    /// the feeds.
+    pub(crate) fn above(band: Band, cutoff: f64, floor: f64) -> Pulse {
+        let (fc, pulse) = (band.fc, Pulse::over(band, 1e-3));
+        if fc > 1.01 * cutoff { Pulse::with_tau(pulse.tau.max((1.0 / floor).ln().sqrt() / (PI * (fc - cutoff))), fc) } else { pulse }
+    }
+
     /// The pulse of width `tau` at `fc`, peaking at t₀ = 4τ.
     pub(crate) fn with_tau(tau: f64, fc: f64) -> Pulse {
         Pulse { t0: 4.0 * tau, tau, fc }

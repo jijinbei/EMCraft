@@ -73,8 +73,12 @@ fn invariants(name: &str) {
     let (gain, asym, unitary) =
         (c["largest_singular_value"].as_f64().unwrap(), c["reciprocity_error"].as_f64().unwrap(), c["unitarity_error"].as_f64().unwrap());
     assert!(c["passive"] == true && asym < 1e-9, "{name}: {c}");
+    // A resistor (a Wilkinson divider's) absorbs only some excitations: passive, not unitary.
+    let resistive = s.model.elements.iter().any(|e| e.resistance > 0.0);
     if lossy(&s) {
         assert!(gain < 1.0 - 1e-3, "{name} absorbs: {c}");
+    } else if resistive {
+        assert!(unitary > 1e-3, "{name}'s resistor absorbs: {c}");
     } else if !LEAKY.iter().any(|(n, _)| *n == name) {
         assert!(unitary < 1e-9, "{name} is lossless: {c}");
     }
@@ -117,7 +121,9 @@ templates! {
     pcb_quarter_wave: "pcb-quarter-wave",
     pcb_branch_line: "pcb-branch-line",
     pcb_coupled_line: "pcb-coupled-line",
-    pcb_bend: "pcb-bend";
+    pcb_bend: "pcb-bend",
+    pcb_wilkinson: "pcb-wilkinson",
+    pcb_ring: "pcb-ring";
     heavy:
     h_bend_radius: "h-bend-radius" ("4 s: its arcs"),
     e_bend_radius: "e-bend-radius" ("3 s: its arcs"),

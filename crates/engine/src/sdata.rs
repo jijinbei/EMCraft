@@ -110,13 +110,14 @@ impl SData {
     }
 }
 
-/// The time domain's S11 and S21 (entry 0 excited, two rows).
+/// The time domain's S-parameters: a row per port, a column per port excited.
 pub fn of_time_domain(t: &emcraft_fdtd::TdResult) -> Result<SData, String> {
-    if t.s11.len() != t.frequencies.len() || t.s21.len() != t.frequencies.len() {
-        return Err("the time domain's S11 and S21 are one value a frequency".into());
+    if !t.consistent() {
+        return Err("the time domain's S-parameters are not one value a frequency, port and port excited".into());
     }
-    let s = t.s11.iter().zip(&t.s21).flat_map(|(a, b)| [*a, *b]).collect();
-    SData::new(t.frequencies.clone(), 2, vec![0], s)
+    let ni = t.inputs.len();
+    let s = (0..t.frequencies.len()).flat_map(|k| (0..t.ports * ni).map(move |i| t.column(i % ni, i / ni)[k])).collect();
+    SData::new(t.frequencies.clone(), t.ports, t.inputs.clone(), s)
 }
 
 #[cfg(test)]

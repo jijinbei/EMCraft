@@ -1,0 +1,12 @@
+[
+ {"command": "model.material.create", "params": {"name": "faint", "eps_r": 1.0001}},
+ {"command": "model.material.create", "params": {"name": "ceramic", "eps_r": 4}},
+ {"command": "geometry.solid", "params": {"shape": "box", "size": [50, 50, 50]}},
+ {"command": "geometry.body", "params": {"material": "faint", "shape": "sphere", "radius": 5, "at": [25, 25, 25]}},
+ {"command": "model.open", "params": {"thickness": 12}},
+ {"command": "source.plane_wave", "params": {"direction": [0, 0, 1], "polarization": [1, 0, 0]}},
+ {"command": "solve.time_domain", "params": {"start": 8, "stop": 12, "points": 3, "cell": 0.5}, "id": "faint"},
+ {"command": "results.far_field", "params": {"theta": [0, 90, 180], "phi": 90, "solver": "time_domain", "frequency": 10}, "id": "faint_far"},
+ {"command": "geometry.body.material", "params": {"body": "body 1", "material": "ceramic"}},
+ {"command": "solve.time_domain", "params": {"start": 8, "stop": 12, "points": 3, "cell": 0.5}, "id": "ceramic"}
+]

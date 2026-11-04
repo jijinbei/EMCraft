@@ -190,7 +190,7 @@ fn hostile_histories_in_a_file_are_refused_and_nothing_panics() {
         ("/analysis_history/solves/0/results/eigenmodes", json!([{"frequency": 0.0}]), "eigenmode"),
         (
             "/analysis_history/solves/0/results/time_domain",
-            json!({"frequencies": [1e9], "outputs": 3, "inputs": [0], "values": "x.c64"}),
+            json!({"frequencies": [1e9], "outputs": 3, "inputs": [3], "values": "x.c64"}),
             "time domain",
         ),
         ("/analysis_history/solves/0/results/sweep/s/frequencies", json!(vec![1.0; 3000]), "values, not"),

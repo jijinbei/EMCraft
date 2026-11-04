@@ -2,6 +2,7 @@
 
 mod adapt;
 mod designs;
+mod elements;
 mod geometry;
 mod history;
 mod invariants;

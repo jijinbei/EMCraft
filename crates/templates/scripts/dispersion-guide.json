@@ -1,0 +1,9 @@
+[
+ {"command": "project.variable", "params": {"name": "a", "value": 22.86, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "b", "value": 10.16, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "p", "value": 10, "quantity": "length"}},
+ {"command": "geometry.waveguide", "params": {"width": "=a", "height": "=b", "sections": [{"length": "=p", "material": "vacuum"}]}},
+ {"command": "mesh.generate", "params": {"size": 3.5}},
+ {"command": "model.periodic", "params": {"x": false, "y": false, "z": true}},
+ {"command": "solve.dispersion", "params": {"from": 0, "to": 180, "points": 11, "bands": 2, "near": 12, "order": 2}}
+]

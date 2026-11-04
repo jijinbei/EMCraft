@@ -137,6 +137,6 @@ fn a_plan_holds_the_whole_run() {
     assert_eq!((serial.steps, serial.reference_steps), (cpu.steps, cpu.reference_steps));
     for i in 0..freqs.len() {
         // The same arithmetic but the projection's weights multiplied first: rounding apart.
-        assert!((serial.s11[i] - cpu.s11[i]).norm() < 1e-10 && (serial.s21[i] - cpu.s21[i]).norm() < 1e-10, "{serial:?} {cpu:?}");
+        assert!((serial.s11()[i] - cpu.s11()[i]).norm() < 1e-10 && (serial.s21()[i] - cpu.s21()[i]).norm() < 1e-10, "{serial:?} {cpu:?}");
     }
 }

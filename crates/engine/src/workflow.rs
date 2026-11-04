@@ -158,7 +158,7 @@ pub const ANALYSES: [AnalysisSpec; Analysis::COUNT] = {
             solve: "solve.eigenmodes",
             required: &[Geometry, Mesh],
             not_needed: &[Excitation],
-            results: &[R::Eigen],
+            results: &[R::Eigen, R::Dispersion],
         },
         AnalysisSpec {
             analysis: Analysis::Radiation,

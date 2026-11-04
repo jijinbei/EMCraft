@@ -112,8 +112,12 @@ impl StoredResults {
                 return Err("an eigenmode's frequency and Q must be finite numbers".into());
             }
         }
+        // A guide's S11 and S21, or a solid's columns of its ports excited: the ports excited among
+        // its rows, checked before its numbers are read.
         let time_domain = match self.time_domain {
-            Some(t) if t.outputs != 2 || t.inputs != [0] => return Err("the time domain's S is S11 and S21 (2 rows, entry 0 excited)".into()),
+            Some(t) if t.outputs == 0 || t.outputs > MAX_ENTRIES || t.inputs.is_empty() || t.inputs.iter().any(|q| *q >= t.outputs) => {
+                return Err(format!("the time domain's S has 1 to {MAX_ENTRIES} rows, its excited ports among them"));
+            }
             Some(t) => Some(t.read(r)?),
             None => None,
         };

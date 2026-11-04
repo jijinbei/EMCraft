@@ -61,6 +61,9 @@ pub struct Model {
     /// Lumped ports (antenna feeds).
     #[serde(default)]
     pub lumped: Vec<LumpedPort>,
+    /// Lumped circuit elements: passive loads across gaps.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub elements: Vec<crate::element::LumpedElement>,
     /// The job's frequency band (Hz): the default for meshing by wavelength, sweeps and port
     /// previews.
     #[serde(default)]
@@ -122,6 +125,7 @@ impl Default for Model {
             open: None,
             sources: Vec::new(),
             lumped: Vec::new(),
+            elements: Vec::new(),
             band: None,
             analysis: None,
             symmetry: Vec::new(),

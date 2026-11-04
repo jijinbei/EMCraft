@@ -235,6 +235,11 @@ referred to each port's impedance), swept fast as waveguide ports are. [`pcb-lum
 checks a 5 mm line between two such ports against the line's ABCD matrix: |S11| within 1.3e-3;
 the phase carries the feeds' own inductance (+1.8° at 1 GHz).
 
+Chip parts across a gap: `pcb.element {"name":"R1","layer":"F.Cu","from":[x, y],"to":[x, y],"resistance":100,"width":0.6}`
+puts a lumped element on a layer (a resistor, inductor and capacitor in series or in parallel,
+`model.element.create`'s parts): a passive load, not a port, its current Y(ω) times the gap's
+voltage added to Ampère's law. The template `pcb-wilkinson` isolates its outputs with one.
+
 ### Losses
 
 A layer's `loss_below` makes its substrate lossy (above). `model.walls {"conductivity": σ}` makes

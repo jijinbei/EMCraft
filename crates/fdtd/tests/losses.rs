@@ -48,8 +48,8 @@ fn worst(r: &TdResult, exact: impl Fn(f64) -> (C, C)) -> (f64, f64) {
     let (mut s, mut mag) = (0.0f64, 0.0f64);
     for (i, f) in r.frequencies.iter().enumerate() {
         let (e11, e21) = exact(*f);
-        s = s.max((r.s11[i] - e11).norm().max((r.s21[i] - e21).norm()));
-        mag = mag.max((r.s21[i].norm() - e21.norm()).abs());
+        s = s.max((r.s11()[i] - e11).norm().max((r.s21()[i] - e21).norm()));
+        mag = mag.max((r.s21()[i].norm() - e21.norm()).abs());
     }
     (s, mag)
 }
@@ -73,7 +73,7 @@ fn a_lossy_slab_matches_the_cascade_of_its_conductivity() {
     // 3.8e-3 in |S21|, both second order (`losses_converge_at_second_order`).
     assert!(s < 8e-2 && mag < 6e-3, "{s:e} {mag:e}");
     for i in 0..3 {
-        assert!(r.s11[i].norm_sqr() + r.s21[i].norm_sqr() < 0.98);
+        assert!(r.s11()[i].norm_sqr() + r.s21()[i].norm_sqr() < 0.98);
     }
 }
 
@@ -103,12 +103,12 @@ fn wall_errors(cell: f64, decay: f64) -> Vec<f64> {
         .enumerate()
         .map(|(i, &f)| {
             let alpha = te10_wall_attenuation(A, B, f, sigma, 1.0);
-            let measured = -r.s21[i].norm().ln() / 0.1;
+            let measured = -r.s21()[i].norm().ln() / 0.1;
             // The phase: β of the lossless guide, to the grid's dispersion.
             let beta = ((2.0 * PI * f / C0).powi(2) - (PI / A).powi(2)).sqrt();
-            let phase = (r.s21[i] * C::from_polar(1.0, beta * 0.1)).arg();
-            eprintln!("{cell} {f:e}: α {measured:.5} against {alpha:.5}, phase {phase:.4}, |S11| {:.1e}", r.s11[i].norm());
-            assert!(r.s11[i].norm() < 2e-3);
+            let phase = (r.s21()[i] * C::from_polar(1.0, beta * 0.1)).arg();
+            eprintln!("{cell} {f:e}: α {measured:.5} against {alpha:.5}, phase {phase:.4}, |S11| {:.1e}", r.s11()[i].norm());
+            assert!(r.s11()[i].norm() < 2e-3);
             measured / alpha - 1.0
         })
         .collect()
@@ -180,7 +180,7 @@ fn hostile_losses_are_refused_or_stay_stable() {
     let mut m = air();
     m.wall_conductivity = Some(emcraft_model::Conductivity::new(emcraft_model::MAX_CONDUCTIVITY).unwrap());
     let r = s_parameters(&m, &Options::new(0.003), &[9e9, 11e9]).unwrap();
-    assert!((r.s21[0].norm() - 1.0).abs() < 1e-3, "{:?}", r.s21);
+    assert!((r.s21()[0].norm() - 1.0).abs() < 1e-3, "{:?}", r.s21());
     // The largest loss tangent the model takes: a slab all but metal, stable at the usual step
     // (the field it lets in diffuses for a long time on the grid: a run cut short, at 10 000
     // steps, long past where an unstable update would have grown without bound).
@@ -190,7 +190,7 @@ fn hostile_losses_are_refused_or_stay_stable() {
         let m = guide(vec![x], vec![Section::new(metres(0.01), "vacuum"), Section::new(metres(0.006), name), Section::new(metres(0.01), "vacuum")]);
         let r = s_parameters(&m, &Options { max_steps: 10_000, ..Options::new(0.003) }, &[9e9, 11e9]).unwrap();
         // |S11| within the coarse grid's error of 1 (0.99 at 1.5 mm).
-        assert!(r.s21.iter().all(|s| s.norm() < 1e-3) && r.s11.iter().all(|s| s.norm() < 1.05), "{name}: {r:?}");
+        assert!(r.s21().iter().all(|s| s.norm() < 1e-3) && r.s11().iter().all(|s| s.norm() < 1.05), "{name}: {r:?}");
     }
 }
 

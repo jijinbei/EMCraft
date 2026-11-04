@@ -110,8 +110,9 @@ fn tables_read_back_exactly() {
     let c = |re: f64, im: f64| C::new(re, im);
     s.results.time_domain = Some(std::sync::Arc::new(emcraft_fdtd::TdResult {
         frequencies: vec![1e9, 2e9],
-        s11: vec![c(0.1, -0.2), c(0.3, 0.0)],
-        s21: vec![c(0.9, 0.1), c(0.8, -0.1)],
+        ports: 3,
+        inputs: vec![0, 2],
+        s: (0..12).map(|i| c(0.1 * i as f64, -0.05 * i as f64)).collect(),
         cells: 1000,
         dt: 1e-12,
         steps: 500,
@@ -246,8 +247,9 @@ mod properties {
             (prop::collection::vec(c(), n), prop::collection::vec(c(), n), 0usize..1000, any::<bool>()).prop_map(
                 move |(s11, s21, steps, converged)| emcraft_fdtd::TdResult {
                     frequencies: frequencies(n),
-                    s11,
-                    s21,
+                    ports: 2,
+                    inputs: vec![0],
+                    s: s11.into_iter().chain(s21).collect(),
                     cells: steps * 3,
                     dt: 1e-12,
                     steps,

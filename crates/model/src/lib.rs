@@ -28,6 +28,7 @@
 pub mod analysis;
 pub mod band;
 pub mod edit;
+pub mod element;
 pub mod error;
 pub mod geom;
 pub mod material;
@@ -47,6 +48,7 @@ pub mod waveguide;
 pub use analysis::Analysis;
 pub use band::Band;
 pub use edit::MaterialUse;
+pub use element::{Arrangement, LumpedElement, MAX_ELEMENTS};
 pub use error::{ModelError, Result, positive};
 pub use geom::{Aabb, CVec3, Point3, Vec3};
 pub use material::{MAX_POLES, Material, Pole, SecondOrder};

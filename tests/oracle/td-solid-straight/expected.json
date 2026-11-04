@@ -1,0 +1,11 @@
+{
+ "title": "An empty WR-90 box 30 mm long by the time-domain solver for solids, both ports excited",
+ "kind": "theory",
+ "source": "TE10 of an empty rectangular guide, S21 = S12 = e^{−jβL}, β = √(k0² − (π/a)²), S11 = S22 = 0 (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.3), evaluated separately from EMCraft's code",
+ "quantities": [
+  {"id": "s21_phase_10", "quantity": "phase of S21 at 10 GHz (degrees)", "measure": {"step": "td", "pointer": "/points/1/s21/deg"}, "value": 88.0084726726385, "tolerance": {"absolute": 0.5}, "reason": "the Yee grid's dispersion on 1 mm cells: the wave is a little slow, 0.2° short over the 30 mm (second order in the cell)"},
+  {"id": "s12_phase_10", "quantity": "phase of S12 at 10 GHz, port 2 excited (degrees)", "measure": {"step": "td", "pointer": "/points/1/s12/deg"}, "value": 88.0084726726385, "tolerance": {"absolute": 0.5}, "reason": "as S21: the guide is the same both ways"},
+  {"id": "s21_mag_8", "quantity": "|S21| at 8 GHz", "measure": {"step": "td", "pointer": "/points/0/s21/mag"}, "value": 1.0, "tolerance": {"absolute": 0.002}, "reason": "lossless: the reference run cancels the feeds' own dispersion"},
+  {"id": "s11_mag_12", "quantity": "|S11| at 12 GHz", "measure": {"step": "td", "pointer": "/points/2/s11/mag"}, "value": 0.0, "tolerance": {"absolute": 0.002}, "reason": "no discontinuity: what is left is the feeds' match to the box's own grid lines"}
+ ]
+}
