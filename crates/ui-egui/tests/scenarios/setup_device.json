@@ -14,7 +14,7 @@
   {"until": {"busy": false, "inspect": {"workflow.device": "cubecl-cpu", "workflow.precision": "double"}}, "timeout": 120},
   {"shot": "setup-device-cubecl"},
   {"note": "The ribbon's Device dialog opens on the same setting"},
-  {"click": "toolbar:solve.device"},
+  {"call": "ui.start", "params": {"command": "solve.device"}},
   {"expect": {"dialog": "solve.device", "inspect": {"dialog.fields.device": "cubecl-cpu", "dialog.fields.precision": "double"}}},
   {"click": "dialog:cancel"},
   {"call": "ui.set", "params": {"dark": true}},

@@ -41,7 +41,7 @@
   {"note": "Done goes back to the project as it was, its 3D view now drawn by the GPU"},
   {"click": "settings:close"},
   {"frames": 2},
-  {"expect": {"inspect": {"settings": null, "home": false, "project.name": "highpass", "view3d.gpu": true}, "handles": ["tab:MODEL"]}},
+  {"expect": {"inspect": {"settings": null, "home": false, "project.name": "highpass", "view3d.gpu": true}}},
   {"note": "From the start page, and closed with Escape back to it"},
   {"click": "bar:start"},
   {"frames": 2},

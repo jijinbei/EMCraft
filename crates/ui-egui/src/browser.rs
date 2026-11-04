@@ -549,9 +549,7 @@ fn results(app: &EmcraftApp) -> Vec<Row> {
     if r.td_radiation.is_some() {
         rows.push(row("Time-domain radiation", &[], Glyph::Radiation, Act::Show(View::FarField)));
     }
-    if app.replies.port_modes.is_some() {
-        rows.push(row("Port modes", &[], Glyph::PortModes, Act::Show(View::PortModes)));
-    }
+    // Port modes open from the Excitation step's table; no row of their own.
     if app.replies.compare.is_some() {
         rows.push(row("Comparison with theory", &[], Glyph::Compare, Act::Show(View::Compare)));
     }

@@ -139,15 +139,16 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
 /// The results with something to show, and the model beside them, as a row of pills.
 pub(super) fn view_tabs(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     ui.horizontal_wrapped(|ui| {
-        // The tabs are the results'; the model's (its field in 3D among them) joins them once there
-        // are results to go back to it from. The PCB route is its own bar's.
-        let results = View::ALL.into_iter().any(|v| v.is_result() && v.available(app));
-        let tab = |v: &View| match v {
-            View::Pcb => false,
-            View::Model => results,
-            v => *v == app.view || v.available(app),
+        // The tabs are the results' (the port modes' only while shown: the Excitation step's
+        // table opens them); the model's (its field in 3D among them) joins them to come back.
+        // The PCB route is its own bar's.
+        let result = |v: View| match v {
+            View::Model | View::Pcb => false,
+            View::PortModes => app.view == v,
+            v => v == app.view || v.available(app),
         };
-        for v in View::ALL.into_iter().filter(tab) {
+        let any = View::ALL.into_iter().any(result);
+        for v in View::ALL.into_iter().filter(|v| if *v == View::Model { any } else { result(*v) }) {
             ui.act(true, pill(shown(v), app.view == v, 12, PillSize::Body), Handle::View(v), "", || Action::ShowView(v), out);
         }
     });

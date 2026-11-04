@@ -1,9 +1,9 @@
 [
   {"note": "A sweep set up in its dialog by typing, run on the worker, its S-parameters charted"},
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
-  {"click": "tab:SIMULATE"},
-  {"expect": {"tab": "SIMULATE", "handles": ["toolbar:solve.frequency", "toolbar:solve.eigenmodes", "toolbar:solve.time_domain", "toolbar:solve.port_modes"]}},
-  {"click": "toolbar:solve.frequency"},
+  {"call": "ui.set", "params": {"tab": "SIMULATE"}},
+  {"expect": {"tab": "SIMULATE"}},
+  {"call": "ui.start", "params": {"command": "solve.frequency"}},
   {"expect": {"dialog": "solve.frequency"}},
   {"click": "dialog:field:start"},
   {"key": "A", "cmd": true},

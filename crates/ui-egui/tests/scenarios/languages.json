@@ -25,7 +25,7 @@
   {"click": "template:open"},
   {"until": {"busy": false}},
   {"frames": 3},
-  {"expect": {"status": "サンプル highpass を開きました", "inspect": {"home": false, "project.name": "highpass"}, "handles": ["tab:MODEL", "tab:PORTS & SOURCES", "step:mesh", "fold:Geometry", "toolbar:geometry.waveguide"]}},
+  {"expect": {"status": "サンプル highpass を開きました", "inspect": {"home": false, "project.name": "highpass"}, "handles": ["step:mesh", "fold:Geometry", "toolbar:geometry.waveguide"]}},
   {"click": "toolbar:geometry.waveguide"},
   {"frames": 3},
   {"expect": {"dialog": "geometry.waveguide", "handles": ["dialog:ok", "dialog:field:width"]}},
@@ -45,7 +45,7 @@
   {"note": "Back to English over the control channel; unknown or ill-typed languages are refused"},
   {"call": "ui.set", "params": {"language": "en"}},
   {"frames": 2},
-  {"expect": {"inspect": {"language": "en"}, "handles": ["tab:MODEL"]}},
+  {"expect": {"inspect": {"language": "en"}}},
   {"call": "ui.set", "params": {"language": "klingon"}, "fail": true},
   {"call": "ui.set", "params": {"language": 3}, "fail": true},
   {"expect": {"inspect": {"language": "en"}}}

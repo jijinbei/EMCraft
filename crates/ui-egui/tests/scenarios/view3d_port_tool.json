@@ -4,7 +4,7 @@
   {"call": "ui.set", "params": {"view": "model", "tab": "PORTS & SOURCES"}},
   {"click": "toolbar:tool:port"},
   {"frames": 2},
-  {"expect": {"inspect": {"view3d.tools.tool": "port", "workflow.step": "excitation", "view3d.overlay": "ports"}, "handles": ["view3d:end:start", "view3d:end:end", "step:tool:port"]}},
+  {"expect": {"inspect": {"view3d.tools.tool": "port", "workflow.step": "excitation", "view3d.overlay": "ports"}, "handles": ["view3d:end:start", "view3d:end:end"]}},
   {"call": "ui.set", "params": {"standard_view": "front"}},
   {"frames": 2},
   {"move": "view3d"},

@@ -354,7 +354,7 @@ fn settings(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
     crate::settings::unit_choices(app, ui, out);
     ui.add_space(t.space_4);
-    ui.text(Style::SmallDim, "Units apply to new projects; an open one changes its own with MODEL › Units.");
+    ui.text(Style::SmallDim, "Units apply to new projects; an open one changes its own with Units in step 1.");
     ui.add_space(t.space_12);
     let all = crate::ui_kit::styled("All settings…", false);
     ui.act(true, all, Fixed::HomeSettings.into(), "The theme, the 3D view, dialogs and files", || Action::Settings(Some(Section::Appearance)), out);

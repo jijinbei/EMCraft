@@ -1,8 +1,8 @@
-//! The application bar, the ribbon (tabs, panels of command buttons) and command search, laid
-//! out as SolidCraft's (`crates/ui-egui/src/toolbar.rs`: a dark application bar, the ribbon on a
-//! floating card, tabs with their accent's soft fill, 60 pt buttons with the glyph over the label,
-//! panel names under their buttons, the search field at the tab row's right), written anew for
-//! EMCraft's commands.
+//! The application bar, the ribbon (the open step's panels of command buttons) and command
+//! search, laid out after SolidCraft's (`crates/ui-egui/src/toolbar.rs`: a dark application bar,
+//! the ribbon on a floating card, 60 pt buttons with the glyph over the label, panel names under
+//! their buttons), written anew for EMCraft's commands. The step bar chooses the panels (each step
+//! its tab); the search field sits at the ribbon's right.
 
 use egui::{Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
 use serde_json::Value;
@@ -10,7 +10,7 @@ use serde_json::Value;
 use crate::commands::{button_label, glyph};
 use crate::glyphs::{self, Glyph};
 use crate::handle::{Fixed, Handle};
-use crate::lang::{Raw, args, command_doc, shown, tr, trf};
+use crate::lang::{Raw, args, command_doc, tr, trf};
 use crate::theme::Tokens;
 use crate::tools3d::Tool;
 use crate::{Action, Actions, EmcraftApp, Hint, Style, UiExt, scenario};
@@ -53,18 +53,16 @@ pub const TABS: &[(RibbonTab, &[(&str, &[&str])])] = &[
     (
         RibbonTab::Simulate,
         &[
-            ("FREQUENCY DOMAIN", &["solve.frequency", "solve.eigenmodes", "solve.dispersion", "solve.radiation"]),
-            ("TIME DOMAIN", &["solve.time_domain"]),
-            ("PORTS", &["solve.port_modes"]),
+            // The solve itself is Run's (step 7), its device Setup's (step 6).
+            ("PERIODIC", &["solve.dispersion"]),
             ("STUDY", &["project.variable", "study.sweep", "study.optimize"]),
-            ("COMPUTE", &["solve.device"]),
         ],
     ),
     (
         RibbonTab::Results,
         &[
-            ("ANALYSIS", &["results.compare", "results.check", "results.tdr"]),
-            ("EXPORT", &["results.touchstone", "view.sparameters", "view.field", "view.animation", "view.pattern", "view.dispersion"]),
+            // Comparison, checks, TDR and Touchstone are the result views' and Results' (step 8).
+            ("EXPORT", &["view.sparameters", "view.field", "view.animation", "view.pattern", "view.dispersion"]),
         ],
     ),
 ];
@@ -80,8 +78,8 @@ const PANEL_LABEL_HEIGHT: f32 = 16.0;
 const BUTTON_MIN_WIDTH: f32 = 58.0;
 /// The search field's least width with its hint; with less room it shows only its key.
 const SEARCH_MIN_WIDTH: f32 = 120.0;
-/// The room the tabs leave the search field at least (its key, and the gaps).
-const SEARCH_LEAST: f32 = 60.0;
+/// The search field's room at the ribbon's right.
+const SEARCH_WIDTH: f32 = 300.0;
 /// The width of the button that opens what has no room.
 const MORE_WIDTH: f32 = 28.0;
 
@@ -168,10 +166,11 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     );
 }
 
-/// The ribbon card: tab row (with command search) over the active tab's panels.
+/// The ribbon card: the open step's panels (the step bar chooses them; no tabs of its own), the
+/// command search at its right.
 pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
-    let height = TAB_ROW_HEIGHT + BUTTON_HEIGHT + PANEL_LABEL_HEIGHT + 12.0;
+    let height = BUTTON_HEIGHT + PANEL_LABEL_HEIGHT + 12.0;
     egui::Panel::top("emcraft_ribbon")
         .exact_size(height + 12.0)
         .show_separator_line(false)
@@ -181,26 +180,32 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
             ui.painter().add(t.card(t.toolbar).paint(card));
             scenario::publish_rect(Fixed::Ribbon, card);
             let row = Rect::from_min_size(card.min, vec2(card.width(), TAB_ROW_HEIGHT));
-            let tabs_end = tabs(app, ui, row, row.right() - SEARCH_LEAST, out);
-            search_field(search, ui, row, tabs_end, out);
-            panels(app, ui, card, row.bottom() + 4.0, out);
+            let search_left = (card.right() - SEARCH_WIDTH).max(card.left() + card.width() * 0.5);
+            search_field(search, ui, row, search_left, out);
+            panels(app, ui, card, search_left - 8.0, card.top() + 6.0, out);
         });
 }
 
 /// The open tab's panels along `top`: each one's buttons, its name under them and a divider
 /// after it; the buttons past the card's right edge go into a menu at its end.
-fn panels(app: &EmcraftApp, ui: &mut egui::Ui, card: Rect, top: f32, out: &mut Actions) {
+fn panels(app: &EmcraftApp, ui: &mut egui::Ui, card: Rect, right: f32, top: f32, out: &mut Actions) {
     let t = &Tokens::get();
     let tab = app.tab;
-    let Some((_, listed)) = TABS.iter().find(|(name, _)| *name == tab) else { return };
-    let panels: Vec<(&str, Vec<Item>)> = ordered(app, tab, listed).into_iter().map(|p| (p.name, p.items(app, tab))).collect();
-    let accent = t.tab(tab);
+    // The PCB diagnosis has its own stages, not the steps: every tab's panels that fit it.
+    let shown: Vec<RibbonTab> = if chosen_kind(app) == Some(crate::steps::Solver::Pcb) { RibbonTab::ALL.to_vec() } else { vec![tab] };
+    let panels: Vec<(RibbonTab, &str, Vec<Item>)> = TABS
+        .iter()
+        .filter(|(name, _)| shown.contains(name))
+        .flat_map(|&(tab, listed)| ordered(app, listed).into_iter().map(move |p| (tab, p.name, p.items(app, tab))))
+        .collect();
     let enabled = !app.busy();
     let mut x = card.left() + 6.0;
-    let all: f32 = panels.iter().map(|(_, items)| items.iter().map(|i| button_width(ui, i.text()) + 3.0).sum::<f32>() + 13.0).sum();
-    let limit = if x + all > card.right() - 4.0 { card.right() - 6.0 - MORE_WIDTH } else { f32::INFINITY };
+    let all: f32 = panels.iter().map(|(_, _, items)| items.iter().map(|i| button_width(ui, i.text()) + 3.0).sum::<f32>() + 13.0).sum();
+    let limit = if x + all > right - 4.0 { right - 6.0 - MORE_WIDTH } else { f32::INFINITY };
     let mut more: Vec<Item> = Vec::new();
-    for (panel, items) in &panels {
+    for (tab, panel, items) in &panels {
+        let tab = *tab;
+        let accent = t.tab(tab);
         let x0 = x;
         for &item in items {
             if !more.is_empty() || x + button_width(ui, item.text()) > limit {
@@ -226,7 +231,7 @@ fn panels(app: &EmcraftApp, ui: &mut egui::Ui, card: Rect, top: f32, out: &mut A
         x += 7.0;
     }
     if !more.is_empty() {
-        let r = Rect::from_min_size(pos2(card.right() - 4.0 - MORE_WIDTH, top), vec2(MORE_WIDTH, BUTTON_HEIGHT));
+        let r = Rect::from_min_size(pos2(right - 4.0 - MORE_WIDTH, top), vec2(MORE_WIDTH, BUTTON_HEIGHT));
         let resp = more_button(ui, r, Fixed::ToolbarMore, "More commands");
         egui::Popup::menu(&resp).show(|ui| {
             for item in more {
@@ -264,10 +269,10 @@ fn chosen_kind(app: &EmcraftApp) -> Option<crate::steps::Solver> {
     app.session.model().analysis.or_else(|| app.session.model().pcb.as_ref().map(|_| crate::steps::Solver::Pcb))
 }
 
-fn ordered(app: &EmcraftApp, tab: RibbonTab, panels: &'static [(&'static str, &'static [&'static str])]) -> Vec<Panel> {
+fn ordered(app: &EmcraftApp, panels: &'static [(&'static str, &'static [&'static str])]) -> Vec<Panel> {
     let chosen = chosen_kind(app);
     // A job of a chosen kind sees only its commands (the search still finds the others).
-    let mut out: Vec<Panel> = panels
+    let out: Vec<Panel> = panels
         .iter()
         .map(|(name, items)| Panel {
             name,
@@ -275,14 +280,6 @@ fn ordered(app: &EmcraftApp, tab: RibbonTab, panels: &'static [(&'static str, &'
         })
         .filter(|p| !p.commands.is_empty())
         .collect();
-    let Some(kind) = chosen.filter(|_| tab == RibbonTab::Simulate) else { return out };
-    let first = crate::steps::command(kind);
-    if let Some(i) = out.iter().position(|p| p.commands.contains(&first)) {
-        let mut panel = out.remove(i);
-        panel.commands.retain(|c| *c != first);
-        panel.commands.insert(0, first);
-        out.insert(0, panel);
-    }
     out
 }
 
@@ -447,67 +444,6 @@ fn more_button(ui: &mut egui::Ui, r: Rect, handle: Fixed, hint: &str) -> egui::R
     resp.hint(hint)
 }
 
-/// The tab row's tabs, up to `limit`: closer together when they are short of room, and those
-/// still without room (never the open one) in a menu at their end. Where the last one ends.
-fn tabs(app: &EmcraftApp, ui: &mut egui::Ui, row: Rect, limit: f32, out: &mut Actions) -> f32 {
-    let t = &Tokens::get();
-    let text_width = |tab: RibbonTab| ui.painter().layout_no_wrap(shown(tab).to_owned(), FontId::proportional(t.font_button), t.text).size().x;
-    let widths: Vec<f32> = TABS.iter().map(|&(tab, _)| text_width(tab)).collect();
-    let room = limit - row.left() - 4.0;
-    let total = |pad: f32, shown: &[bool]| widths.iter().zip(shown).filter(|(_, s)| **s).map(|(w, _)| w + pad + 2.0).sum::<f32>();
-    // A tab with nothing for the job's kind of analysis is left out (unless it is open).
-    let present: Vec<bool> = TABS.iter().map(|&(tab, panels)| tab == app.tab || !ordered(app, tab, panels).is_empty()).collect();
-    let mut visible = present.clone();
-    let pad = if total(24.0, &visible) <= room { 24.0 } else { 12.0 };
-    // The last tabs but the open one go into the menu until the rest fit beside its button.
-    while total(pad, &visible) > room - if visible == present { 0.0 } else { MORE_WIDTH } {
-        let Some(k) = (0..TABS.len()).rev().find(|&k| visible[k] && TABS[k].0 != app.tab) else { break };
-        visible[k] = false;
-        if total(pad, &visible) + MORE_WIDTH <= room {
-            break;
-        }
-    }
-    let mut x = row.left() + 4.0;
-    for (&(tab, _), _) in TABS.iter().zip(&visible).filter(|(_, v)| **v) {
-        let name = shown(tab);
-        let g = ui.painter().layout_no_wrap(name.to_owned(), FontId::proportional(t.font_button), t.text);
-        let tr = Rect::from_min_size(pos2(x, row.top() + 4.0), vec2(g.size().x + pad, TAB_ROW_HEIGHT - 8.0));
-        let resp = ui.hit(tr, Handle::Tab(tab), Sense::click());
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, name));
-        let active = app.tab == tab;
-        let accent = t.tab(tab);
-        let fill = if active {
-            accent[2]
-        } else if resp.hovered() {
-            t.hover
-        } else {
-            Color32::TRANSPARENT
-        };
-        ui.painter().rect_filled(tr, 4, fill);
-        let ink = if active { accent[1] } else { t.text };
-        ui.painter().text(tr.center(), Align2::CENTER_CENTER, name, FontId::proportional(t.font_button), ink);
-        if resp.clicked() {
-            out.push(Action::SetTab(tab));
-        }
-        x = tr.right() + 2.0;
-    }
-    if visible != present {
-        let r = Rect::from_min_size(pos2(x, row.top() + 4.0), vec2(MORE_WIDTH, TAB_ROW_HEIGHT - 8.0));
-        let resp = more_button(ui, r, Fixed::TabsMore, "More tabs");
-        egui::Popup::menu(&resp).show(|ui| {
-            for (&(tab, _), _) in TABS.iter().zip(visible.iter().zip(&present)).filter(|(_, (v, p))| **p && !**v) {
-                if ui.named(egui::Button::new(shown(tab)), Handle::Tab(tab)).clicked() {
-                    out.push(Action::SetTab(tab));
-                    ui.close();
-                }
-            }
-        });
-        x = r.right() + 2.0;
-    }
-    ui.painter().hline(row.x_range(), row.bottom() - 0.5, Stroke::new(1.0, t.toolbar.lerp_to_gamma(t.border, 0.5)));
-    x
-}
-
 /// Command search: the query and the highlighted row.
 #[derive(Clone, Debug, Default)]
 pub struct Search {
@@ -567,10 +503,10 @@ pub fn direct(query: &str) -> Option<Result<(String, Value), String>> {
 
 /// The search field at the tab row's right, narrower where the tabs (ending at `tabs_end`)
 /// leave less room.
-fn search_field(search: &mut Search, ui: &mut egui::Ui, row: Rect, tabs_end: f32, out: &mut Actions) {
+fn search_field(search: &mut Search, ui: &mut egui::Ui, row: Rect, left: f32, out: &mut Actions) {
     // Too little room: a small field showing only its key, wide over the tabs while in use.
     let id = egui::Id::new("emcraft_search");
-    let room = row.right() - 8.0 - tabs_end - 12.0;
+    let room = row.right() - 8.0 - left - 12.0;
     let in_use = search.focus || !search.text.is_empty() || ui.memory(|m| m.has_focus(id));
     let width = if room < SEARCH_MIN_WIDTH && in_use { 240.0f32.min(row.width() - 16.0) } else { room.clamp(32.0, 292.0) };
     let hint = if width < SEARCH_MIN_WIDTH { "/".to_owned() } else { tr("Search commands (/)").to_owned() };
@@ -770,33 +706,34 @@ mod tests {
         assert_eq!(RibbonTab::parse("Model"), None);
     }
 
-    /// SIMULATE puts the chosen kind's solve first (its panel first); nothing else moves, and
-    /// with no kind chosen the tab is as listed.
+    /// The ribbon holds no solve (Run's) and no device (Setup's); a chosen kind's commands only,
+    /// the other kinds' left out (the search still finds them).
     #[test]
-    fn simulate_puts_the_chosen_kinds_solve_first() {
+    fn the_ribbon_holds_no_solve_and_a_kinds_own_commands() {
         let mut h = crate::scenario::Harness::new();
-        let simulate = TABS.iter().find(|(t, _)| *t == RibbonTab::Simulate).map(|(_, p)| *p).unwrap_or(&[]);
-        let listed = ordered(&h.app, RibbonTab::Simulate, simulate);
-        assert_eq!(listed.first().and_then(|p| p.commands.first()), Some(&"solve.frequency"));
+        let all = |app: &EmcraftApp| -> Vec<&str> { TABS.iter().flat_map(|(_, p)| ordered(app, p)).flat_map(|p| p.commands).collect() };
+        let listed = all(&h.app);
+        assert!(
+            listed.iter().all(|id| !matches!(
+                *id,
+                "solve.frequency" | "solve.eigenmodes" | "solve.radiation" | "solve.time_domain" | "solve.device" | "solve.port_modes"
+            )),
+            "{listed:?}"
+        );
         h.app.session.execute("project.analysis", &serde_json::json!({"kind": "time_domain"})).unwrap();
-        let moved = ordered(&h.app, RibbonTab::Simulate, simulate);
-        assert_eq!((moved[0].name, moved[0].commands.as_slice()), ("TIME DOMAIN", &["solve.time_domain"][..]));
-        // The other kinds' solves are left out; the rest stays.
-        let all: Vec<&str> = moved.iter().flat_map(|p| p.commands.iter().copied()).collect();
-        assert!(!all.contains(&"solve.frequency") && !all.contains(&"solve.eigenmodes") && all.contains(&"study.sweep"), "{all:?}");
-        h.app.session.execute("project.analysis", &serde_json::json!({"kind": "radiation"})).unwrap();
-        let moved = ordered(&h.app, RibbonTab::Simulate, simulate);
-        assert_eq!(moved[0].commands, ["solve.radiation"]);
+        let td = all(&h.app);
+        assert!(!td.contains(&"solve.dispersion") && td.contains(&"study.sweep") && td.contains(&"source.plane_wave"), "{td:?}");
         let model = TABS.iter().find(|(t, _)| *t == RibbonTab::Model).map(|(_, p)| *p).unwrap_or(&[]);
-        let shown = ordered(&h.app, RibbonTab::Model, model);
+        let shown = ordered(&h.app, model);
         assert!(shown.iter().all(|p| p.name != "PCB"));
         assert_eq!(shown.len() + 1, model.len());
+        let simulate = TABS.iter().find(|(t, _)| *t == RibbonTab::Simulate).map(|(_, p)| *p).unwrap_or(&[]);
         h.app.session.execute("project.analysis", &serde_json::json!({"kind":"pcb"})).unwrap();
-        let pcb = ordered(&h.app, RibbonTab::Simulate, simulate);
+        let pcb = ordered(&h.app, simulate);
         assert!(pcb.iter().flat_map(|p| &p.commands).all(|id| *id == "project.variable"));
         h.app.session.execute("pcb.sample", &serde_json::json!({})).unwrap();
         assert!(h.app.session.model().analysis.is_none());
         assert_eq!(chosen_kind(&h.app), Some(crate::steps::Solver::Pcb));
-        assert_eq!(ordered(&h.app, RibbonTab::Simulate, simulate), pcb);
+        assert_eq!(ordered(&h.app, simulate), pcb);
     }
 }

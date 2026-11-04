@@ -32,13 +32,13 @@ impl View {
     fn empty(self) -> Option<&'static str> {
         match self {
             View::Model | View::Pcb | View::PortModes | View::Compare => None,
-            View::SParameters => Some("No S-parameters yet: SIMULATE › Frequency sweep."),
-            View::Tdr => Some("No sweep yet: SIMULATE › Frequency sweep (a harmonic one, f = k Δf, for low pass)."),
+            View::SParameters => Some("No S-parameters yet: Run (step 7)."),
+            View::Tdr => Some("No sweep yet: Run (step 7) (a harmonic sweep, f = k Δf, for low pass)."),
             View::Field => Some("No fields yet: solve a sweep, eigenmodes or an open problem first."),
-            View::FarField => Some("No far field yet: SIMULATE › Radiation (an open model with sources or lumped ports)."),
-            View::Eigenmodes => Some("No eigenmodes yet: SIMULATE › Eigenmodes."),
-            View::Study => Some("No study yet: define a variable, then SIMULATE › Sweep or Optimize."),
-            View::Dispersion => Some("No dispersion diagram yet: BOUNDARIES › Periodic boundaries, then SIMULATE › Dispersion."),
+            View::FarField => Some("No far field yet: Run (step 7) on an open model with sources or lumped ports."),
+            View::Eigenmodes => Some("No eigenmodes yet: Run (step 7)."),
+            View::Study => Some("No study yet: define a variable, then Sweep or Optimize (step 6)."),
+            View::Dispersion => Some("No dispersion diagram yet: periodic boundaries (step 4), then Dispersion (step 6)."),
         }
     }
 

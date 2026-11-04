@@ -21,7 +21,7 @@
   {"expect": {"inspect": {"workflow.step": "excitation", "view3d.overlay": "ports", "workflow.steps.excitation": "done"}}},
   {"click": "excitation:preview"},
   {"until": {"busy": false, "inspect": {"port_modes": true}}, "timeout": 60},
-  {"expect": {"status": "Port modes at 9", "view": "model", "handles": ["excitation:patterns"]}},
+  {"expect": {"status": "Port modes at 9", "view": "model"}},
   {"shot": "workflow-3-excitation"},
   {"click": "step:boundaries"},
   {"expect": {"inspect": {"view3d.overlay": "boundaries"}}},
