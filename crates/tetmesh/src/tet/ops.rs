@@ -292,7 +292,7 @@ pub fn remove_face(cx: &mut TetComplex, t: u32, k: usize) -> Result<bool> {
             if barren.contains(&(p, r)) {
                 continue;
             }
-            if let Some((f, ta, tb)) = sandwiched_across(cx, a, b, p, r, owner, &faces)? {
+            if let Some((f, ta, tb)) = (Sandwich { a, b, p, r }).across(cx, owner, &faces)? {
                 faces.push(f);
                 old.push(ta);
                 old.push(tb);
@@ -311,54 +311,68 @@ pub fn remove_face(cx: &mut TetComplex, t: u32, k: usize) -> Result<bool> {
     Ok(cx.replace(&change)?.is_some())
 }
 
-/// A face `(p, r, x)` sandwiched between `a` and `b` (tetrahedra `a ∪ f` and `b ∪ f` both exist)
-/// next to edge `pr`, not already in `faces`; `owner` is `a ∪ g` for the face `g` of `faces` on
-/// `pr`.
-///
-/// The search runs over the tetrahedra round `pr` as [`TetComplex::edge_ring`] walks them. Those
-/// holding `a` share the triangle `apr`, so there are at most two: `owner`, whose face `g` is in
-/// `faces`, and its neighbour across `apr`. At most one candidate passes, so the order of the walk
-/// does not matter; and when `owner`'s fan holds every tetrahedron on `pr` (the edge is not
-/// pinched between two fans), the walk meets that neighbour, which is looked at directly.
-fn sandwiched_across(cx: &mut TetComplex, a: u32, b: u32, p: u32, r: u32, owner: u32, faces: &[[u32; 3]]) -> Result<Option<([u32; 3], u32, u32)>> {
-    if cx.fan_is_whole(owner, p, r)? {
-        let vs = cx.tet(owner)?;
-        let Some(k) = vs.iter().position(|&v| v != a && v != p && v != r) else { return Ok(None) };
-        let ta = cx.adj(owner)?.get(k).copied().unwrap_or(NONE);
-        return if ta == NONE { Ok(None) } else { sandwich_at(cx, a, b, p, r, faces, ta) };
-    }
-    sandwiched_by_fan(cx, a, b, p, r, faces)
+/// The faces `f = (p, r, x)` sandwiched between `a` and `b` next to edge `pr`: tetrahedra
+/// `a ∪ f` and `b ∪ f` both exist.
+#[derive(Clone, Copy)]
+struct Sandwich {
+    a: u32,
+    b: u32,
+    p: u32,
+    r: u32,
 }
 
-/// [`sandwiched_across`] by the walk round `pr`: the tetrahedra round it holding `a`, in turn.
-fn sandwiched_by_fan(cx: &mut TetComplex, a: u32, b: u32, p: u32, r: u32, faces: &[[u32; 3]]) -> Result<Option<([u32; 3], u32, u32)>> {
-    let Some(fan) = cx.edge_fan(p, r)? else { return Ok(None) };
-    for &ta in &fan {
-        if let Some(found) = sandwich_at(cx, a, b, p, r, faces, ta)? {
-            return Ok(Some(found));
+impl Sandwich {
+    /// A sandwiched face not already in `faces`; `owner` is `a ∪ g` for the face `g` of `faces`
+    /// on `pr`. Then `(f, a ∪ f, b ∪ f)`.
+    ///
+    /// The search runs over the tetrahedra round `pr` as [`TetComplex::edge_ring`] walks them.
+    /// Those holding `a` share the triangle `apr`, so there are at most two: `owner`, whose face
+    /// `g` is in `faces`, and its neighbour across `apr`. At most one candidate passes, so the
+    /// order of the walk does not matter; and when `owner`'s fan holds every tetrahedron on `pr`
+    /// (the edge is not pinched between two fans), the walk meets that neighbour, which is looked
+    /// at directly.
+    fn across(self, cx: &mut TetComplex, owner: u32, faces: &[[u32; 3]]) -> Result<Option<([u32; 3], u32, u32)>> {
+        let Sandwich { a, p, r, .. } = self;
+        if cx.fan_is_whole(owner, p, r)? {
+            let vs = cx.tet(owner)?;
+            let Some(k) = vs.iter().position(|&v| v != a && v != p && v != r) else { return Ok(None) };
+            let ta = cx.adj(owner)?.get(k).copied().unwrap_or(NONE);
+            return if ta == NONE { Ok(None) } else { self.at(cx, ta, faces) };
         }
+        self.by_fan(cx, faces)
     }
-    Ok(None)
-}
 
-/// Whether tetrahedron `ta` round `pr` is `a ∪ f` for a face `f = (p, r, x)` not in `faces` whose
-/// tetrahedron across from `a` is `b ∪ f`: then `(f, ta, tb)`.
-fn sandwich_at(cx: &TetComplex, a: u32, b: u32, p: u32, r: u32, faces: &[[u32; 3]], ta: u32) -> Result<Option<([u32; 3], u32, u32)>> {
-    let va = cx.tet(ta)?;
-    if !va.contains(&a) {
-        return Ok(None);
+    /// [`Self::across`] by the walk round `pr`: the tetrahedra round it holding `a`, in turn.
+    fn by_fan(self, cx: &mut TetComplex, faces: &[[u32; 3]]) -> Result<Option<([u32; 3], u32, u32)>> {
+        let Some(fan) = cx.edge_fan(self.p, self.r)? else { return Ok(None) };
+        for &ta in &fan {
+            if let Some(found) = self.at(cx, ta, faces)? {
+                return Ok(Some(found));
+            }
+        }
+        Ok(None)
     }
-    let x = va.iter().copied().find(|&v| v != a && v != p && v != r).unwrap_or(NONE);
-    if x == NONE || x == b {
-        return Ok(None);
+
+    /// Whether tetrahedron `ta` round `pr` is `a ∪ f` for a sandwiched face `f` not in `faces`:
+    /// then `(f, ta, tb)`.
+    fn at(self, cx: &TetComplex, ta: u32, faces: &[[u32; 3]]) -> Result<Option<([u32; 3], u32, u32)>> {
+        let Sandwich { a, b, p, r } = self;
+        let va = cx.tet(ta)?;
+        if !va.contains(&a) {
+            return Ok(None);
+        }
+        let x = va.iter().copied().find(|&v| v != a && v != p && v != r).unwrap_or(NONE);
+        if x == NONE || x == b {
+            return Ok(None);
+        }
+        let f = [p, r, x];
+        if faces.iter().any(|g| sorted3(*g) == sorted3(f)) {
+            return Ok(None);
+        }
+        let k = va.iter().position(|&v| v == a).unwrap_or(0);
+        let tb = cx.adj(ta)?.get(k).copied().unwrap_or(NONE);
+        Ok((tb != NONE && cx.tet(tb)?.contains(&b)).then_some((f, ta, tb)))
     }
-    let f = [p, r, x];
-    if faces.iter().any(|g| sorted3(*g) == sorted3(f)) {
-        return Ok(None);
-    }
-    let k = va.iter().position(|&v| v == a).unwrap_or(0);
-    let tb = cx.adj(ta)?.get(k).copied().unwrap_or(NONE);
-    Ok((tb != NONE && cx.tet(tb)?.contains(&b)).then_some((f, ta, tb)))
 }
 
 /// How an inserted vertex is placed.
@@ -925,8 +939,9 @@ mod tests {
                     let (p, r) = (face[i], face[(i + 1) % 3]);
                     assert!(cx.fan_is_whole(t, p, r).unwrap());
                     assert_eq!(cx.edge_fan(p, r).unwrap().map(|f| f.len()), Some(cx.edge_degree_for_tests(p, r)));
-                    let fast = sandwiched_across(&mut cx, a, b, p, r, t, &[face]).unwrap();
-                    let walk = sandwiched_by_fan(&mut cx, a, b, p, r, &[face]).unwrap();
+                    let sandwich = Sandwich { a, b, p, r };
+                    let fast = sandwich.across(&mut cx, t, &[face]).unwrap();
+                    let walk = sandwich.by_fan(&mut cx, &[face]).unwrap();
                     assert_eq!(fast, walk);
                     tried += 1;
                     found += usize::from(fast.is_some());

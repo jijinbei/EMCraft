@@ -40,7 +40,8 @@ pub(super) fn repair(points: &[Point3], tets: &mut Vec<[u32; 4]>, boundary: &mut
     }
     let tags: Vec<(u32, usize, u32)> = boundary.iter().map(|b| (b.tet, usize::from(b.opposite), b.triangle)).collect();
     let kinds = vec![VertexKind::Corner; points.len()];
-    let mut cx = TetComplex::with_invalid(points, kinds, tets, &tags, &[], points.len(), max_tets.max(tets.len() * 2))?;
+    let mut cx =
+        TetComplex::with_invalid(points, kinds, tets, &tags, crate::tet::complex::Caps { points: points.len(), tets: max_tets.max(tets.len() * 2) })?;
     // The segments: boundary edges between two different input triangles (never by angle).
     // Edges inside one input triangle (between its pieces) may be flipped; the triangle stays
     // covered.

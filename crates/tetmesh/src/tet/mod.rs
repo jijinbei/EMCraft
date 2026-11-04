@@ -56,7 +56,7 @@ use crate::quality::{GateOptions, GateReport, Metric, Validity, element_quality,
 use crate::surface::BoundarySurface;
 use crate::{Error, Point3, Result};
 
-use complex::{IdMap, NONE, TetComplex, VertexKind, face_toward, sorted2, sorted3};
+use complex::{Caps, IdMap, NONE, TetComplex, VertexKind, face_toward, sorted2, sorted3};
 use geometry::{AnalyticSurface, GradedSize, Tessellation};
 use improve::{ImproveOptions, ImproveStats};
 use refine::{Context, RefineOptions, RefineStats};
@@ -366,8 +366,13 @@ pub fn complex_from_cdt(surface: &BoundarySurface, cdt: &TetMesh, o: &QualityOpt
     let tags: Vec<(u32, usize, u32)> =
         cdt.boundary.iter().map(|b| (b.tet, usize::from(b.opposite), tri_face.get(b.triangle as usize).copied().unwrap_or(NONE))).collect();
     let kinds = vec![VertexKind::Interior; cdt.points.len()];
-    let mut cx =
-        TetComplex::with_invalid(&cdt.points, kinds, &cdt.tets, &tags, &[], o.max_points.max(cdt.points.len()), o.max_tets.max(cdt.tets.len()))?;
+    let mut cx = TetComplex::with_invalid(
+        &cdt.points,
+        kinds,
+        &cdt.tets,
+        &tags,
+        Caps { points: o.max_points.max(cdt.points.len()), tets: o.max_tets.max(cdt.tets.len()) },
+    )?;
     let feature_cos = geometry::sin_cos(o.feature_angle.clamp(0.0, 180.0).to_radians()).1;
     let (table, edges) = refine::feature_curves(&cx, feature_cos)?;
     for &((a, b), c) in &edges {

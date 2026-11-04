@@ -280,47 +280,29 @@ pub enum Walk {
 /// face, and the B-rep face tag.
 pub type BoundaryTag = (u32, usize, u32);
 
+/// How large a [`TetComplex`] may grow: vertices and tetrahedra at any time.
+#[derive(Clone, Copy, Debug)]
+pub struct Caps {
+    pub points: usize,
+    pub tets: usize,
+}
+
 impl TetComplex {
-    /// A complex from vertices, tetrahedra (tet4 order, positive), boundary faces and feature
-    /// edges. Faces shared by two tetrahedra become neighbours; every other face must be listed
-    /// in `boundary`. Caps: `max_points` vertices and `max_tets` tetrahedra at any time.
-    pub fn new(
-        points: &[Point3],
-        kinds: Vec<VertexKind>,
-        tets: &[[u32; 4]],
-        boundary: &[BoundaryTag],
-        curves: &[((u32, u32), u32)],
-        max_points: usize,
-        max_tets: usize,
-    ) -> Result<Self> {
-        Self::build(points, kinds, tets, boundary, curves, max_points, max_tets, true)
+    /// A complex from vertices (each with its kind), tetrahedra (tet4 order, positive) and
+    /// boundary faces, within `caps`. Faces shared by two tetrahedra become neighbours; every
+    /// other face must be listed in `boundary`.
+    pub fn new(points: &[Point3], kinds: Vec<VertexKind>, tets: &[[u32; 4]], boundary: &[BoundaryTag], caps: Caps) -> Result<Self> {
+        Self::build(points, kinds, tets, boundary, caps, true)
     }
 
     /// [`Self::new`] for a mesh that may have flat or inverted tetrahedra (a tetrahedralization
     /// rounded to doubles, to be repaired by the operations, which only create positive ones).
-    pub fn with_invalid(
-        points: &[Point3],
-        kinds: Vec<VertexKind>,
-        tets: &[[u32; 4]],
-        boundary: &[BoundaryTag],
-        curves: &[((u32, u32), u32)],
-        max_points: usize,
-        max_tets: usize,
-    ) -> Result<Self> {
-        Self::build(points, kinds, tets, boundary, curves, max_points, max_tets, false)
+    pub fn with_invalid(points: &[Point3], kinds: Vec<VertexKind>, tets: &[[u32; 4]], boundary: &[BoundaryTag], caps: Caps) -> Result<Self> {
+        Self::build(points, kinds, tets, boundary, caps, false)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn build(
-        points: &[Point3],
-        kinds: Vec<VertexKind>,
-        tets: &[[u32; 4]],
-        boundary: &[BoundaryTag],
-        curves: &[((u32, u32), u32)],
-        max_points: usize,
-        max_tets: usize,
-        strict: bool,
-    ) -> Result<Self> {
+    fn build(points: &[Point3], kinds: Vec<VertexKind>, tets: &[[u32; 4]], boundary: &[BoundaryTag], caps: Caps, strict: bool) -> Result<Self> {
+        let Caps { points: max_points, tets: max_tets } = caps;
         if points.len() > max_points || points.len() >= NONE as usize - 1 {
             return Err(Error::Limit(format!("{} vertices; the limit is {max_points}", points.len())));
         }
@@ -385,9 +367,6 @@ impl TetComplex {
         }
         if !faces.is_empty() {
             return Err(Error::Invalid(format!("{} faces have one tetrahedron and no boundary tag", faces.len())));
-        }
-        for &(e, c) in curves {
-            cx.curves.insert(sorted2(e.0, e.1), c);
         }
         Ok(cx)
     }

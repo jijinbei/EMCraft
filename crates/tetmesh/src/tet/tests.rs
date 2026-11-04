@@ -39,7 +39,7 @@ pub(crate) fn cube() -> TetComplex {
         }
     }
     let kinds = vec![VertexKind::Corner; 8];
-    TetComplex::new(&crate::vec3::points_of(&p), kinds, &tets, &boundary, &[], 1000, 10_000).unwrap()
+    TetComplex::new(&crate::vec3::points_of(&p), kinds, &tets, &boundary, Caps { points: 1000, tets: 10_000 }).unwrap()
 }
 
 /// A complex of these tetrahedra (each turned positive) and vertex kinds, every face not shared on
@@ -61,7 +61,7 @@ fn complex_of(p: &[[f64; 3]], raw: &[[u32; 4]], kinds: Vec<VertexKind>, tag: imp
             }
         }
     }
-    TetComplex::new(&crate::vec3::points_of(p), kinds, &tets, &boundary, &[], 100, 100).unwrap()
+    TetComplex::new(&crate::vec3::points_of(p), kinds, &tets, &boundary, Caps { points: 100, tets: 100 }).unwrap()
 }
 
 /// The link condition (Dey, Edelsbrunner, Guha, Nekhayev 1999). The cube's boundary edge 0–1 may
@@ -529,7 +529,8 @@ fn deleting_a_cap_never_leaves_a_neighbour_floating() {
             }
         }
     }
-    let mut cx = TetComplex::new(&crate::vec3::points_of(&p), vec![VertexKind::Corner; 6], &tets, &boundary, &[], 100, 100).unwrap();
+    let mut cx =
+        TetComplex::new(&crate::vec3::points_of(&p), vec![VertexKind::Corner; 6], &tets, &boundary, Caps { points: 100, tets: 100 }).unwrap();
     assert!(!cx.delete_boundary_tet(0).unwrap(), "the cap was deleted, leaving its neighbours floating");
     assert_eq!(cx.live_tets().count(), 3);
     cx.validate().unwrap();
@@ -577,7 +578,7 @@ fn a_boundary_insertion_never_rings_a_kept_face() {
     }
     let on_fillet = [false, true, true, true, false, false, true, false, false, true, true];
     let kinds: Vec<VertexKind> = on_fillet.iter().map(|&f| if f { VertexKind::Face(20) } else { VertexKind::Corner }).collect();
-    let mut cx = TetComplex::new(&crate::vec3::points_of(&p), kinds, &tets, &boundary, &[], 100, 100).unwrap();
+    let mut cx = TetComplex::new(&crate::vec3::points_of(&p), kinds, &tets, &boundary, Caps { points: 100, tets: 100 }).unwrap();
     // On the fillet face of tetrahedron 0, as far from the other vertices as the improvement asks.
     let q = ExactPoint3::try_from([37.57631755601779, 26.730747346632697, 19.941167252265036]).unwrap();
     insert_delaunay_apart(&mut cx, q, VertexKind::Face(20), Site::Face(0, 1), 4096, 0.06539086641130744).unwrap();

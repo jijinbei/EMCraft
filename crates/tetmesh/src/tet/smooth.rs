@@ -104,9 +104,10 @@ fn restrict(d: Vec3, f: Freedom) -> Vec3 {
 
 /// Try moving `v` to `target` (restricted to its freedom and placed on its boundary entity),
 /// at full, half and quarter steps; accept the first that keeps the star valid and its worst
-/// quality at least `floor`. Returns whether it moved.
-fn try_move(cx: &mut TetComplex, ctx: &Context, v: u32, star: &[u32], f: Freedom, target: Point3, floor: f64) -> Result<bool> {
+/// quality at least [`ODT_FLOOR`] (or as it was, when worse). Returns whether it moved.
+fn try_move(cx: &mut TetComplex, ctx: &Context, v: u32, star: &[u32], f: Freedom, target: Point3) -> Result<bool> {
     let x = cx.xyz(v)?;
+    let floor = star_quality(cx, v, x, star)?.min(ODT_FLOOR);
     let d = restrict(target - x, f);
     for s in [1.0, 0.5, 0.25] {
         let Some(p) = ctx.place(cx.kind(v), x + d * s) else { continue };
@@ -152,8 +153,7 @@ pub fn odt_pass(cx: &mut TetComplex, ctx: &Context) -> Result<usize> {
             continue;
         }
         let target = (num * (1.0 / den)).to_point();
-        let before = star_quality(cx, v, cx.xyz(v)?, &star)?;
-        if try_move(cx, ctx, v, &star, f, target, before.min(ODT_FLOOR))? {
+        if try_move(cx, ctx, v, &star, f, target)? {
             moved += 1;
         }
     }
