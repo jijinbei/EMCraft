@@ -302,7 +302,7 @@ fn each_point_says_whether_it_was_solved_in_full() {
     let mut s = swept(9);
     let r = s.execute("solve.refine", &json!({"frequencies": [6.1]})).unwrap();
     assert_eq!(r["solved_in_full"], json!(1));
-    let mut after = fast.clone();
+    let mut after = fast;
     after.insert(1, true);
     assert_eq!(flags(&r), after);
 }

@@ -129,7 +129,7 @@ fn the_history_is_part_of_the_unsaved_state() {
     assert_eq!(u.archive().len(), 1);
     u.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(u.archive().len(), 2);
-    assert!(u.archive().iter().all(|a| a.in_memory()));
+    assert!(u.archive().iter().all(super::super::archive::Archived::in_memory));
     // Labels and pins are checked.
     assert!(u.execute("results.history.label", &json!({"id": 1, "label": "x".repeat(81)})).is_err());
     assert!(u.execute("results.history.label", &json!({"id": 1, "label": "a\u{7}"})).is_err());

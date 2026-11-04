@@ -235,7 +235,7 @@ pub(crate) fn value_text(v: &Value) -> String {
     match v {
         Value::Null => String::new(),
         Value::String(s) => s.clone(),
-        Value::Number(n) => n.as_f64().map(number_text).unwrap_or_else(|| n.to_string()),
+        Value::Number(n) => n.as_f64().map_or_else(|| n.to_string(), number_text),
         other => other.to_string(),
     }
 }
@@ -373,7 +373,7 @@ pub fn parse_number(text: &str) -> Result<f64, String> {
 }
 
 fn number_value(v: f64) -> Value {
-    serde_json::Number::from_f64(v).map(Value::Number).unwrap_or(Value::Null)
+    serde_json::Number::from_f64(v).map_or(Value::Null, Value::Number)
 }
 
 /// The JSON value of a field: `None` when it is left empty.

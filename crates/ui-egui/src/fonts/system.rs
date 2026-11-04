@@ -286,7 +286,7 @@ mod tests {
 
     /// A folder of its own under the scratch directory.
     fn scratch(name: &str) -> PathBuf {
-        let base = std::env::var_os("EMCRAFT_SCRATCH").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+        let base = std::env::var_os("EMCRAFT_SCRATCH").map_or_else(std::env::temp_dir, PathBuf::from);
         let dir = base.join(format!("emcraft-fonts-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();

@@ -113,7 +113,7 @@ impl Mesh {
             if lines.iter().any(|l| l.len() < 2 || !l.iter().all(|x| x.is_finite()) || l.windows(2).any(|w| w[1] <= w[0])) {
                 return Err("a mesh's grid lines must be finite and ascending, at least 2 along each axis".into());
             }
-            let cells = lines.iter().map(|l| l.len() - 1).try_fold(1usize, |a, k| a.checked_mul(k));
+            let cells = lines.iter().map(|l| l.len() - 1).try_fold(1usize, usize::checked_mul);
             if cells != Some(g.cells.len()) || g.cells.iter().any(|&c| c != u32::MAX && (c as usize).saturating_add(TETS_PER_CELL) > t) {
                 return Err("a mesh's grid has one entry a cell, each the first of its tetrahedra or none".into());
             }

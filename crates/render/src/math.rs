@@ -158,12 +158,12 @@ fn argument(t: &[char], pos: &mut usize, depth: usize, budget: &mut usize) -> Ve
 
 /// The name after a backslash: letters, or one other character.
 fn command_name(t: &[char], pos: &mut usize) -> String {
-    if t.get(*pos).is_some_and(|c| c.is_ascii_alphabetic()) {
+    if t.get(*pos).is_some_and(char::is_ascii_alphabetic) {
         let n: String = t[*pos..].iter().take_while(|c| c.is_ascii_alphabetic()).collect();
         *pos += n.len();
         n
     } else {
-        let n = t.get(*pos).map(|c| c.to_string()).unwrap_or_default();
+        let n = t.get(*pos).map(std::string::ToString::to_string).unwrap_or_default();
         *pos += 1;
         n
     }

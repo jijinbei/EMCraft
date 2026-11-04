@@ -309,7 +309,7 @@ pub(crate) fn leapfrog(kernel: &impl Kernel, planes: usize, max_steps: usize, mu
     if max_steps == 0 {
         return 0;
     }
-    let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(MAX_THREADS).min(planes / 4).max(1);
+    let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get).min(MAX_THREADS).min(planes / 4).max(1);
     let slabs: Vec<Range<usize>> = (0..threads).map(|t| t * planes / threads..(t + 1) * planes / threads).collect();
     let barrier = Barrier::new(threads);
     let done = AtomicBool::new(false);

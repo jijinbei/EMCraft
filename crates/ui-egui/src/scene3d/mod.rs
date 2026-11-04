@@ -317,7 +317,7 @@ fn present_materials(session: &Session, selected: &[Pick], out: &mut Built) {
             if matches!(Pick::from_tag(t.tag), Some(Pick::Section(_))) {
                 if t.p.iter().all(|p| (p[2] - t.p[0][2]).abs() < 1e-12) {
                     let z = t.p[0][2];
-                    let length = m.waveguide.as_ref().map_or(0.0, |w| w.length());
+                    let length = m.waveguide.as_ref().map_or(0.0, emcraft_model::Waveguide::length);
                     let start = z.abs() < 1e-12;
                     let end = (z - length).abs() < 1e-12;
                     let port = m

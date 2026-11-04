@@ -132,7 +132,7 @@ impl Triangulation {
                     }
                 }
                 Some(g) => {
-                    let fs = across.get(g).map(|&(ws, _)| ws).unwrap_or([NONE; 4]);
+                    let fs = across.get(g).map_or([NONE; 4], |&(ws, _)| ws);
                     if fs.contains(&GHOST) {
                         return failed(format!("hull face of {t} borders another ghost"));
                     }

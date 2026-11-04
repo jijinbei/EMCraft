@@ -518,7 +518,7 @@ fn set_curve(p: &Params, chart: Option<&Chart>, style: &mut ChartStyle) -> Resul
     let colour = || {
         p.string("colour")
             .optional()?
-            .map(|c| Colour::parse(c).filter(|c| c.a == 255).map(|c| c.hex()).ok_or_else(|| p.error("colour", "must be #rrggbb")))
+            .map(|c| Colour::parse(c).filter(|c| c.a == 255).map(super::theme::Colour::hex).ok_or_else(|| p.error("colour", "must be #rrggbb")))
             .transpose()
     };
     cs.colour = p.edit("colour", colour)?.apply(cs.colour.take());

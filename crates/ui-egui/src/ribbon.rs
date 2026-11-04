@@ -727,11 +727,11 @@ mod tests {
         h.app.session.execute("project.analysis", &serde_json::json!({"kind": "time_domain"})).unwrap();
         let td = all(&h.app);
         assert!(!td.contains(&"solve.dispersion") && td.contains(&"study.sweep") && td.contains(&"source.plane_wave"), "{td:?}");
-        let model = TABS.iter().find(|(t, _)| *t == RibbonTab::Model).map(|(_, p)| *p).unwrap_or(&[]);
+        let model = TABS.iter().find(|(t, _)| *t == RibbonTab::Model).map_or(&[][..], |(_, p)| *p);
         let shown = ordered(&h.app, model);
         assert!(shown.iter().all(|p| p.name != "PCB"));
         assert_eq!(shown.len() + 1, model.len());
-        let simulate = TABS.iter().find(|(t, _)| *t == RibbonTab::Simulate).map(|(_, p)| *p).unwrap_or(&[]);
+        let simulate = TABS.iter().find(|(t, _)| *t == RibbonTab::Simulate).map_or(&[][..], |(_, p)| *p);
         h.app.session.execute("project.analysis", &serde_json::json!({"kind":"pcb"})).unwrap();
         let pcb = ordered(&h.app, simulate);
         assert!(pcb.iter().flat_map(|p| &p.commands).all(|id| *id == "project.variable"));

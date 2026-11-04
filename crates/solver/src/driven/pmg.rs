@@ -56,7 +56,7 @@ fn dot(a: &[C], b: &[C]) -> C {
 }
 
 fn norm(a: &[C]) -> f64 {
-    a.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt()
+    a.iter().map(num_complex::Complex::norm_sqr).sum::<f64>().sqrt()
 }
 
 impl Driven {

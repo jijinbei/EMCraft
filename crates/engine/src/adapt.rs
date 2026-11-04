@@ -58,7 +58,7 @@ fn delta_far(a: &[C], b: &[C]) -> f64 {
         return f64::INFINITY;
     }
     let diff: f64 = a.iter().zip(b).map(|(x, y)| (x - y).norm_sqr()).sum();
-    let norm: f64 = b.iter().map(|y| y.norm_sqr()).sum();
+    let norm: f64 = b.iter().map(C::norm_sqr).sum();
     if norm > 0.0 {
         (diff / norm).sqrt()
     } else if diff == 0.0 {

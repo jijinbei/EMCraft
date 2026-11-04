@@ -224,7 +224,7 @@ fn the_extruded_board_conforms_with_its_copper_inside() {
         Stack { slabs: vec![Slab { thickness: 0.0, material: 0, cells: 1, ratio: 1.0 }], ..stack.clone() },
         Stack { slabs: vec![Slab { thickness: 1e-3, material: 0, cells: 1000, ratio: 1.0 }], ..stack.clone() },
         Stack { slabs: vec![Slab { thickness: 1e-3, material: 0, cells: 2, ratio: f64::NAN }], ..stack.clone() },
-        Stack { sheets: vec![(5, 1)], ..stack.clone() },
+        Stack { sheets: vec![(5, 1)], ..stack },
     ] {
         assert!(extrude(&planar, &bad).is_err());
     }

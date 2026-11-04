@@ -352,7 +352,7 @@ mod tests {
         approx::assert_abs_diff_eq!(cpl.norm_sqr() + thr.norm_sqr(), 1.0, epsilon = 1e-12);
         // Mismatched ports: still lossless, reflection and isolation no longer zero.
         let s = coupler(ze, zo, theta, 50.0 * 1.1);
-        assert!((s.iter().map(|x| x.norm_sqr()).sum::<f64>() - 1.0).abs() < 1e-12 && s[0].norm() > 1e-3);
+        assert!((s.iter().map(num_complex::Complex::norm_sqr).sum::<f64>() - 1.0).abs() < 1e-12 && s[0].norm() > 1e-3);
     }
 
     #[test]

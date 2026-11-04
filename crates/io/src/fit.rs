@@ -978,7 +978,7 @@ mod tests {
         let same = vec![Point3::new(1.0, 1.0, 1.0); 3];
         assert_eq!(fit_faces(&tri(same, vec![[0, 1, 2]]), &[0]), vec![None]);
         let few = vec![Point3::ORIGIN, Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)];
-        assert_eq!(fit_faces(&tri(few.clone(), vec![[0, 1, 9]]), &[0]), vec![None]);
+        assert_eq!(fit_faces(&tri(few, vec![[0, 1, 9]]), &[0]), vec![None]);
         // NaN and infinite coordinates.
         for bad in [f64::NAN, f64::INFINITY] {
             let mut s = sphere_surface(Point3::ORIGIN, 1.0, 1);

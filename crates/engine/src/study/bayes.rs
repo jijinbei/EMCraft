@@ -107,13 +107,10 @@ pub fn bayesian(f: &mut impl FnMut(&[f64]) -> Result<f64>, start: &[f64], tolera
             continue;
         };
         let refit = lengths.is_empty() || x.len() <= REFIT_ALWAYS || x.len() % REFIT_EVERY == 0;
-        let gp = match if refit { Gp::fit(&x, &y) } else { Gp::with_lengths(&x, &y, &lengths) } {
-            Ok(gp) => gp,
-            Err(_) => {
-                call(halton(spare, d), &mut solved)?;
-                spare += 1;
-                continue;
-            }
+        let Ok(gp) = (if refit { Gp::fit(&x, &y) } else { Gp::with_lengths(&x, &y, &lengths) }) else {
+            call(halton(spare, d), &mut solved)?;
+            spare += 1;
+            continue;
         };
         lengths = gp.lengths().to_vec();
         let ei = |u: &[f64]| -> f64 { gp.predict(u).map_or(0.0, |p| expected_improvement(best, p.mean[0], p.sigma[0])) };

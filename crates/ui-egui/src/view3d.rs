@@ -447,7 +447,7 @@ pub fn show(app: &EmcraftApp, st: &mut crate::viewport::Parts, ui: &mut egui::Ui
     let gpu_field = overlay == Overlay::Field && app.prefs.gpu_look.field && field.kept.is_empty() && drawer_of(ui) != Drawer::None;
     let key = scene_key(app, v, field, overlay, gpu_field);
     if !v.is_built(&key) {
-        build(app, v, field, overlay, key.clone(), out);
+        build(app, v, field, overlay, key, out);
     }
     v.update_cut(app.session.model(), out);
     v.field_frame = if gpu_field { field_frame(app, v, field) } else { None };

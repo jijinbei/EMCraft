@@ -98,7 +98,11 @@ fn probe(backend: Backend) -> Result<Vec<Precision>> {
 /// Runs `f`, turning a panic inside the device's runtime into an error.
 pub(crate) fn guarded<T>(f: impl FnOnce() -> Result<T>) -> Result<T> {
     catch_unwind(AssertUnwindSafe(f)).unwrap_or_else(|panic| {
-        let why = panic.downcast_ref::<String>().cloned().or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default();
+        let why = panic
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| panic.downcast_ref::<&str>().map(std::string::ToString::to_string))
+            .unwrap_or_default();
         Err(FdtdError::Device(format!("the runtime stopped: {why}")))
     })
 }

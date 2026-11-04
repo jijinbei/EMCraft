@@ -269,7 +269,7 @@ pub(crate) fn face_coefficients<'m>(
     empty: f64,
     cell: impl Fn([isize; 3]) -> Option<&'m Material>,
 ) -> ([Vec<f64>; 3], [Vec<f64>; 3]) {
-    let magnetic = model.materials.iter().any(|m| m.is_magnetically_lossy());
+    let magnetic = model.materials.iter().any(emcraft_model::Material::is_magnetically_lossy);
     let mut h_decay = [Vec::new(), Vec::new(), Vec::new()];
     let ch = [0, 1, 2].map(|a| {
         let d = dims[a];

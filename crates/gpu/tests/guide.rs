@@ -60,7 +60,7 @@ fn on(backend: Backend, precision: Precision, o: &Options) -> TdResult {
 static DEVICE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn on_model(m: &Model, freqs: &[f64], backend: Backend, precision: Precision, o: &Options) -> TdResult {
-    let _one = DEVICE.lock().unwrap_or_else(|e| e.into_inner());
+    let _one = DEVICE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let t = Instant::now();
     let r = s_parameters_with(m, o, freqs, Some(&Gpu { backend, precision })).unwrap();
     eprintln!("{backend} {precision}: {} + {} steps in {:.2?}", r.steps, r.reference_steps, t.elapsed());

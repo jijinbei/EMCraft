@@ -854,7 +854,7 @@ mod tests {
         let tiny = [Section::new([1e-300, 2e-300, 0.0], 0.0), Section::new([1e-320, 0.0, 0.0], 0.5)];
         for sec in [Section::across(0, 0.5, Keep::Low), Section::new([3.0, -1.0, 2.0], 0.1)].into_iter().chain(tiny) {
             let cut = section(&s, &sec).unwrap();
-            assert!(cut.tris.iter().flat_map(|t| t.p).flatten().all(|v| v.is_finite()));
+            assert!(cut.tris.iter().flat_map(|t| t.p).flatten().all(f64::is_finite));
         }
         assert!(section(&Scene::default(), &Section::across(0, 0.0, Keep::Low)).unwrap().tris.is_empty());
     }

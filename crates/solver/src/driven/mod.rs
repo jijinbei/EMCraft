@@ -368,7 +368,7 @@ impl Driven {
         let topo = Topology::new(&mesh);
         // The conductivity and thickness are checked by their types.
         let sigma = match walls {
-            Walls::Modelled => model.wall_conductivity.map(|c| c.get()),
+            Walls::Modelled => model.wall_conductivity.map(emcraft_model::Conductivity::get),
             Walls::Perfect => None,
         };
         let faces = BoundaryFaces::classify(model, &mesh, ends, sigma.is_none())?;
@@ -413,7 +413,11 @@ impl Driven {
             None => None,
         };
         let wall = match sigma {
-            Some(sigma) => Some(WallLoss { sigma, thickness: model.wall_thickness.map(|t| t.get()), mass: space.wall_mass(&pattern, &faces.walls)? }),
+            Some(sigma) => Some(WallLoss {
+                sigma,
+                thickness: model.wall_thickness.map(emcraft_model::Metres::get),
+                mass: space.wall_mass(&pattern, &faces.walls)?,
+            }),
             None => None,
         };
         Ok(Driven {

@@ -121,7 +121,7 @@ fn serendipity(x: [f64; 3], xyz: &[Point3]) -> [f64; 3] {
             }
         }
     };
-    let corner = |k: usize| HEX_CORNERS.get(k).map(|c| c.map(|v| 2.0 * v as f64 - 1.0)).unwrap_or([0.0; 3]);
+    let corner = |k: usize| HEX_CORNERS.get(k).map_or([0.0; 3], |c| c.map(|v| 2.0 * v as f64 - 1.0));
     for k in 0..8 {
         let c = corner(k);
         let n = 0.125 * (1.0 + x[0] * c[0]) * (1.0 + x[1] * c[1]) * (1.0 + x[2] * c[2]) * (x[0] * c[0] + x[1] * c[1] + x[2] * c[2] - 2.0);

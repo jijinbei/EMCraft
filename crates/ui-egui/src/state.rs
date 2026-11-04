@@ -325,7 +325,7 @@ impl PcbUi {
     /// The form as `pcb.conditions` takes it; numbers that do not read go as they are typed,
     /// for the engine to refuse.
     pub(crate) fn conditions(&self) -> Value {
-        let number = |s: &str| s.trim().parse::<f64>().ok().filter(|v| v.is_finite()).map(Value::from).unwrap_or_else(|| Value::String(s.to_owned()));
+        let number = |s: &str| s.trim().parse::<f64>().ok().filter(|v| v.is_finite()).map_or_else(|| Value::String(s.to_owned()), Value::from);
         serde_json::json!({"ground": self.ground.trim(), "reference": number(&self.reference), "stop": number(&self.stop)})
     }
 }

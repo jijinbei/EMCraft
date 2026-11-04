@@ -551,7 +551,7 @@ mod tests {
         // corner would land in the region below the step.
         let low = cube([3.05, -1.0, -1.0], [11.0, 0.5, 21.0]);
         let stepped = crate::csg::combine(
-            &crate::csg::Surface { positions: gp.clone(), triangles: gt.clone(), tags: vec![0; gt.len()] },
+            &crate::csg::Surface { positions: gp, triangles: gt.clone(), tags: vec![0; gt.len()] },
             &crate::csg::Surface { positions: low.0, triangles: low.1.clone(), tags: vec![1; low.1.len()] },
             crate::csg::Op::Union,
             1,

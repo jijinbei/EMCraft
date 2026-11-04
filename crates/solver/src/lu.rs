@@ -260,11 +260,11 @@ impl FrontKernel for Kernel {
         let m = front.m();
         for j in columns.clone() {
             let cj = j - columns.start;
-            for &(i, v) in self.lower.get(j).map(Vec::as_slice).unwrap_or(&[]) {
+            for &(i, v) in self.lower.get(j).map_or(&[][..], Vec::as_slice) {
                 let r = front.place_entry(i)?;
                 front.f[cj * m + r] += v;
             }
-            for &(c, v) in self.upper.get(j).map(Vec::as_slice).unwrap_or(&[]) {
+            for &(c, v) in self.upper.get(j).map_or(&[][..], Vec::as_slice) {
                 let r = front.place_entry(c)?;
                 front.f[r * m + cj] += v;
             }
@@ -438,7 +438,7 @@ mod tests {
         // A zero diagonal with the large entries off it: [[0, 5], [3, 0]] blocks in one front.
         let n = 6;
         let groups = [(0..n).collect::<Vec<_>>()];
-        let mut a = Csr::from_groups(n, groups.iter().map(|g| g.as_slice()));
+        let mut a = Csr::from_groups(n, groups.iter().map(std::vec::Vec::as_slice));
         let mut rng = Rng(11);
         for i in 0..n {
             for j in 0..n {

@@ -33,7 +33,7 @@ static OPEN: AtomicUsize = AtomicUsize::new(0);
 pub fn start(port: u16, wake: impl Fn() + Send + Sync + 'static) -> Result<(Receiver<ControlRequest>, Option<control_auth::TokenFile>), String> {
     let token = control_auth::env_token().or_else(control_auth::new_token).ok_or("no random token available")?;
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| format!("cannot listen on 127.0.0.1:{port}: {e}"))?;
-    let port = listener.local_addr().map(|a| a.port()).unwrap_or(port);
+    let port = listener.local_addr().map_or(port, |a| a.port());
     let guard = match control_auth::token_path(port) {
         Some(path) => match control_auth::write_token_file(&path, &token) {
             Ok(()) => {

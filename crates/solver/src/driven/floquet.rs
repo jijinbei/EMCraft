@@ -313,13 +313,9 @@ impl Driven {
     /// right-hand side of each port's excitation by its first mode, the modes' terms and the
     /// phases per period.
     fn periodic_system(&self, frequency: f64) -> Result<PeriodicSystem> {
-        let (tie, periodic) = match (&self.tie, &self.periodic) {
-            (Some(t), Some(p)) => (t, p),
-            _ => return Err(invalid("periodic solve", "the model is not periodic")),
-        };
-        let first = match self.ports.first().map(|p| &p.modes) {
-            Some(super::PortModes::Floquet(fp)) => fp,
-            _ => return Err(super::SolveError::NotReady("no Floquet ports: create them with model.port.create on the cell's ends".into())),
+        let (Some(tie), Some(periodic)) = (&self.tie, &self.periodic) else { return Err(invalid("periodic solve", "the model is not periodic")) };
+        let Some(super::PortModes::Floquet(first)) = self.ports.first().map(|p| &p.modes) else {
+            return Err(super::SolveError::NotReady("no Floquet ports: create them with model.port.create on the cell's ends".into()));
         };
         let (kx, ky) = incidence(periodic, first, frequency);
         let psi = tie.phases(kx, ky, 0.0);

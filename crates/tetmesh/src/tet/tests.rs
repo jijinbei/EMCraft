@@ -323,7 +323,7 @@ mod pipeline {
         assert!(b.report.output.tets > a.report.output.tets && b.report.output.inadmissible == 0);
         // Biased: the mesh's nodes on the edge are the seed's.
         let bias = Some(crate::compat::Bias { ratio: 4.0, toward: crate::compat::BiasToward::Start });
-        let biased = QualityOptions { seeds: vec![EdgeSeed { count: 8, bias, ..seeded.seeds[0].clone() }], ..plain.clone() };
+        let biased = QualityOptions { seeds: vec![EdgeSeed { count: 8, bias, ..seeded.seeds[0].clone() }], ..plain };
         let c = quality_mesh(&s, &cdt, Vec::new(), &biased).unwrap();
         let mut x: Vec<f64> = c.points.iter().filter(|p| p[1].abs() < 1e-9 && p[2].abs() < 1e-9).map(|p| p[0]).collect();
         x.sort_by(f64::total_cmp);

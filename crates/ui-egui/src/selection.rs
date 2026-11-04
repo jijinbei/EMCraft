@@ -182,7 +182,7 @@ mod tests {
     fn boxes_take_whole_parts_by_window_and_touched_ones_by_crossing() {
         let (s, cam) = two_squares();
         let (w, h) = (400.0, 400.0);
-        let on = |p: [f64; 3]| cam.project(p, w, h).map(|q| pos2(q[0] as f32, q[1] as f32)).unwrap_or(Pos2::ZERO);
+        let on = |p: [f64; 3]| cam.project(p, w, h).map_or(Pos2::ZERO, |q| pos2(q[0] as f32, q[1] as f32));
         // Around the right square only, left to right: a window.
         let window = BoxSel::from_drag(on([0.9, 1.1, 0.0]), on([2.1, -0.1, 0.0]));
         assert!(!window.crossing);

@@ -283,7 +283,7 @@ mod tests {
     fn material_summaries_name_their_poles() {
         let plain = Material::new("ptfe", 2.1, 1.0).unwrap();
         assert_eq!(plain.summary(), "εr 2.1, μr 1");
-        let lossy = plain.clone().with_loss_tangent(0.01).unwrap();
+        let lossy = plain.with_loss_tangent(0.01).unwrap();
         assert_eq!(lossy.summary(), "εr 2.1, μr 1, tan δ 0.01");
         let d = Material::new("water", 5.0, 1.0)
             .unwrap()

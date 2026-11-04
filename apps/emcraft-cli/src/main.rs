@@ -172,8 +172,7 @@ fn sample(args: &[String]) -> Result<()> {
     let mut solve = script
         .as_array()
         .and_then(|steps| steps.iter().find(|st| st["command"] == "solve.frequency"))
-        .map(|st| st["params"].clone())
-        .unwrap_or_else(|| json!({"order": 2}));
+        .map_or_else(|| json!({"order": 2}), |st| st["params"].clone());
     let mut all = freqs.clone();
     if let (Some(a), Some(b)) = (solve["start"].as_f64(), solve["stop"].as_f64()) {
         let n = solve["points"].as_u64().unwrap_or(11).max(2);

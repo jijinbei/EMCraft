@@ -396,7 +396,7 @@ fn lossy_terminal_port(m: &emcraft_model::Model, p: &emcraft_model::Port) -> boo
     if w.strips.iter().filter(at_end).count() < 2 {
         return false;
     }
-    let fill = m.port_material(p.end).is_ok_and(|x| x.is_lossy());
+    let fill = m.port_material(p.end).is_ok_and(emcraft_model::Material::is_lossy);
     fill || w.layers.iter().filter_map(|l| m.material(&l.material).ok()).any(|(_, x)| x.is_lossy())
 }
 

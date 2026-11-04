@@ -302,7 +302,7 @@ impl Renderer {
                     write_mask: wgpu::ColorWrites::RED,
                 }),
             ];
-            pipeline("emcraft_view3d_oit", "vs_tri", &[Some(tri_layout())], "fs_oit", &targets, depth(false, LessEqual, none.clone()))
+            pipeline("emcraft_view3d_oit", "vs_tri", &[Some(tri_layout())], "fs_oit", &targets, depth(false, LessEqual, none))
         } else {
             pipeline(
                 "emcraft_view3d_glass",
@@ -310,7 +310,7 @@ impl Renderer {
                 &[Some(tri_layout())],
                 "fs_blend",
                 &frame(Some(alpha_over()), all),
-                depth(false, LessEqual, none.clone()),
+                depth(false, LessEqual, none),
             )
         };
         let glass_depth = pipeline(

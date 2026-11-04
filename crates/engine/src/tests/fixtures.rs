@@ -8,7 +8,7 @@ use crate::Session;
 /// A path in the tests' scratch directory (under `EMCRAFT_SCRATCH` when set, else the system's
 /// temporary directory).
 pub(crate) fn scratch(name: &str) -> String {
-    let base = std::env::var_os("EMCRAFT_SCRATCH").map(std::path::PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    let base = std::env::var_os("EMCRAFT_SCRATCH").map_or_else(std::env::temp_dir, std::path::PathBuf::from);
     let dir = base.join(format!("emcraft-engine-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);
     dir.join(name).to_string_lossy().into_owned()

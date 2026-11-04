@@ -181,7 +181,7 @@ impl Reader {
 
     /// The parts' names, in the package's order.
     pub fn names(&self) -> Vec<String> {
-        self.zip.file_names().filter_map(|n| n.ok().map(|n| n.into_owned())).collect()
+        self.zip.file_names().filter_map(|n| n.ok().map(std::borrow::Cow::into_owned)).collect()
     }
 
     /// Part `name`'s bytes, at most `max` of them.
@@ -221,7 +221,7 @@ mod tests {
     use proptest::test_runner::{Config, RngSeed};
 
     fn scratch(name: &str) -> std::path::PathBuf {
-        let base = std::env::var_os("EMCRAFT_SCRATCH").map(std::path::PathBuf::from).unwrap_or_else(std::env::temp_dir);
+        let base = std::env::var_os("EMCRAFT_SCRATCH").map_or_else(std::env::temp_dir, std::path::PathBuf::from);
         let dir = base.join(format!("emcraft-package-{name}-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         dir.join("p.zip")

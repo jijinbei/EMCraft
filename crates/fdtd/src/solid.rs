@@ -306,7 +306,8 @@ impl SolidGrid {
             for p in ports.iter().filter(|p| p.axis != d) {
                 breaks.extend([p.span[d].0, p.span[d].1].into_iter().filter(|x| inside(*x)));
             }
-            let bodies = model.inclusions.iter().map(|i| i.bounds()).chain(model.features.iter().map(|f| f.bounds()));
+            let bodies =
+                model.inclusions.iter().map(emcraft_model::Inclusion::bounds).chain(model.features.iter().map(emcraft_model::Feature::bounds));
             let mut extra: Vec<f64> = bodies.flat_map(|a| [a.min[d], a.max[d]]).filter(|x| inside(*x)).collect();
             extra.sort_by(f64::total_cmp);
             for x in extra {

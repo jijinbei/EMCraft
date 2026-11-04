@@ -103,7 +103,7 @@ impl FrontKernel for Kernel {
         let m = front.m();
         for j in columns.clone() {
             let cj = j - columns.start;
-            for &(i, v) in self.a_cols.get(j).map(Vec::as_slice).unwrap_or(&[]) {
+            for &(i, v) in self.a_cols.get(j).map_or(&[][..], Vec::as_slice) {
                 let r = front.place_entry(i)?;
                 front.f[cj * m + r] += v;
                 if r != cj {
@@ -321,7 +321,7 @@ mod tests {
         // coupled densely, all in one front.
         let n = 6;
         let groups = [(0..n).collect::<Vec<_>>()];
-        let mut a = Csr::from_groups(n, groups.iter().map(|g| g.as_slice()));
+        let mut a = Csr::from_groups(n, groups.iter().map(std::vec::Vec::as_slice));
         let mut rng = Rng(7);
         for i in 0..n {
             for j in i + 1..n {
@@ -428,7 +428,7 @@ mod tests {
         // entry, √ε‖A‖ would replace every pivot of the small one; equilibrated, none.
         let n = 40;
         let groups: Vec<Vec<usize>> = (0..n - 1).map(|i| vec![i, i + 1]).collect();
-        let mut a = Csr::from_groups(n, groups.iter().map(|g| g.as_slice()));
+        let mut a = Csr::from_groups(n, groups.iter().map(std::vec::Vec::as_slice));
         for i in 0..n {
             let s = if i < n / 2 { 1e12 } else { 1.0 };
             a.add(i, i, C::new(4.0 * s, 0.3));
@@ -451,7 +451,7 @@ mod tests {
     #[test]
     fn hostile_matrices_are_refused() {
         let groups = [vec![0, 1]];
-        let mut a = Csr::from_groups(2, groups.iter().map(|g| g.as_slice()));
+        let mut a = Csr::from_groups(2, groups.iter().map(std::vec::Vec::as_slice));
         let xyz = [Point3::ORIGIN, Point3::new(1.0, 0.0, 0.0)];
         assert_eq!(Ldlt::factor(&a, &xyz).unwrap_err(), FactorError::Zero);
         a.add(0, 0, C::new(f64::NAN, 0.0));
@@ -474,8 +474,8 @@ mod tests {
         disk.solve(&mut y).unwrap();
         assert_eq!(x, y);
         // Clones share the file.
-        let again = disk.clone();
-        let mut z = b.clone();
+        let again = disk;
+        let mut z = b;
         again.solve(&mut z).unwrap();
         assert_eq!(x, z);
     }

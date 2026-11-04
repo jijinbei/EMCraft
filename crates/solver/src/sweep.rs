@@ -449,7 +449,7 @@ impl Reduced {
             }
         }
         let bn = b.iter().map(|(_, x)| x.norm_sqr()).sum::<f64>().sqrt();
-        let rn = r.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
+        let rn = r.iter().map(num_complex::Complex::norm_sqr).sum::<f64>().sqrt();
         Ok((x, if bn > 0.0 { rn / bn } else { rn }))
     }
 }

@@ -105,7 +105,7 @@ fn place(area: Vec2, least: Vec2, wants: &[Vec2], main_w: f32, column: Column) -
     let main = Rect::from_min_size(pos2(0.0, 0.0), vec2(main_w, (area.y - below).max(least.y)));
     let mut blocks: Vec<Rect> = stack(beside, main_w + GAP, -GAP, column.width).collect();
     blocks.extend(stack(under, 0.0, main.bottom(), main_w));
-    let height = blocks.iter().map(|r| r.bottom()).fold(main.bottom(), f32::max).max(area.y);
+    let height = blocks.iter().map(egui::Rect::bottom).fold(main.bottom(), f32::max).max(area.y);
     Arrangement { main, blocks, height, content: content(wants) }
 }
 

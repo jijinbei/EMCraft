@@ -211,7 +211,7 @@ fn parameters(ui: &mut egui::Ui, d: &mut Dialog, params: &[Value], drawn: &mut V
         let saved = q["value"].as_f64().map(|x| crate::dialogs::value_text(&json!(x))).unwrap_or_default();
         let id = egui::Id::new(("import_param", name));
         let mut value =
-            ui.data(|m| m.get_temp::<String>(id)).unwrap_or_else(|| set.get(name).map(crate::dialogs::value_text).unwrap_or_else(|| saved.clone()));
+            ui.data(|m| m.get_temp::<String>(id)).unwrap_or_else(|| set.get(name).map_or_else(|| saved.clone(), crate::dialogs::value_text));
         ui_kit::row(ui, Raw(name), false, |ui| {
             let w = ui.available_width() - if unit.is_empty() { 8.0 } else { 40.0 };
             let r = ui.named(egui::TextEdit::singleline(&mut value).desired_width(w).char_limit(256), Handle::DialogParam(name));

@@ -144,9 +144,7 @@ impl<'a> Params<'a> {
 
     fn resolve(&self, name: &str, v: &Value) -> Result<Value> {
         Ok(match v {
-            Value::String(t) if expr::body(t).is_some() => {
-                serde_json::Number::from_f64(self.number_of(name, v)?).map(Value::Number).unwrap_or(Value::Null)
-            }
+            Value::String(t) if expr::body(t).is_some() => serde_json::Number::from_f64(self.number_of(name, v)?).map_or(Value::Null, Value::Number),
             Value::Array(list) => Value::Array(list.iter().map(|x| self.resolve(name, x)).collect::<Result<_>>()?),
             Value::Object(map) => Value::Object(map.iter().map(|(k, x)| Ok((k.clone(), self.resolve(name, x)?))).collect::<Result<_>>()?),
             other => other.clone(),

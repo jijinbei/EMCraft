@@ -333,7 +333,7 @@ fn barrels(
 ) -> Result<Vec<Hole>> {
     let heights = board.heights();
     let interface_of = |name: &str| layer_index(board, name).ok().and_then(|l| sheets.iter().find(|s| s.0 == l)).map(|s| s.1);
-    let covered = planar.nets.get(copper.barrels).map(Vec::as_slice).unwrap_or(&[]);
+    let covered = planar.nets.get(copper.barrels).map_or(&[][..], Vec::as_slice);
     let mut holes = Vec::with_capacity(board.vias.len());
     for (i, v) in board.vias.iter().enumerate() {
         let (Some(from), Some(to)) = (interface_of(&v.layers[0]), interface_of(&v.layers[1])) else { continue };
@@ -341,7 +341,7 @@ fn barrels(
         let triangles: Vec<u32> = (0..covered.len() as u32).filter(|&t| covered[t as usize] == own).collect();
         let (a, b) = (heights[layer_index(board, &v.layers[0])?], heights[layer_index(board, &v.layers[1])?]);
         for (l, name) in board.layers.iter().enumerate().filter(|(l, _)| heights[*l] > a.min(b) && heights[*l] < a.max(b)) {
-            let on = planar.nets.get(l).map(Vec::as_slice).unwrap_or(&[]);
+            let on = planar.nets.get(l).map_or(&[][..], Vec::as_slice);
             let other = triangles
                 .iter()
                 .filter_map(|&t| on.get(t as usize))

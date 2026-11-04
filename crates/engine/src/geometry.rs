@@ -265,11 +265,8 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     };
     // The region the fields fill: one body alone (or the one named), else a box of air around
     // them all (always for an open problem).
-    let region = p
-        .string("region")
-        .optional()?
-        .map(str::to_owned)
-        .unwrap_or_else(|| if bodies.len() == 1 && !open { bodies[0].name.clone() } else { "box".into() });
+    let region =
+        p.string("region").optional()?.map_or_else(|| if bodies.len() == 1 && !open { bodies[0].name.clone() } else { "box".into() }, str::to_owned);
     if open && region != "box" {
         return Err(p.error("region", "an open problem lies in a box of air (`box`)"));
     }

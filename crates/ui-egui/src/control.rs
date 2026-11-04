@@ -157,8 +157,8 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "font": {"japanese": app.fonts.in_use()},
         "languages": crate::lang::ids(),
         "home": app.page.home(),
-        "template": app.template.as_ref().map(|d| d.inspect()),
-        "settings": app.page.settings().map(|s| s.id()),
+        "template": app.template.as_ref().map(super::template_dialog::TemplateDialog::inspect),
+        "settings": app.page.settings().map(super::settings::Section::id),
         "project": {"name": app.session.name(), "path": app.session.path(), "dirty": app.session.is_dirty(), "title": crate::files::title(app)},
         "files": {"prompt": match &app.ask { Some(crate::files::Ask::Path(p)) => Some(p.text.clone()), _ => None }, "confirm": matches!(app.ask, Some(crate::files::Ask::Save(_))), "then": match &app.ask { Some(crate::files::Ask::Save(t)) => Some(format!("{t:?}")), _ => None }},
         "quitting": app.quit_requested,
@@ -209,7 +209,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         v["study"]["surrogate"] = json!(study.surrogate.is_some());
         v["study"]["predicted"] = json!(study.rows.iter().filter(|r| r.is_predicted()).count());
     }
-    v["purpose"] = json!(app.home.purpose.map(|k| k.id()));
+    v["purpose"] = json!(app.home.purpose.map(emcraft_model::Analysis::id));
     v["kept"] = json!(emcraft_engine::archive::rows(&app.session));
     v["compare"] = json!(app.views.compare);
     v["chart_style"] = chart_style(app);
@@ -770,7 +770,7 @@ fn render(app: &mut EmcraftApp, a: Args) -> Handled {
 /// A window screenshot as PNG, written to `path` or measured.
 pub fn save_screenshot(image: &egui::ColorImage, path: Option<&str>) -> Value {
     let (w, h) = (image.size[0], image.size[1]);
-    let rgba: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_srgba_unmultiplied()).collect();
+    let rgba: Vec<u8> = image.pixels.iter().flat_map(egui::Color32::to_srgba_unmultiplied).collect();
     let canvas = emcraft_render::Canvas { w, h, rgba };
     let Some(png) = canvas.png() else { return json!({"ok": false, "error": "could not encode the screenshot"}) };
     match path {

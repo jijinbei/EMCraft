@@ -77,11 +77,11 @@ impl SMatrix {
         for _ in 0..200 {
             let sv: Vec<C> = (0..n).map(|i| (0..n).map(|j| self[(i, j)] * v[j]).sum()).collect();
             let w: Vec<C> = (0..n).map(|j| (0..n).map(|i| self[(i, j)].conj() * sv[i]).sum()).collect();
-            let norm = w.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
+            let norm = w.iter().map(num_complex::Complex::norm_sqr).sum::<f64>().sqrt();
             if !(norm > 0.0) {
                 break;
             }
-            let vn = v.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
+            let vn = v.iter().map(num_complex::Complex::norm_sqr).sum::<f64>().sqrt();
             sigma2 = norm / vn.max(f64::MIN_POSITIVE);
             v = w.into_iter().map(|c| c / norm).collect();
         }
@@ -180,7 +180,7 @@ mod tests {
         let s = SMatrix::from_fn(2, |p, q| if p == q { c(0.0, 0.0) } else { t });
         approx::assert_abs_diff_eq!(s.largest_singular_value(), 1.0, epsilon = 1e-12);
         assert_eq!(s.reciprocity_error(), 0.0);
-        let mut lossy = s.clone();
+        let mut lossy = s;
         lossy[(1, 0)] = t * 0.5;
         approx::assert_abs_diff_eq!(lossy.reciprocity_error(), 0.5, epsilon = 1e-12);
     }

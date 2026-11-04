@@ -1042,7 +1042,7 @@ impl TetComplex {
                 let key = sorted3(face_toward(*vs, k));
                 if let Some((j, l)) = inner.remove(&key) {
                     // Two tetrahedra on opposite sides of their shared face.
-                    let other = change.new.get(j).map(|u| face_toward(*u, l)).unwrap_or([NONE; 3]);
+                    let other = change.new.get(j).map_or([NONE; 3], |u| face_toward(*u, l));
                     if !same_cycle(face_toward(*vs, k), [other[0], other[2], other[1]]) {
                         return Ok(None);
                     }
@@ -1059,7 +1059,7 @@ impl TetComplex {
         let mut pending: Vec<([u32; 3], (usize, usize))> = inner.into_iter().collect();
         pending.sort_unstable();
         for (key, (i, k)) in pending {
-            let face = change.new.get(i).map(|vs| face_toward(*vs, k)).unwrap_or([NONE; 3]);
+            let face = change.new.get(i).map_or([NONE; 3], |vs| face_toward(*vs, k));
             let declared_face = declared.get(&key).copied();
             used_declared += usize::from(declared_face.is_some());
             if let Some((n, back, tag, seen)) = outside.remove(&key) {

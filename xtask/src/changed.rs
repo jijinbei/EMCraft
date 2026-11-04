@@ -90,7 +90,8 @@ mod tests {
     #[test]
     fn a_change_reaches_its_package_and_everything_built_on_it() {
         let m = meta();
-        let at = |files: &[&str]| names(affected(&m, Path::new("/w"), &files.iter().map(|f| f.to_string()).collect::<Vec<_>>()).unwrap());
+        let at =
+            |files: &[&str]| names(affected(&m, Path::new("/w"), &files.iter().map(std::string::ToString::to_string).collect::<Vec<_>>()).unwrap());
         assert_eq!(at(&["crates/engine/src/lib.rs"]), ["engine", "ui"]);
         // Through dev dependencies too.
         assert_eq!(at(&["crates/model/src/x.rs"]), ["engine", "model", "solver", "testkit", "ui"]);

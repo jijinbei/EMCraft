@@ -252,7 +252,7 @@ impl CrossSection {
                 vt.into_iter().chain(vz).filter_map(Slot::get).collect()
             })
             .collect();
-        self.pattern = Csr::from_groups(n, groups.iter().map(|g| g.as_slice()));
+        self.pattern = Csr::from_groups(n, groups.iter().map(std::vec::Vec::as_slice));
         let mats = self.assemble_with(&|t| C::new(self.eps[t], 0.0), &|t| C::new(1.0 / self.mu[t], 0.0))?;
         let [curl, mass, b, tz] = mats.map(|m| m.into_iter().map(|c| c.re).collect::<Vec<f64>>());
         (self.curl, self.mass, self.b, self.t) = (curl, mass, b, tz);
@@ -406,7 +406,7 @@ impl CrossSection {
         let nz = n - nt;
         let groups: Vec<Vec<usize>> =
             (nt..n).map(|i| p.row(i).map(|k| p.col[k]).filter(|&j| j >= nt).map(|j| j - nt).chain([i - nt]).collect()).collect();
-        let mut zz = Csr::from_groups(nz, groups.iter().map(|g| g.as_slice()));
+        let mut zz = Csr::from_groups(nz, groups.iter().map(std::vec::Vec::as_slice));
         for i in nt..n {
             for k in p.row(i).filter(|&k| p.col[k] >= nt) {
                 zz.add(i - nt, p.col[k] - nt, value(k));

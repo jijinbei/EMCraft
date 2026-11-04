@@ -428,7 +428,7 @@ impl EmcraftApp {
         self.apply_all(out);
         self.collect_screenshots(&ctx);
         self.keep_prefs();
-        self.focus_last = ctx.memory(|m| m.focused());
+        self.focus_last = ctx.memory(egui::Memory::focused);
     }
 
     /// Brings the caches the drawing reads up to date: they come from engine queries, which

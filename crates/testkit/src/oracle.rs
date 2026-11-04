@@ -480,7 +480,7 @@ pub fn cases(root: &Path) -> Result<Vec<String>> {
     let dir = root.join("tests/oracle");
     let mut names: Vec<String> = std::fs::read_dir(&dir)
         .map_err(|e| OracleError::file(&dir, e))?
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|e| e.path().join("expected.json").exists())
         .filter_map(|e| e.file_name().into_string().ok())
         .collect();
@@ -608,7 +608,7 @@ mod tests {
         let mut bad = e.clone();
         bad["kind"] = json!("guess");
         assert!(Expected::parse(&bad).is_err());
-        let mut twice = e.clone();
+        let mut twice = e;
         let q = twice["quantities"][0].clone();
         twice["quantities"].as_array_mut().unwrap().push(q);
         assert!(Expected::parse(&twice).is_err());

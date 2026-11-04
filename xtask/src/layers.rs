@@ -203,7 +203,7 @@ pub fn check(crates: &[Crate]) -> Vec<Violation> {
             }
         }
     }
-    out.sort_by_key(|v| v.to_string());
+    out.sort_by_key(std::string::ToString::to_string);
     out.dedup();
     out
 }

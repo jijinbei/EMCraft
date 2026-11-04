@@ -316,14 +316,14 @@ fn probes(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut
         points: probes.iter().map(|p| p.at).collect(),
     };
     if field.probe_values.as_ref().is_none_or(|(k, _)| *k != key) {
-        let points: Vec<Point3> = probes.iter().map(|p| p.point()).collect();
+        let points: Vec<Point3> = probes.iter().map(emcraft_engine::views::Probe::point).collect();
         let values = view::fields_at(&app.session, &field.view, &points).map(|(_, v)| v).unwrap_or_default();
         field.probe_values = Some((key, values));
     }
     let magnetic = field.view.component.is_magnetic();
     let (name, unit_name) = if magnetic { ("|H|", "A/m") } else { ("|E|", "V/m") };
     let norm = |v: &emcraft_model::CVec3| v.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
-    let values = field.probe_values.as_ref().map(|(_, v)| v.as_slice()).unwrap_or(&[]);
+    let values = field.probe_values.as_ref().map_or(&[][..], |(_, v)| v.as_slice());
     for (i, p) in probes.iter().enumerate() {
         let value = match values.get(i).copied().flatten() {
             Some((e, h)) => format!("{name} {} {unit_name}", emcraft_render::axes::format(norm(if magnetic { &h } else { &e }))),

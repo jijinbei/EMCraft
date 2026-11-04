@@ -115,7 +115,7 @@ pub fn chart_with_units(study: &Study, parameter: Option<&str>, slice: &Slice, u
 
 /// The name of the sweep's variable `free`, or `otherwise`.
 fn variable(study: &Study, free: usize, otherwise: &str) -> String {
-    study.variables.get(free).map_or_else(|| otherwise.to_owned(), |n| n.clone())
+    study.variables.get(free).map_or_else(|| otherwise.to_owned(), std::clone::Clone::clone)
 }
 
 /// Variable `k`'s unit, when known.

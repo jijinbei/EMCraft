@@ -44,7 +44,7 @@ pub(super) fn from_mesh(session: &emcraft_engine::Session, overlay: Overlay, out
             color = sc().port_soft;
             alpha = 25;
         }
-        let pick = port.map(Pick::Port).unwrap_or_else(|| if m.waveguide.is_some() { Pick::Guide } else { Pick::Solid });
+        let pick = port.map_or_else(|| if m.waveguide.is_some() { Pick::Guide } else { Pick::Solid }, Pick::Port);
         if alpha > 0 {
             out.scene.tagged(pick.tag(), |s| s.tri(a, b, c, color, alpha));
         }

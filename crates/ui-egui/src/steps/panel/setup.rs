@@ -218,7 +218,7 @@ fn band_diagram(app: &EmcraftApp, f: &Fields, ui: &mut egui::Ui, solves: &[f64])
         p.text(pos2(x(v), base + 4.0), egui::Align2::CENTER_TOP, fmt((v / step).round() * step), small.clone(), t.text_dim);
         v += step;
     }
-    p.text(pos2(right, base + 4.0), egui::Align2::RIGHT_TOP, fu, small.clone(), t.text_dim);
+    p.text(pos2(right, base + 4.0), egui::Align2::RIGHT_TOP, fu, small, t.text_dim);
     // The cut-offs, labelled on two staggered rows.
     for (i, (f, label, first)) in cuts.iter().enumerate() {
         let color = if *first { t.warning } else { t.text_dim };

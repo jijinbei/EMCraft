@@ -261,7 +261,7 @@ fn subtree<K: FrontKernel>(
 pub(crate) fn factor_tree<K: FrontKernel>(kernel: &K, an: &Analysis) -> Result<(Vec<K::Node>, Counts), FactorError> {
     let ns = an.supernodes();
     let tree = Tree::new(an);
-    let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let (tasks, top) = tree.split(threads);
 
     let mut nodes: Vec<Option<K::Node>> = (0..ns).map(|_| None).collect();
@@ -411,7 +411,7 @@ pub(crate) mod testing {
                 }
             }
         }
-        let a = Csr::from_groups(n, edges.iter().map(|g| g.as_slice()));
+        let a = Csr::from_groups(n, edges.iter().map(<[usize; 2]>::as_slice));
         (a, edges, xyz)
     }
 }

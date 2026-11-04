@@ -36,7 +36,7 @@ fn grid(n: [usize; 3], diag: C) -> (Csr, Vec<Point3>) {
             }
         }
     }
-    let mut a = Csr::from_groups(xyz.len(), groups.iter().map(|g| g.as_slice()));
+    let mut a = Csr::from_groups(xyz.len(), groups.iter().map(std::vec::Vec::as_slice));
     for g in &groups {
         let v = C::new(next(), next());
         a.add(g[0], g[1], v);

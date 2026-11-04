@@ -223,8 +223,7 @@ pub fn read(text: &str, override_layers: Option<Vec<Layer>>) -> Result<Board> {
                     .child("uuid")
                     .or_else(|| n.child("tstamp"))
                     .and_then(|n| n.text(1).ok())
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| format!("segment:{}", board.segments.len())),
+                    .map_or_else(|| format!("segment:{}", board.segments.len()), str::to_owned),
                 net: net(n)?,
                 layer: n.word("layer")?.into(),
                 start: n.point("start")?.map(|v| Length::Millimetre.to_si(v)),
@@ -347,7 +346,7 @@ fn pads(fp: &Node, layers: &[String], net: &dyn Fn(&Node) -> Result<String>, boa
         let centre = rotate([mm(p_at.number(1)?), mm(p_at.number(2)?)], turn);
         let centre = [origin[0] + centre[0], origin[1] + centre[1]];
         // The pad's own angle is absolute (it includes the footprint's) when given.
-        let angle = p_at.number(3).map(f64::to_radians).unwrap_or(turn);
+        let angle = p_at.number(3).map_or(turn, f64::to_radians);
         let size = pad.child("size").ok_or_else(|| bad("pad size missing"))?;
         let (w, h) = (mm(size.number(1)?), mm(size.number(2)?));
         if !(w > 0.0 && h > 0.0) {

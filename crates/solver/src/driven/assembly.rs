@@ -107,7 +107,7 @@ impl<'a> Space<'a> {
     pub(super) fn pattern(&self, extra: impl Iterator<Item = Vec<usize>>) -> Csr {
         let mut groups: Vec<Vec<usize>> = (0..self.mesh.tets.len()).map(|t| self.dofs.of_tet(self.topo, t).filter_map(Slot::get).collect()).collect();
         groups.extend(extra);
-        Csr::from_groups(self.dofs.unknowns, groups.iter().map(|g| g.as_slice()))
+        Csr::from_groups(self.dofs.unknowns, groups.iter().map(std::vec::Vec::as_slice))
     }
 
     /// K, M and each dispersive material's M_d over the tetrahedra `keep` admits (those of the

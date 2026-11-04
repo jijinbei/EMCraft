@@ -196,7 +196,7 @@ fn changed_packages(base: &str) -> Result<changed::Affected, String> {
     files.extend(git(&["ls-files", "--others", "--exclude-standard"])?.lines().map(str::to_owned));
     let out = cargo().args(["metadata", "--format-version", "1", "--no-deps"]).output().map_err(|e| format!("cargo metadata: {e}"))?;
     let meta: serde_json::Value = serde_json::from_slice(&out.stdout).map_err(|e| format!("cargo metadata: {e}"))?;
-    let root = meta["workspace_root"].as_str().map(PathBuf::from).unwrap_or_else(root);
+    let root = meta["workspace_root"].as_str().map_or_else(root, PathBuf::from);
     changed::affected(&meta, &root, &files)
 }
 

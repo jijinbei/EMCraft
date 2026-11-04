@@ -89,7 +89,7 @@ fn worst(a: &OpenRun, b: &OpenRun) -> f64 {
 static DEVICE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn on(m: &Model, o: &OpenOptions, freqs: &[f64], backend: Backend, precision: Precision) -> OpenRun {
-    let _one = DEVICE.lock().unwrap_or_else(|e| e.into_inner());
+    let _one = DEVICE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let t = Instant::now();
     let r = radiate_with(m, o, freqs, Some(&Gpu { backend, precision })).unwrap();
     eprintln!("{backend} {precision}: {} steps in {:.2?}", r.steps, t.elapsed());

@@ -64,7 +64,7 @@ fn vector(a: &[C], n: usize, lambda: C, scale: f64) -> Option<Vec<C>> {
     let mut v: Vec<C> = (0..n).map(|i| C::new(1.0 + 0.1 * i as f64, 0.05 * i as f64)).collect();
     for _ in 0..3 {
         v = solve(m.clone(), v)?;
-        let norm = v.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
+        let norm = v.iter().map(num_complex::Complex::norm_sqr).sum::<f64>().sqrt();
         if !(norm > 0.0 && norm.is_finite()) {
             return None;
         }
@@ -160,14 +160,14 @@ fn eigenvalues(mut h: Vec<C>, n: usize) -> Option<Vec<C>> {
 fn hessenberg(a: &mut [C], n: usize) {
     for k in 0..n.saturating_sub(2) {
         let x: Vec<C> = (k + 1..n).map(|i| a[i * n + k]).collect();
-        let alpha = x.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
+        let alpha = x.iter().map(num_complex::Complex::norm_sqr).sum::<f64>().sqrt();
         if alpha == 0.0 {
             continue;
         }
         let phase = if x[0].norm() > 0.0 { x[0] / x[0].norm() } else { C::new(1.0, 0.0) };
         let mut v = x;
         v[0] += phase * alpha;
-        let vn = v.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
+        let vn = v.iter().map(num_complex::Complex::norm_sqr).sum::<f64>().sqrt();
         if vn == 0.0 {
             continue;
         }

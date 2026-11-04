@@ -295,7 +295,7 @@ mod tests {
     fn sums_and_products_are_exact() {
         let big = Expansion::from_f64(1e300);
         let tiny = Expansion::from_f64(1e-300);
-        let s = big.clone() + tiny.clone();
+        let s = big.clone() + tiny;
         assert_eq!(s.0, vec![1e-300, 1e300]);
         assert_eq!((s - big).0, vec![1e-300]);
         let a = Expansion::diff(1.0, 1e-20); // 1 - 1e-20, two components

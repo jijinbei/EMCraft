@@ -406,7 +406,7 @@ mod tests {
     }
 
     fn eval(p: &Bernstein, x: &[Vec<f64>]) -> f64 {
-        let refs: Vec<&[f64]> = x.iter().map(|v| v.as_slice()).collect();
+        let refs: Vec<&[f64]> = x.iter().map(std::vec::Vec::as_slice).collect();
         p.eval(&refs)
     }
 

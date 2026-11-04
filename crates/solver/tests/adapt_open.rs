@@ -84,7 +84,7 @@ fn a_conductors_lifted_trace_is_the_scattered_fields_data() {
     let eta = open_indicator(&d, &m, &r).unwrap();
     // Without the lifted values the elements on the sphere would see a scattered field whose
     // trace is zero there instead of −n × E_inc: a jump the solution does not have.
-    let mut bare = r.clone();
+    let mut bare = r;
     bare.lifted.clear();
     let wrong = open_indicator(&d, &m, &bare).unwrap();
     let mesh = m.mesh.as_ref().unwrap();

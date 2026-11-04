@@ -116,11 +116,10 @@ pub fn scan(dir: &Path) -> Vec<Found> {
             let _ = std::fs::remove_file(&note);
             continue;
         }
-        let name = v
-            .get("name")
-            .and_then(Value::as_str)
-            .map(|n| emcraft_engine::text::clip(n, 200))
-            .unwrap_or_else(|| file.file_stem().map_or_else(|| "Untitled".to_owned(), |s| s.to_string_lossy().into_owned()));
+        let name = v.get("name").and_then(Value::as_str).map_or_else(
+            || file.file_stem().map_or_else(|| "Untitled".to_owned(), |s| s.to_string_lossy().into_owned()),
+            |n| emcraft_engine::text::clip(n, 200),
+        );
         let original = v.get("original").and_then(Value::as_str).filter(|o| !o.trim().is_empty()).map(|o| emcraft_engine::text::clip(o, 4096));
         let when = modified(&file);
         // Saved since the copy: nothing to recover.

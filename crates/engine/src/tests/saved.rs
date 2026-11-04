@@ -75,7 +75,7 @@ fn a_solved_sweep_opens_with_its_fields_and_needs_no_solve() {
     same_results(&s.results, &t.results);
     // Current, the kept solve it is in memory (restoring it solves nothing), clean.
     assert!(!t.results().any_stale());
-    assert!(!t.is_dirty() && t.archive().last().is_some_and(|a| a.in_memory()));
+    assert!(!t.is_dirty() && t.archive().last().is_some_and(super::super::archive::Archived::in_memory));
     // The field at a point reads as before.
     let probe = json!({"frequency": 8, "at": [[11.43, 5.08, 50.0]]});
     assert_eq!(t.execute("results.probe", &probe).unwrap(), s.execute("results.probe", &probe).unwrap());

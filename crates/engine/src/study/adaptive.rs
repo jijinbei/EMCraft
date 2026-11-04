@@ -238,7 +238,7 @@ mod tests {
         let a: Vec<f64> = (0..6).map(|i| i as f64).collect();
         let b = vec![10.0, 20.0, 30.0];
         let points: Vec<Vec<f64>> = a.iter().flat_map(|x| b.iter().map(move |y| vec![*x, *y])).collect();
-        let axes = vec![a.clone(), b.clone()];
+        let axes = vec![a, b];
         let run = || {
             let mut order = Vec::new();
             let (rows, _) = fill(&points, &axes, 8, &mut |i, _| {
@@ -254,7 +254,7 @@ mod tests {
         };
         let (o1, r1) = run();
         assert_eq!(run(), (o1.clone(), r1));
-        let mut unique = o1.clone();
+        let mut unique = o1;
         unique.sort();
         unique.dedup();
         assert_eq!(unique.len(), 8);
