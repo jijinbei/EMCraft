@@ -187,6 +187,8 @@ impl DeviceSelection {
 #[derive(Default)]
 pub struct Workflow {
     status: Option<(u64, [StepState; 9])>,
+    /// [`statuses_now`] worked out once for the frame, with what it was worked out from.
+    shown: Option<(Shown, [StepState; 9])>,
     /// The estimate of the step's run (the Mesh step: one solve at an order; Setup and Run: the
     /// run as set up).
     estimate: Option<Estimate>,
@@ -205,6 +207,26 @@ pub struct Workflow {
     pub refusal: Option<String>,
     /// The Setup form differs from the confirmed settings, or none are ([`unconfirmed`]).
     pub unconfirmed: bool,
+}
+
+/// What [`statuses_now`] depends on besides the session's statuses.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Shown {
+    revision: u64,
+    unconfirmed: bool,
+    refused: bool,
+    failed: bool,
+}
+
+impl Shown {
+    fn of(app: &EmcraftApp) -> Shown {
+        Shown {
+            revision: app.revision,
+            unconfirmed: app.session.model().job.setup().is_some() && unconfirmed(app),
+            refused: app.workflow.refusal.is_some(),
+            failed: run_failure(app).is_some(),
+        }
+    }
 }
 
 /// `project.estimate`'s reply, with the revision and the request it was asked for.
@@ -242,14 +264,18 @@ pub fn prepare(app: &mut EmcraftApp) {
     let key = app.revision;
     sync_setup(app);
     check_form(app);
+    if app.workflow.status.as_ref().is_none_or(|(k, _)| *k != key) {
+        app.workflow.status = Some((key, emcraft_engine::workflow::steps(&app.session)));
+    }
     // A refusal lasts while something blocks Run.
     if let Some(r) = app.workflow.refusal.take()
-        && !run::preflight(&app.session, &statuses_now(app)).blocking.is_empty()
+        && !run::preflight(&app.session, &statuses_now(app)[..]).blocking.is_empty()
     {
         app.workflow.refusal = Some(r);
     }
-    if app.workflow.status.as_ref().is_none_or(|(k, _)| *k != key) {
-        app.workflow.status = Some((key, emcraft_engine::workflow::steps(&app.session)));
+    let shown = Shown::of(app);
+    if app.workflow.shown.as_ref().is_none_or(|(k, _)| *k != shown) {
+        app.workflow.shown = Some((shown, statuses_now(app).into_owned()));
     }
     // What the step's estimate is of: one solve at the Setup's order (Mesh), the run as the
     // form sets it up (Setup, Run).
@@ -350,8 +376,15 @@ pub fn run_estimate(app: &EmcraftApp) -> Option<&Result<Value, String>> {
 
 /// The statuses of the steps: the session's (the cache when it is current, else worked out on
 /// a copy), with what the window knows on top: after a refused Run, the steps that block it
-/// need attention; after a run failed, Run does.
-pub fn statuses_now(app: &EmcraftApp) -> [StepState; 9] {
+/// need attention; after a run failed, Run does. Worked out once a frame (`prepare`), borrowed
+/// from there while nothing it depends on changed.
+pub fn statuses_now(app: &EmcraftApp) -> std::borrow::Cow<'_, [StepState; 9]> {
+    let now = Shown::of(app);
+    if let Some((k, states)) = &app.workflow.shown
+        && *k == now
+    {
+        return std::borrow::Cow::Borrowed(states);
+    }
     let mut states = match &app.workflow.status {
         Some((k, v)) if *k == app.revision => v.clone(),
         _ => emcraft_engine::workflow::steps(&app.session),
@@ -379,7 +412,7 @@ pub fn statuses_now(app: &EmcraftApp) -> [StepState; 9] {
     {
         run.status = run.status.min(Status::Missing);
     }
-    states
+    std::borrow::Cow::Owned(states)
 }
 
 /// Why the last run failed, while that is the last word (the Run panel shows it in full).

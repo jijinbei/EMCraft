@@ -119,7 +119,7 @@ pub fn start_run(app: &mut EmcraftApp) -> Result<Value, UiError> {
 
     super::check_form(app);
     let states = statuses_now(app);
-    let pre = preflight(&app.session, &states);
+    let pre = preflight(&app.session, &states[..]);
     if !pre.blocking.is_empty() {
         let n = pre.blocking.len();
         let e = UiError::Refused(format!(

@@ -70,8 +70,8 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
                             Step::Boundaries => model::boundaries(app, ui),
                             Step::Mesh => model::mesh(app, ui),
                             Step::Setup => setup::setup(app, fields, ui, out),
-                            Step::Run => run::run_panel(app, ui, &states, out),
-                            Step::Results => results::results(app, fields, ui, &states, out),
+                            Step::Run => run::run_panel(app, ui, &states[..], out),
+                            Step::Results => results::results(app, fields, ui, &states[..], out),
                         }
                     });
                 if let Some(d) = dialog {
