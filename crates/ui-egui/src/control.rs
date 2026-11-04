@@ -140,7 +140,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         // The import dialog: what the chosen file holds (`geometry.import.inspect`'s reply or why
         // it cannot be read) and whether its options are unfolded.
         let detected = app.replies.import.as_ref().map(|p| match &p.reply {
-            Ok(v) => v.clone(),
+            Ok(v) => json!(v),
             Err(e) => json!({"error": e}),
         });
         json!({"command": d.command.id, "docked": d.docked, "fields": fields, "errors": errors, "error": d.error,

@@ -329,6 +329,35 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     }))
 }
 
+/// `geometry.import.inspect`'s reply: what a part holds.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ImportInspection {
+    /// `solidcraft`, `stl` or `3mf`.
+    pub format: String,
+    pub bodies: Vec<ImportedBody>,
+    /// Its extent (display units), none without vertices.
+    pub size: Option<[f64; 3]>,
+    /// `display` (STL has none) or `file`.
+    pub units: String,
+    /// A design's parameters.
+    pub parameters: Vec<DesignParameter>,
+}
+
+/// A design's parameter: its value as saved (in `unit`), none when the design leaves it out.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DesignParameter {
+    pub name: String,
+    pub value: Option<f64>,
+    pub unit: String,
+}
+
+/// A body of an inspected part.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ImportedBody {
+    pub name: String,
+    pub triangles: usize,
+}
+
 /// `geometry.import.inspect`: what a part holds — its format, bodies, size, units and a
 /// design's parameters — read as `geometry.import` reads it, nothing imported.
 pub fn import_inspect(s: &mut Session, p: &Params) -> Result<Value> {
@@ -339,7 +368,7 @@ pub fn import_inspect(s: &mut Session, p: &Params) -> Result<Value> {
     let (format, bodies, parameters) = if design {
         let parameters = emcraft_io::solidcraft::parameters(&bytes)?;
         let bodies = emcraft_io::solidcraft::read(&bytes, &[], None)?.into_iter().map(|b| b.surface).collect::<Vec<_>>();
-        let parameters: Vec<Value> = parameters.into_iter().map(|q| json!({"name": q.name, "value": q.value, "unit": q.unit})).collect();
+        let parameters = parameters.into_iter().map(|q| DesignParameter { name: q.name, value: q.value, unit: q.unit }).collect();
         ("solidcraft", bodies, parameters)
     } else {
         let format = match emcraft_io::Format::of(path)? {
@@ -351,12 +380,12 @@ pub fn import_inspect(s: &mut Session, p: &Params) -> Result<Value> {
     let lo = bodies.iter().flat_map(|b| b.positions.iter()).fold([f64::INFINITY; 3], |m, q| [0, 1, 2].map(|d| m[d].min(q[d])));
     let hi = bodies.iter().flat_map(|b| b.positions.iter()).fold([f64::NEG_INFINITY; 3], |m, q| [0, 1, 2].map(|d| m[d].max(q[d])));
     let size = (lo[0] <= hi[0]).then(|| [0, 1, 2].map(|d| s.show_length(hi[d] - lo[d])));
-    Ok(json!({
-        "format": format,
-        "bodies": bodies.iter().map(|b| json!({"name": b.name, "triangles": b.triangles.len()})).collect::<Vec<_>>(),
-        "size": size,
-        "units": if format == "stl" { "display" } else { "file" },
-        "parameters": parameters,
+    Ok(json!(ImportInspection {
+        format: format.to_owned(),
+        bodies: bodies.iter().map(|b| ImportedBody { name: b.name.clone(), triangles: b.triangles.len() }).collect(),
+        size,
+        units: if format == "stl" { "display" } else { "file" }.to_owned(),
+        parameters,
     }))
 }
 

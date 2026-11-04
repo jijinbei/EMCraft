@@ -385,36 +385,83 @@ pub fn eigenmodes(s: &mut Session, p: &Params) -> Result<Value> {
     crate::results::eigenmode_table(s)
 }
 
+/// `solve.port_modes`' reply: the frequency (display units) and each port's modes.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PortModes {
+    pub frequency: f64,
+    /// The display length β and the attenuation are per.
+    pub length_unit: String,
+    pub ports: Vec<PortModeList>,
+}
+
+/// A port's modes, the fundamental first.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PortModeList {
+    pub name: String,
+    pub modes: Vec<PortModeRow>,
+}
+
+/// A port mode: β (rad per display length) and the effective permittivity when it propagates,
+/// its attenuation (dB per display length) when it does not or in a lossy medium, and the line
+/// impedance of a TEM or quasi-TEM mode.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PortModeRow {
+    pub name: String,
+    pub propagating: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beta: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eps_eff: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub impedance: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attenuation_db: Option<f64>,
+    pub closed_form: bool,
+}
+
 pub fn port_modes(s: &mut Session, p: &Params) -> Result<Value> {
+    Ok(json!(port_modes_of(s, p)?))
+}
+
+/// [`port_modes`] as its type.
+fn port_modes_of(s: &mut Session, p: &Params) -> Result<PortModes> {
     let f = crate::args::frequency_or_band_top(s, p, "frequency", crate::args::SET_THE_BAND)?;
     let list = emcraft_solver::driven::port_modes(&s.model, p.order()?, f)?;
     let k0 = 2.0 * PI * f / C0;
     // Per display length: a quantity per metre times the metres in one unit.
     let per_unit = s.display.length.to_si(1.0);
-    let ports: Vec<Value> = list
+    let ports = list
         .iter()
-        .map(|(name, modes)| {
-            let rows: Vec<Value> = modes.iter().map(|m| port_mode_row(m, k0, per_unit)).collect();
-            json!({"name": name, "modes": rows})
-        })
+        .map(|(name, modes)| PortModeList { name: name.clone(), modes: modes.iter().map(|m| port_mode_row(m, k0, per_unit)).collect() })
         .collect();
-    Ok(json!({"frequency": s.show_frequency(f), "length_unit": s.display.length.symbol(), "ports": ports}))
+    Ok(PortModes { frequency: s.show_frequency(f), length_unit: s.display.length.symbol().to_owned(), ports })
 }
 
-/// A port mode in a reply: β (per display length `per_unit` m) and the effective permittivity
-/// at free-space wavenumber `k0` when it propagates, its attenuation when it does not.
-fn port_mode_row(m: &emcraft_solver::driven::ModeInfo, k0: f64, per_unit: f64) -> Value {
+/// A port mode at free-space wavenumber `k0`, per display length `per_unit` m.
+fn port_mode_row(m: &emcraft_solver::driven::ModeInfo, k0: f64, per_unit: f64) -> PortModeRow {
+    let row = PortModeRow {
+        name: m.name.clone(),
+        propagating: false,
+        beta: None,
+        eps_eff: None,
+        impedance: None,
+        attenuation_db: None,
+        closed_form: m.closed_form,
+    };
     // In a lossy medium: γ = α + jβ, propagating while β > α.
     if let Some(g) = m.gamma {
-        let attenuation_db = 20.0 * LOG10_E * g.re * per_unit;
-        let eps_eff = -(g * g).re / (k0 * k0);
-        return json!({"name": m.name, "propagating": g.im > g.re, "beta": g.im * per_unit, "attenuation_db": attenuation_db, "eps_eff": eps_eff, "impedance": m.impedance, "closed_form": m.closed_form});
+        return PortModeRow {
+            propagating: g.im > g.re,
+            beta: Some(g.im * per_unit),
+            attenuation_db: Some(20.0 * LOG10_E * g.re * per_unit),
+            eps_eff: Some(-(g * g).re / (k0 * k0)),
+            impedance: m.impedance,
+            ..row
+        };
     }
     if m.beta2 > 0.0 {
-        let beta = m.beta2.sqrt();
-        json!({"name": m.name, "propagating": true, "beta": beta * per_unit, "eps_eff": m.beta2 / (k0 * k0), "impedance": m.impedance, "closed_form": m.closed_form})
+        PortModeRow { propagating: true, beta: Some(m.beta2.sqrt() * per_unit), eps_eff: Some(m.beta2 / (k0 * k0)), impedance: m.impedance, ..row }
     } else {
-        let alpha = (-m.beta2).sqrt();
-        json!({"name": m.name, "propagating": false, "attenuation_db": 20.0 * LOG10_E * alpha * per_unit, "closed_form": m.closed_form})
+        PortModeRow { attenuation_db: Some(20.0 * LOG10_E * (-m.beta2).sqrt() * per_unit), ..row }
     }
 }

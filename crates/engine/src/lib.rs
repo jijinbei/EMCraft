@@ -33,6 +33,7 @@ mod elements;
 mod estimate;
 pub mod expr;
 mod geometry;
+pub use geometry::{DesignParameter, ImportInspection, ImportedBody};
 pub mod guides;
 mod items;
 pub mod job;
@@ -72,7 +73,7 @@ pub use results::{ComparePoint, Comparison};
 pub use script::Step;
 pub use sdata::SData;
 pub use session::{Change, Limits, ResultKind, Results, Session, Sweep};
-pub use solve::{Compute, Device, LinearSolver};
+pub use solve::{Compute, Device, LinearSolver, PortModeList, PortModeRow, PortModes};
 pub use view::field_view;
 
 /// results.tdr's chart, for the UI.

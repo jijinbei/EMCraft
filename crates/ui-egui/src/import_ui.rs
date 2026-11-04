@@ -72,7 +72,11 @@ pub(crate) fn prepare(app: &mut EmcraftApp) {
     if let Ok(u) = text(d, "unit").parse::<f64>() {
         params["unit"] = json!(u);
     }
-    let reply = app.session.execute("geometry.import.inspect", &params).map_err(|e| e.to_string());
+    let reply = app
+        .session
+        .execute("geometry.import.inspect", &params)
+        .map_err(|e| e.to_string())
+        .and_then(|v| serde_json::from_value(v).map_err(|e| e.to_string()));
     app.replies.import = Some(ImportProbe { key, reply });
 }
 
@@ -82,7 +86,7 @@ pub(crate) fn body(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, asked: &
     let session = &app.session;
     let probe = app.replies.import.as_ref().filter(|p| p.key == key(d));
     let reply = probe.and_then(|p| p.reply.as_ref().ok());
-    let format = reply.and_then(|r| r["format"].as_str());
+    let format = reply.map(|r| r.format.as_str());
     chips(ui, format);
     ui.add_space(t.space_6);
     let empty = text(d, "path").is_empty();
@@ -169,13 +173,19 @@ fn chips(ui: &mut egui::Ui, format: Option<&str>) {
 
 /// What the file holds: its bodies, size and units; a design's parameters as fields that write
 /// the dialog's `parameters`.
-fn detected(ui: &mut egui::Ui, d: &mut Dialog, r: &Value, session: &emcraft_engine::Session, drawn: &mut Vec<(egui::Id, bool)>) {
+fn detected(
+    ui: &mut egui::Ui,
+    d: &mut Dialog,
+    r: &emcraft_engine::ImportInspection,
+    session: &emcraft_engine::Session,
+    drawn: &mut Vec<(egui::Id, bool)>,
+) {
     let t = &Tokens::get();
     let l = session.display().length.symbol();
     let frame = egui::Frame::NONE.fill(t.panel).corner_radius(t.radius_sm).inner_margin(egui::Margin::symmetric(8, 6));
     let shown = frame.show(ui, |ui| {
         ui.set_width(ui.available_width());
-        let bodies: Vec<&str> = r["bodies"].as_array().into_iter().flatten().filter_map(|b| b["name"].as_str()).collect();
+        let bodies: Vec<&str> = r.bodies.iter().map(|b| b.name.as_str()).collect();
         let names = bodies.iter().take(6).copied().collect::<Vec<_>>().join(", ");
         let more = if bodies.len() > 6 { "…" } else { "" };
         let count = if bodies.len() == 1 { tr("1 body").to_owned() } else { trf("{n} bodies", args!(n = bodies.len())) };
@@ -183,13 +193,13 @@ fn detected(ui: &mut egui::Ui, d: &mut Dialog, r: &Value, session: &emcraft_engi
             ui.text(Style::Strong, count);
             ui.text(Style::Small, format!("{names}{more}"));
         });
-        if let Some(size) = r["size"].as_array() {
-            let v: Vec<String> = size.iter().filter_map(Value::as_f64).map(|x| crate::dialogs::value_text(&json!((x * 1e6).round() / 1e6))).collect();
-            let units = if r["units"] == "display" { tr("in display units (STL has none)") } else { tr("units from the file") };
+        if let Some(size) = r.size {
+            let v: Vec<String> = size.iter().map(|x| crate::dialogs::value_text(&json!((x * 1e6).round() / 1e6))).collect();
+            let units = if r.units == "display" { tr("in display units (STL has none)") } else { tr("units from the file") };
             ui_kit::small(ui, format!("{} {l} · {units}", v.join(" × ")), t.text_dim);
         }
-        let params = r["parameters"].as_array().filter(|p| !p.is_empty());
-        if let Some(params) = params {
+        let params = &r.parameters;
+        if !params.is_empty() {
             ui.add_space(t.space_4);
             ui_kit::small(ui, "Parameters", t.text_dim);
             parameters(ui, d, params, drawn);
@@ -200,15 +210,14 @@ fn detected(ui: &mut egui::Ui, d: &mut Dialog, r: &Value, session: &emcraft_engi
 
 /// A design's parameters, each a field holding its value as saved until changed; a change is
 /// written into the dialog's `parameters` (name → number, or an expression the design reads).
-fn parameters(ui: &mut egui::Ui, d: &mut Dialog, params: &[Value], drawn: &mut Vec<(egui::Id, bool)>) {
+fn parameters(ui: &mut egui::Ui, d: &mut Dialog, params: &[emcraft_engine::DesignParameter], drawn: &mut Vec<(egui::Id, bool)>) {
     let t = &Tokens::get();
     let Some(field) = d.field_mut("parameters") else { return };
     let mut set: Map<String, Value> = serde_json::from_str(field.text.trim()).ok().and_then(|v: Value| v.as_object().cloned()).unwrap_or_default();
     let mut changed = false;
     for q in params.iter().take(64) {
-        let Some(name) = q["name"].as_str() else { continue };
-        let unit = q["unit"].as_str().unwrap_or("");
-        let saved = q["value"].as_f64().map(|x| crate::dialogs::value_text(&json!(x))).unwrap_or_default();
+        let (name, unit) = (q.name.as_str(), q.unit.as_str());
+        let saved = q.value.map(|x| crate::dialogs::value_text(&json!(x))).unwrap_or_default();
         let id = egui::Id::new(("import_param", name));
         let mut value =
             ui.data(|m| m.get_temp::<String>(id)).unwrap_or_else(|| set.get(name).map_or_else(|| saved.clone(), crate::dialogs::value_text));
@@ -239,8 +248,8 @@ fn parameters(ui: &mut egui::Ui, d: &mut Dialog, params: &[Value], drawn: &mut V
 }
 
 /// What importing makes of the file: one line and its pictogram, by the region chosen.
-fn outcome(ui: &mut egui::Ui, d: &mut Dialog, reply: Option<&Value>) {
-    let bodies = reply.and_then(|r| r["bodies"].as_array()).map_or(0, Vec::len);
+fn outcome(ui: &mut egui::Ui, d: &mut Dialog, reply: Option<&emcraft_engine::ImportInspection>) {
+    let bodies = reply.map_or(0, |r| r.bodies.len());
     let region = text(d, "region");
     let open = d.fields.iter().any(|f| f.name == "open" && f.on);
     let (kind, line) = match region {

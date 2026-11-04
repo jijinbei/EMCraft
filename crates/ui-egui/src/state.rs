@@ -243,7 +243,7 @@ pub struct ViewState {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Replies {
     pub pcb: Option<emcraft_engine::pcb::Inspection>,
-    pub port_modes: Option<Value>,
+    pub port_modes: Option<emcraft_engine::PortModes>,
     pub compare: Option<emcraft_engine::Comparison>,
     /// What the import dialog's file holds (`geometry.import.inspect`).
     pub import: Option<ImportProbe>,
@@ -253,7 +253,7 @@ pub struct Replies {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ImportProbe {
     pub key: String,
-    pub reply: Result<Value, String>,
+    pub reply: Result<emcraft_engine::ImportInspection, String>,
 }
 
 /// PCB controls and an explicit pinned comparison, independent of the volume-field state.

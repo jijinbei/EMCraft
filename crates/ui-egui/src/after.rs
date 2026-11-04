@@ -193,7 +193,7 @@ impl EmcraftApp {
                 });
             }
             "solve.port_modes" => {
-                self.replies.port_modes = Some(reply.clone());
+                self.replies.port_modes = serde_json::from_value(reply.clone()).ok();
                 // The Excitation step tabulates them in its panel, beside the 3D view.
                 if self.place.step() != Some(steps::Step::Excitation) {
                     self.place = self.place.show(View::PortModes);

@@ -16,14 +16,14 @@ pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, ou
             ui.act(enabled, egui::Button::new(tr("Solve port modes…")), Fixed::PortModesSolve.into(), || Action::dialog("solve.port_modes"), out)
         });
     };
-    let lu = reply.get("length_unit").and_then(Value::as_str).unwrap_or("mm").to_owned();
+    let lu = reply.length_unit.as_str();
     let fu = app.session.display().frequency.symbol();
-    ui.label(egui::RichText::new(trf("Port modes at {f} {unit}", args!(f = num(&reply["frequency"], 4), unit = fu))).size(t.font_heading));
+    ui.label(egui::RichText::new(trf("Port modes at {f} {unit}", args!(f = number(Some(reply.frequency), 4), unit = fu))).size(t.font_heading));
     // The mode picked (from the Excitation panel or a click here), else the first port's first;
     // the table scrolls to it once.
     let focus = app.workflow.mode_focus.clone().or_else(|| {
-        let name = reply.pointer("/ports/0/name").and_then(Value::as_str)?;
-        Some(crate::steps::ModeFocus { port: name.to_owned(), mode: 0, scroll: false })
+        let name = &reply.ports.first()?.name;
+        Some(crate::steps::ModeFocus { port: name.clone(), mode: 0, scroll: false })
     });
     let scroll = focus.as_ref().is_some_and(|f| f.scroll);
     if let Some(f) = focus.as_ref().filter(|f| f.scroll || app.workflow.mode_focus.is_none()) {
@@ -48,27 +48,27 @@ pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, ou
     let outer = ui;
     let ui = &mut table_ui;
     egui::ScrollArea::both().id_salt("modes_table").max_height(tall).show(ui, |ui| {
-        for port in reply.get("ports").and_then(Value::as_array).into_iter().flatten() {
-            crate::ui_kit::section(ui, trf("Port {name}", args!(name = port["name"].as_str().unwrap_or(""))));
-            egui::Grid::new(("modes", port["name"].as_str().unwrap_or(""))).striped(true).num_columns(6).show(ui, |ui| {
+        for port in &reply.ports {
+            let pname = port.name.as_str();
+            crate::ui_kit::section(ui, trf("Port {name}", args!(name = pname)));
+            egui::Grid::new(("modes", pname)).striped(true).num_columns(6).show(ui, |ui| {
                 super::dim_if_stale(ui);
                 let attenuation = trf("Attenuation (dB/{unit})", args!(unit = lu));
                 for h in [tr("Mode"), tr("Propagates"), &format!("β (rad/{lu})"), "εeff", "Z (Ω)", &attenuation] {
                     ui.text(Style::Strong, Raw(h));
                 }
                 ui.end_row();
-                let pname = port["name"].as_str().unwrap_or("");
-                for (k, m) in port.get("modes").and_then(Value::as_array).into_iter().flatten().enumerate() {
+                for (k, m) in port.modes.iter().enumerate() {
                     // The mode picked in the Excitation panel: marked, and scrolled to once.
                     let focused = focus.as_ref().is_some_and(|f| f.port == pname && f.mode == k);
                     let back = ui.painter().add(egui::Shape::Noop);
                     let cells = [
-                        ui.label(m["name"].as_str().unwrap_or("?")),
-                        ui.label(tr(if m["propagating"] == json!(true) { "yes" } else { "no" })),
-                        ui.label(num(&m["beta"], 5)),
-                        ui.label(num(&m["eps_eff"], 5)),
-                        ui.label(num(&m["impedance"], 3)),
-                        ui.label(num(&m["attenuation_db"], 3)),
+                        ui.label(m.name.as_str()),
+                        ui.label(tr(if m.propagating { "yes" } else { "no" })),
+                        ui.label(number(m.beta, 5)),
+                        ui.label(number(m.eps_eff, 5)),
+                        ui.label(number(m.impedance, 3)),
+                        ui.label(number(m.attenuation_db, 3)),
                     ];
                     ui.end_row();
                     let row = cells.iter().fold(cells[0].rect, |r, c| r.union(c.rect)).expand2(egui::vec2(4.0, 1.0));
@@ -108,10 +108,9 @@ fn mode_picture(
     slot: &mut Cached<PictureKey<crate::state::ModePicture>>,
     f: &crate::steps::ModeFocus,
     ui: &mut egui::Ui,
-    reply: &Value,
+    reply: &emcraft_engine::PortModes,
 ) {
-    let fu = app.session.display().frequency;
-    let Some(frequency) = reply["frequency"].as_f64().map(|v| fu.to_si(v)) else { return };
+    let frequency = app.session.display().frequency.to_si(reply.frequency);
     let width = picture_width(ui);
     let key = PictureKey::new(app.revision, width, crate::state::ModePicture { port: f.port.clone(), mode: f.mode, frequency });
     let session = &app.session;
@@ -127,7 +126,12 @@ fn mode_picture(
 }
 
 pub(super) fn num(v: &Value, digits: usize) -> String {
-    v.as_f64().map_or_else(|| "–".into(), |x| format!("{x:.digits$}"))
+    number(v.as_f64(), digits)
+}
+
+/// `v` to `digits` places, a dash without one.
+pub(super) fn number(v: Option<f64>, digits: usize) -> String {
+    v.map_or_else(|| "–".into(), |x| format!("{x:.digits$}"))
 }
 
 pub(super) fn eigenmodes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {

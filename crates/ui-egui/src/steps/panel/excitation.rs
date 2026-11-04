@@ -38,8 +38,7 @@ pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions)
     let hint = if ready { "" } else { "needs a mesh (step 6)" };
     ui.act(ready && !busy, ui_kit::styled("Preview port modes", true), Fixed::ExcitationPreview.into(), || Action::PreviewPortModes, out).hint(hint);
     let Some(reply) = app.replies.port_modes.as_ref() else { return };
-    let f = reply.get("frequency").and_then(Value::as_f64).unwrap_or(f64::NAN);
-    ui_kit::small(ui, trf("at {f} {unit}", args!(f = fmt(f), unit = fu)), t.text_dim);
+    ui_kit::small(ui, trf("at {f} {unit}", args!(f = fmt(reply.frequency), unit = fu)), t.text_dim);
     // A row opens its mode in the Port modes view.
     mode_table(app, ui, reply, out);
 }
@@ -67,9 +66,9 @@ fn port_roles(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 
 /// The port-mode preview: a row per mode. Hovering a row lights its port in the 3D view;
 /// clicking it opens the Port modes view at that mode.
-fn mode_table(app: &EmcraftApp, ui: &mut egui::Ui, reply: &Value, out: &mut Actions) {
+fn mode_table(app: &EmcraftApp, ui: &mut egui::Ui, reply: &emcraft_engine::PortModes, out: &mut Actions) {
     let t = &Tokens::get();
-    let unit = reply.get("length_unit").and_then(Value::as_str).unwrap_or("m");
+    let unit = reply.length_unit.as_str();
     let w = ui.available_width();
     let widths = [w * 0.34, w * 0.24, w * 0.2, w * 0.2];
     let cell = |ui: &mut egui::Ui, width: f32, text: egui::WidgetText| {
@@ -90,22 +89,21 @@ fn mode_table(app: &EmcraftApp, ui: &mut egui::Ui, reply: &Value, out: &mut Acti
     let mut row = 0usize;
     let mut hovered = None;
     let mut clicked = None;
-    for p in reply.get("ports").and_then(Value::as_array).into_iter().flatten() {
-        let name = p.get("name").and_then(Value::as_str).unwrap_or("?");
+    for p in &reply.ports {
+        let name = p.name.as_str();
         let port = app.session.model().ports.iter().position(|q| q.name == name);
-        for (k, mode) in p.get("modes").and_then(Value::as_array).into_iter().flatten().take(8).enumerate() {
-            let n = |key: &str| mode.get(key).and_then(Value::as_f64);
+        for (k, mode) in p.modes.iter().take(8).enumerate() {
             let txt = |s: String| egui::WidgetText::from(egui::RichText::new(s).size(t.font_small).color(t.text));
             let back = ui.painter().add(egui::Shape::Noop);
             let r = ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
-                cell(ui, widths[0], txt(format!("{name} · {}", mode.get("name").and_then(Value::as_str).unwrap_or(""))));
-                if mode.get("propagating").and_then(Value::as_bool) == Some(true) {
-                    cell(ui, widths[1], txt(n("beta").map_or_else(|| "—".into(), |v| format!("{v:.4}"))));
-                    cell(ui, widths[2], txt(n("eps_eff").map_or_else(|| "—".into(), |v| format!("{v:.4}"))));
-                    cell(ui, widths[3], txt(n("impedance").map_or_else(|| "—".into(), |v| format!("{v:.2}"))));
+                cell(ui, widths[0], txt(format!("{name} · {}", mode.name)));
+                if mode.propagating {
+                    cell(ui, widths[1], txt(mode.beta.map_or_else(|| "—".into(), |v| format!("{v:.4}"))));
+                    cell(ui, widths[2], txt(mode.eps_eff.map_or_else(|| "—".into(), |v| format!("{v:.4}"))));
+                    cell(ui, widths[3], txt(mode.impedance.map_or_else(|| "—".into(), |v| format!("{v:.2}"))));
                 } else {
-                    let a = n("attenuation_db").unwrap_or(f64::NAN);
+                    let a = mode.attenuation_db.unwrap_or(f64::NAN);
                     ui_kit::small(ui, trf("cut off, {a} dB/{unit}", args!(a = format!("{a:.1}"), unit = unit)), t.text_dim);
                 }
             });
