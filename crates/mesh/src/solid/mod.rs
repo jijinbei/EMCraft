@@ -167,6 +167,24 @@ fn spherical_layer(model: &Model) -> Result<Option<SphericalLayer>> {
 /// [`solid`] with its [`SolidOptions`]: sizes per material, curved edges or straight, local
 /// refinements.
 pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
+    // A sector keeps the inclusions inside it; those outside it are their images'.
+    let kept;
+    let model = match &model.rotation {
+        Some(rot) if !model.inclusions.is_empty() => {
+            let mut m = model.clone();
+            let mut sides = Vec::with_capacity(m.inclusions.len());
+            for (i, inc) in m.inclusions.iter().enumerate() {
+                sides.push(rot.sector_side(&inc.shape, inc.at).ok_or_else(|| {
+                    MeshError::invalid("rotational symmetry", format!("not supported yet: inclusion {} lies across the sector's cut faces", i + 1))
+                })?);
+            }
+            let mut side = sides.into_iter();
+            m.inclusions.retain(|_| side.next().unwrap_or(false));
+            kept = m;
+            &kept
+        }
+        _ => model,
+    };
     let SolidOptions { sizes, curved, refine } = options;
     let curved = *curved;
     let mut locals = local_sizes(refine)?;
@@ -184,8 +202,8 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
     // inclusion's) with the layer's shell, meshed as a region of its own between it and the
     // solid's sphere — so the shell's tetrahedra are a layer of their own.
     let layer = spherical_layer(model)?;
-    if model.rotation.is_some() && (!model.inclusions.is_empty() || !model.symmetry.is_empty() || layer.is_some()) {
-        return Err(MeshError::invalid("rotational symmetry", "not supported yet with inclusions, symmetry planes or a spherical layer"));
+    if model.rotation.is_some() && (!model.symmetry.is_empty() || layer.is_some()) {
+        return Err(MeshError::invalid("rotational symmetry", "not supported yet with symmetry planes or a spherical layer"));
     }
     let mut main = match layer {
         Some(SphericalLayer { inner, .. }) => {

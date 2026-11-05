@@ -711,7 +711,7 @@ pub(crate) fn rotation_shown(s: &Session) -> Value {
 /// `model.rotation.find`.
 pub fn find_rotation(s: &mut Session, p: &Params) -> Result<Value> {
     let found = s.model.find_rotation().ok_or_else(|| {
-        let why = s.model.rotation_unsupported().unwrap_or_else(|| "the solid does not turn onto itself about any axis along z".into());
+        let why = s.model.rotation_blocker().unwrap_or_else(|| "the solid does not turn onto itself about any axis along z".into());
         EngineError::failed(format!("no rotational symmetry found: {why}"))
     })?;
     let max = emcraft_model::rotation::MAX_SECTORS as usize;

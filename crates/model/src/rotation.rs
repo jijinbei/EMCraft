@@ -97,6 +97,53 @@ impl Rotation {
         (-x * s + y * c).abs() <= tol && x * c + y * s >= -tol
     }
 
+    /// Whether a body (`shape` placed at `at`) lies inside the sector (`Some(true)`), outside it
+    /// (`Some(false)`) or across its cut faces (`None`), by its box across z against the wedge
+    /// (convex, its angle at most 2π/3): inside when the box's corners all are, outside when an
+    /// axis separates the box from the wedge's triangle out past the box (the separating axis
+    /// theorem: the box's sides and the triangle's), a millionth of the box's size to spare.
+    ///
+    /// ```
+    /// use emcraft_model::{Metres, Point3, Rotation, Shape};
+    ///
+    /// let r = Rotation::new(4, 0, [0.0, 0.0])?; // the sector from 8.4° to 98.4°
+    /// let post = Shape::Cylinder { radius: Metres::new(0.001)?, length: Metres::new(0.003)? };
+    /// assert_eq!(r.sector_side(&post, Point3::new(0.0035, 0.0035, 0.0)), Some(true)); // at 45°
+    /// assert_eq!(r.sector_side(&post, Point3::new(0.0, 0.005, 0.0)), None); // at 90°, across 98.4°
+    /// assert_eq!(r.sector_side(&post, Point3::new(0.005, -0.001, 0.0)), Some(false)); // below 0°
+    /// assert_eq!(r.sector_side(&post, Point3::new(0.0, 0.0, 0.0)), None); // on the axis
+    /// # Ok::<(), emcraft_model::ModelError>(())
+    /// ```
+    pub fn sector_side(&self, shape: &crate::Shape, at: Point3) -> Option<bool> {
+        let b = shape.bounds();
+        let (lo, hi) = (b.min.to_vec() + at.to_vec(), b.max.to_vec() + at.to_vec());
+        let margin = 1e-6 * (hi - lo).norm().max(f64::MIN_POSITIVE);
+        let c = self.centre;
+        let corners = [[lo.x, lo.y], [hi.x, lo.y], [hi.x, hi.y], [lo.x, hi.y]];
+        let (d0, d1) = ([self.start().cos(), self.start().sin()], [(self.start() + self.angle()).cos(), (self.start() + self.angle()).sin()]);
+        let cross = |a: [f64; 2], b: [f64; 2]| a[0] * b[1] - a[1] * b[0];
+        let rel = |p: [f64; 2]| [p[0] - c[0], p[1] - c[1]];
+        if corners.iter().all(|&p| cross(d0, rel(p)) > margin && cross(rel(p), d1) > margin) {
+            return Some(true);
+        }
+        let reach = 2.0 * corners.iter().map(|&p| rel(p)[0].hypot(rel(p)[1])).fold(0.0, f64::max) + 1.0;
+        let tri = [c, [c[0] + reach * d0[0], c[1] + reach * d0[1]], [c[0] + reach * d1[0], c[1] + reach * d1[1]]];
+        let mut axes = vec![[1.0, 0.0], [0.0, 1.0]];
+        for k in 0..3 {
+            let (p, q) = (tri[k], tri[(k + 1) % 3]);
+            axes.push([q[1] - p[1], p[0] - q[0]]);
+        }
+        let span = |pts: &[[f64; 2]], a: [f64; 2]| {
+            let n = a[0].hypot(a[1]).max(f64::MIN_POSITIVE);
+            pts.iter().map(|p| (p[0] * a[0] + p[1] * a[1]) / n).fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), v| (l.min(v), h.max(v)))
+        };
+        let separated = axes.iter().any(|&a| {
+            let ((l1, h1), (l2, h2)) = (span(&corners, a), span(&tri, a));
+            h1 + margin < l2 || h2 + margin < l1
+        });
+        separated.then_some(false)
+    }
+
     /// `p` turned one sector on.
     pub fn turned(&self, p: Point3) -> Point3 {
         self.turned_by(p, self.angle())
@@ -193,6 +240,20 @@ impl crate::Model {
         self.rotation.as_ref().and_then(|r| self.rotation_issue_of(r))
     }
 
+    /// Why no rotational symmetry is found: what [`Self::rotation_unsupported`] says, else what
+    /// keeps a quarter turn about a round solid's or a box's own axis from holding.
+    pub fn rotation_blocker(&self) -> Option<String> {
+        if let Some(why) = self.rotation_unsupported() {
+            return Some(why);
+        }
+        let centre = match &self.solid.as_ref()?.shape {
+            crate::Shape::Cylinder { .. } | crate::Shape::Sphere { .. } => [0.0, 0.0],
+            crate::Shape::Box { size } => [0.5 * size.x, 0.5 * size.y],
+            crate::Shape::Surface { .. } => return None,
+        };
+        self.rotation_issue_of(&Rotation { n: 4, m: 0, centre })
+    }
+
     /// What keeps the model from any rotational symmetry whatever its shape: no solid, or
     /// what a sector cannot carry yet.
     pub fn rotation_unsupported(&self) -> Option<String> {
@@ -202,8 +263,8 @@ impl crate::Model {
         if !self.symmetry.is_empty() || self.periodic.is_some() || self.open.is_some() {
             return Some("not supported yet: with symmetry planes, periodic boundaries or an open boundary".into());
         }
-        if !self.inclusions.is_empty() || !self.lumped.is_empty() || !self.sources.is_empty() {
-            return Some("not supported yet: with inclusions, lumped ports or sources (the solid and its features alone)".into());
+        if !self.lumped.is_empty() || !self.sources.is_empty() {
+            return Some("not supported yet: with lumped ports or sources".into());
         }
         None
     }
@@ -240,6 +301,43 @@ impl crate::Model {
         Ok(())
     }
 
+    /// Whether every inclusion turns onto one of the same filling, as [`Self::features_turn`]
+    /// checks features, and lies wholly inside or outside the sector (not yet across its cut
+    /// faces: an inclusion the sector keeps is meshed as it is, one outside it is its images').
+    fn inclusions_turn(&self, r: &Rotation) -> std::result::Result<(), String> {
+        const SIDE: usize = 9;
+        let samples = |inc: &crate::Inclusion| -> Vec<Point3> {
+            let b = inc.bounds();
+            let at = |i: usize, k: usize| b.min[k] + (i as f64 + 0.5) / SIDE as f64 * (b.max[k] - b.min[k]);
+            (0..SIDE * SIDE * SIDE)
+                .map(|n| Point3::new(at(n % SIDE, 0), at(n / SIDE % SIDE, 1), at(n / (SIDE * SIDE), 2)))
+                .filter(|p| inc.contains(*p))
+                .collect()
+        };
+        let inside: Vec<Vec<Point3>> = self.inclusions.iter().map(samples).collect();
+        for (i, inc) in self.inclusions.iter().enumerate() {
+            let onto = self.inclusions.iter().zip(&inside).any(|(o, theirs)| {
+                o.material == inc.material
+                    && inside[i].iter().all(|p| o.contains(r.turned(*p)))
+                    && theirs.iter().all(|q| inc.contains(r.turned_by(*q, -r.angle())))
+            });
+            if !onto {
+                return Err(format!(
+                    "inclusion {} does not turn onto an inclusion of its filling by 2π/{}: the model is not symmetric under the turn",
+                    i + 1,
+                    r.n
+                ));
+            }
+            if r.sector_side(&inc.shape, inc.at).is_none() {
+                return Err(format!(
+                    "not supported yet: inclusion {} lies across the sector's cut faces (one about the axis: solve.revolution)",
+                    i + 1
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Whether the model is the same turned by 2π/n about the axis: its solid (a cylinder or a
     /// sphere about its own axis, a box square across z about its middle and n = 4, an imported
     /// surface whose vertices turn onto its vertices), and nothing the sector cannot carry yet.
@@ -250,6 +348,7 @@ impl crate::Model {
             }
             let solid = self.solid.as_ref().ok_or("needs a solid")?;
             self.features_turn(r)?;
+            self.inclusions_turn(r)?;
             let b = solid.shape.bounds();
             let scale = (b.max - b.min).norm().max(f64::MIN_POSITIVE);
             let tol = 1e-9 * scale;

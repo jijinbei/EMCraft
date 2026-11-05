@@ -153,7 +153,7 @@ fn the_rotation_a_model_has_is_found() {
     let mut f = pillbox();
     f.execute("geometry.inclusion", &json!({"shape": "sphere", "radius": 2, "at": [0, 0, 7]})).unwrap();
     let e = f.execute("model.rotation.find", &json!({})).unwrap_err();
-    assert!(e.to_string().contains("not supported yet"), "{e}");
+    assert!(e.to_string().contains("across the sector"), "{e}");
 }
 
 /// A straight circular guide, radius 10 mm and 30 mm long, ports on both ends, on a quarter.
@@ -448,5 +448,60 @@ fn a_dielectric_plug_in_a_circular_guide_as_a_body_of_revolution() {
         let s21 = p * (1.0 - gamma * gamma) / den * c(-b1 * 0.025);
         let (g11, g21) = (super::s(&r, i, "s11"), super::s(&r, i, "s21"));
         assert!((g11 - s11).norm() < 5e-3 && (g21 - s21).norm() < 5e-3, "{f} Hz: S11 {g11} against {s11}, S21 {g21} against {s21}");
+    }
+}
+
+/// A pillbox with four dielectric posts (εr 4, radius 1 mm, `length` mm from z = 1 mm) round its
+/// axis at 45° + k·90°.
+fn posted_with(length: f64) -> Session {
+    let mut s = pillbox();
+    s.execute("model.material.create", &json!({"name": "ceramic", "eps_r": 4})).unwrap();
+    for k in 0..4 {
+        let a = (45.0 + 90.0 * f64::from(k)).to_radians();
+        let at = [(5.0 * a.cos() * 1e9).round() / 1e9, (5.0 * a.sin() * 1e9).round() / 1e9, 1.0];
+        s.execute("geometry.inclusion", &json!({"shape": "cylinder", "radius": 1, "length": length, "at": at, "material": "ceramic"})).unwrap();
+    }
+    s
+}
+
+fn posted() -> Session {
+    posted_with(13.0)
+}
+
+#[test]
+fn a_quarter_keeps_the_posts_inside_it() {
+    // Four posts round the axis: the quarter meshes the one inside it (ceramic tetrahedra there).
+    let mut q = posted_with(3.0);
+    q.execute("model.rotation", &json!({"n": 4})).unwrap();
+    q.execute("mesh.generate", &json!({"size": 5})).unwrap();
+    let mesh = q.model.mesh.as_ref().unwrap();
+    let ceramic = q.model.materials.iter().position(|m| m.name == "ceramic").unwrap();
+    assert!(mesh.tet_material.iter().any(|&m| m as usize == ceramic));
+    // A post across the cut faces is refused.
+    let mut x = pillbox();
+    x.execute("geometry.inclusion", &json!({"shape": "cylinder", "radius": 1, "length": 13, "at": [0, 0, 1]})).unwrap();
+    let e = x.execute("model.rotation", &json!({"n": 4})).unwrap_err();
+    assert!(e.to_string().contains("across the sector"), "{e}");
+}
+
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn dielectric_posts_round_the_axis_on_a_quarter_give_the_whole_s_modes() {
+    let mut whole = posted();
+    whole.execute("mesh.generate", &json!({"size": 3})).unwrap();
+    let w = whole.execute("solve.eigenmodes", &json!({"near": 13, "count": 6, "order": 1})).unwrap();
+    let all: Vec<f64> = w["modes"].as_array().unwrap().iter().map(|m| m["frequency"].as_f64().unwrap()).collect();
+    let mut q = posted();
+    q.execute("model.rotation", &json!({"n": 4})).unwrap();
+    q.execute("mesh.generate", &json!({"size": 3})).unwrap();
+    let r = q.execute("solve.cyclic", &json!({"frequency": 13, "count": 2, "order": 1})).unwrap();
+    for m in [0, 1, 2] {
+        for f in modes(&r, m) {
+            if f > all.last().copied().unwrap_or(0.0) {
+                continue;
+            }
+            let near = all.iter().map(|g| (g / f - 1.0).abs()).fold(f64::INFINITY, f64::min);
+            assert!(near < 5e-3, "harmonic {m}: {f} GHz, the whole's {all:?}");
+        }
     }
 }
