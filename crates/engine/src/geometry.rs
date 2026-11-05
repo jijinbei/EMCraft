@@ -686,8 +686,8 @@ pub fn rotation(s: &mut Session, p: &Params) -> Result<Value> {
         s.model.set_rotation(None)?;
         return Ok(rotation_shown(s));
     }
-    let max = emcraft_model::rotation::MAX_SECTORS as usize;
-    let n = p.integer("n", emcraft_model::rotation::MIN_SECTORS as usize..=max).required()?;
+    let max = emcraft_model::symmetry::rotation::MAX_SECTORS as usize;
+    let n = p.integer("n", emcraft_model::symmetry::rotation::MIN_SECTORS as usize..=max).required()?;
     let m = p.integer("m", 0..=n - 1).or(0)?;
     // The solid's middle across z by default: the axis of a cylinder, a sphere or a square box.
     let middle = s.model.bounds().map(|b| vec![0.5 * (b.min[0] + b.max[0]), 0.5 * (b.min[1] + b.max[1])]);
@@ -714,9 +714,9 @@ pub fn find_rotation(s: &mut Session, p: &Params) -> Result<Value> {
         let why = s.model.rotation_blocker().unwrap_or_else(|| "the solid does not turn onto itself about any axis along z".into());
         EngineError::failed(format!("no rotational symmetry found: {why}"))
     })?;
-    let max = emcraft_model::rotation::MAX_SECTORS as usize;
+    let max = emcraft_model::symmetry::rotation::MAX_SECTORS as usize;
     // Round: a quarter by default; else the most sectors there are.
-    let n = p.integer("n", emcraft_model::rotation::MIN_SECTORS as usize..=max).or(found.most.unwrap_or(4) as usize)? as u32;
+    let n = p.integer("n", emcraft_model::symmetry::rotation::MIN_SECTORS as usize..=max).or(found.most.unwrap_or(4) as usize)? as u32;
     if !found.allows(n) {
         return Err(p.error("n", format!("must divide {} (the model is {})", found.most.unwrap_or(n), found.group())));
     }

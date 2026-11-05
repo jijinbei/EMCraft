@@ -15,7 +15,7 @@
 //! - [`shape`]: solids, the inclusions inside them and the features combined with them;
 //! - [`port`]: waveguide ports;
 //! - [`open`]: the open boundary, sources and lumped ports;
-//! - [`symmetry`]: symmetry planes and the images they make;
+//! - [`symmetry`]: symmetry planes and the images they make, rotations and bodies of revolution;
 //! - [`periodic`]: periodic boundaries (unit cells of infinite arrays);
 //! - [`band`]: the frequency band;
 //! - [`analysis`]: the kind of analysis the job is set up for;
@@ -41,7 +41,6 @@ pub mod periodic;
 pub mod port;
 pub mod prism;
 pub mod quantity;
-pub mod rotation;
 pub mod shape;
 pub mod symmetry;
 pub mod units;
@@ -63,8 +62,8 @@ pub use periodic::{Periodic, Polarization};
 pub use port::{DEFAULT_TERMINAL_IMPEDANCE, End, Frame, MAX_PORT_MODES, MAX_TERMINALS, ModeSolver, Port, PortFace, PortShape, Terminals};
 pub use prism::MAX_PRISM_POINTS;
 pub use quantity::{Conductivity, Hertz, LossTangent, MAX_CONDUCTIVITY, MAX_LOSS_TANGENT, Metres, Ohms, Positive, Quantity};
-pub use rotation::Rotation;
 pub use shape::{Axis, BoxSize, Combine, FaceSurface, Feature, Inclusion, MAX_SURFACE_TRIANGLES, Shape, Solid, solid_angle};
+pub use symmetry::rotation::Rotation;
 pub use symmetry::{Found, Image, Symmetry, SymmetryKind};
 pub use waveguide::{Layer, Section, Span, Strip, Via, Waveguide};
 

@@ -184,7 +184,7 @@ pub struct Workflow {
     /// once per revision for the Boundaries step.
     pub symmetry: Option<(u64, Vec<emcraft_model::Found>)>,
     /// The rotational symmetry it allows ([`emcraft_model::Model::find_rotation`]), alike.
-    pub rotation: Option<(u64, Option<emcraft_model::rotation::FoundRotation>)>,
+    pub rotation: Option<(u64, Option<emcraft_model::symmetry::rotation::FoundRotation>)>,
     /// [`statuses_now`] worked out once for the frame, with what it was worked out from.
     shown: Option<(Shown, [StepState; 9])>,
     /// The estimate of the step's run (the Mesh step: one solve at an order; Setup and Run: the

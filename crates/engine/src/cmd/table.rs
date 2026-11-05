@@ -773,7 +773,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         ],
         effect: Effect::None,
         invalidates: None,
-        run: crate::solve::revolution,
+        run: crate::symmetry::revolution,
     },
     CommandSpec {
         id: "solve.revolution.frequency",
@@ -789,7 +789,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         ],
         effect: Effect::None,
         invalidates: None,
-        run: crate::solve::revolution_frequency,
+        run: crate::symmetry::revolution_frequency,
     },
     CommandSpec {
         id: "solve.cyclic",
@@ -803,7 +803,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         ],
         effect: Effect::None,
         invalidates: None,
-        run: crate::solve::cyclic,
+        run: crate::symmetry::cyclic,
     },
     CommandSpec {
         id: "solve.harmonics",
@@ -819,7 +819,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         ],
         effect: Effect::None,
         invalidates: None,
-        run: crate::solve::harmonics,
+        run: crate::symmetry::harmonics,
     },
     CommandSpec {
         id: "model.symmetry.find",
@@ -1290,7 +1290,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         ],
         effect: Effect::None,
         invalidates: None,
-        run: crate::view::commands::revolution_field,
+        run: crate::symmetry::revolution_field,
     },
     CommandSpec {
         id: "view.port_mode",

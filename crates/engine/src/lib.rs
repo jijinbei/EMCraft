@@ -53,6 +53,7 @@ mod session;
 mod solve;
 mod store;
 pub mod study;
+mod symmetry;
 pub mod tdr;
 pub mod text;
 pub mod theme;
