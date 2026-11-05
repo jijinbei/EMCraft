@@ -165,14 +165,37 @@ fn check(r: &Request) -> Result<()> {
     Ok(())
 }
 
-/// Triangulates the request's region with its copper (the module docs say how).
+/// Triangulates the request's region with its copper (the module docs say how): the outlines
+/// triangulated as they are to tell where the copper is, then the edges between copper and not
+/// split to the element size, triangulated and refined.
 pub fn triangulate(r: &Request) -> Result<Planar> {
     check(r)?;
     let lattice = Lattice::new(r.lo);
     let top = lattice.on(r.hi);
-    let corners = [[0.0, 0.0], [top[0], 0.0], top, [0.0, top[1]]];
+    let first = first_pass(r, lattice, top)?;
+    second_pass(r, lattice, top, first)
+}
 
-    // Pass 1: the outlines, split where they meet, and the copper over each triangle.
+/// An edge from one point to another (lattice steps), and whether it bounds copper.
+type Side = ([f64; 2], [f64; 2], bool);
+
+/// What the first pass finds: the copper's outlines, which of them are fine and their edges, and
+/// the edges between triangles covered differently with the region's outline.
+struct FirstPass {
+    rings: Rings,
+    fine: Vec<bool>,
+    fine_edges: Vec<Side>,
+    outline: Vec<Side>,
+}
+
+/// The points as exact-predicate points.
+fn exact(xy: &[[f64; 2]]) -> Result<Vec<Point2>> {
+    xy.iter().map(|p| Point2::new(p[0], p[1]).map_err(|e| invalid(e.to_string()))).collect()
+}
+
+/// Pass 1: the outlines, split where they meet, and the copper over each triangle.
+fn first_pass(r: &Request, lattice: Lattice, top: [f64; 2]) -> Result<FirstPass> {
+    let corners = [[0.0, 0.0], [top[0], 0.0], top, [0.0, top[1]]];
     let mut points = Points::default();
     let ids: Vec<u32> = corners.iter().map(|&c| points.id(c)).collect();
     let mut edges: Vec<[u32; 2]> = (0..4).map(|k| [ids[k], ids[(k + 1) % 4]]).collect();
@@ -193,7 +216,6 @@ pub fn triangulate(r: &Request) -> Result<Planar> {
         edges.extend((0..ring.len()).map(|k| [ring[k], ring[(k + 1) % ring.len()]]));
     }
     let chains = split::split(&mut points, &edges)?;
-    let exact = |xy: &[[f64; 2]]| xy.iter().map(|p| Point2::new(p[0], p[1]).map_err(|e| invalid(e.to_string()))).collect::<Result<Vec<_>>>();
     let rings: Vec<Ring> = owners
         .iter()
         .enumerate()
@@ -206,7 +228,7 @@ pub fn triangulate(r: &Request) -> Result<Planar> {
         })
         .collect::<Result<_>>()?;
     // The fine outlines' edges, for telling which copper edges need the edge size.
-    let fine_edges: Vec<([f64; 2], [f64; 2], bool)> = rings
+    let fine_edges: Vec<Side> = rings
         .iter()
         .zip(&fine)
         .filter(|(_, f)| **f)
@@ -217,7 +239,17 @@ pub fn triangulate(r: &Request) -> Result<Planar> {
     let first = Cdt::build(&exact(&points.xy)?, &segments, MAX_TRIANGLES)?.into_triangulation();
     let nets = label::label(&first.points, &first.triangles, &constrained, &rings, (r.layers, r.nets))?;
 
-    // The edges between triangles covered differently, and the region's outline.
+    let mut outline = between(&first, &nets)?;
+    // In the order of their coordinates, so the second pass does not depend on the order the
+    // outlines came in.
+    outline
+        .sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap_or(std::cmp::Ordering::Equal).then(x.1.partial_cmp(&y.1).unwrap_or(std::cmp::Ordering::Equal)));
+
+    Ok(FirstPass { rings, fine, fine_edges, outline })
+}
+
+/// The edges between triangles covered differently (copper), and the region's outline.
+fn between(first: &cdt::Triangulation, nets: &[Vec<u32>]) -> Result<Vec<Side>> {
     let mut sides: Vec<([u32; 2], u32)> = first
         .triangles
         .iter()
@@ -226,7 +258,7 @@ pub fn triangulate(r: &Request) -> Result<Planar> {
         .collect();
     sides.sort_unstable();
     let differ = |s: u32, t: u32| nets.iter().any(|n| n.get(s as usize) != n.get(t as usize));
-    let mut outline: Vec<([f64; 2], [f64; 2], bool)> = Vec::new();
+    let mut outline: Vec<Side> = Vec::new();
     let mut k = 0;
     while let Some(&(e, s)) = sides.get(k) {
         let pair = sides.get(k + 1).filter(|x| x.0 == e).map(|x| x.1);
@@ -240,12 +272,12 @@ pub fn triangulate(r: &Request) -> Result<Planar> {
         let (a, b) = (at(e[0])?, at(e[1])?);
         outline.push(if a <= b { (a, b, copper) } else { (b, a, copper) });
     }
-    // In the order of their coordinates, so the second pass does not depend on the order the
-    // outlines came in.
-    outline
-        .sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap_or(std::cmp::Ordering::Equal).then(x.1.partial_cmp(&y.1).unwrap_or(std::cmp::Ordering::Equal)));
+    Ok(outline)
+}
 
-    // Pass 2: those edges split to the element size, triangulated and refined.
+/// Pass 2: the first pass's edges split to the element size, triangulated and refined.
+fn second_pass(r: &Request, lattice: Lattice, top: [f64; 2], first: FirstPass) -> Result<Planar> {
+    let FirstPass { rings, fine, fine_edges, mut outline } = first;
     let step = lattice::STEP;
     let (big, small) = (r.size / step, r.edge_size / step);
     let reach = (big - small) / GRADING;
