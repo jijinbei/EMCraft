@@ -19,7 +19,7 @@
 use crate::Result;
 use crate::predicates::{ExactPoint3, Sign};
 
-use super::complex::{Change, EDGES, IdMap, NONE, TetComplex, VertexKind, face_toward, sorted2, sorted3, turns_over};
+use super::complex::{Change, EDGES, IdMap, IdSet, NONE, TetComplex, VertexKind, face_toward, sorted2, sorted3, turns_over};
 use super::measure;
 use crate::Point3;
 
@@ -413,7 +413,7 @@ pub fn insert_delaunay_apart(
     }
     // Grow the conflict region.
     let mut cavity: Vec<u32> = roots.clone();
-    let mut inset: IdMap<u32, ()> = cavity.iter().map(|&t| (t, ())).collect();
+    let mut inset: IdSet<u32> = cavity.iter().copied().collect();
     let mut i = 0;
     while let Some(&t) = cavity.get(i) {
         i += 1;
@@ -421,11 +421,11 @@ pub fn insert_delaunay_apart(
             return Ok(None);
         }
         for n in cx.adj(t)? {
-            if n == NONE || inset.contains_key(&n) {
+            if n == NONE || inset.contains(&n) {
                 continue;
             }
             if cx.in_sphere(cx.tet(n)?, &p)? {
-                inset.insert(n, ());
+                inset.insert(n);
                 cavity.push(n);
             }
         }
@@ -525,7 +525,7 @@ enum Plan {
 
 /// Plan the fill of a cavity from `p`.
 fn plan_cavity(cx: &TetComplex, cavity: &[u32], p: &ExactPoint3, site: Site, root_faces: &[[u32; 3]]) -> Result<Plan> {
-    let inset: IdMap<u32, ()> = cavity.iter().map(|&t| (t, ())).collect();
+    let inset: IdSet<u32> = cavity.iter().copied().collect();
     // Boundary faces of cavity tetrahedra: candidates for removal (only for boundary sites).
     let mut bfaces: Vec<([u32; 3], [u32; 3], u32, u32)> = Vec::new(); // (oriented, sorted, tag, tet)
     let mut outer: Vec<([u32; 3], u32)> = Vec::new(); // (oriented face, owning tet)
@@ -535,7 +535,7 @@ fn plan_cavity(cx: &TetComplex, cavity: &[u32], p: &ExactPoint3, site: Site, roo
         let tags = cx.tags(t)?;
         for k in 0..4 {
             let n = ns[k];
-            if n != NONE && inset.contains_key(&n) {
+            if n != NONE && inset.contains(&n) {
                 continue;
             }
             let f = face_toward(vs, k);
@@ -590,23 +590,23 @@ fn plan_cavity(cx: &TetComplex, cavity: &[u32], p: &ExactPoint3, site: Site, roo
         removed = queue;
         // Vertices strictly inside D would be deleted: only allowed for face vertices of the
         // same tag that no kept face uses.
-        let mut in_kept: IdMap<u32, ()> = IdMap::default();
+        let mut in_kept: IdSet<u32> = IdSet::default();
         for (j, g) in bfaces.iter().enumerate() {
             if !removed.contains(&j) {
                 for v in g.0 {
-                    in_kept.insert(v, ());
+                    in_kept.insert(v);
                 }
             }
         }
         for &(f, _) in &outer {
             for v in f {
-                in_kept.insert(v, ());
+                in_kept.insert(v);
             }
         }
         for &i in &removed {
             if let Some(g) = bfaces.get(i) {
                 for v in g.0 {
-                    if !in_kept.contains_key(&v) && !matches!(cx.kind(v), VertexKind::Face(_) | VertexKind::Interior) {
+                    if !in_kept.contains(&v) && !matches!(cx.kind(v), VertexKind::Face(_) | VertexKind::Interior) {
                         return Ok(Plan::Fail);
                     }
                 }
@@ -676,11 +676,11 @@ fn plan_cavity(cx: &TetComplex, cavity: &[u32], p: &ExactPoint3, site: Site, roo
 
 /// The tetrahedra of `cavity` connected to the roots through faces inside the cavity.
 fn connected(cx: &TetComplex, cavity: &[u32], roots: &[u32]) -> Result<Vec<u32>> {
-    let inset: IdMap<u32, ()> = cavity.iter().map(|&t| (t, ())).collect();
-    let mut seen: IdMap<u32, ()> = IdMap::default();
+    let inset: IdSet<u32> = cavity.iter().copied().collect();
+    let mut seen: IdSet<u32> = IdSet::default();
     let mut out: Vec<u32> = Vec::new();
     for &r in roots {
-        if inset.contains_key(&r) && seen.insert(r, ()).is_none() {
+        if inset.contains(&r) && seen.insert(r) {
             out.push(r);
         }
     }
@@ -688,7 +688,7 @@ fn connected(cx: &TetComplex, cavity: &[u32], roots: &[u32]) -> Result<Vec<u32>>
     while let Some(&t) = out.get(i) {
         i += 1;
         for n in cx.adj(t)? {
-            if n != NONE && inset.contains_key(&n) && seen.insert(n, ()).is_none() {
+            if n != NONE && inset.contains(&n) && seen.insert(n) {
                 out.push(n);
             }
         }

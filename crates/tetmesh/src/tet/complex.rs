@@ -22,7 +22,7 @@
 //! four face tags (the B-rep face of a boundary face, [`NONE`] inside). Slots of removed
 //! tetrahedra are recycled in a fixed order, so the same input gives the same mesh.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hasher};
 
 use crate::compat::{normalized_jacobian, tet4_jacobian};
@@ -82,6 +82,9 @@ impl Hasher for IdHasher {
 
 /// A hash map keyed by vertex ids.
 pub type IdMap<K, V> = HashMap<K, V, BuildHasherDefault<IdHasher>>;
+
+/// A hash set of vertex or tetrahedron ids.
+pub type IdSet<K> = HashSet<K, BuildHasherDefault<IdHasher>>;
 
 /// The most grid cells one boundary face is listed in ([`Skin`]); a larger face goes on the list
 /// every lookup reads.
@@ -1130,10 +1133,10 @@ impl TetComplex {
             }
         }
         if !gone.is_empty() {
-            let region: IdMap<u32, ()> = old.iter().map(|&t| (t, ())).collect();
+            let region: IdSet<u32> = old.iter().copied().collect();
             for v in gone {
                 for t in self.star(v)? {
-                    if !region.contains_key(&t) {
+                    if !region.contains(&t) {
                         return Ok(None);
                     }
                 }

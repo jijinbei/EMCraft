@@ -21,7 +21,7 @@ use crate::predicates::{ExactPoint3, snap_to_domain};
 use crate::size::SizeField;
 use crate::{Error, Result};
 
-use super::complex::{IdMap, NONE, TetComplex, VertexKind, Walk, face_toward, sorted2, sorted4};
+use super::complex::{IdMap, IdSet, NONE, TetComplex, VertexKind, Walk, face_toward, sorted2, sorted4};
 use super::geometry::BoundaryGeometry;
 use super::measure;
 use super::ops::{self, Site};
@@ -122,8 +122,8 @@ fn encroached(cx: &TetComplex, tets: &[u32], p: Point3) -> Result<Option<(u32, u
 /// The tetrahedra whose circumsphere holds `p`, grown from `t` across interior faces.
 fn conflicts(cx: &TetComplex, t: u32, p: &ExactPoint3) -> Result<Vec<u32>> {
     let mut out = vec![t];
-    let mut seen: IdMap<u32, ()> = IdMap::default();
-    seen.insert(t, ());
+    let mut seen: IdSet<u32> = IdSet::default();
+    seen.insert(t);
     let mut i = 0;
     while let Some(&u) = out.get(i) {
         i += 1;
@@ -131,8 +131,8 @@ fn conflicts(cx: &TetComplex, t: u32, p: &ExactPoint3) -> Result<Vec<u32>> {
             break;
         }
         for n in cx.adj(u)? {
-            if n != NONE && !seen.contains_key(&n) {
-                seen.insert(n, ());
+            if n != NONE && !seen.contains(&n) {
+                seen.insert(n);
                 if cx.in_sphere(cx.tet(n)?, p)? {
                     out.push(n);
                 }
@@ -258,7 +258,7 @@ fn badness(x: &[Point3; 4], ctx: &Context, o: &RefineOptions) -> Option<Point3> 
 pub fn refine(cx: &mut TetComplex, ctx: &Context, o: &RefineOptions) -> Result<RefineStats> {
     let mut stats = RefineStats::default();
     let mut queue: Vec<u32> = cx.live_tets().map(|(t, _)| t).collect();
-    let mut given_up: IdMap<[u32; 4], ()> = IdMap::default();
+    let mut given_up: IdSet<[u32; 4]> = IdSet::default();
     let mut head = 0usize;
     let mut inserted = 0usize;
     while head < queue.len() {
@@ -278,7 +278,7 @@ pub fn refine(cx: &mut TetComplex, ctx: &Context, o: &RefineOptions) -> Result<R
         }
         let vs = cx.tet(t)?;
         let key = sorted4(vs);
-        if given_up.contains_key(&key) {
+        if given_up.contains(&key) {
             continue;
         }
         let x = cx.coords(vs)?;
@@ -326,7 +326,7 @@ pub fn refine(cx: &mut TetComplex, ctx: &Context, o: &RefineOptions) -> Result<R
             }
             None => {
                 stats.skipped += 1;
-                given_up.insert(key, ());
+                given_up.insert(key);
             }
         }
     }
@@ -388,11 +388,11 @@ pub fn coarsen(cx: &mut TetComplex, ctx: &Context, short: f64, long: f64, floor:
     let mut done = 0;
     for _ in 0..passes {
         let mut edges: Vec<(f64, u32, u32)> = Vec::new();
-        let mut seen: IdMap<(u32, u32), ()> = IdMap::default();
+        let mut seen: IdSet<(u32, u32)> = IdSet::default();
         for (_, vs) in cx.live_tets() {
             for &(i, j) in &super::complex::EDGES {
                 let e = sorted2(vs[i], vs[j]);
-                if seen.insert(e, ()).is_some() {
+                if !seen.insert(e) {
                     continue;
                 }
                 let (a, b) = (cx.xyz(e.0)?, cx.xyz(e.1)?);
