@@ -191,7 +191,7 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
         None => tessellate(shape, size),
     };
     if !refine.is_empty() {
-        too_large(estimate + refined_estimate(&main.positions, size, refine))?;
+        too_large(estimate + refined_estimate(&main.surface.positions, size, refine))?;
     }
     let mut features = joined(&model.features, shape, size)?;
     features.extend(cuts);
@@ -288,7 +288,7 @@ fn tag_symmetry_planes(mesh: &mut Mesh, model: &Model, size: f64) {
 /// off the other bodies' planes first (`grid`).
 fn combine_all(mut main: Tessellation, features: &[emcraft_model::Feature], solid: &Shape, size: f64) -> Result<Tessellation> {
     let (own, planes) = body_planes(features, solid, size);
-    grid::keep_off(&mut main.positions, grid_axes(solid, emcraft_model::Axis::Z), &merged_planes(&planes), grid::NEAR * size);
+    grid::keep_off(&mut main.surface.positions, grid_axes(solid, emcraft_model::Axis::Z), &merged_planes(&planes), grid::NEAR * size);
     for (k, f) in features.iter().enumerate() {
         let others = merged_planes(std::iter::once(&own).chain(planes.iter().enumerate().filter(|(j, _)| *j != k).map(|(_, p)| p)));
         main = combined(main, f, k, solid, size, &others)?;
@@ -368,12 +368,12 @@ impl Body<'_> {
         for _ in 0..MAX_INTERFACE_ROUNDS {
             // Tags: the solid's faces (with a spherical layer, the inner sphere's triangles), then
             // each interface's triangles in turn.
-            out.first_tag = main.tri_face.iter().map(|f| f + 1).max().unwrap_or(0);
+            out.first_tag = main.surface.tags.iter().map(|f| f + 1).max().unwrap_or(0);
             let mut outer = main.clone();
             out.interfaces.clear();
             let mut next = out.first_tag;
             for t in &interfaces {
-                let count = t.triangles.len() as u32;
+                let count = t.surface.triangles.len() as u32;
                 append(&mut outer, t, next, false);
                 out.interfaces.push(Tags { first: next, count });
                 next += count;
@@ -389,7 +389,7 @@ impl Body<'_> {
                 changed |= adopt(&mut main, extract(&outer_mesh, 0, out.first_tag, true), size);
                 let mut t = tessellate(self.shape, size);
                 append(&mut t, &main, 1, false);
-                let n = main.triangles.len() as u32;
+                let n = main.surface.triangles.len() as u32;
                 let shell = region(&t, size, (1..1 + n).collect(), &self.locals)?;
                 changed |= adopt(&mut main, extract(&shell, 1, n, false), size);
                 Some(shell)
@@ -401,7 +401,7 @@ impl Body<'_> {
             for ((inc, t), h) in model.inclusions.iter().zip(&mut interfaces).zip(&self.inner_size) {
                 let Some(name) = &inc.material else { continue };
                 let (m, _) = model.material(name)?;
-                let n = t.triangles.len() as u32;
+                let n = t.surface.triangles.len() as u32;
                 let inner = region(t, *h, (0..n).collect(), &self.locals)?;
                 changed |= adopt(t, extract(&inner, 0, n, true), size);
                 out.meshes.push((inner, m as u32));

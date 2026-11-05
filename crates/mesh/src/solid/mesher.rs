@@ -50,12 +50,12 @@ pub(super) struct RegionFace {
 /// are (interfaces another region shares).
 pub(super) fn region(t: &Tessellation, size: f64, frozen: Vec<u32>, locals: &[LocalSize]) -> Result<RegionMesh> {
     let fail = |e: emcraft_tetmesh::Error| MeshError::Invalid { what: "tetrahedral meshing".into(), why: e.to_string() };
-    let positions: Vec<MPoint> = t.positions.iter().map(|&p| mesher_point(p)).collect();
-    let surface = BoundarySurface::new(&positions, &t.triangles, &t.tri_face, &SurfaceOptions::default()).map_err(fail)?;
+    let positions: Vec<MPoint> = t.surface.positions.iter().map(|&p| mesher_point(p)).collect();
+    let surface = BoundarySurface::new(&positions, &t.surface.triangles, &t.surface.tags, &SurfaceOptions::default()).map_err(fail)?;
     let cdt = tetrahedralize(&surface, &CdtOptions::default()).map_err(fail)?;
     let options = QualityOptions { size: Some(size), max_tets: MAX_TETS, frozen_faces: frozen, locals: locals.to_vec(), ..QualityOptions::default() };
     let mut analytic = t.analytic.clone();
-    analytic.resize(t.tri_face.iter().map(|f| *f as usize + 1).max().unwrap_or(0).max(analytic.len()), None);
+    analytic.resize(t.surface.tags.iter().map(|f| *f as usize + 1).max().unwrap_or(0).max(analytic.len()), None);
     let q = quality_mesh(&surface, &cdt, analytic, &options).map_err(fail)?;
     let tets: Vec<[u32; 4]> = q.elements.iter().filter_map(|e| <[u32; 4]>::try_from(e.as_slice()).ok()).collect();
     if tets.len() != q.elements.len() {

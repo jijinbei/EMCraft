@@ -47,7 +47,7 @@ fn named(width: f64, at: Point3) -> String {
 /// [`MAX_TETS`], a gap is too narrow for any element, or the gaps need more than
 /// [`MAX_GAP_SIZES`] local sizes.
 pub(super) fn gap_sizes(t: &Tessellation, size: f64, flush: f64) -> Result<(Vec<LocalSize>, f64)> {
-    let flats = crate::clip::flat(Triangles { positions: &t.positions, triangles: &t.triangles }, flush);
+    let flats = crate::clip::flat(Triangles { positions: &t.surface.positions, triangles: &t.surface.triangles }, flush);
     // Per axis, the triangles facing down it (the low side of a gap: outward −) and up it, by plane.
     let mut up: [Vec<(f64, usize)>; 3] = Default::default();
     let mut down: [Vec<(f64, usize)>; 3] = Default::default();
@@ -131,7 +131,7 @@ pub(super) fn gap_sizes(t: &Tessellation, size: f64, flush: f64) -> Result<(Vec<
 }
 
 fn corners(t: &Tessellation, i: usize) -> Option<[Point3; 3]> {
-    crate::shared::corners(&t.positions, t.triangles.get(i)?)
+    crate::shared::corners(&t.surface.positions, t.surface.triangles.get(i)?)
 }
 
 /// The overlap of two triangles of a plane: `a` clipped by each side of `b` in turn
@@ -178,8 +178,8 @@ mod tests {
 
     /// A slab of air `side` square and `w` thick across z, as 12 triangles facing out.
     fn slab(side: f64, w: f64) -> Tessellation {
-        let s = crate::clip::half_space(&[], emcraft_model::Aabb::new(Point3::ORIGIN, Point3::new(side, side, w)), 0.0);
-        Tessellation { positions: s.positions, triangles: s.triangles, tri_face: s.tags, ..Tessellation::default() }
+        let surface = crate::clip::half_space(&[], emcraft_model::Aabb::new(Point3::ORIGIN, Point3::new(side, side, w)), 0.0);
+        Tessellation { surface, ..Tessellation::default() }
     }
 
     #[test]

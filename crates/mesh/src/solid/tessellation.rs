@@ -9,15 +9,14 @@ use emcraft_tetmesh::tet::geometry::AnalyticSurface;
 
 use super::grid::Planes;
 use super::mesher::{MPoint, MVec, RegionFace, RegionMesh, mesher_point, mesher_vec, model_point, model_vec};
+use crate::csg::Surface;
 use crate::{MeshError, Result};
 
-/// A tessellated body: triangles tagged by face, each face's exact surface, and which faces are
-/// the ends a port may close (z = 0, z = length).
+/// A tessellated body: its triangles tagged by face (`surface.tags`), each face's exact surface,
+/// and which faces are the ends a port may close (z = 0, z = length).
 #[derive(Clone, Debug, Default)]
 pub(super) struct Tessellation {
-    pub(super) positions: Vec<Point3>,
-    pub(super) triangles: Vec<[u32; 3]>,
-    pub(super) tri_face: Vec<u32>,
+    pub(super) surface: Surface,
     pub(super) analytic: Vec<Option<AnalyticSurface>>,
     pub(super) start_face: Option<u32>,
     pub(super) end_face: Option<u32>,
@@ -25,8 +24,8 @@ pub(super) struct Tessellation {
 
 impl Tessellation {
     fn point(&mut self, p: Point3) -> u32 {
-        self.positions.push(p);
-        (self.positions.len() - 1) as u32
+        self.surface.positions.push(p);
+        (self.surface.positions.len() - 1) as u32
     }
 }
 
@@ -69,8 +68,8 @@ fn tessellate_box(size_xyz: Vec3, h: f64) -> Tessellation {
                 // (u, v, axis) is right-handed: counter-clockwise in (u, v) faces +axis.
                 let tris = if high { [[q[0], q[1], q[2]], [q[0], q[2], q[3]]] } else { [[q[0], q[2], q[1]], [q[0], q[3], q[2]]] };
                 for tri in tris {
-                    t.triangles.push(tri);
-                    t.tri_face.push(face as u32);
+                    t.surface.triangles.push(tri);
+                    t.surface.tags.push(face as u32);
                 }
             }
         }
@@ -106,8 +105,8 @@ fn tessellate_cylinder(r: f64, len: f64, h: f64) -> Tessellation {
             let (a, b) = (rings[k][j], rings[k][(j + 1) % nt]);
             let (c, d) = (rings[k + 1][(j + 1) % nt], rings[k + 1][j]);
             for tri in [[a, b, c], [a, c, d]] {
-                t.triangles.push(tri);
-                t.tri_face.push(0);
+                t.surface.triangles.push(tri);
+                t.surface.tags.push(0);
             }
         }
     }
@@ -121,8 +120,8 @@ fn tessellate_cylinder(r: f64, len: f64, h: f64) -> Tessellation {
                 let (c, d) = (inner[(j + 1) % nt], inner[j]);
                 let tris = if face == 2 { [[a, b, c], [a, c, d]] } else { [[a, c, b], [a, d, c]] };
                 for tri in tris {
-                    t.triangles.push(tri);
-                    t.tri_face.push(face);
+                    t.surface.triangles.push(tri);
+                    t.surface.tags.push(face);
                 }
             }
             prev = inner;
@@ -130,8 +129,8 @@ fn tessellate_cylinder(r: f64, len: f64, h: f64) -> Tessellation {
         let centre = t.point(Point3::new(0.0, 0.0, z));
         for j in 0..nt {
             let (a, b) = (prev[j], prev[(j + 1) % nt]);
-            t.triangles.push(if face == 2 { [a, b, centre] } else { [a, centre, b] });
-            t.tri_face.push(face);
+            t.surface.triangles.push(if face == 2 { [a, b, centre] } else { [a, centre, b] });
+            t.surface.tags.push(face);
         }
     }
     t
@@ -202,9 +201,9 @@ fn tessellate_sphere(r: f64, h: f64) -> Tessellation {
         tris = next;
         edge /= 2.0;
     }
-    t.positions = pts;
-    t.tri_face = vec![0; tris.len()];
-    t.triangles = tris;
+    t.surface.positions = pts;
+    t.surface.tags = vec![0; tris.len()];
+    t.surface.triangles = tris;
     t
 }
 
@@ -224,7 +223,7 @@ pub(super) fn tessellate(shape: &Shape, size: f64) -> Tessellation {
 /// surfaces.
 fn tessellate_surface(shape: &Shape) -> Tessellation {
     let Shape::Surface { positions, triangles, tags, surfaces, .. } = shape else { return Tessellation::default() };
-    let mut tri_face = tags.clone();
+    let mut tags = tags.clone();
     let faces = tags.iter().map(|t| t + 1).max().unwrap_or(0);
     let mut analytic: Vec<Option<AnalyticSurface>> =
         (0..faces as usize).map(|f| surfaces.get(f).copied().flatten().filter(FaceSurface::is_curved).map(exact)).collect();
@@ -238,11 +237,12 @@ fn tessellate_surface(shape: &Shape) -> Tessellation {
         let tag = analytic.len() as u32;
         analytic.push(Some(AnalyticSurface::Plane { normal: MVec::new(0.0, 0.0, n), point: MPoint::new(0.0, 0.0, z) }));
         for &i in list {
-            tri_face[i] = tag;
+            tags[i] = tag;
         }
         tag_of[k] = Some(tag);
     }
-    Tessellation { positions: positions.clone(), triangles: triangles.clone(), tri_face, analytic, start_face: tag_of[0], end_face: tag_of[1] }
+    let surface = Surface { positions: positions.clone(), triangles: triangles.clone(), tags };
+    Tessellation { surface, analytic, start_face: tag_of[0], end_face: tag_of[1] }
 }
 
 /// A fitted face's surface as the mesher's.
@@ -293,7 +293,9 @@ pub(super) fn transformed(t: Tessellation, axis: Axis, at: Point3) -> Tessellati
             })
         })
         .collect();
-    Tessellation { positions: t.positions.into_iter().map(place).collect(), analytic, ..t }
+    let mut t = Tessellation { analytic, ..t };
+    t.surface.positions = t.surface.positions.into_iter().map(place).collect();
+    t
 }
 
 /// A flat face across an axis: the plane `axis` = `at`, its outward normal along +axis
@@ -695,22 +697,18 @@ pub(super) fn grid_axes(shape: &Shape, axis: Axis) -> &'static [usize] {
 /// differently in the two regions.
 pub(super) fn placed(t: Tessellation, at: Point3) -> Tessellation {
     let shift = |p: Point3| p + at.to_vec();
-    let n = t.triangles.len() as u32;
-    Tessellation {
-        positions: t.positions.into_iter().map(shift).collect(),
-        triangles: t.triangles,
-        tri_face: (0..n).collect(),
-        ..Tessellation::default()
-    }
+    let n = t.surface.triangles.len() as u32;
+    let surface = Surface { positions: t.surface.positions.into_iter().map(shift).collect(), triangles: t.surface.triangles, tags: (0..n).collect() };
+    Tessellation { surface, ..Tessellation::default() }
 }
 
 /// Appends interface `b` to `a` with its tags offset by `base`, turned inside out when `outward`
 /// is false (the hole it makes in the outer region).
 pub(super) fn append(a: &mut Tessellation, b: &Tessellation, base: u32, outward: bool) {
-    let off = a.positions.len() as u32;
-    a.positions.extend(&b.positions);
-    a.triangles.extend(b.triangles.iter().map(|&[x, y, z]| if outward { [x, y, z] } else { [x, z, y] }.map(|v| v + off)));
-    a.tri_face.extend(b.tri_face.iter().map(|f| base + f));
+    let off = a.surface.positions.len() as u32;
+    a.surface.positions.extend(&b.surface.positions);
+    a.surface.triangles.extend(b.surface.triangles.iter().map(|&[x, y, z]| if outward { [x, y, z] } else { [x, z, y] }.map(|v| v + off)));
+    a.surface.tags.extend(b.surface.tags.iter().map(|f| base + f));
 }
 
 /// The triangles a region's mesh kept on tags `base..base + count`, as a tessellation oriented out
@@ -736,28 +734,29 @@ pub(super) fn extract(mesh: &RegionMesh, base: u32, count: u32, inside: bool) ->
         let tri = if flip { [nodes[0], nodes[2], nodes[1]] } else { nodes };
         let ids = tri.map(|v| {
             *index.entry(v).or_insert_with(|| {
-                t.positions.push(p(v));
-                (t.positions.len() - 1) as u32
+                t.surface.positions.push(p(v));
+                (t.surface.positions.len() - 1) as u32
             })
         });
-        t.tri_face.push(t.triangles.len() as u32);
-        t.triangles.push(ids);
+        t.surface.tags.push(t.surface.triangles.len() as u32);
+        t.surface.triangles.push(ids);
     }
     t
 }
 
 /// Whether two tessellations have the same triangles (corners within 1e-9 of the size).
 pub(super) fn same_triangles(a: &Tessellation, b: &Tessellation, size: f64) -> bool {
-    if a.triangles.len() != b.triangles.len() {
+    if a.surface.triangles.len() != b.surface.triangles.len() {
         return false;
     }
     let q = 1e-9 * size;
     let keys = |t: &Tessellation| -> std::collections::BTreeSet<[[i64; 3]; 3]> {
-        t.triangles
+        t.surface
+            .triangles
             .iter()
             .map(|tri| {
                 let mut v = tri.map(|i| {
-                    let p = t.positions.get(i as usize).copied().unwrap_or(Point3::ORIGIN);
+                    let p = t.surface.positions.get(i as usize).copied().unwrap_or(Point3::ORIGIN);
                     [p.x, p.y, p.z].map(|c| (c / q).round() as i64)
                 });
                 v.sort_unstable();
