@@ -5,6 +5,7 @@
 //! ATTRIBUTION.md.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+mod bench;
 mod changed;
 mod colours;
 mod dupes;
@@ -32,6 +33,12 @@ commands:
                   run the verification cases (tests/oracle, docs/verification.md) against their
                   references and fixtures; write docs/oracle.md after a full run; --bless
                   freezes a passing case's results in its fixture.json (release build)
+  bench [--case NAME]... [--runs N] [--save FILE] [--against FILE]
+                  run a fixed set of oracle recipes with the release emcraft-cli: each one's
+                  wall-clock time and the solvers' split of it (assembly, analysis, factor,
+                  solve); --save writes them and every number replied as a baseline,
+                  --against compares with one (times as ratios, results bit for bit; fails
+                  when a result moved); --runs keeps the fastest of N
   features        write docs/features.md (every command with its parameters)
   dupes [--min LINES] [--loose] [--fail]
                   list code copied between production sources (runs of LINES normalised lines,
@@ -64,6 +71,7 @@ fn main() -> ExitCode {
             c.args(["run", "--release", "-p", "emcraft-testkit", "--bin", "oracle", "--"]).args(&rest);
             run(c, "oracle")
         }
+        Some("bench") => bench::run(&root(), &rest),
         Some("features") => cmd_features(),
         Some("dupes") => cmd_dupes(&rest),
         Some("colours" | "colors") => colours::run(&root()),

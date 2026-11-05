@@ -213,4 +213,6 @@ cargo xtask oracle                      # every case; writes docs/oracle.md
 cargo xtask oracle --case highpass-filter
 cargo xtask oracle --bless highpass-filter
 cargo xtask test --heavy                # the convergence studies
+cargo xtask bench --save base.json       # times and every replied number of a few cases
+cargo xtask bench --against base.json    # after a change: times as ratios, results bit for bit
 ```
