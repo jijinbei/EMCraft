@@ -226,6 +226,39 @@ pub fn build(session: &Session, overlay: Overlay) -> Built {
     build_with(session, overlay, &[], &[])
 }
 
+/// A model cut by symmetry planes drawn whole: what is meshed and its mirror images across each
+/// plane, so the view shows the model, not the half it is solved on. The Mesh step tells them
+/// apart: the images faint and without the mesh's edges.
+fn mirrored_halves(m: &emcraft_model::Model, overlay: Overlay, scene: &mut emcraft_render::view3d::Scene) {
+    let faint = overlay == Overlay::Mesh;
+    for s in &m.symmetry {
+        let k = s.axis.index();
+        let mirror = |p: [f64; 3]| {
+            let mut q = p;
+            q[k] = 2.0 * s.at - p[k];
+            q
+        };
+        let tris: Vec<_> = scene
+            .tris
+            .iter()
+            .map(|t| {
+                let mut c = *t;
+                // Mirrored, the winding turns over: two corners exchanged keep it outward.
+                c.p = [mirror(t.p[0]), mirror(t.p[2]), mirror(t.p[1])];
+                if faint {
+                    c.alpha = t.alpha / 3;
+                }
+                c
+            })
+            .collect();
+        scene.tris.extend(tris);
+        if !faint {
+            let lines: Vec<_> = scene.lines.iter().map(|l| emcraft_render::view3d::Line { a: mirror(l.a), b: mirror(l.b), ..*l }).collect();
+            scene.lines.extend(lines);
+        }
+    }
+}
+
 /// Builds the scene, with the field's planes for [`Overlay::Field`] and what is selected
 /// highlighted.
 pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], selected: &[Pick]) -> Built {
@@ -239,30 +272,23 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
         }
         return out;
     }
-    // Meshed, the model is the side below each symmetry plane: the view frames that.
-    let below = |(lo, mut hi): ([f64; 3], [f64; 3])| {
-        for s in m.symmetry.iter().filter(|_| m.mesh.is_some()) {
-            let k = s.axis.index();
-            if s.at > lo[k] {
-                hi[k] = hi[k].min(s.at);
-            }
-        }
-        (lo, hi)
-    };
-    let mut out = Built { bounds: m.bounds().map(|b| below((p3(b.min), p3(b.max)))), ..Default::default() };
+    let mut out = Built { bounds: m.bounds().map(|b| (p3(b.min), p3(b.max))), ..Default::default() };
     match &m.mesh {
-        Some(_) => mesh::from_mesh(
-            session,
-            overlay,
-            &mut out,
-            selected.iter().find_map(|p| {
-                if let Pick::Material(i) = p {
-                    m.materials.get(*i).filter(|m| !session.views().hidden_materials.contains(&m.name)).map(|_| *i)
-                } else {
-                    None
-                }
-            }),
-        ),
+        Some(_) => {
+            mesh::from_mesh(
+                session,
+                overlay,
+                &mut out,
+                selected.iter().find_map(|p| {
+                    if let Pick::Material(i) = p {
+                        m.materials.get(*i).filter(|m| !session.views().hidden_materials.contains(&m.name)).map(|_| *i)
+                    } else {
+                        None
+                    }
+                }),
+            );
+            mirrored_halves(m, overlay, &mut out.scene);
+        }
         None => {
             geometry::from_geometry(m, overlay, &mut out);
             extras::symmetry_planes(m, &mut out);

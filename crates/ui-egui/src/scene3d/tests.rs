@@ -368,21 +368,27 @@ fn a_board_shows_its_copper_by_role_with_its_heights_stretched() {
     assert!(b.legend.iter().any(|(text, _)| text.starts_with("heights")));
 }
 
-/// With a symmetry plane only the side below it is meshed: the view frames that half, and each
-/// port's arrows stand on the middle of its part of the face (an E-plane bend halved across its
-/// broad side), not on the plane at the face's edge.
+/// With a symmetry plane only the side below it is meshed, but the model is drawn whole: the
+/// meshed half and its mirror image, framed as a whole, each port's arrows on the middle of its
+/// whole face. The Mesh step tells the halves apart: the image faint, without the mesh's edges.
 #[test]
-fn a_halved_model_is_framed_and_its_ports_marked_on_the_half_that_is_there() {
+fn a_halved_model_is_drawn_whole_and_its_image_faint_in_the_mesh_step() {
     let mut s = Session::new();
     s.execute("file.sample", &json!({"name": "td-e-bend"})).unwrap();
     let half = s.model().symmetry[0].at;
     let built = build(&s, Overlay::Plain);
     let (_, hi) = built.bounds.unwrap();
-    assert!((hi[2] - half).abs() < 1e-12, "{hi:?}");
+    assert!((hi[2] - 2.0 * half).abs() < 1e-12, "{hi:?}");
+    let top = built.scene.tris.iter().flat_map(|t| t.p).map(|p| p[2]).fold(f64::MIN, f64::max);
+    assert!(top > 2.0 * half - 1e-9, "the image across the plane is drawn: {top}");
     assert_eq!(built.arrows.len(), 3);
     for a in &built.arrows {
-        assert!((a.start[2] - half / 2.0).abs() < 1e-12 && (a.end[2] - half / 2.0).abs() < 1e-12, "{a:?}");
+        assert!((a.start[2] - half).abs() < 1e-12 && (a.end[2] - half).abs() < 1e-12, "{a:?}");
     }
+    let mesh = build(&s, Overlay::Mesh);
+    let above = |p: [f64; 3]| p[2] > half + 1e-9;
+    assert!(mesh.scene.tris.iter().filter(|t| t.p.iter().all(|p| above(*p))).all(|t| t.alpha <= 255 / 3));
+    assert!(!mesh.scene.lines.iter().any(|l| above(l.a) && above(l.b)), "no mesh edges on the image");
 }
 
 /// A symmetry plane shows before the model is meshed: a faint sheet in its wall's colour across
