@@ -84,6 +84,11 @@ fn hostile_parameters_are_refused_and_nothing_panics() {
     let solved = small();
     for c in COMMANDS {
         for g in &garbage {
+            // No parameters at all are the time domain's defaults, not garbage: a real run of
+            // several seconds (the solve tests run the time domain); its garbage is still sent.
+            if c.id == "solve.time_domain" && g.is_null() {
+                continue;
+            }
             let mut s = solved.clone();
             let r = s.execute(c.id, g);
             assert!(!matches!(r, Err(EngineError::Panicked(_))), "{} panicked on {g}", c.id);
