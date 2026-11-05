@@ -255,7 +255,7 @@ mod tests {
                 }
             }
         }
-        chars.sort();
+        chars.sort_unstable();
         chars.dedup();
         let pairs: Vec<(GlyphId, GlyphId)> =
             chars.iter().filter(|c| full.glyph_id(**c).0 != 0).map(|c| (full.glyph_id(*c), cut.glyph_id(*c))).collect();

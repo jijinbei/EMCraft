@@ -4,6 +4,7 @@
 //! corner order gives the outward side).
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 
 use emcraft_model::Point3;
 
@@ -133,7 +134,7 @@ pub fn write_ascii(s: &Surface, unit: f64) -> String {
         out.push_str(" facet normal 0 0 0\n  outer loop\n");
         for &v in t {
             let p = s.positions.get(v as usize).copied().unwrap_or(Point3::ORIGIN);
-            out.push_str(&format!("   vertex {} {} {}\n", p.x / unit, p.y / unit, p.z / unit));
+            let _ = writeln!(out, "   vertex {} {} {}", p.x / unit, p.y / unit, p.z / unit);
         }
         out.push_str("  endloop\n endfacet\n");
     }

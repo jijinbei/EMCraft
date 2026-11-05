@@ -425,7 +425,7 @@ pub fn port_modes(s: &mut Session, p: &Params) -> Result<Value> {
 }
 
 /// [`port_modes`] as its type.
-fn port_modes_of(s: &mut Session, p: &Params) -> Result<PortModes> {
+fn port_modes_of(s: &Session, p: &Params) -> Result<PortModes> {
     let f = crate::args::frequency_or_band_top(s, p, "frequency", crate::args::SET_THE_BAND)?;
     let list = emcraft_solver::driven::port_modes(&s.model, p.order()?, f)?;
     let k0 = wavenumber(f);

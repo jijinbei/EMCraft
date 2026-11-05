@@ -125,7 +125,7 @@ fn boundary_face_insertion_keeps_tags() {
     // A point on the z = 0 side.
     let p = ExactPoint3::try_from([0.3, 0.6, 0.0]).unwrap();
     let mut site = None;
-    for (t, _) in cx.live_tets().collect::<Vec<_>>() {
+    for (t, _) in cx.live_tets() {
         let vs = cx.tet(t).unwrap();
         for k in 0..4 {
             if cx.adj(t).unwrap()[k] == NONE && cx.tags(t).unwrap()[k] == 4 {
@@ -350,10 +350,10 @@ mod pipeline {
         for b in &m.boundary {
             let e = &m.elements[b.tet as usize];
             let k = b.opposite as usize;
-            let corners: Vec<usize> = (0..4).filter(|&i| i != k).collect();
+
             let mids =
                 [(0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)].iter().enumerate().filter(|(_, (i, j))| *i != k && *j != k).map(|(n, _)| 4 + n);
-            for i in corners.into_iter().chain(mids) {
+            for i in (0..4).filter(|&i| i != k).chain(mids) {
                 let q = m.points[e[i] as usize];
                 let r = (q[0] * q[0] + q[1] * q[1] + q[2] * q[2]).sqrt();
                 assert!((r - 5.0).abs() < 1e-9, "a boundary node {i} of {e:?} at {q:?}, radius {r}; report {:?}", m.report);

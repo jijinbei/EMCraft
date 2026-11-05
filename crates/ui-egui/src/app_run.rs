@@ -2,6 +2,7 @@
 //! and cancelling, quitting.
 
 use super::*;
+use std::fmt::Write as _;
 
 impl EmcraftApp {
     pub fn busy(&self) -> bool {
@@ -109,8 +110,12 @@ impl EmcraftApp {
                 }
                 if let Some(m) = self.messages.last_mut() {
                     match job.place() {
-                        Some(w) => m.text.push_str(&format!(" ({secs:.1} s · {})", messages::place_text(&w))),
-                        None => m.text.push_str(&format!(" ({secs:.1} s)")),
+                        Some(w) => {
+                            let _ = write!(m.text, " ({secs:.1} s · {})", messages::place_text(&w));
+                        }
+                        None => {
+                            let _ = write!(m.text, " ({secs:.1} s)");
+                        }
                     }
                 }
             }

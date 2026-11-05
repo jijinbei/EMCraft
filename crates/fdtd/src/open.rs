@@ -1127,13 +1127,13 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
     if checks.diverged {
         return Err(invalid("run", "the fields diverged"));
     }
-    let (ports, radiated, huygens) = normalise(frequencies, &ports, tr, hbox)?;
+    let (ports, radiated, huygens) = normalise(frequencies, &ports, &tr, &hbox)?;
     Ok(OpenRun { frequencies: frequencies.to_vec(), ports, radiated, huygens, cells: grid.cells(), steps, dt, converged: checks.converged })
 }
 
 /// The ports' spectra, the radiated power and the Huygens box's fields: the transforms
 /// normalised by the source spectrum.
-fn normalise(frequencies: &[f64], ports: &[GridPort], tr: Transforms, hbox: HuygensBox) -> Result<(Vec<PortSpectrum>, Vec<f64>, Vec<Huygens>)> {
+fn normalise(frequencies: &[f64], ports: &[GridPort], tr: &Transforms, hbox: &HuygensBox) -> Result<(Vec<PortSpectrum>, Vec<f64>, Vec<Huygens>)> {
     let ds = &tr.source;
     let huygens = frequencies
         .iter()

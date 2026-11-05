@@ -3,6 +3,7 @@
 //! it), undo and redo, and the results' exports and checks.
 
 use std::collections::VecDeque;
+use std::fmt::Write as _;
 
 use emcraft_model::Model;
 use emcraft_model::units::Display;
@@ -554,25 +555,29 @@ pub fn touchstone(s: &mut Session, p: &Params) -> Result<Value> {
     let one = refs.first().copied().flatten().filter(|r| refs.iter().all(|x| *x == Some(*r)));
     let mut out = String::new();
     out.push_str("! EMCraft S-parameters\n");
-    out.push_str(&format!("! ports: {}\n", entries.iter().map(|e| e.name.as_str()).collect::<Vec<_>>().join(", ")));
+    let _ = writeln!(out, "! ports: {}", entries.iter().map(|e| e.name.as_str()).collect::<Vec<_>>().join(", "));
     if one.is_none() {
         out.push_str("! power waves of the ports' modes (no common reference impedance): R 50 is nominal\n");
     }
-    out.push_str(&format!("# GHz S {} R {}\n", if ma { "MA" } else { "RI" }, one.unwrap_or(50.0)));
+    let _ = writeln!(out, "# GHz S {} R {}", if ma { "MA" } else { "RI" }, one.unwrap_or(50.0));
     let pair = |c: C| if ma { format!("{:.12e} {:.12e}", c.norm(), c.arg().to_degrees()) } else { format!("{:.12e} {:.12e}", c.re, c.im) };
     for r in &sw.results {
         let at = |i: usize, j: usize| r.s.get(i, j).unwrap_or_default();
         let f = format!("{:.12e}", r.frequency / 1e9);
         match n {
-            1 => out.push_str(&format!("{f} {}\n", pair(at(0, 0)))),
+            1 => {
+                let _ = writeln!(out, "{f} {}", pair(at(0, 0)));
+            }
             // Version 1's two-port order: S11 S21 S12 S22.
-            2 => out.push_str(&format!("{f} {} {} {} {}\n", pair(at(0, 0)), pair(at(1, 0)), pair(at(0, 1)), pair(at(1, 1)))),
+            2 => {
+                let _ = writeln!(out, "{f} {} {} {} {}", pair(at(0, 0)), pair(at(1, 0)), pair(at(0, 1)), pair(at(1, 1)));
+            }
             _ => {
                 // A row of the matrix per line, at most four values to a line (continued).
                 for i in 0..n {
                     for (k, chunk) in (0..n).map(|j| pair(at(i, j))).collect::<Vec<_>>().chunks(4).enumerate() {
                         let lead = if i == 0 && k == 0 { format!("{f} ") } else { String::new() };
-                        out.push_str(&format!("{lead}{}\n", chunk.join(" ")));
+                        let _ = writeln!(out, "{lead}{}", chunk.join(" "));
                     }
                 }
             }

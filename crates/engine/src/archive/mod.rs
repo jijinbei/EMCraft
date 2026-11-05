@@ -349,7 +349,7 @@ pub fn pin(s: &mut Session, p: &Params) -> Result<Value> {
 pub fn label(s: &mut Session, p: &Params) -> Result<Value> {
     let k = find(s, p)?;
     let label = checked_label(p.string("label").required()?).map_err(|e| p.error("label", e))?;
-    s.archive[k].label = label.clone();
+    s.archive[k].label.clone_from(&label);
     Ok(json!({"id": s.archive[k].id, "label": label}))
 }
 

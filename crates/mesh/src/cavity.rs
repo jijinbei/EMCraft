@@ -98,7 +98,7 @@ pub fn cavity(bodies: &[(String, Surface)], keep: Keep) -> Result<Cavity> {
             Err(e) => return Err(fail(format!("taking `{name}` from the box: {e}"))),
         };
     }
-    pieces(air, keep)
+    pieces(&air, keep)
 }
 
 /// A connected part of a surface: its triangles, signed volume and whether it reaches a side
@@ -145,8 +145,8 @@ fn shell_winding(s: &Surface, shell: &Shell, p: Point3) -> f64 {
 }
 
 /// The kept pieces of the box less the bodies.
-fn pieces(air: Surface, keep: Keep) -> Result<Cavity> {
-    let shells = shells(&air);
+fn pieces(air: &Surface, keep: Keep) -> Result<Cavity> {
+    let shells = shells(air);
     // Each hole (a shell enclosing metal, negative volume) belongs to the smallest piece of air
     // around it.
     let pieces: Vec<usize> = (0..shells.len()).filter(|&k| shells[k].volume > 0.0).collect();
@@ -162,7 +162,7 @@ fn pieces(air: Surface, keep: Keep) -> Result<Cavity> {
         owner[k] = pieces
             .iter()
             .copied()
-            .filter(|&q| shell_winding(&air, &shells[q], p) > 0.5)
+            .filter(|&q| shell_winding(air, &shells[q], p) > 0.5)
             .min_by(|&a, &b| shells[a].volume.total_cmp(&shells[b].volume).then(a.cmp(&b)));
     }
     let enclosed: Vec<usize> = pieces.iter().copied().filter(|&q| !shells[q].side).collect();

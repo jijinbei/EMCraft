@@ -320,12 +320,12 @@ fn check_as(text: &str, builtin: Option<Base>) -> Checked {
         Some(n) => match builtin {
             Some(b) if b.id() != n => out.problem(format!("the built-in theme's `name` must be `{b}`")),
             None if Base::parse(&n.to_lowercase()).is_some() => out.problem(format!("`name` `{n}` is a built-in theme's")),
-            _ => out.theme.name = n.to_owned(),
+            _ => n.clone_into(&mut out.theme.name),
         },
     }
     match o.get("description") {
         None => {}
-        Some(Value::String(d)) if d.chars().count() <= MAX_DESCRIPTION => out.theme.description = d.clone(),
+        Some(Value::String(d)) if d.chars().count() <= MAX_DESCRIPTION => out.theme.description.clone_from(d),
         Some(_) => out.problem(format!("`description` must be a text of at most {MAX_DESCRIPTION} characters")),
     }
     match (o.get("base"), builtin) {

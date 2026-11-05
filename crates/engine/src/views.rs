@@ -90,6 +90,7 @@ const MAX_NAME: usize = 64;
 /// The thinnest and the widest a curve is drawn (pixels).
 pub const WIDTHS: std::ops::RangeInclusive<f64> = 0.5..=12.0;
 
+#[allow(clippy::trivially_copy_pass_by_ref, reason = "serde's skip_serializing_if passes a reference")]
 fn is_false(b: &bool) -> bool {
     !*b
 }
@@ -372,29 +373,31 @@ pub fn added(s: &Session, id: ChartId, key: &str) -> bool {
 pub fn style_chart(s: &Session, id: ChartId, mut chart: Chart) -> Chart {
     let Some(style) = s.views.charts.get(id.id()) else { return chart };
     if let Some(t) = style.title.as_ref().filter(|t| !t.is_empty()) {
-        chart.title = t.clone();
+        chart.title.clone_from(t);
     }
     let fu = s.display.frequency;
     for a in AxisId::ALL {
         let st = style.axis(a);
         let shown = |v: f64| if is_frequency(id, a) { fu.from_si(v) } else { v };
-        let data: Vec<f64> = chart
-            .series
-            .iter()
-            .filter(|c| !style.hidden.contains(&c.key))
-            .flat_map(|c| c.points.iter().map(move |p| if a == AxisId::X { p[0] } else { p[1] }))
-            .collect();
+
         let axis = match a {
             AxisId::X => &mut chart.x,
             AxisId::Y => &mut chart.y,
         };
         if let Some(l) = st.label.as_ref().filter(|l| !l.is_empty()) {
-            axis.label = l.clone();
+            axis.label.clone_from(l);
         }
         axis.log = st.log;
         if st.log && axis.min.min(axis.max) <= 0.0 {
             // The positive points' range, out to whole decades.
-            let (lo, hi) = crate::view::chart::span(data.into_iter().filter(|v| *v > 0.0 && v.is_finite()));
+            let (lo, hi) = crate::view::chart::span(
+                chart
+                    .series
+                    .iter()
+                    .filter(|c| !style.hidden.contains(&c.key))
+                    .flat_map(|c| c.points.iter().map(move |p| if a == AxisId::X { p[0] } else { p[1] }))
+                    .filter(|v| *v > 0.0 && v.is_finite()),
+            );
             if lo.is_finite() && hi.is_finite() {
                 (axis.min, axis.max) = (10f64.powf(lo.log10().floor()), 10f64.powf(hi.log10().ceil()).max(lo * 10.0));
             }

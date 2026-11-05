@@ -286,7 +286,7 @@ fn pen(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui, boa
         egui::ComboBox::from_id_salt("pcb_pen_net").selected_text(pen.net.as_str()).show_ui(ui, |ui| {
             for n in nets {
                 if ui.selectable_label(pen.net == n, n).clicked() {
-                    pen.net = n.to_owned();
+                    n.clone_into(&mut pen.net);
                     pen.from = None;
                 }
             }
@@ -294,7 +294,7 @@ fn pen(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui, boa
         egui::ComboBox::from_id_salt("pcb_pen_layer").selected_text(pen.layer.as_str()).show_ui(ui, |ui| {
             for layer in &board.layers {
                 if ui.selectable_label(pen.layer == layer.name, &layer.name).clicked() {
-                    pen.layer = layer.name.clone();
+                    pen.layer.clone_from(&layer.name);
                     pen.from = None;
                 }
             }

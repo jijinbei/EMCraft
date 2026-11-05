@@ -111,7 +111,7 @@ mod tests {
         let has = |f: &ttf_parser::Face, c: char| f.glyph_index(c).is_some_and(|g| g.0 != 0);
         let ja = include_str!("../locales/ja.json");
         let mut missing: Vec<char> = ja.chars().filter(|c| !c.is_ascii() && has(&full, *c) && !has(&face, *c)).collect();
-        missing.sort();
+        missing.sort_unstable();
         missing.dedup();
         assert!(missing.is_empty(), "not in the subset (run cargo xtask font-subset): {}", missing.iter().collect::<String>());
         // Kana and a first-level kanji beyond the translation.

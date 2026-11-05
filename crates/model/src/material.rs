@@ -2,6 +2,7 @@
 //! dispersive (poles).
 
 use std::f64::consts::PI;
+use std::fmt::Write as _;
 
 use num_complex::Complex64;
 use serde::{Deserialize, Serialize};
@@ -200,7 +201,7 @@ impl Material {
     pub fn summary(&self) -> String {
         let mut loss = if self.loss_tangent.is_zero() { String::new() } else { format!(", tan δ {}", self.loss_tangent) };
         if !self.magnetic_loss_tangent.is_zero() {
-            loss += &format!(", tan δm {}", self.magnetic_loss_tangent);
+            let _ = write!(loss, ", tan δm {}", self.magnetic_loss_tangent);
         }
         if !self.is_dispersive() {
             return format!("εr {}, μr {}{loss}", self.eps_r, self.mu_r);

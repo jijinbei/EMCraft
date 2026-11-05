@@ -115,7 +115,7 @@ impl Grid {
         let losses = Losses::new(band.fc);
         let wall = match model.wall_conductivity {
             None => None,
-            Some(sigma) => Some((losses.wall(sigma, band.f1)?, crate::surface::inverse_sqrt(angular(band.f0), angular(band.f1)))),
+            Some(sigma) => Some((crate::Losses::wall(sigma, band.f1)?, crate::surface::inverse_sqrt(angular(band.f0), angular(band.f1)))),
         };
         // Dispersive materials in the model's order (deterministic).
         let mut poles: Vec<Vec<Pole>> = Vec::new();

@@ -123,7 +123,7 @@ mod tests {
         assert!(t.edges.iter().all(|e| e[0] < e[1]));
         assert!(t.faces.iter().all(|f| f[0] < f[1] && f[1] < f[2]));
         let mut e = t.edges.clone();
-        e.sort();
+        e.sort_unstable();
         e.dedup();
         assert_eq!(e.len(), t.edges.len());
         // Grid edges along x, y, z plus one diagonal per cell face and the cell diagonal.

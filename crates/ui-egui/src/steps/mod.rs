@@ -123,7 +123,7 @@ impl Fields {
     fn fill_defaults(&mut self) {
         for (field, default) in [(&mut self.points, "101"), (&mut self.order, "2"), (&mut self.count, "5"), (&mut self.cell, "1")] {
             if field.is_empty() {
-                *field = default.to_owned();
+                default.clone_into(field);
             }
         }
     }

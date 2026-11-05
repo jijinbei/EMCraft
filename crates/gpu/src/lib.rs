@@ -58,7 +58,7 @@ trait OnDevice {
 
 impl Gpu {
     /// Runs `job` on the device in the chosen precision, a panic in the runtime an error.
-    fn dispatch<J: OnDevice>(&self, job: J) -> Result<J::Out> {
+    fn dispatch<J: OnDevice>(self, job: J) -> Result<J::Out> {
         let device = self.backend.device()?;
         guarded(|| {
             let client = device.client();

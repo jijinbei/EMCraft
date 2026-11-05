@@ -22,6 +22,7 @@
 //! ```
 
 use std::borrow::Cow;
+use std::fmt::Write as _;
 
 use egui::text::{LayoutJob, TextFormat};
 use egui::{Align, Color32, FontId, Response};
@@ -188,13 +189,13 @@ pub fn texify(plain: &str) -> Cow<'_, str> {
         // A Greek letter and its subscript.
         if let Some((_, name)) = GREEK.iter().find(|g| g.0 == ch) {
             if c.get(i + 1) == Some(&'∞') && ends(i + 2) {
-                out.push_str(&format!("${name}_{{\\infty}}$"));
+                let _ = write!(out, "${name}_{{\\infty}}$");
                 (i, changed) = (i + 2, true);
                 continue;
             }
             let sub = GREEK_SUBS.iter().find(|s| s.chars().enumerate().all(|(k, x)| c.get(i + 1 + k) == Some(&x)) && ends(i + 1 + s.len()));
             if let Some(sub) = sub {
-                out.push_str(&format!("${name}_{{{sub}}}$"));
+                let _ = write!(out, "${name}_{{{sub}}}$");
                 (i, changed) = (i + 1 + sub.len(), true);
                 continue;
             }
@@ -205,14 +206,14 @@ pub fn texify(plain: &str) -> Cow<'_, str> {
             if (1..=4).contains(&n) && ends(i + 2 + n) {
                 let base = GREEK.iter().find(|g| g.0 == ch).map_or_else(|| ch.to_string(), |g| g.1.to_owned());
                 let sub: String = c[i + 2..i + 2 + n].iter().collect();
-                out.push_str(&format!("${base}_{{{sub}}}$"));
+                let _ = write!(out, "${base}_{{{sub}}}$");
                 (i, changed) = (i + 2 + n, true);
                 continue;
             }
         }
         // An S-parameter: S and two digits.
         if ch == 'S' && c.get(i + 1).is_some_and(char::is_ascii_digit) && c.get(i + 2).is_some_and(char::is_ascii_digit) && ends(i + 3) {
-            out.push_str(&format!("$S_{{{}{}}}$", c[i + 1], c[i + 2]));
+            let _ = write!(out, "$S_{{{}{}}}$", c[i + 1], c[i + 2]);
             (i, changed) = (i + 3, true);
             continue;
         }
@@ -221,7 +222,7 @@ pub fn texify(plain: &str) -> Cow<'_, str> {
             && let Some((len, mantissa, exponent)) = e_notation(&c[i..])
             && ends(i + len)
         {
-            out.push_str(&format!("{mantissa}$\\times 10^{{{exponent}}}$"));
+            let _ = write!(out, "{mantissa}$\\times 10^{{{exponent}}}$");
             (i, changed) = (i + len, true);
             continue;
         }

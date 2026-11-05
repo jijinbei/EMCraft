@@ -13,7 +13,7 @@ pub use crate::view::dispersion_chart;
 use crate::{EngineError, Params, Result, Session};
 
 /// The model's periodic boundaries as a reply.
-fn shown(p: &Option<Periodic>) -> Value {
+fn shown(p: Option<&Periodic>) -> Value {
     match p {
         None => json!({"periodic": false}),
         Some(p) => json!({
@@ -28,7 +28,7 @@ fn shown(p: &Option<Periodic>) -> Value {
 pub fn periodic(s: &mut Session, p: &Params) -> Result<Value> {
     if p.flag("clear").or(false)? {
         s.model.set_periodic(None)?;
-        return Ok(shown(&s.model.periodic));
+        return Ok(shown(s.model.periodic.as_ref()));
     }
     let old = s.model.periodic;
     let angle = |name: &str, old: f64| -> Result<f64> { Ok(p.number(name).optional()?.map_or(old, f64::to_radians)) };
@@ -41,7 +41,7 @@ pub fn periodic(s: &mut Session, p: &Params) -> Result<Value> {
         polarization: p.choice("polarization").or(old.map_or(Polarization::Te, |o| o.polarization))?,
     };
     s.model.set_periodic(Some(next))?;
-    Ok(shown(&s.model.periodic))
+    Ok(shown(s.model.periodic.as_ref()))
 }
 
 pub fn dispersion(s: &mut Session, p: &Params) -> Result<Value> {

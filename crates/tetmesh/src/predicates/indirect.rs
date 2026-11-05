@@ -87,6 +87,7 @@ fn coord<T: Clone>(v: &[T; 3], k: usize) -> T {
 }
 
 /// `v · w`, or `v` when `w = 1`.
+#[allow(clippy::ref_option, reason = "read with the points' own `&p.w`, at every call")]
 fn mulw<T: Ring>(v: T, w: &Option<T>) -> T {
     match w {
         None => v,
@@ -95,6 +96,7 @@ fn mulw<T: Ring>(v: T, w: &Option<T>) -> T {
 }
 
 /// The sign of `W` (positive for explicit points), `None` if uncertain.
+#[allow(clippy::ref_option, reason = "read with the points' own `&p.w`, at every call")]
 fn w_sign<T: Signed>(w: &Option<T>) -> Option<Sign> {
     w.as_ref().map_or(Some(Sign::Positive), Signed::sign)
 }

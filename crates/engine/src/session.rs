@@ -220,7 +220,7 @@ impl Results {
     /// The kinds this holds that `before` did not hold as they are, those a solve just made,
     /// are fresh.
     pub(crate) fn solved_since(&mut self, before: &Results) {
-        fn same<T>(a: &Option<Arc<T>>, b: &Option<Arc<T>>) -> bool {
+        fn same<T>(a: Option<&Arc<T>>, b: Option<&Arc<T>>) -> bool {
             match (a, b) {
                 (Some(a), Some(b)) => Arc::ptr_eq(a, b),
                 (None, None) => true,
@@ -229,13 +229,13 @@ impl Results {
         }
         for kind in ResultKind::ALL {
             let unchanged = match kind {
-                ResultKind::Sweep => same(&self.sweep, &before.sweep),
-                ResultKind::Eigen => same(&self.eigen, &before.eigen),
-                ResultKind::TimeDomain => same(&self.time_domain, &before.time_domain),
-                ResultKind::Radiation => same(&self.radiation, &before.radiation),
-                ResultKind::TdRadiation => same(&self.td_radiation, &before.td_radiation),
-                ResultKind::Dispersion => same(&self.dispersion, &before.dispersion),
-                ResultKind::Study => same(&self.study, &before.study),
+                ResultKind::Sweep => same(self.sweep.as_ref(), before.sweep.as_ref()),
+                ResultKind::Eigen => same(self.eigen.as_ref(), before.eigen.as_ref()),
+                ResultKind::TimeDomain => same(self.time_domain.as_ref(), before.time_domain.as_ref()),
+                ResultKind::Radiation => same(self.radiation.as_ref(), before.radiation.as_ref()),
+                ResultKind::TdRadiation => same(self.td_radiation.as_ref(), before.td_radiation.as_ref()),
+                ResultKind::Dispersion => same(self.dispersion.as_ref(), before.dispersion.as_ref()),
+                ResultKind::Study => same(self.study.as_ref(), before.study.as_ref()),
             };
             if !unchanged {
                 self.stale.remove(&kind);

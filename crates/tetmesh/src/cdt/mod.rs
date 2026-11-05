@@ -273,7 +273,7 @@ impl Recovery {
     /// Inside (`true`) or outside, per tetrahedron slot: a flood fill from the box corners that
     /// flips across every facet triangle (Diazzi et al. §4.5), then the exact check that each
     /// facet triangle has its inside tetrahedron on the side its normal points away from.
-    fn label(&mut self) -> Result<Vec<bool>> {
+    fn label(&self) -> Result<Vec<bool>> {
         let mut label: Vec<Option<bool>> = vec![None; self.cx.slots()];
         let corners = self.surface..self.surface + 8;
         let corner = self.cx.live_tets().find(|(_, vs)| vs.iter().any(|&v| corners.contains(&(v as usize))));

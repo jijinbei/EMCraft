@@ -191,7 +191,7 @@ impl CrossSection {
         if !lambdas.iter().all(|l| l.is_finite()) {
             return Err(invalid("port modes", "a mode at the shift"));
         }
-        self.separate_clusters(&lambdas, &mut vectors, &b_val, &mul)?;
+        Self::separate_clusters(&lambdas, &mut vectors, &b_val, &mul)?;
         let mut modes = lambdas.into_iter().zip(vectors).map(|(l, v)| self.finish_lossy(l, v, &inv_mu)).collect::<Result<Vec<_>>>()?;
         modes.sort_by(|p, q| q.beta2().total_cmp(&p.beta2()));
         Ok(modes)
@@ -199,7 +199,7 @@ impl CrossSection {
 
     /// Makes the vectors of each degenerate cluster of `lambdas` orthogonal in the unconjugated
     /// form xᵀB y (Gram–Schmidt); refuses a cluster whose vectors cannot be told apart.
-    fn separate_clusters(&self, lambdas: &[C], vectors: &mut [Vec<C>], b_val: &[C], mul: &dyn Fn(&[C], &[C]) -> Vec<C>) -> Result<()> {
+    fn separate_clusters(lambdas: &[C], vectors: &mut [Vec<C>], b_val: &[C], mul: &dyn Fn(&[C], &[C]) -> Vec<C>) -> Result<()> {
         let top = lambdas.iter().map(|l| l.norm()).fold(0.0, f64::max);
         for i in 0..vectors.len() {
             for j in 0..i {

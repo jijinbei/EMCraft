@@ -319,7 +319,7 @@ pub fn triangulate(r: &Request) -> Result<Planar> {
     mesh.refine(&size, &|p, h| guard.distances(p, h).1 >= cdt::CLEARANCE * h)?;
     let mesh = mesh.into_triangulation();
     let nets = label::label(&mesh.points, &mesh.triangles, &constrained, &rings, (r.layers, r.nets))?;
-    Ok(compact(mesh.points, mesh.triangles, nets, lattice))
+    Ok(compact(&mesh.points, &mesh.triangles, nets, lattice))
 }
 
 /// The points (as fractions of the way, strictly between 0 and 1) splitting the edge `a`–`b`
@@ -371,7 +371,7 @@ fn pieces(chains: &[Vec<u32>], outline: usize) -> (Vec<([u32; 2], Kind)>, Vec<[u
 }
 
 /// The mesh with only the points its triangles use, in metres.
-fn compact(points: Vec<[f64; 2]>, triangles: Vec<[u32; 3]>, nets: Vec<Vec<u32>>, lattice: Lattice) -> Planar {
+fn compact(points: &[[f64; 2]], triangles: &[[u32; 3]], nets: Vec<Vec<u32>>, lattice: Lattice) -> Planar {
     let mut id = vec![NO_NET; points.len()];
     for &v in triangles.iter().flatten() {
         if let Some(x) = id.get_mut(v as usize) {
@@ -379,7 +379,7 @@ fn compact(points: Vec<[f64; 2]>, triangles: Vec<[u32; 3]>, nets: Vec<Vec<u32>>,
         }
     }
     let mut kept = Vec::new();
-    for (x, p) in id.iter_mut().zip(&points) {
+    for (x, p) in id.iter_mut().zip(points) {
         if *x == 0 {
             *x = kept.len() as u32;
             kept.push(lattice.back(*p));

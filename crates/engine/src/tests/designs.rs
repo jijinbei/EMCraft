@@ -17,7 +17,7 @@ fn built(name: &str, values: serde_json::Value) -> Session {
     s
 }
 
-fn bounds(s: &mut Session) -> Vec<f64> {
+fn bounds(s: &Session) -> Vec<f64> {
     let [lo, hi] = s.model.bounds().unwrap().corners();
     (0..3).map(|d| (hi[d] - lo[d]) * 1e3).collect()
 }
@@ -25,11 +25,11 @@ fn bounds(s: &mut Session) -> Vec<f64> {
 #[test]
 fn a_template_opens_its_design_and_passes_its_parameters() {
     let mut s = built("taper", json!({"l": 30}));
-    let size = bounds(&mut s);
+    let size = bounds(&s);
     assert!((size[0] - 22.86).abs() < 1e-6 && (size[1] - 10.16).abs() < 1e-6 && (size[2] - 30.0).abs() < 1e-6, "{size:?}");
     // A parameter changed later rebuilds the model from the design at its new value.
     s.execute("project.variable", &json!({"name": "l", "value": 45})).unwrap();
-    approx::assert_abs_diff_eq!(bounds(&mut s)[2], 45.0, epsilon = 1e-6);
+    approx::assert_abs_diff_eq!(bounds(&s)[2], 45.0, epsilon = 1e-6);
     assert_eq!(s.model.ports.len(), 2);
 }
 

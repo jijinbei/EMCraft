@@ -115,7 +115,7 @@ fn end(text: &str) -> Option<Value> {
 }
 
 /// The card under the gear `at`.
-fn card(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, at: Rect, id: ChartId, out: &mut Actions) {
+fn card(app: &EmcraftApp, st: &mut Parts, ui: &egui::Ui, at: Rect, id: ChartId, out: &mut Actions) {
     let t = &Tokens::get();
     let shown = emcraft_engine::views::shown_style(&app.session, id);
     fill(&mut st.views.style, &shown);

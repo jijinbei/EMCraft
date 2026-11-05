@@ -24,6 +24,7 @@ pub struct Layer {
     pub loss_below: f64,
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref, reason = "serde's skip_serializing_if passes a reference")]
 fn is_zero(x: &f64) -> bool {
     *x == 0.0
 }

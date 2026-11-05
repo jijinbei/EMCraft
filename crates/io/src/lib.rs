@@ -80,7 +80,7 @@ pub fn read(name: &str, bytes: &[u8], stl_unit: f64) -> Result<Surface> {
         all.triangles.extend(p.triangles.into_iter().map(|t| t.map(|v| v + off)));
         all.tags.extend(p.tags.into_iter().map(|t| t + base));
     }
-    all.name = file_name(name).to_owned();
+    file_name(name).clone_into(&mut all.name);
     Ok(all)
 }
 

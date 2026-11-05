@@ -153,7 +153,7 @@ fn sample(args: &[String]) -> Result<()> {
     let mut it = args[1..].iter();
     while let Some(a) = it.next() {
         match a.as_str() {
-            "--out" => out = it.next().ok_or("--out needs a directory")?.clone(),
+            "--out" => out.clone_from(it.next().ok_or("--out needs a directory")?),
             "--frequency" => freqs.push(it.next().and_then(|f| f.parse().ok()).ok_or("--frequency needs a number (GHz)")?),
             other => return Err(format!("sample: unknown option `{other}`").into()),
         }

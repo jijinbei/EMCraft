@@ -292,7 +292,7 @@ impl Recovery {
     /// tetrahedron may cross. Faces on the facet's plane are left open when `skip` says so. The new
     /// tetrahedra and the faces left open.
     fn gift_wrap(
-        &mut self,
+        &self,
         f: usize,
         front: Vec<[u32; 3]>,
         fixed: &[[u32; 3]],
@@ -364,7 +364,7 @@ impl Recovery {
     }
 
     /// The apex for front face `sigma`: conditions (i)–(iii) of the module docs.
-    fn apex(&mut self, f: usize, sigma: [u32; 3], front: Front<'_>, fixed: &[([u32; 3], Bounds)], vertices: &[u32]) -> Result<u32> {
+    fn apex(&self, f: usize, sigma: [u32; 3], front: Front<'_>, fixed: &[([u32; 3], Bounds)], vertices: &[u32]) -> Result<u32> {
         let mut candidates = Vec::new();
         for &w in vertices {
             if !sigma.contains(&w) && self.cx.volume([sigma[0], sigma[1], sigma[2], w])? == Sign::Positive {

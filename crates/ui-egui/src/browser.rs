@@ -706,7 +706,7 @@ fn browser_row(app: &EmcraftApp, ui: &mut egui::Ui, section: &str, r: &Row, out_
 }
 
 /// The eye at the right of `rect` that shows or hides `object`; its rectangle.
-fn visibility_eye(app: &EmcraftApp, ui: &mut egui::Ui, rect: Rect, object: &emcraft_engine::visibility::DisplayObject, out: &mut Actions) -> Rect {
+fn visibility_eye(app: &EmcraftApp, ui: &egui::Ui, rect: Rect, object: &emcraft_engine::visibility::DisplayObject, out: &mut Actions) -> Rect {
     let t = &Tokens::get();
     let visible = app.session.views().visible(object);
     let name = object.name();

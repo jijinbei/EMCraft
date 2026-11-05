@@ -3,6 +3,7 @@
 //! with them; the desktop app's step bar reads them directly. The checks follow the job's kind
 //! of analysis (`project.analysis`) once one is chosen; until then they are as for any job.
 
+use std::fmt::Write as _;
 use std::str::FromStr;
 
 pub use emcraft_model::Analysis;
@@ -257,7 +258,7 @@ pub fn cutoffs(s: &Session) -> Vec<Cutoff> {
         }
         match out.iter_mut().find(|c| (c.frequency - frequency).abs() <= 1e-6 * frequency && c.label.starts_with(mode)) {
             Some(c) if c.label.starts_with(&format!("{mode} port ")) && owner.starts_with("port ") => {
-                c.label.push_str(&format!(", {}", owner.trim_start_matches("port ")));
+                let _ = write!(c.label, ", {}", owner.trim_start_matches("port "));
             }
             Some(_) => {}
             None => out.push(Cutoff { frequency, label: format!("{mode} {owner}"), first }),

@@ -238,7 +238,7 @@ impl Losses {
 
     /// The walls' conductivity `sigma` (S/m, in range by its type) checked against the band: a
     /// good conductor up to `f_max`.
-    pub(crate) fn wall(&self, sigma: Conductivity, f_max: f64) -> Result<f64> {
+    pub(crate) fn wall(sigma: Conductivity, f_max: f64) -> Result<f64> {
         let sigma = sigma.get();
         if sigma < GOOD_CONDUCTOR * 2.0 * PI * f_max * EPS0 {
             return Err(invalid(

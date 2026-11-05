@@ -368,7 +368,7 @@ impl EmcraftApp {
             },
             Pref::Language(id) => match crate::lang::find(&id) {
                 Some(l) => {
-                    self.prefs.language = l.id.to_owned();
+                    l.id.clone_into(&mut self.prefs.language);
                     self.use_theme();
                 }
                 None => self.error(format!("no language `{}` (there are {})", crate::lang::clip_id(&id), crate::lang::ids().join(", "))),

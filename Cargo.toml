@@ -73,6 +73,15 @@ or_fun_call = "warn"
 map_unwrap_or = "warn"
 redundant_closure_for_method_calls = "warn"
 manual_let_else = "warn"
+# No mutable or by-reference argument a function does not need, no `self` it does not read, no
+# copy it does not make use of; text appended with `write!`, not a `format!` built to be copied.
+needless_pass_by_ref_mut = "warn"
+trivially_copy_pass_by_ref = "warn"
+ref_option = "warn"
+unused_self = "warn"
+assigning_clones = "warn"
+stable_sort_primitive = "warn"
+format_push_string = "warn"
 type_complexity = "allow"
 # `!(x > tol)` is our idiom for "not a usable number" (NaN-safe).
 neg_cmp_op_on_partial_ord = "allow"

@@ -371,15 +371,15 @@ impl Tie {
 
     /// Tᴴ v for a test-side vector over the full unknowns.
     pub fn reduce_test(&self, v: &[(usize, C)], psi: [f64; 3]) -> Vec<(usize, C)> {
-        self.gather(v.iter().filter_map(|&(u, x)| self.coefficient(u, psi).map(|(r, c)| (r, c.conj() * x))))
+        Self::gather(v.iter().filter_map(|&(u, x)| self.coefficient(u, psi).map(|(r, c)| (r, c.conj() * x))))
     }
 
     /// Tᵀ v for a trial-side vector (a functional of x = T x_r).
     pub fn reduce_trial(&self, v: &[(usize, C)], psi: [f64; 3]) -> Vec<(usize, C)> {
-        self.gather(v.iter().filter_map(|&(u, x)| self.coefficient(u, psi).map(|(r, c)| (r, c * x))))
+        Self::gather(v.iter().filter_map(|&(u, x)| self.coefficient(u, psi).map(|(r, c)| (r, c * x))))
     }
 
-    fn gather(&self, items: impl Iterator<Item = (usize, C)>) -> Vec<(usize, C)> {
+    fn gather(items: impl Iterator<Item = (usize, C)>) -> Vec<(usize, C)> {
         let mut m: std::collections::BTreeMap<usize, C> = std::collections::BTreeMap::new();
         for (r, x) in items {
             *m.entry(r).or_default() += x;

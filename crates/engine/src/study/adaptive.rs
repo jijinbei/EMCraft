@@ -255,7 +255,7 @@ mod tests {
         let (o1, r1) = run();
         assert_eq!(run(), (o1.clone(), r1));
         let mut unique = o1;
-        unique.sort();
+        unique.sort_unstable();
         unique.dedup();
         assert_eq!(unique.len(), 8);
     }

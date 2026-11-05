@@ -161,7 +161,7 @@ impl Model {
                 MaterialUse::Inclusion(k) => self.inclusions.get_mut(k).and_then(|inc| inc.material.as_mut()),
             };
             if let Some(slot) = slot {
-                *slot = new.to_owned();
+                new.clone_into(slot);
             }
         }
     }
