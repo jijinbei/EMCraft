@@ -115,7 +115,8 @@ impl Packed {
         // Planes within 10⁻⁵ of the scene apart count as one: the depth buffer cannot tell them
         // apart (a body's cap a rounding below another's), where the CPU's f64 can.
         let step = (radius * 1e-5).max(1e-15);
-        for t in scene.tris.iter().filter(|t| t.alpha > 0) {
+        // A clear face still shows its edges when it has them.
+        for t in scene.tris.iter().filter(|t| t.alpha > 0 || t.wire.is_some_and(|(_, a)| a > 0)) {
             if !t.p.iter().flatten().all(|v| v.is_finite()) {
                 continue;
             }
@@ -158,7 +159,12 @@ impl Packed {
                 out.extend_from_slice(&rank.to_le_bytes());
                 out.extend_from_slice(&[t.color.0, t.color.1, t.color.2, t.alpha]);
                 out.extend_from_slice(&t.tag.to_le_bytes());
-                out.extend_from_slice(&[0; 28]);
+                out.extend_from_slice(&[0; 12]);
+                // The edges' opacity and colour (0: none), where an arrow keeps its motion.
+                let (c, a) = t.wire.unwrap_or((t.color, 0));
+                for v in [a, c.0, c.1, c.2] {
+                    out.extend_from_slice(&(f32::from(v) / 255.0).to_le_bytes());
+                }
             }
         }
         for l in scene.lines.iter().filter(|l| l.alpha > 0) {

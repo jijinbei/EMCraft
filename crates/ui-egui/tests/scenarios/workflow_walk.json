@@ -24,7 +24,7 @@
   {"expect": {"inspect": {"view3d.overlay": "boundaries"}}},
   {"shot": "workflow-4-boundaries"},
   {"click": "step:mesh"},
-  {"expect": {"inspect": {"view3d.overlay": "mesh", "view3d.lines": {"min": 1000}}}},
+  {"expect": {"inspect": {"view3d.overlay": "mesh", "view3d.wired": {"min": 500}}}},
   {"shot": "workflow-5-mesh"},
   {"note": "Mesh's command (the ribbon shows the step's tab) docks its dialog in the step panel, on the mesh as it was made (3 mm elements)"},
   {"click": "toolbar:mesh.generate"},

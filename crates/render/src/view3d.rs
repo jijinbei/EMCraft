@@ -391,6 +391,9 @@ pub struct Tri {
     pub color: Rgb,
     pub alpha: u8,
     pub tag: u32,
+    /// Its three edges drawn in this colour and opacity (a mesh's wireframe, drawn by the GPU
+    /// on the triangle itself), the face left as it is; `None`: no edges.
+    pub wire: Option<(Rgb, u8)>,
 }
 
 /// A line segment (world) with its colour and opacity.
@@ -413,7 +416,13 @@ pub struct Scene {
 
 impl Scene {
     pub fn tri(&mut self, a: [f64; 3], b: [f64; 3], c: [f64; 3], color: Rgb, alpha: u8) {
-        self.tris.push(Tri { p: [a, b, c], color, alpha, tag: self.tag });
+        self.tris.push(Tri { p: [a, b, c], color, alpha, tag: self.tag, wire: None });
+    }
+
+    /// As [`Scene::tri`], its edges drawn in `wire` (colour, opacity): a mesh's wireframe without
+    /// a line per edge; the face may be clear (`alpha` 0) and only its edges show.
+    pub fn wired_tri(&mut self, p: [[f64; 3]; 3], color: Rgb, alpha: u8, wire: (Rgb, u8)) {
+        self.tris.push(Tri { p, color, alpha, tag: self.tag, wire: Some(wire) });
     }
 
     /// Tags what `draw` adds (for picking), then goes back to the tag before.

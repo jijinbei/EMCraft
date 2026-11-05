@@ -247,6 +247,7 @@ fn mirrored_halves(m: &emcraft_model::Model, overlay: Overlay, scene: &mut emcra
                 c.p = [mirror(t.p[0]), mirror(t.p[2]), mirror(t.p[1])];
                 if faint {
                     c.alpha = t.alpha / 3;
+                    c.wire = None;
                 }
                 c
             })

@@ -607,7 +607,7 @@ fn caps(plane: &Plane, bodies: &[&Body], budget: usize, out: &mut Scene) -> bool
         let [a, bb, c, d] = [[t.xa, t.lo[0]], [t.xb, t.lo[1]], [t.xb, t.hi[1]], [t.xa, t.hi[0]]].map(|q| plane.lift(q));
         let mut put = |p: [[f64; 3]; 3]| {
             if p.iter().flatten().all(|v| v.is_finite()) {
-                tris.push(Tri { p, color: body.color, alpha: body.alpha, tag: body.tag });
+                tris.push(Tri { p, color: body.color, alpha: body.alpha, tag: body.tag, wire: None });
             }
         };
         if t.hi[1] > t.lo[1] {

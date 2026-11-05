@@ -45,14 +45,20 @@ pub(super) fn from_mesh(session: &emcraft_engine::Session, overlay: Overlay, out
             alpha = 25;
         }
         let pick = port.map_or_else(|| if m.waveguide.is_some() { Pick::Guide } else { Pick::Solid }, Pick::Port);
-        if alpha > 0 {
+        let air = kind == Kind::Air && port.is_none();
+        if overlay == Overlay::Mesh {
+            // The volume mesh's faces with their edges, drawn on the GPU on each triangle (the
+            // air's faint: the mesh's sizes inside matter more), the face itself as it is.
+            let wire = (super::style::wire_rgb(), if air { WIRE_ALPHA / 3 } else { WIRE_ALPHA });
+            out.scene.tagged(pick.tag(), |s| s.wired_tri([a, b, c], color, alpha, wire));
+        } else if alpha > 0 {
             out.scene.tagged(pick.tag(), |s| s.tri(a, b, c, color, alpha));
         }
         let key = match f.tag {
             Boundary::Port(k) if port.is_some() => 1 + k,
             _ => 0,
         };
-        faces.push((f.nodes, key, kind == Kind::Air && port.is_none()));
+        faces.push((f.nodes, key, air));
     }
     if let Some(t) = m.wall_thickness
         && m.open.is_none()
@@ -136,9 +142,15 @@ fn material_regions(m: &Model, mesh: &emcraft_model::Mesh, overlay: Overlay, sel
     }
 }
 
-/// Edges of the boundary `faces`: every one for the mesh view, else the outline (sharp folds,
-/// and where the faces' keys change).
+/// The opacity of the mesh's edges in the Mesh step (the air's a third of it).
+const WIRE_ALPHA: u8 = 90;
+
+/// The outline of the boundary `faces` (sharp folds, and where the faces' keys change); the
+/// Mesh step draws every edge on its triangles instead ([`emcraft_render::view3d::Scene::wired_tri`]).
 fn outline_edges(mesh: &emcraft_model::Mesh, faces: &[Face], overlay: Overlay, out: &mut Built) {
+    if overlay == Overlay::Mesh {
+        return;
+    }
     let node = |n: u32| mesh.nodes.get(n as usize).copied();
     let normal = |i: usize| {
         let f = faces.get(i)?.0;

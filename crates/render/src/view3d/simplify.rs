@@ -153,7 +153,7 @@ pub fn coarser(scene: &Scene, target: usize) -> Option<Scene> {
         match made {
             Some(l) => {
                 let at = |i: u32| l.positions.get(i as usize).copied().unwrap_or_default();
-                out.tris.extend(l.triangles.iter().map(|t| Tri { p: t.map(at), color: first.color, alpha: first.alpha, tag: first.tag }));
+                out.tris.extend(l.triangles.iter().map(|t| Tri { p: t.map(at), color: first.color, alpha: first.alpha, tag: first.tag, wire: None }));
             }
             None => out.tris.extend(group.iter().map(|t| **t)),
         }

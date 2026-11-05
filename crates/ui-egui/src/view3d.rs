@@ -393,12 +393,17 @@ impl View3d {
     /// The state for `ui.inspect` (lengths in `l`).
     pub fn inspect(&self, l: emcraft_model::units::Length) -> serde_json::Value {
         let c = &self.camera;
-        let b = self.built.as_ref().zip(self.shown()).map(|((k, _), b)| (k.overlay.id(), b.scene.tris.len(), b.scene.lines.len()));
+        let b =
+            self.built.as_ref().zip(self.shown()).map(|((k, _), b)| {
+                (k.overlay.id(), b.scene.tris.len(), b.scene.lines.len(), b.scene.tris.iter().filter(|t| t.wire.is_some()).count())
+            });
         serde_json::json!({
             "yaw": c.yaw.to_degrees(), "pitch": c.pitch.to_degrees(), "distance": c.distance,
             "target": c.target,
             "projection": match c.projection { Projection::Perspective => "perspective", Projection::Orthographic => "orthographic" },
             "overlay": b.map(|x| x.0), "triangles": b.map(|x| x.1), "lines": b.map(|x| x.2),
+            // Triangles drawn with their edges (the mesh's wireframe).
+            "wired": b.map(|x| x.3),
             "ms": self.last_ms, "size": self.last_size,
             "selected": self.selected.last().map(|p| format!("{p:?}")),
             "selection": self.selected.iter().map(|p| format!("{p:?}")).collect::<Vec<_>>(),

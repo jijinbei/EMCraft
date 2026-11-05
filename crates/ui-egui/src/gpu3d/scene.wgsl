@@ -150,7 +150,23 @@ struct V {
     @location(1) world: vec3<f32>,
     @location(2) @interpolate(flat) flag: f32,
     @location(3) normal: vec3<f32>,
+    // Where in its triangle (barycentric), and the triangle's edges' opacity and colour (a
+    // mesh's wireframe; 0: none).
+    @location(4) bary: vec3<f32>,
+    @location(5) @interpolate(flat) wire: vec4<f32>,
 };
+
+// The triangle's colour with its edges drawn over it, about a pixel wide whatever the zoom
+// (from the barycentrics' screen derivatives); a clear face shows only its edges.
+fn wired(i: V, c: vec4<f32>) -> vec4<f32> {
+    if (i.wire.x <= 0.0) {
+        return c;
+    }
+    let d = max(fwidth(i.bary), vec3<f32>(1e-6));
+    let e = smoothstep(vec3<f32>(0.0), d * 1.25, i.bary);
+    let a = (1.0 - min(min(e.x, e.y), e.z)) * i.wire.x;
+    return vec4<f32>(mix(c.rgb, i.wire.yzw, a), max(c.a, a));
+}
 
 // The ground: a full-screen triangle, top to bottom by pixel row as the CPU fills it.
 @vertex
@@ -176,13 +192,17 @@ fn placed(p: vec3<f32>, rank: f32) -> vec4<f32> {
 }
 
 @vertex
-fn vs_tri(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: vec4<f32>, @location(4) im: vec3<f32>, @location(5) motion: vec4<f32>) -> V {
+fn vs_tri(@builtin(vertex_index) vi: u32, @location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: vec4<f32>, @location(4) im: vec3<f32>, @location(5) motion: vec4<f32>) -> V {
     var o: V;
     o.pos = placed(p, max(n.w, 0.0));
     o.color = c;
     o.world = p;
     o.normal = n.xyz;
     o.flag = n.w;
+    let k = vi % 3u;
+    o.bary = vec3<f32>(f32(k == 0u), f32(k == 1u), f32(k == 2u));
+    // A plain triangle's motion slot holds its edges; an arrow's (n.w < −1.5) its motion.
+    o.wire = select(motion, vec4<f32>(0.0), n.w < -0.5);
     if (is_field(n.w)) {
         o.color = vec4<f32>(1.0, 1.0, 1.0, c.a);
     } else if (n.w < -1.5) {
@@ -217,14 +237,16 @@ fn fs_opaque(i: V) -> @location(0) vec4<f32> {
         }
         return vec4<f32>(fc.rgb * lit(i).rgb, 1.0);
     }
-    return vec4<f32>(lit(i).rgb, 1.0);
+    return vec4<f32>(wired(i, vec4<f32>(lit(i).rgb, 1.0)).rgb, 1.0);
 }
 
 // See-through triangles blended in order (where the device has no order-independent targets).
 @fragment
 fn fs_blend(i: V) -> @location(0) vec4<f32> {
     if (!(i.flag > -2.5 && i.flag < -1.5) && removed(i.world)) { discard; }
-    return lit(i);
+    let c = wired(i, lit(i));
+    if (c.a <= 0.0) { discard; }
+    return c;
 }
 
 // Weighted blended order-independent transparency (McGuire and Bavoil, JCGT 2(2), 2013): the
@@ -238,8 +260,9 @@ struct Oit {
 @fragment
 fn fs_oit(i: V) -> Oit {
     if (!(i.flag > -2.5 && i.flag < -1.5) && removed(i.world)) { discard; }
-    let color = lit(i);
+    let color = wired(i, lit(i));
     let a = color.a;
+    if (a <= 0.0) { discard; }
     let w = a * clamp(3e3 * pow(1.0 - i.pos.z, 3.0), 1e-2, 3e3);
     var o: Oit;
     o.accum = vec4<f32>(color.rgb * a, a) * w;
@@ -263,6 +286,8 @@ fn vs_line(@builtin(vertex_index) vi: u32, @location(0) a: vec3<f32>, @location(
     o.world = vec3<f32>(0.0);
     o.flag = 0.0;
     o.normal = vec3<f32>(0.0, 0.0, 1.0);
+    o.bary = vec3<f32>(1.0);
+    o.wire = vec4<f32>(0.0);
     // Clip the original world-space segment before expanding it into a screen-space quad.
     var wa = a;
     var wb = b;
@@ -331,7 +356,8 @@ struct G {
 
 // The field's plane has no triangles where its cells are left out: neither has it pixels here.
 fn hole(i: G) -> bool {
-    return (!(i.flag > -2.5 && i.flag < -1.5) && removed(i.world)) || (is_field(i.flag) && field_colour(i.world).a < 0.5);
+    // A clear face (one drawn only for its wireframe) is no surface to pick or outline.
+    return i.alpha <= 0.0 || (!(i.flag > -2.5 && i.flag < -1.5) && removed(i.world)) || (is_field(i.flag) && field_colour(i.world).a < 0.5);
 }
 
 @vertex
