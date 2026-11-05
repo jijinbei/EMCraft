@@ -790,6 +790,22 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::solve::cyclic,
     },
     CommandSpec {
+        id: "solve.harmonics",
+        label: "Harmonics sweep",
+        doc: "A rotationally symmetric model (model.rotation) with ports on its axis, solved on its sector in each harmonic m at `frequencies` (or `points` from `start` to `stop`): each harmonic's S between the ports' first modes (the rotating e^{−jνφ}, ν ≡ m mod n; a harmonic whose first modes do not all propagate is left out at that frequency), and the dominant pair — the mode of order +1 in harmonic 1 and its twin −1 in n − 1 — as the whole model's standing polarizations c (cos) and s (sin): S_cc = S_ss = (S₊ + S₋)/2, S_sc and S_cs = ±j(S₊ − S₋)/2, nonzero only when the model turns one rotation's wave differently from the other's (a twisted or chiral part). The model is left as it is.",
+        params: &[
+            opt("frequencies", K::Array, "frequencies to solve").of(F),
+            opt("start", K::Number, "first frequency (default the band's start)").of(F),
+            opt("stop", K::Number, "last frequency (default the band's stop)").of(F),
+            opt("points", K::Integer, "frequencies from `start` to `stop` (default 11)"),
+            opt("m", K::Array, "the harmonics, 0 to n − 1 (default all)"),
+            ORDER,
+        ],
+        effect: Effect::None,
+        invalidates: None,
+        run: crate::solve::harmonics,
+    },
+    CommandSpec {
         id: "model.symmetry.find",
         label: "Find symmetry",
         doc: "Finds the planes the model is symmetric about (its geometry, materials and ports; each axis' middle) and sets them, at most two: each wall from what its ports' TE10 asks for (magnetic across a broad side, electric across a narrow one). Without ports (an eigenmode search) either wall keeps a family of modes: `kind` chooses it. Refused when no plane is found.",

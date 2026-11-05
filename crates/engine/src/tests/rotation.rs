@@ -286,3 +286,31 @@ fn a_widened_guide_on_a_quarter_gives_the_whole_s_s() {
     let unknowns = |r: &Value| r["unknowns"].as_f64().unwrap();
     assert!(unknowns(&q) < 0.8 * unknowns(&w), "quarter {} of whole {} unknowns", unknowns(&q), unknowns(&w));
 }
+
+#[test]
+fn the_harmonics_assemble_the_whole_guide_s_standing_modes() {
+    let mut s = guide_quarter(0, 4.0);
+    let r = s.execute("solve.harmonics", &json!({"frequencies": [12], "order": 2})).unwrap();
+    // At 12 GHz harmonic 0's TM01 (cut-off 11.47 GHz) and 2's TE21 (14.6 GHz): TM01 passes, TE21 not.
+    let rows = r["harmonics"].as_array().unwrap();
+    assert_eq!(rows.len(), 4);
+    assert_eq!(rows[1]["modes"], json!(["TE11+", "TE11+"]));
+    assert_eq!(rows[3]["modes"], json!(["TE11−", "TE11−"]));
+    assert_eq!(rows[2]["points"][0]["propagating"], false);
+    // TE11's standing polarizations: each passes as e^{−jβL}, neither turns into the other.
+    let st = &r["standing"];
+    assert_eq!(st["mode"], "TE11");
+    let c = |k: &str| {
+        let e = &st["points"][0][k];
+        emcraft_solver::Complex64::new(e["re"].as_f64().unwrap(), e["im"].as_f64().unwrap())
+    };
+    let k = 2.0 * std::f64::consts::PI * 12e9 / emcraft_model::units::C0;
+    let beta = (k * k - (X11P / 0.01).powi(2)).sqrt();
+    let want = emcraft_solver::Complex64::from_polar(1.0, -beta * 0.03);
+    for key in ["s2c1c", "s2s1s"] {
+        assert!((c(key) - want).norm() < 0.01, "{key} {} against {want}", c(key));
+    }
+    for key in ["s2s1c", "s2c1s", "s1s1c", "s1c1c"] {
+        assert!(c(key).norm() < 0.01, "{key} {}", c(key));
+    }
+}

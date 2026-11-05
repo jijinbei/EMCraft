@@ -468,6 +468,120 @@ pub fn cyclic(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"n": rot.n, "order": order.as_u8(), "harmonics": rows}))
 }
 
+/// `solve.harmonics`: a rotationally symmetric model with ports on its axis solved on its sector
+/// in each harmonic, and its dominant mode's S over both rotations (m = 1 and n − 1) in the
+/// standing polarizations the whole model's ports carry.
+pub fn harmonics(s: &mut Session, p: &Params) -> Result<Value> {
+    let rot = s.model.rotation.ok_or_else(|| EngineError::failed("no rotational symmetry: set it with model.rotation"))?;
+    if s.model.ports.is_empty() {
+        return Err(EngineError::failed("no ports: create them on the solid's ends with model.port.create"));
+    }
+    let freqs = frequencies(s, p)?;
+    let order = p.order()?;
+    let wanted: Vec<u32> = match p.list("m", 64).optional()? {
+        Some(list) => list
+            .iter()
+            .map(|v| {
+                v.as_u64()
+                    .filter(|&m| m < u64::from(rot.n))
+                    .map(|m| m as u32)
+                    .ok_or_else(|| p.error("m", format!("must hold harmonics 0 to {}", rot.n - 1)))
+            })
+            .collect::<Result<_>>()?,
+        None => (0..rot.n).collect(),
+    };
+    let ports = s.model.ports.len();
+    let mut solved: Vec<(u32, Vec<String>, Vec<Option<emcraft_solver::SMatrix>>)> = Vec::new();
+    let total = wanted.len() * freqs.len();
+    for (i, &m) in wanted.iter().enumerate() {
+        let mut model = s.model.clone();
+        model.rotation = Some(emcraft_model::Rotation { m, ..rot });
+        let d = emcraft_solver::Driven::new(&model, order)?;
+        let names: Vec<String> = d
+            .ports
+            .iter()
+            .map(|port| match &port.modes {
+                emcraft_solver::driven::PortModes::Cyclic(c) => {
+                    c.modes.first().map(emcraft_solver::driven::cyclic::RotatingMode::name).unwrap_or_default()
+                }
+                _ => String::new(),
+            })
+            .collect();
+        let mut points = Vec::with_capacity(freqs.len());
+        for (k, &f) in freqs.iter().enumerate() {
+            crate::progress::report(i * freqs.len() + k, total, "harmonic")?;
+            // A harmonic whose first modes do not all propagate there carries no wave in.
+            let carries = (0..ports).map(|q| d.complex_mode_propagates(q, f)).collect::<std::result::Result<Vec<_>, _>>()?;
+            points.push(if carries.iter().all(|c| *c == Some(true)) { Some(d.solve(f)?.s) } else { None });
+        }
+        solved.push((m, names, points));
+    }
+    let label = |q: usize| s.model.ports.get(q).map_or_else(String::new, |x| x.name.clone());
+    let table = |sm: &emcraft_solver::SMatrix| {
+        let mut row = serde_json::Map::new();
+        for a in 0..ports {
+            for b in 0..ports {
+                row.insert(format!("s{}{}", a + 1, b + 1), complex(sm.get(a, b).unwrap_or_default()));
+            }
+        }
+        Value::Object(row)
+    };
+    let shown: Vec<Value> = solved
+        .iter()
+        .map(|(m, names, points)| {
+            let pts: Vec<Value> = freqs
+                .iter()
+                .zip(points)
+                .map(|(f, sm)| match sm {
+                    Some(sm) => {
+                        let mut v = table(sm);
+                        v["frequency"] = json!(s.show_frequency(*f));
+                        v
+                    }
+                    None => json!({"frequency": s.show_frequency(*f), "propagating": false}),
+                })
+                .collect();
+            json!({"m": m, "modes": names, "points": pts})
+        })
+        .collect();
+    let mut reply = json!({"n": rot.n, "order": order.as_u8(), "ports": (0..ports).map(label).collect::<Vec<_>>(), "harmonics": shown});
+    // The dominant pair: the mode of order +1 in harmonic 1 and its counter-rotating twin in
+    // n − 1, as the standing cos (c) and sin (s) polarizations (e± = (e_c ± j e_s)/√2 for TE,
+    // ∓ for TM): S_cc = S_ss = (S₊ + S₋)/2, S_sc = ±j(S₊ − S₋)/2, S_cs = ∓j(S₊ − S₋)/2.
+    let find = |m: u32| solved.iter().find(|(k, _, _)| *k == m);
+    if let (Some((_, plus, sp)), Some((_, minus, sm))) = (find(1), find(rot.n - 1)) {
+        let base = |name: &str| name.trim_end_matches(['+', '−']).to_owned();
+        let same = plus.iter().zip(minus).all(|(a, b)| a.ends_with('+') && b.ends_with('−') && base(a) == base(b));
+        if same && rot.n >= 3 {
+            let te = plus.first().is_some_and(|n| n.starts_with("TE"));
+            let j = emcraft_solver::Complex64::new(0.0, if te { 1.0 } else { -1.0 });
+            let pts: Vec<Value> = freqs
+                .iter()
+                .zip(sp.iter().zip(sm))
+                .map(|(f, pair)| {
+                    let mut row = serde_json::Map::new();
+                    row.insert("frequency".into(), json!(s.show_frequency(*f)));
+                    if let (Some(a), Some(b)) = pair {
+                        for x in 0..ports {
+                            for y in 0..ports {
+                                let (up, down) = (a.get(x, y).unwrap_or_default(), b.get(x, y).unwrap_or_default());
+                                let (even, odd) = ((up + down) * 0.5, (up - down) * 0.5);
+                                for (key, v) in [("cc", even), ("ss", even), ("sc", j * odd), ("cs", -j * odd)] {
+                                    let (o, i) = (&key[..1], &key[1..]);
+                                    row.insert(format!("s{}{o}{}{i}", x + 1, y + 1), complex(v));
+                                }
+                            }
+                        }
+                    }
+                    Value::Object(row)
+                })
+                .collect();
+            reply["standing"] = json!({"mode": base(plus.first().map_or("", String::as_str)), "points": pts});
+        }
+    }
+    Ok(reply)
+}
+
 pub fn port_modes(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!(port_modes_of(s, p)?))
 }

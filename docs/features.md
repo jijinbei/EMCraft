@@ -568,6 +568,19 @@ The cavity modes of a rotationally symmetric model (model.rotation) from its mes
 | `count` | integer |  | no | modes per harmonic, 1 to 20 (default 4) |
 | `order` | integer |  | no | element order: 1 or 2 (default) |
 
+## `solve.harmonics` — Harmonics sweep
+
+A rotationally symmetric model (model.rotation) with ports on its axis, solved on its sector in each harmonic m at `frequencies` (or `points` from `start` to `stop`): each harmonic's S between the ports' first modes (the rotating e^{−jνφ}, ν ≡ m mod n; a harmonic whose first modes do not all propagate is left out at that frequency), and the dominant pair — the mode of order +1 in harmonic 1 and its twin −1 in n − 1 — as the whole model's standing polarizations c (cos) and s (sin): S_cc = S_ss = (S₊ + S₋)/2, S_sc and S_cs = ±j(S₊ − S₋)/2, nonzero only when the model turns one rotation's wave differently from the other's (a twisted or chiral part). The model is left as it is.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `frequencies` | array | frequency | no | frequencies to solve |
+| `start` | number | frequency | no | first frequency (default the band's start) |
+| `stop` | number | frequency | no | last frequency (default the band's stop) |
+| `points` | integer |  | no | frequencies from `start` to `stop` (default 11) |
+| `m` | array |  | no | the harmonics, 0 to n − 1 (default all) |
+| `order` | integer |  | no | element order: 1 or 2 (default) |
+
 ## `model.symmetry.find` — Find symmetry
 
 Finds the planes the model is symmetric about (its geometry, materials and ports; each axis' middle) and sets them, at most two: each wall from what its ports' TE10 asks for (magnetic across a broad side, electric across a narrow one). Without ports (an eigenmode search) either wall keeps a family of modes: `kind` chooses it. Refused when no plane is found.
