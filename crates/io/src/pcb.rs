@@ -162,43 +162,10 @@ pub fn read(text: &str, override_layers: Option<Vec<Layer>>) -> Result<Board> {
     if root.head() != Some("kicad_pcb") || parser.at != parser.s.len() {
         return Err(bad("expected one kicad_pcb document"));
     }
-    let mut layers = override_layers.unwrap_or_default();
-    if layers.is_empty() {
-        let stack = root
-            .child("setup")
-            .and_then(|n| n.child("stackup"))
-            .ok_or_else(|| bad("stackup is missing: supply copper layers with z and eps_below"))?;
-        let mut z = 0.0;
-        let mut eps: Option<f64> = None;
-        let mut tan_d: Option<f64> = None;
-        for n in stack.list().iter().filter(|n| n.head() == Some("layer")) {
-            let name = n.text(1)?;
-            if name.ends_with(".Cu") {
-                if let Some(previous) = layers.last_mut() {
-                    previous.eps_below = eps.ok_or_else(|| bad("dielectric epsilon_r is missing"))?;
-                    previous.loss_below = tan_d.unwrap_or(0.0);
-                }
-                layers.push(Layer { name: name.into(), z, eps_below: 1.0, loss_below: 0.0 });
-                eps = None;
-                tan_d = None;
-            } else if n.child("epsilon_r").is_some() || n.child("type").and_then(|n| n.text(1).ok()).is_some_and(|t| t == "prepreg" || t == "core") {
-                let er = n.num("epsilon_r")?;
-                if eps.is_some_and(|p| (p - er).abs() > 1e-9) {
-                    return Err(bad("mixed dielectric plies: provide an explicitly homogenized stackup"));
-                }
-                eps = Some(er);
-                // The ply's loss tangent, where the stackup gives one (else lossless).
-                if n.child("loss_tangent").is_some() {
-                    let t = n.num("loss_tangent")?;
-                    if tan_d.is_some_and(|p| (p - t).abs() > 1e-12) {
-                        return Err(bad("mixed dielectric plies: provide an explicitly homogenized stackup"));
-                    }
-                    tan_d = Some(t);
-                }
-                z += Length::Millimetre.to_si(n.num("thickness")?);
-            }
-        }
-    }
+    let layers = match override_layers {
+        Some(layers) if !layers.is_empty() => layers,
+        _ => stackup(&root)?,
+    };
     let mut nets = BTreeMap::new();
     for n in root.list().iter().filter(|n| n.head() == Some("net")) {
         nets.insert(n.text(1)?.to_owned(), n.text(2)?.to_owned());
@@ -254,35 +221,78 @@ pub fn read(text: &str, override_layers: Option<Vec<Layer>>) -> Result<Board> {
                 }
             }
             Some("footprint") => pads(n, &board.layers.iter().map(|l| l.name.clone()).collect::<Vec<_>>(), &net, &mut board)?,
-            Some("zone") => {
-                let filled: Vec<_> = n.list().iter().filter(|p| p.head() == Some("filled_polygon")).collect();
-                if filled.is_empty() {
-                    if board.notes.len() < 128 {
-                        board.notes.push("An unfilled zone was skipped; refill copper in the PCB editor before importing.".into());
-                    }
-                    continue;
-                }
-                for poly in filled {
-                    let layer = poly
-                        .child("layer")
-                        .and_then(|l| l.text(1).ok())
-                        .or_else(|| n.child("layer").and_then(|l| l.text(1).ok()))
-                        .ok_or_else(|| bad("filled polygon has no layer"))?;
-                    let pts = poly.child("pts").ok_or_else(|| bad("filled polygon has no points"))?;
-                    let polygon = pts
-                        .list()
-                        .iter()
-                        .filter(|p| p.head() == Some("xy"))
-                        .map(|p| Ok([Length::Millimetre.to_si(p.number(1)?), Length::Millimetre.to_si(p.number(2)?)]))
-                        .collect::<Result<Vec<_>>>()?;
-                    board.copper.push(Copper { net: net(n)?, layer: layer.into(), polygon });
-                }
-            }
+            Some("zone") => zone(n, &net, &mut board)?,
             _ => {}
         }
     }
     board.check().map_err(|e| bad(&e.to_string()))?;
     Ok(board)
+}
+
+/// The copper layers of the board's stackup, from the top: each one's height z (m) and the
+/// dielectric below it (one homogeneous ply between two copper layers).
+fn stackup(root: &Node) -> Result<Vec<Layer>> {
+    let mut layers: Vec<Layer> = Vec::new();
+    let stack =
+        root.child("setup").and_then(|n| n.child("stackup")).ok_or_else(|| bad("stackup is missing: supply copper layers with z and eps_below"))?;
+    let mut z = 0.0;
+    let mut eps: Option<f64> = None;
+    let mut tan_d: Option<f64> = None;
+    for n in stack.list().iter().filter(|n| n.head() == Some("layer")) {
+        let name = n.text(1)?;
+        if name.ends_with(".Cu") {
+            if let Some(previous) = layers.last_mut() {
+                previous.eps_below = eps.ok_or_else(|| bad("dielectric epsilon_r is missing"))?;
+                previous.loss_below = tan_d.unwrap_or(0.0);
+            }
+            layers.push(Layer { name: name.into(), z, eps_below: 1.0, loss_below: 0.0 });
+            eps = None;
+            tan_d = None;
+        } else if n.child("epsilon_r").is_some() || n.child("type").and_then(|n| n.text(1).ok()).is_some_and(|t| t == "prepreg" || t == "core") {
+            let er = n.num("epsilon_r")?;
+            if eps.is_some_and(|p| (p - er).abs() > 1e-9) {
+                return Err(bad("mixed dielectric plies: provide an explicitly homogenized stackup"));
+            }
+            eps = Some(er);
+            // The ply's loss tangent, where the stackup gives one (else lossless).
+            if n.child("loss_tangent").is_some() {
+                let t = n.num("loss_tangent")?;
+                if tan_d.is_some_and(|p| (p - t).abs() > 1e-12) {
+                    return Err(bad("mixed dielectric plies: provide an explicitly homogenized stackup"));
+                }
+                tan_d = Some(t);
+            }
+            z += Length::Millimetre.to_si(n.num("thickness")?);
+        }
+    }
+    Ok(layers)
+}
+
+/// A zone's filled polygons as copper of its net (a note when it was never filled).
+fn zone(n: &Node, net: &dyn Fn(&Node) -> Result<String>, board: &mut Board) -> Result<()> {
+    let filled: Vec<_> = n.list().iter().filter(|p| p.head() == Some("filled_polygon")).collect();
+    if filled.is_empty() {
+        if board.notes.len() < 128 {
+            board.notes.push("An unfilled zone was skipped; refill copper in the PCB editor before importing.".into());
+        }
+        return Ok(());
+    }
+    for poly in filled {
+        let layer = poly
+            .child("layer")
+            .and_then(|l| l.text(1).ok())
+            .or_else(|| n.child("layer").and_then(|l| l.text(1).ok()))
+            .ok_or_else(|| bad("filled polygon has no layer"))?;
+        let pts = poly.child("pts").ok_or_else(|| bad("filled polygon has no points"))?;
+        let polygon = pts
+            .list()
+            .iter()
+            .filter(|p| p.head() == Some("xy"))
+            .map(|p| Ok([Length::Millimetre.to_si(p.number(1)?), Length::Millimetre.to_si(p.number(2)?)]))
+            .collect::<Result<Vec<_>>>()?;
+        board.copper.push(Copper { net: net(n)?, layer: layer.into(), polygon });
+    }
+    Ok(())
 }
 
 /// The chords of the arc from `a` through `m` to `b` (m), each within `sag` of the circle (at
