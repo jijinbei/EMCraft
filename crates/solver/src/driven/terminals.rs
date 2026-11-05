@@ -32,8 +32,8 @@ use num_complex::Complex64 as C;
 
 use super::terms::PortTerm;
 use super::{Driven, Result, invalid};
+use crate::dense::Lu;
 use crate::smatrix::SMatrix;
-use crate::zdense;
 
 /// One entry of S: a port read in its first mode, or one terminal (conductor) of a terminal
 /// port.
@@ -182,11 +182,11 @@ impl Driven {
 
 /// T_V = 2 (T_Iᴴ)⁻¹ of the k × k row-major `t_i`; `None` when it is singular.
 fn voltages(t_i: &[C], k: usize) -> Option<Vec<C>> {
-    let h: Vec<Vec<C>> = (0..k).map(|r| (0..k).map(|c| t_i[c * k + r].conj()).collect()).collect();
+    let h = Lu::new((0..k * k).map(|rc| t_i[(rc % k) * k + rc / k].conj()).collect(), k)?;
     let mut out = vec![C::new(0.0, 0.0); k * k];
     for col in 0..k {
         let e: Vec<C> = (0..k).map(|i| C::new(if i == col { 2.0 } else { 0.0 }, 0.0)).collect();
-        let x = zdense::solve(h.clone(), e)?;
+        let x = h.solve(&e);
         for (r, v) in x.into_iter().enumerate() {
             if !(v.re.is_finite() && v.im.is_finite()) {
                 return None;

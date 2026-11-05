@@ -321,7 +321,7 @@ impl Tree {
 
     /// The item nearest to `p` among those `accept` takes, by `distance` (squared, with a point
     /// and a value carried along), searching boxes closer than the best so far.
-    fn nearest(&self, p: Point3, accept: &dyn Fn(u32) -> bool, distance: &dyn Fn(u32) -> (f64, Point3, f64)) -> Option<(Point3, f64)> {
+    fn nearest(&self, p: Point3, accept: &impl Fn(u32) -> bool, distance: &impl Fn(u32) -> (f64, Point3, f64)) -> Option<(Point3, f64)> {
         let box_d2 = |n: &Node| -> f64 {
             (0..3)
                 .map(|k| {

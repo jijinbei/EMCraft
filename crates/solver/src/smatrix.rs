@@ -4,7 +4,7 @@
 use std::ops::{Index, IndexMut};
 
 use crate::Complex64 as C;
-use crate::zdense;
+use crate::dense::Lu;
 
 /// S of `n` ports: `S[(p, q)]` (or `S[p][q]`) is the wave out of port p for a unit wave into
 /// port q. Square by construction.
@@ -97,8 +97,8 @@ impl SMatrix {
         let num = SMatrix::from_fn(n, |i, j| p[i] * self[(i, j)] + diagonal(i, j, q[i]));
         let den = SMatrix::from_fn(n, |i, j| q[i] * self[(i, j)] + diagonal(i, j, p[i]));
         // Solve S′ D = N, i.e. Dᵀ S′ᵀ = Nᵀ, column by column of S′ᵀ.
-        let dt: Vec<Vec<C>> = (0..n).map(|i| (0..n).map(|j| den[(j, i)]).collect()).collect();
-        let rows = (0..n).map(|i| zdense::solve(dt.clone(), num[i].to_vec())).collect::<Option<Vec<Vec<C>>>>()?;
+        let dt = Lu::new((0..n * n).map(|k| den[(k % n, k / n)]).collect(), n)?;
+        let rows: Vec<Vec<C>> = (0..n).map(|i| dt.solve(&num[i])).collect();
         Some(SMatrix { n, entries: rows.concat() })
     }
 }
@@ -115,13 +115,13 @@ impl SMatrix {
         }
         // D = P + Q S, N = Q + P S.
         let product = |l: &[C], i: usize, j: usize| (0..n).map(|k| l[i * n + k] * self[(k, j)]).sum::<C>();
-        let den: Vec<Vec<C>> = (0..n).map(|i| (0..n).map(|j| p[i * n + j] + product(q, i, j)).collect()).collect();
+        let den = Lu::new((0..n * n).map(|k| p[k] + product(q, k / n, k % n)).collect(), n)?;
         let num: Vec<C> = (0..n * n).map(|k| q[k] + product(p, k / n, k % n)).collect();
         // X = D⁻¹, column by column.
         let mut inv = vec![C::new(0.0, 0.0); n * n];
         for k in 0..n {
             let e: Vec<C> = (0..n).map(|i| C::new(if i == k { 1.0 } else { 0.0 }, 0.0)).collect();
-            let col = zdense::solve(den.clone(), e)?;
+            let col = den.solve(&e);
             for (i, x) in col.into_iter().enumerate() {
                 inv[i * n + k] = x;
             }

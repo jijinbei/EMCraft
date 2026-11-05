@@ -175,29 +175,39 @@ fn householder3(x: f64, y: f64, z: f64) -> Option<[f64; 3]> {
     Some([v0 / len, y / len, z / len])
 }
 
-/// Reduces `a` to upper Hessenberg form by Householder reflections (a similarity).
-fn hessenberg(a: &mut [f64], n: usize) {
-    let at = |i: usize, j: usize| i * n + j;
+/// Reduces `a` (n × n, row-major, real or complex) to upper Hessenberg form in place by
+/// Householder reflections (Golub & Van Loan §7.4.3): A ← (I − 2vvᴴ) A (I − 2vvᴴ) for each
+/// column, the reflector's first entry turned by the column's own phase so nothing cancels; the
+/// entries below the subdiagonal set to zero.
+pub(crate) fn hessenberg<T: Scalar>(a: &mut [T], n: usize) {
     for k in 0..n.saturating_sub(2) {
-        let x: Vec<f64> = (k + 1..n).map(|i| a[at(i, k)]).collect();
-        let norm = x.iter().map(|v| v * v).sum::<f64>().sqrt();
-        if norm == 0.0 {
+        let x: Vec<T> = (k + 1..n).map(|i| a[i * n + k]).collect();
+        let alpha = x.iter().map(|c| c.abs2()).sum::<f64>().sqrt();
+        if alpha == 0.0 {
             continue;
         }
+        let phase = if x[0].norm() > 0.0 { x[0].over(x[0].norm()) } else { T::real(1.0) };
         let mut v = x;
-        v[0] += if v[0] >= 0.0 { norm } else { -norm };
-        let len = v.iter().map(|c| c * c).sum::<f64>().sqrt();
-        v.iter_mut().for_each(|c| *c /= len);
-        for j in 0..n {
-            let d: f64 = v.iter().enumerate().map(|(r, vr)| vr * a[at(k + 1 + r, j)]).sum();
-            v.iter().enumerate().for_each(|(r, vr)| a[at(k + 1 + r, j)] -= 2.0 * vr * d);
+        v[0] += phase.scaled(alpha);
+        let vn = v.iter().map(|c| c.abs2()).sum::<f64>().sqrt();
+        if vn == 0.0 {
+            continue;
         }
-        for i in 0..n {
-            let d: f64 = v.iter().enumerate().map(|(c, vc)| vc * a[at(i, k + 1 + c)]).sum();
-            v.iter().enumerate().for_each(|(c, vc)| a[at(i, k + 1 + c)] -= 2.0 * vc * d);
+        v.iter_mut().for_each(|c| *c = c.over(vn));
+        for j in 0..n {
+            let s: T = v.iter().enumerate().map(|(i, vi)| vi.conj() * a[(k + 1 + i) * n + j]).sum();
+            for (i, vi) in v.iter().enumerate() {
+                a[(k + 1 + i) * n + j] -= (*vi * s).scaled(2.0);
+            }
+        }
+        for r in 0..n {
+            let s: T = v.iter().enumerate().map(|(i, vi)| a[r * n + k + 1 + i] * *vi).sum();
+            for (i, vi) in v.iter().enumerate() {
+                a[r * n + k + 1 + i] -= (s * vi.conj()).scaled(2.0);
+            }
         }
         for i in k + 2..n {
-            a[at(i, k)] = 0.0;
+            a[i * n + k] = T::default();
         }
     }
 }
@@ -210,7 +220,7 @@ fn inverse_iteration(a: &[f64], n: usize, theta: f64, apart: &[&[f64]], scale: f
     for i in 0..n {
         m[i * n + i] -= shift;
     }
-    let lu = Lu::new(m, n, 1e-15 * scale)?;
+    let lu = Lu::floored(m, n, 1e-15 * scale)?;
     // A deterministic start with every component.
     let mut x: Vec<f64> = (0..n).map(|i| 1.0 + 0.37 * ((i * 7919 % 101) as f64 / 101.0)).collect();
     for _ in 0..4 {
@@ -232,57 +242,93 @@ fn inverse_iteration(a: &[f64], n: usize, theta: f64, apart: &[&[f64]], scale: f
     Some(x)
 }
 
-/// A dense LU factorization with partial pivoting; tiny pivots are replaced by `floor` (inverse
-/// iteration factors a nearly singular matrix on purpose).
-pub(crate) struct Lu {
+/// A dense LU factorization with partial pivoting (Golub & Van Loan, *Matrix Computations*, 4th
+/// ed., §3.4), real or complex, row-major n × n: factored once, solved for any number of
+/// right-hand sides. The forward substitution subtracts each multiple in the order the
+/// elimination makes them, so a solve gives the very numbers elimination on the augmented system
+/// gives.
+///
+/// ```
+/// use emcraft_solver::dense::Lu;
+///
+/// // [[0, 2], [1, 1]] x = [2, 2]: a zero first pivot, rows exchanged.
+/// let lu = Lu::new(vec![0.0, 2.0, 1.0, 1.0], 2).unwrap();
+/// assert_eq!(lu.solve(&[2.0, 2.0]), [1.0, 1.0]);
+/// // Singular, not square, or not finite: refused.
+/// assert!(Lu::new(vec![1.0, 2.0, 2.0, 4.0], 2).is_none());
+/// assert!(Lu::new(vec![1.0, 2.0, 3.0], 2).is_none());
+/// assert!(Lu::new(vec![f64::NAN], 1).is_none());
+/// ```
+pub struct Lu<T> {
     n: usize,
-    a: Vec<f64>,
+    a: Vec<T>,
     perm: Vec<usize>,
 }
 
-impl Lu {
-    pub(crate) fn new(mut a: Vec<f64>, n: usize, floor: f64) -> Option<Lu> {
-        if a.len() != n * n {
+impl<T: Scalar> Lu<T> {
+    /// `a` factored; `None` when it is singular, not n × n or not finite.
+    pub fn new(a: Vec<T>, n: usize) -> Option<Lu<T>> {
+        Lu::factor(a, n, None)
+    }
+
+    /// Pivots below `floor` in size replaced by `floor` (real only: inverse iteration factors a
+    /// nearly singular matrix on purpose).
+    fn factor(mut a: Vec<T>, n: usize, floor: Option<f64>) -> Option<Lu<T>> {
+        if a.len() != n * n || !a.iter().all(|x| x.norm().is_finite()) {
             return None;
         }
         let mut perm: Vec<usize> = (0..n).collect();
         for k in 0..n {
-            let p = (k..n).max_by(|&i, &j| a[i * n + k].abs().total_cmp(&a[j * n + k].abs()))?;
+            let p = (k..n).max_by(|&i, &j| a[i * n + k].norm().total_cmp(&a[j * n + k].norm()))?;
             if p != k {
                 for j in 0..n {
                     a.swap(k * n + j, p * n + j);
                 }
                 perm.swap(k, p);
             }
-            if a[k * n + k].abs() < floor {
-                a[k * n + k] = if a[k * n + k] < 0.0 { -floor } else { floor };
+            if let Some(floor) = floor
+                && a[k * n + k].norm() < floor
+            {
+                a[k * n + k] = T::real(if a[k * n + k].re() < 0.0 { -floor } else { floor });
             }
-            if a[k * n + k] == 0.0 {
+            if a[k * n + k].norm() == 0.0 {
                 return None;
             }
             for i in k + 1..n {
                 let f = a[i * n + k] / a[k * n + k];
                 a[i * n + k] = f;
                 for j in k + 1..n {
-                    a[i * n + j] -= f * a[k * n + j];
+                    let x = a[k * n + j];
+                    a[i * n + j] -= f * x;
                 }
             }
         }
         Some(Lu { n, a, perm })
     }
 
-    pub(crate) fn solve(&self, b: &[f64]) -> Vec<f64> {
+    /// The solution x of A x = b (b's missing entries taken as zero).
+    pub fn solve(&self, b: &[T]) -> Vec<T> {
         let n = self.n;
-        let mut x: Vec<f64> = self.perm.iter().map(|&p| b.get(p).copied().unwrap_or(0.0)).collect();
-        for i in 0..n {
-            let s: f64 = (0..i).map(|j| self.a[i * n + j] * x[j]).sum();
-            x[i] -= s;
+        let mut x: Vec<T> = self.perm.iter().map(|&p| b.get(p).copied().unwrap_or_default()).collect();
+        for k in 0..n {
+            let xk = x[k];
+            for i in k + 1..n {
+                let f = self.a[i * n + k];
+                x[i] -= f * xk;
+            }
         }
         for i in (0..n).rev() {
-            let s: f64 = (i + 1..n).map(|j| self.a[i * n + j] * x[j]).sum();
+            let s: T = (i + 1..n).map(|j| self.a[i * n + j] * x[j]).sum();
             x[i] = (x[i] - s) / self.a[i * n + i];
         }
         x
+    }
+}
+
+impl Lu<f64> {
+    /// `a` factored with pivots below `floor` replaced by ±`floor`.
+    pub(crate) fn floored(a: Vec<f64>, n: usize, floor: f64) -> Option<Lu<f64>> {
+        Lu::factor(a, n, Some(floor))
     }
 }
 
@@ -300,6 +346,10 @@ pub trait Scalar:
     fn real(x: f64) -> Self;
     /// |x|.
     fn norm(self) -> f64;
+    /// `self` times the real `r`.
+    fn scaled(self, r: f64) -> Self;
+    /// `self` over the real `r`.
+    fn over(self, r: f64) -> Self;
 }
 
 impl Scalar for f64 {
@@ -318,6 +368,12 @@ impl Scalar for f64 {
     fn norm(self) -> f64 {
         self.abs()
     }
+    fn scaled(self, r: f64) -> f64 {
+        self * r
+    }
+    fn over(self, r: f64) -> f64 {
+        self / r
+    }
 }
 
 impl Scalar for C {
@@ -335,6 +391,12 @@ impl Scalar for C {
     }
     fn norm(self) -> f64 {
         C::norm(self)
+    }
+    fn scaled(self, r: f64) -> C {
+        self * r
+    }
+    fn over(self, r: f64) -> C {
+        self / r
     }
 }
 
@@ -437,7 +499,7 @@ mod tests {
         let n = d.len();
         let mut r = rng(seed);
         let v: Vec<f64> = (0..n * n).map(|k| r() + if k % (n + 1) == 0 { 2.0 } else { 0.0 }).collect();
-        let lu = Lu::new(v.clone(), n, 0.0).unwrap();
+        let lu = Lu::new(v.clone(), n).unwrap();
         // Columns of V⁻¹ from unit vectors, then A = V D V⁻¹.
         let inv: Vec<Vec<f64>> = (0..n).map(|j| lu.solve(&(0..n).map(|i| if i == j { 1.0 } else { 0.0 }).collect::<Vec<_>>())).collect();
         let mut a = vec![0.0; n * n];

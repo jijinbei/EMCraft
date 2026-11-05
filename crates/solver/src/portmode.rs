@@ -261,7 +261,7 @@ impl CrossSection {
 
     /// ∫ μr⁻¹ curl curl, ∫ εr e·f, the k-free part of B and ∫ εr φ ξ on the pattern, with εr
     /// and μr⁻¹ of each triangle from `eps` and `inv_mu` (complex for lossy materials).
-    fn assemble_with(&self, eps: &dyn Fn(usize) -> C, inv_mu: &dyn Fn(usize) -> C) -> Result<[Vec<C>; 4]> {
+    fn assemble_with(&self, eps: &impl Fn(usize) -> C, inv_mu: &impl Fn(usize) -> C) -> Result<[Vec<C>; 4]> {
         let mut mats: [Csr; 4] = std::array::from_fn(|_| self.pattern.zeroed());
         for t in 0..self.tris.len() {
             let tri = self.triangle(t)?;
@@ -343,7 +343,7 @@ impl CrossSection {
             let g: Vec<f64> = (0..m * m).map(|ij| dot(&qb[ij / m], &kq[ij % m])).collect();
             let bm: Vec<f64> = (0..m * m).map(|ij| dot(&qb[ij / m], &bq[ij % m])).collect();
             let scale = g.iter().fold(0.0f64, |s, v| s.max(v.abs()));
-            let lu = crate::dense::Lu::new(g, m, 1e-14 * scale).ok_or_else(|| invalid("port modes", "a singular projection"))?;
+            let lu = crate::dense::Lu::floored(g, m, 1e-14 * scale).ok_or_else(|| invalid("port modes", "a singular projection"))?;
             let cols: Vec<Vec<f64>> = (0..m).map(|j| lu.solve(&(0..m).map(|i| bm[i * m + j]).collect::<Vec<_>>())).collect();
             let op: Vec<f64> = (0..m * m).map(|ij| cols[ij % m][ij / m]).collect();
             let mut ritz = crate::dense::eigen(&op, m).ok_or_else(|| invalid("port modes", "the projected eigenproblem did not converge"))?;

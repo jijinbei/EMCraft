@@ -21,6 +21,7 @@
 //! ∫ |e_t|² dS = 1 and turned so ∫ e_t · e_t dS is real and positive (the lossless modes' real
 //! fields, continued), then signed as the lossless ones.
 
+use crate::dense::Lu;
 use emcraft_fem::tri::Triangle;
 use emcraft_model::{CVec3, Point3, Vec3};
 use num_complex::Complex64 as C;
@@ -96,12 +97,12 @@ fn cluster_vectors(op: &[C], m: usize, ritz: &[(C, Vec<C>)]) -> Option<Vec<Vec<C
             let k = end - i;
             let mean = ritz[i..end].iter().map(|(t, _)| t).sum::<C>() / k as f64;
             let shift = mean + C::new(1e-10 * top, 1e-10 * top);
-            let a: Vec<Vec<C>> = (0..m).map(|r| (0..m).map(|c| op[r * m + c] - if r == c { shift } else { C::new(0.0, 0.0) }).collect()).collect();
+            let a = Lu::new((0..m * m).map(|rc| op[rc] - if rc / m == rc % m { shift } else { C::new(0.0, 0.0) }).collect(), m)?;
             let mut block: Vec<Vec<C>> = (0..k)
                 .map(|j| (0..m).map(|r| C::new(((r + 1) as f64 * (j + 1) as f64 * 0.7).cos(), 0.1 * (r as f64 - j as f64))).collect())
                 .collect();
             for _ in 0..3 {
-                block = block.into_iter().map(|v| crate::zdense::solve(a.clone(), v)).collect::<Option<Vec<_>>>()?;
+                block = block.iter().map(|v| a.solve(v)).collect();
                 block = orthonormal(block)?;
             }
             out.extend(block);
@@ -166,11 +167,9 @@ impl CrossSection {
             let kq: Vec<Vec<C>> = qb.iter().map(|v| mul(&shifted.val, v)).collect();
             let bq: Vec<Vec<C>> = qb.iter().map(|v| mul(&b_val, v)).collect();
             let m = qb.len();
-            let g: Vec<Vec<C>> = (0..m).map(|i| (0..m).map(|j| hdot(&qb[i], &kq[j])).collect()).collect();
-            let cols = (0..m)
-                .map(|j| crate::zdense::solve(g.clone(), (0..m).map(|i| hdot(&qb[i], &bq[j])).collect()))
-                .collect::<Option<Vec<Vec<C>>>>()
+            let g = Lu::new((0..m * m).map(|ij| hdot(&qb[ij / m], &kq[ij % m])).collect(), m)
                 .ok_or_else(|| invalid("port modes", "a singular projection"))?;
+            let cols: Vec<Vec<C>> = (0..m).map(|j| g.solve(&(0..m).map(|i| hdot(&qb[i], &bq[j])).collect::<Vec<_>>())).collect();
             let op: Vec<C> = (0..m * m).map(|ij| cols[ij % m][ij / m]).collect();
             let mut ritz = crate::zdense::eigen(&op, m).ok_or_else(|| invalid("port modes", "the projected eigenproblem did not converge"))?;
             // Nearest the shift first.
@@ -199,7 +198,7 @@ impl CrossSection {
 
     /// Makes the vectors of each degenerate cluster of `lambdas` orthogonal in the unconjugated
     /// form xᵀB y (Gram–Schmidt); refuses a cluster whose vectors cannot be told apart.
-    fn separate_clusters(lambdas: &[C], vectors: &mut [Vec<C>], b_val: &[C], mul: &dyn Fn(&[C], &[C]) -> Vec<C>) -> Result<()> {
+    fn separate_clusters(lambdas: &[C], vectors: &mut [Vec<C>], b_val: &[C], mul: &impl Fn(&[C], &[C]) -> Vec<C>) -> Result<()> {
         let top = lambdas.iter().map(|l| l.norm()).fold(0.0, f64::max);
         for i in 0..vectors.len() {
             for j in 0..i {

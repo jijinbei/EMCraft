@@ -6,39 +6,11 @@
 //! degenerate pair coupled by rounding — solved directly); eigenvectors by inverse iteration on the
 //! original matrix (§7.6.1).
 //!
-//! Matrices are row-major `n × n` slices; [`solve`] takes a small dense system by rows (the
-//! reduced systems of the fast sweep, the eigensolver's projected pencil, S renormalised).
+//! Matrices are row-major `n × n` slices; small dense systems are solved by [`crate::dense::Lu`].
 
 use num_complex::Complex64 as C;
 
-/// Solves a small dense complex system by Gaussian elimination with partial pivoting; `None`
-/// when it is singular.
-pub(crate) fn solve(mut a: Vec<Vec<C>>, mut b: Vec<C>) -> Option<Vec<C>> {
-    let n = b.len();
-    for k in 0..n {
-        let piv = (k..n).max_by(|&i, &j| a[i][k].norm().total_cmp(&a[j][k].norm()))?;
-        if a[piv][k].norm() == 0.0 {
-            return None;
-        }
-        a.swap(k, piv);
-        b.swap(k, piv);
-        for i in k + 1..n {
-            let f = a[i][k] / a[k][k];
-            for j in k..n {
-                let x = a[k][j];
-                a[i][j] -= f * x;
-            }
-            let x = b[k];
-            b[i] -= f * x;
-        }
-    }
-    let mut x = vec![C::new(0.0, 0.0); n];
-    for i in (0..n).rev() {
-        let s: C = (i + 1..n).map(|j| a[i][j] * x[j]).sum();
-        x[i] = (b[i] - s) / a[i][i];
-    }
-    Some(x)
-}
+use crate::dense::Lu;
 
 /// QR sweeps per eigenvalue before giving up.
 const MAX_SWEEPS: usize = 80;
@@ -60,10 +32,10 @@ pub fn eigen(a: &[C], n: usize) -> Option<Vec<(C, Vec<C>)>> {
 /// moved off the eigenvalue by a hair (so the system is solvable).
 fn vector(a: &[C], n: usize, lambda: C, scale: f64) -> Option<Vec<C>> {
     let shift = lambda + C::new(1e-10 * scale, 1e-10 * scale);
-    let m: Vec<Vec<C>> = (0..n).map(|i| (0..n).map(|j| a[i * n + j] - if i == j { shift } else { C::new(0.0, 0.0) }).collect()).collect();
+    let m = Lu::new((0..n * n).map(|ij| a[ij] - if ij / n == ij % n { shift } else { C::new(0.0, 0.0) }).collect(), n)?;
     let mut v: Vec<C> = (0..n).map(|i| C::new(1.0 + 0.1 * i as f64, 0.05 * i as f64)).collect();
     for _ in 0..3 {
-        v = solve(m.clone(), v)?;
+        v = m.solve(&v);
         let norm = v.iter().map(num_complex::Complex::norm_sqr).sum::<f64>().sqrt();
         if !(norm > 0.0 && norm.is_finite()) {
             return None;
@@ -74,7 +46,7 @@ fn vector(a: &[C], n: usize, lambda: C, scale: f64) -> Option<Vec<C>> {
 }
 
 fn eigenvalues(mut h: Vec<C>, n: usize) -> Option<Vec<C>> {
-    hessenberg(&mut h, n);
+    crate::dense::hessenberg(&mut h, n);
     let at = |h: &Vec<C>, i: usize, j: usize| h[i * n + j];
     let mut out = vec![C::new(0.0, 0.0); n];
     let mut hi = n;
@@ -156,38 +128,6 @@ fn eigenvalues(mut h: Vec<C>, n: usize) -> Option<Vec<C>> {
     Some(out)
 }
 
-/// Reduces `a` in place to upper Hessenberg form by Householder reflections.
-fn hessenberg(a: &mut [C], n: usize) {
-    for k in 0..n.saturating_sub(2) {
-        let x: Vec<C> = (k + 1..n).map(|i| a[i * n + k]).collect();
-        let alpha = x.iter().map(num_complex::Complex::norm_sqr).sum::<f64>().sqrt();
-        if alpha == 0.0 {
-            continue;
-        }
-        let phase = if x[0].norm() > 0.0 { x[0] / x[0].norm() } else { C::new(1.0, 0.0) };
-        let mut v = x;
-        v[0] += phase * alpha;
-        let vn = v.iter().map(num_complex::Complex::norm_sqr).sum::<f64>().sqrt();
-        if vn == 0.0 {
-            continue;
-        }
-        v.iter_mut().for_each(|c| *c /= vn);
-        // A ← (I − 2vv*) A (I − 2vv*), v on rows/columns k+1..n.
-        for j in 0..n {
-            let s: C = v.iter().enumerate().map(|(i, vi)| vi.conj() * a[(k + 1 + i) * n + j]).sum();
-            for (i, vi) in v.iter().enumerate() {
-                a[(k + 1 + i) * n + j] -= *vi * s * 2.0;
-            }
-        }
-        for r in 0..n {
-            let s: C = v.iter().enumerate().map(|(i, vi)| a[r * n + k + 1 + i] * vi).sum();
-            for (i, vi) in v.iter().enumerate() {
-                a[r * n + k + 1 + i] -= s * vi.conj() * 2.0;
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,8 +140,8 @@ mod tests {
                 (0..n).map(|j| C::new(if i == j { 2.0 } else { 0.0 } + 0.1 * ((i * 7 + j * 3) % 5) as f64, 0.05 * ((i + 2 * j) % 3) as f64)).collect()
             })
             .collect();
-        let inv: Vec<Vec<C>> =
-            (0..n).map(|j| solve(v.clone(), (0..n).map(|i| C::new(if i == j { 1.0 } else { 0.0 }, 0.0)).collect()).unwrap()).collect();
+        let lu = Lu::new(v.concat(), n).unwrap();
+        let inv: Vec<Vec<C>> = (0..n).map(|j| lu.solve(&(0..n).map(|i| C::new(if i == j { 1.0 } else { 0.0 }, 0.0)).collect::<Vec<_>>())).collect();
         let mut a = vec![C::new(0.0, 0.0); n * n];
         for i in 0..n {
             for j in 0..n {

@@ -653,7 +653,7 @@ impl Cdt {
     /// Delaunay refinement of the inside triangles to the size field `size`. A Steiner point `p`
     /// for local size `h` is skipped when `allows(p, h)` refuses it (the caller's clearance from
     /// the segments) or when it comes closer than [`CLEARANCE`]` × h` to a vertex.
-    pub fn refine(&mut self, size: &dyn Fn([f64; 2]) -> f64, allows: &dyn Fn([f64; 2], f64) -> bool) -> Result<()> {
+    pub fn refine(&mut self, size: &impl Fn([f64; 2]) -> f64, allows: &impl Fn([f64; 2], f64) -> bool) -> Result<()> {
         for _ in 0..MAX_REFINE_PASSES {
             let mut inserted = 0usize;
             let n = self.tris.len();

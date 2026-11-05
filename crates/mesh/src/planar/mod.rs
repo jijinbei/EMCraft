@@ -358,7 +358,7 @@ fn second_pass(r: &Request, lattice: Lattice, top: [f64; 2], first: FirstPass) -
 /// into pieces of about the local size `size`: the k-th where ∫ ds / h reaches k times the whole
 /// integral over its rounded-up value (a graded spacing, finer where `size` is smaller). `finest`
 /// is the smallest the size gets, which sets the samples of the integral.
-fn spaced(a: [f64; 2], b: [f64; 2], size: &dyn Fn([f64; 2]) -> f64, finest: f64) -> Vec<f64> {
+fn spaced(a: [f64; 2], b: [f64; 2], size: &impl Fn([f64; 2]) -> f64, finest: f64) -> Vec<f64> {
     let len = (b[0] - a[0]).hypot(b[1] - a[1]);
     let samples = ((2.0 * len / finest).ceil() as usize).clamp(2, 1 << 16);
     let at = |t: f64| size([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]);

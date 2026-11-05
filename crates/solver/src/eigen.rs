@@ -31,6 +31,7 @@
 //! with the lossless mode, Q_c = ωU/P_c from the walls' ½R_s∫|H_t|² and Q_d = ωU/P_d from the
 //! dielectrics' ½ωε₀∫ε″|E|², 1/Q = 1/Q_c + 1/Q_d.
 
+use crate::dense::Lu;
 use emcraft_model::units::angular;
 use std::f64::consts::PI;
 
@@ -234,11 +235,11 @@ impl Arithmetic for Complex {
     fn ritz(m: Matrices, y: &[Vec<C>], ky: &[Vec<C>], my: &[Vec<C>]) -> Result<Vec<(C, Vec<C>)>> {
         let (n, q) = (m.pattern.n, y.len());
         // Kr z = λ Mr z ⇔ (Mr⁻¹ Kr) z = λ z.
-        let mr: Vec<Vec<C>> = (0..q).map(|i| (0..q).map(|j| dot(&y[i], &my[j])).collect()).collect();
+        let mr = Lu::new((0..q * q).map(|ij| dot(&y[ij / q], &my[ij % q])).collect(), q).ok_or_else(lost_independence)?;
         let mut b = vec![C::new(0.0, 0.0); q * q];
         for j in 0..q {
             let col: Vec<C> = (0..q).map(|i| dot(&y[i], &ky[j])).collect();
-            let s = crate::zdense::solve(mr.clone(), col).ok_or_else(lost_independence)?;
+            let s = mr.solve(&col);
             for i in 0..q {
                 b[i * q + j] = s[i];
             }

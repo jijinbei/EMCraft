@@ -36,9 +36,9 @@
 use num_complex::Complex64 as C;
 use rayon::prelude::*;
 
+use crate::dense::Lu;
 use crate::driven::{Driven, FrequencyResult, PortTerm, Result, Timings, check_frequency, invalid, wall_factor, wavenumber};
 use crate::sparse::Csr;
-use crate::zdense;
 
 /// How a fast sweep decides it is done.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -349,7 +349,8 @@ struct Reduced {
     /// P v per basis vector, the layer's matrix at this k₀.
     pv: Option<Vec<Vec<C>>>,
     rank_one: Vec<RankOne>,
-    ar: Vec<Vec<C>>,
+    /// Vᵀ A V factored, `None` when it is singular.
+    ar: Option<Lu<C>>,
 }
 
 impl Reduced {
@@ -404,6 +405,7 @@ impl Reduced {
                 }
             }
         }
+        let ar = Lu::new(ar.concat(), m);
         Ok(Reduced { n, k2, dispersive, wall, pv, rank_one, ar })
     }
 
@@ -413,7 +415,7 @@ impl Reduced {
     fn solve(&self, basis: &Basis, b: &[(usize, C)]) -> Result<(Vec<C>, f64)> {
         let (n, m) = (self.n, basis.v.len());
         let br: Vec<C> = basis.v.iter().map(|v| b.iter().map(|&(i, x)| x * v[i]).sum()).collect();
-        let z = zdense::solve(self.ar.clone(), br).ok_or_else(|| invalid("sweep", "a singular reduced system"))?;
+        let z = self.ar.as_ref().ok_or_else(|| invalid("sweep", "a singular reduced system"))?.solve(&br);
         let x: Vec<C> = (0..n).map(|i| (0..m).map(|j| z[j] * basis.v[j][i]).sum()).collect();
         // A V z from the fixed parts' products, each basis vector's coefficients folded in once:
         // K V z − k₀² M V z − Σ k₀² εr,d M_d V z + c W V z + P V z.

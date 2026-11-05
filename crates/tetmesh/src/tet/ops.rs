@@ -55,7 +55,7 @@ pub const BOUNDARY_FLIP_COS: f64 = 0.939_692_620_785_908_4;
 /// apex achieving it), so a caller that wants only triangulations better than `floor` gets the
 /// same ones for less work. `q(i, k, j, b)` is the quality of triangle `(i, k, j)`, or any value
 /// not above `b` when it is not above `b` (nothing at or below the best so far changes the table).
-fn klincsek(m: usize, floor: f64, q: &mut dyn FnMut(usize, usize, usize, f64) -> Result<f64>) -> Result<(Vec<f64>, Vec<usize>)> {
+fn klincsek(m: usize, floor: f64, q: &mut impl FnMut(usize, usize, usize, f64) -> Result<f64>) -> Result<(Vec<f64>, Vec<usize>)> {
     let mut best = vec![f64::INFINITY; m * m];
     let mut arg = vec![0usize; m * m];
     for i in (0..m.saturating_sub(2)).rev() {
