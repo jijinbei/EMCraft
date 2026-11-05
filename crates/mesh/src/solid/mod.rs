@@ -394,9 +394,9 @@ impl Body<'_> {
                 next += count;
             }
             let frozen_from = if self.shell { 0 } else { out.first_tag };
-            // A sector: every face of the solid kept as tessellated (the cut faces must stay each
-            // other's turn, and the outline they share with the solid's other faces with them).
-            let cut = self.frozen.first().map_or(0..0, |_| 0..out.first_tag);
+            // A sector: its cut faces kept as triangulated (each other's turn); the solid's other
+            // faces remeshed, bound to the cut outlines' points (thinned to the size).
+            let cut = self.frozen.first().map_or(0..0, |&base| base..out.first_tag);
             let frozen: Vec<u32> = (frozen_from..next).chain(cut).collect();
             let outer_mesh = region(&outer, size, frozen, &self.locals)?;
             // A sector's cut faces with points the mesher added: matched again and meshed again.

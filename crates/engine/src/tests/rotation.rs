@@ -202,7 +202,7 @@ const X21P: f64 = 3.054_236_928_227_14;
 
 #[test]
 fn fields_beyond_the_sector_are_its_turns_phased() {
-    let mut s = guide_quarter(1, 5.0);
+    let mut s = guide_quarter(1, 4.0);
     s.execute("solve.frequency", &json!({"frequencies": [12], "order": 1})).unwrap();
     // A point in the sector and its turns by a quarter, a half and three quarters.
     let r = s.execute("results.probe", &json!({"frequency": 12, "at": [[4, 1, 15], [-1, 4, 15], [-4, -1, 15], [1, -4, 15]]})).unwrap();

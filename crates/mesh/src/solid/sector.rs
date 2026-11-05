@@ -190,6 +190,11 @@ fn close(t: Tessellation, rot: &Rotation, scale: f64, refine: Option<f64>, inner
     let tol = 1e-9 * scale;
     let merge = 1e-7 * scale;
     let halves = [Half::new(rot, rot.start(), tol), Half::new(rot, rot.start() + rot.angle(), tol)];
+    // Cut first (not taking a mesher's points back): each outline thinned to the size.
+    let t = match refine {
+        Some(size) => thinned(t, &halves, 0.6 * size, merge),
+        None => t,
+    };
     let base = t.surface.tags.iter().map(|g| g + 1).max().unwrap_or(0).max(t.analytic.len() as u32);
     let size = refine.unwrap_or(scale);
     let pos = t.surface.positions.clone();
@@ -512,6 +517,113 @@ fn close(t: Tessellation, rot: &Rotation, scale: f64, refine: Option<f64>, inner
     Ok((out, base))
 }
 
+/// The open surface `t` with the points of each cut outline closer than `gap` to the one kept
+/// before them along it collapsed onto it: the cut crosses the solid's tessellation wherever its
+/// edges meet the plane, a hair apart at times, and the mesher keeps every point it is given (a
+/// face it may remesh is still bound by them), refining the faces along the cut down to their
+/// spacing. Corners (where an outline turns by more than 10° or branches) and points on the axis
+/// stay; a point goes only where every triangle at it keeps its side and most of its area, the
+/// triangles that held both points dropped.
+fn thinned(mut t: Tessellation, halves: &[Half; 2], gap: f64, merge: f64) -> Tessellation {
+    for h in halves {
+        let pos = t.surface.positions.clone();
+        let on = |v: u32| pos.get(v as usize).is_some_and(|p| h.holds(*p));
+        let edges: Vec<[u32; 2]> = outline(&t.surface.triangles).into_iter().filter(|e| on(e[0]) && on(e[1])).collect();
+        let mut nb: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+        for e in &edges {
+            nb.entry(e[0]).or_default().push(e[1]);
+            nb.entry(e[1]).or_default().push(e[0]);
+        }
+        let local = |v: u32| h.local(pos[v as usize]);
+        let corner = |v: u32| -> bool {
+            let Some(n) = nb.get(&v) else { return true };
+            let [a, b] = n[..] else { return true };
+            if local(v)[0].abs() <= merge {
+                return true;
+            }
+            let (p, q, r) = (local(a), local(v), local(b));
+            let (u, w) = ([q[0] - p[0], q[1] - p[1]], [r[0] - q[0], r[1] - q[1]]);
+            let turn = (u[0] * w[1] - u[1] * w[0]).abs() / (u[0].hypot(u[1]) * w[0].hypot(w[1])).max(f64::MIN_POSITIVE);
+            turn > 10f64.to_radians().sin()
+        };
+        // Each chain from a corner to the next, walked once.
+        let mut walked: std::collections::BTreeSet<[u32; 2]> = std::collections::BTreeSet::new();
+        let mut onto: BTreeMap<u32, u32> = BTreeMap::new();
+        let starts: Vec<u32> = nb.keys().copied().filter(|&v| corner(v)).collect();
+        for &c in &starts {
+            for &first in nb.get(&c).map_or(&[][..], Vec::as_slice) {
+                if walked.contains(&[c.min(first), c.max(first)]) {
+                    continue;
+                }
+                let mut chain = vec![c];
+                let (mut prev, mut cur) = (c, first);
+                loop {
+                    walked.insert([prev.min(cur), prev.max(cur)]);
+                    chain.push(cur);
+                    if corner(cur) || chain.len() > edges.len() + 1 {
+                        break;
+                    }
+                    let next = nb.get(&cur).and_then(|n| n.iter().copied().find(|&x| x != prev));
+                    let Some(next) = next else { break };
+                    (prev, cur) = (cur, next);
+                }
+                // Greedy along the chain, its last point (a corner) kept.
+                let mut kept = chain[0];
+                let end = *chain.last().unwrap_or(&kept);
+                for &v in &chain[1..chain.len().saturating_sub(1)] {
+                    let d = |a: u32, b: u32| {
+                        let (p, q) = (local(a), local(b));
+                        (p[0] - q[0]).hypot(p[1] - q[1])
+                    };
+                    if d(v, kept) < gap && d(v, end) >= 0.5 * gap {
+                        onto.insert(v, kept);
+                    } else {
+                        kept = v;
+                    }
+                }
+            }
+        }
+        // Collapse, each where its triangles stay sound.
+        for (v, w) in onto {
+            let at: Vec<usize> = (0..t.surface.triangles.len()).filter(|&i| t.surface.triangles[i].contains(&v)).collect();
+            let normal = |tri: [u32; 3], p: &[Point3]| {
+                let [a, b, c] = tri.map(|x| p[x as usize]);
+                (b - a).cross(c - a)
+            };
+            let sound = at.iter().all(|&i| {
+                let tri = t.surface.triangles[i];
+                if tri.contains(&w) {
+                    return true;
+                }
+                let after = tri.map(|x| if x == v { w } else { x });
+                let (n0, n1) = (normal(tri, &t.surface.positions), normal(after, &t.surface.positions));
+                n1.dot(n0) > 0.5 * n0.norm_sqr()
+            });
+            if !sound {
+                continue;
+            }
+            let mut keep = vec![true; t.surface.triangles.len()];
+            for &i in &at {
+                let tri = &mut t.surface.triangles[i];
+                if tri.contains(&w) {
+                    keep[i] = false;
+                } else {
+                    for x in tri.iter_mut() {
+                        if *x == v {
+                            *x = w;
+                        }
+                    }
+                }
+            }
+            let mut k = keep.iter();
+            t.surface.triangles.retain(|_| k.next().copied().unwrap_or(true));
+            let mut k = keep.iter();
+            t.surface.tags.retain(|_| k.next().copied().unwrap_or(true));
+        }
+    }
+    t
+}
+
 /// The sector's surface as the tetrahedral mesher left it (boundary recovery adds points, even
 /// on frozen faces, and on the outline they share with the solid's other faces), its cut faces
 /// made each other's turn again: the other faces as meshed, the cut faces' points (the second's
@@ -655,9 +767,9 @@ mod tests {
         matched(shape, Rotation::new(5, 2, [0.0, 0.0]).unwrap(), std::f64::consts::PI * r * r * l);
     }
 
-    /// A quarter of a cylinder takes well under the whole's tetrahedra at the same size: the two
-    /// cut outlines' crossings are merged where they lie a sliver apart, so the mesher does not
-    /// refine down to them along the cut lines.
+    /// A sector of a cylinder takes about its share of the whole's tetrahedra at the same size: the
+    /// cut outlines thinned to the size and their crossings merged, the walls remeshed, so the
+    /// mesher does not refine down to the tessellation's crossings along the cut lines.
     #[test]
     fn a_quarter_takes_a_fraction_of_the_whole_s_tetrahedra() {
         let shape = Shape::Cylinder { radius: Metres::new(0.01).unwrap(), length: Metres::new(0.03).unwrap() };
@@ -667,8 +779,12 @@ mod tests {
             m.rotation = rot;
             crate::solid::solid(&m, Metres::new(0.003).unwrap()).unwrap().tets.len()
         };
-        let (whole, quarter) = (count(None), count(Some(Rotation::new(4, 0, [0.0, 0.0]).unwrap())));
-        assert!(10 * quarter < 6 * whole, "{quarter} tetrahedra on a quarter against {whole} on the whole");
+        // 4 109 whole, 1 427 on a quarter, 867 on an eighth.
+        let whole = count(None);
+        for (n, share) in [(4, 0.4), (8, 0.25)] {
+            let part = count(Some(Rotation::new(n, 0, [0.0, 0.0]).unwrap()));
+            assert!((part as f64) < share * whole as f64, "{part} tetrahedra on 1/{n} against {whole} on the whole");
+        }
     }
 
     /// The axis stays split to the element size through the mesher's rounds: taken back from it,
