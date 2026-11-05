@@ -89,9 +89,16 @@ pub(super) fn boundaries(app: &EmcraftApp, ui: &mut egui::Ui) {
         };
         kv(ui, "solved", solved);
         let unused: Vec<&str> = has.into_iter().filter(|a| !used.contains(a)).collect();
-        if !unused.is_empty() && used.len() < 2 {
+        if !unused.is_empty() && used.len() < 2 && m.rotation.is_none() {
             ui_kit::small(ui, trf("Find symmetry can cut it across {axes} too", args!(axes = unused.join(", "))), Tokens::get().text_dim);
         }
+    }
+    // A rotation set, or the one the model allows.
+    if let Some(r) = &m.rotation {
+        kv(ui, "rotation", trf("C{n} · 1/{n} of the model, harmonic {m}", args!(n = r.n, m = r.m)));
+    } else if let Some((_, Some(found))) = &app.workflow.rotation {
+        kv(ui, "model's rotation", found.group());
+        ui_kit::small(ui, "Find rotation can solve it on a sector", Tokens::get().text_dim);
     }
     if let Some(p) = &m.periodic {
         kv(ui, "periodic", crate::browser::periodic_text(p));

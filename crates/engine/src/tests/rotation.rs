@@ -109,3 +109,39 @@ fn what_a_sector_cannot_carry_is_refused() {
     let e = s.execute("solve.eigenmodes", &json!({"near": 12})).unwrap_err();
     assert!(e.to_string().contains("solve.cyclic"), "{e}");
 }
+
+#[test]
+fn the_rotation_a_model_has_is_found() {
+    // Round: any number of sectors, a quarter by default.
+    let mut s = pillbox();
+    let r = s.execute("model.rotation.find", &json!({})).unwrap();
+    assert_eq!((r["group"].as_str(), r["n"].as_u64()), (Some("C∞"), Some(4)));
+    s.execute("model.rotation.find", &json!({"n": 7, "m": 2})).unwrap();
+    assert_eq!(s.model.rotation.map(|r| (r.n, r.m)), Some((7, 2)));
+    // A square box: quarters about its middle.
+    let mut b = Session::new();
+    b.execute("geometry.solid", &json!({"shape": "box", "size": [10, 10, 5]})).unwrap();
+    let r = b.execute("model.rotation.find", &json!({})).unwrap();
+    assert_eq!((r["group"].as_str(), r["n"].as_u64(), r["centre"].clone()), (Some("C4"), Some(4), json!([5.0, 5.0])));
+    b.execute("geometry.solid", &json!({"shape": "box", "size": [10, 12, 5]})).unwrap();
+    // The rotation set before no longer holds: the model says so, and none is found.
+    assert!(b.model.rotation_issue().is_some());
+    assert!(b.execute("model.rotation.find", &json!({})).is_err());
+    // A hexagonal prism off the origin: six sectors about its centre, or three.
+    let hexagon: Vec<[f64; 2]> =
+        (0..6).map(|k| f64::from(k) * std::f64::consts::FRAC_PI_3).map(|a| [3.0 + 8.0 * a.cos(), -2.0 + 8.0 * a.sin()]).collect();
+    let mut h = Session::new();
+    h.execute("geometry.solid", &json!({"shape": "prism", "points": hexagon, "length": 6})).unwrap();
+    let r = h.execute("model.rotation.find", &json!({})).unwrap();
+    assert_eq!((r["group"].as_str(), r["n"].as_u64()), (Some("C6"), Some(6)));
+    let c: Vec<f64> = r["centre"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+    assert!((c[0] - 3.0).abs() < 1e-9 && (c[1] + 2.0).abs() < 1e-9, "{c:?}");
+    h.execute("model.rotation.find", &json!({"n": 3})).unwrap();
+    assert!(h.execute("model.rotation.find", &json!({"n": 4})).is_err());
+    assert_eq!(h.model.rotation.map(|r| r.n), Some(3));
+    // What a sector cannot carry is named.
+    let mut f = pillbox();
+    f.execute("geometry.inclusion", &json!({"shape": "sphere", "radius": 2, "at": [0, 0, 7]})).unwrap();
+    let e = f.execute("model.rotation.find", &json!({})).unwrap_err();
+    assert!(e.to_string().contains("not supported yet"), "{e}");
+}

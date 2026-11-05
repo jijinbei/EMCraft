@@ -79,13 +79,90 @@ impl Rotation {
         Point3::new(self.centre[0] + c * x - s * y, self.centre[1] + s * x + c * y, p.z)
     }
 
+    /// Whether `p` lies within `tol` (m) on the half-plane from the axis out at `angle`
+    /// (radians from x): a sector's cut faces are those at [`Rotation::start`] and one sector on.
+    ///
+    /// ```
+    /// use emcraft_model::{Point3, Rotation};
+    ///
+    /// let r = Rotation::new(4, 0, [0.0, 0.0])?;
+    /// let (s, c) = r.start().sin_cos();
+    /// assert!(r.on_half_plane(Point3::new(2.0 * c, 2.0 * s, 1.0), r.start(), 1e-9));
+    /// assert!(!r.on_half_plane(Point3::new(-2.0 * c, -2.0 * s, 1.0), r.start(), 1e-9)); // the plane's other half
+    /// # Ok::<(), emcraft_model::ModelError>(())
+    /// ```
+    pub fn on_half_plane(&self, p: Point3, angle: f64, tol: f64) -> bool {
+        let (x, y) = (p.x - self.centre[0], p.y - self.centre[1]);
+        let (s, c) = angle.sin_cos();
+        (-x * s + y * c).abs() <= tol && x * c + y * s >= -tol
+    }
+
     /// `p` turned one sector on.
     pub fn turned(&self, p: Point3) -> Point3 {
         self.turned_by(p, self.angle())
     }
 }
 
+/// A rotational symmetry the model allows ([`crate::Model::find_rotation`]): its axis' centre
+/// (m) and the most sectors it can be cut into (`None`: any number, the solid being round).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FoundRotation {
+    pub centre: [f64; 2],
+    pub most: Option<u32>,
+}
+
+impl FoundRotation {
+    /// Whether `n` sectors fit the symmetry: any for a round solid, a divisor of the most else.
+    ///
+    /// ```
+    /// use emcraft_model::rotation::FoundRotation;
+    ///
+    /// let hexagon = FoundRotation { centre: [0.0, 0.0], most: Some(6) };
+    /// assert!(hexagon.allows(3) && hexagon.allows(6) && !hexagon.allows(4) && !hexagon.allows(2));
+    /// assert_eq!(hexagon.group(), "C6");
+    /// assert!(FoundRotation { centre: [0.0, 0.0], most: None }.allows(64));
+    /// ```
+    pub fn allows(&self, n: u32) -> bool {
+        (MIN_SECTORS..=MAX_SECTORS).contains(&n) && self.most.is_none_or(|k| k % n == 0)
+    }
+
+    /// The rotation group's Schoenflies name about the axis: C∞ for a round solid, Cₙ else.
+    pub fn group(&self) -> String {
+        self.most.map_or_else(|| "C∞".to_owned(), |k| format!("C{k}"))
+    }
+}
+
 impl crate::Model {
+    /// The rotational symmetry about an axis along z the model allows as it is (what
+    /// [`crate::Model::set_rotation`] would take): the axis of a cylinder or a sphere, a square
+    /// box's middle, the centroid of an imported surface's vertices (a symmetric set's centroid
+    /// lies on its axis), with the most sectors that turn it onto itself.
+    pub fn find_rotation(&self) -> Option<FoundRotation> {
+        let solid = self.solid.as_ref()?;
+        let fits = |n: u32, centre: [f64; 2]| self.rotation_issue_of(&Rotation { n, m: 0, centre }).is_none();
+        match &solid.shape {
+            crate::Shape::Cylinder { .. } | crate::Shape::Sphere { .. } => {
+                let centre = [0.0, 0.0];
+                fits(MIN_SECTORS + 1, centre).then_some(FoundRotation { centre, most: None })
+            }
+            crate::Shape::Box { size } => {
+                let centre = [0.5 * size.x, 0.5 * size.y];
+                fits(4, centre).then_some(FoundRotation { centre, most: Some(4) })
+            }
+            crate::Shape::Surface { positions, .. } => {
+                let b = solid.shape.bounds();
+                let q = 1e-6 * (b.max - b.min).norm().max(f64::MIN_POSITIVE);
+                // Each vertex once (a mesh repeats them per face), in a fixed order.
+                let distinct: std::collections::BTreeMap<[i64; 3], crate::Point3> =
+                    positions.iter().map(|p| ([(p.x / q).round() as i64, (p.y / q).round() as i64, (p.z / q).round() as i64], *p)).collect();
+                let count = distinct.len().max(1) as f64;
+                let (x, y) = distinct.values().fold((0.0, 0.0), |(x, y), p| (x + p.x, y + p.y));
+                let centre = [x / count, y / count];
+                (MIN_SECTORS..=MAX_SECTORS).rev().find(|&n| fits(n, centre)).map(|n| FoundRotation { centre, most: Some(n) })
+            }
+        }
+    }
+
     /// Sets the rotational symmetry (none clears it) after checking the model allows it; the
     /// mesh is dropped (a sector's is not the whole's).
     pub fn set_rotation(&mut self, rotation: Option<Rotation>) -> Result<()> {
@@ -103,21 +180,30 @@ impl crate::Model {
         self.rotation.as_ref().and_then(|r| self.rotation_issue_of(r))
     }
 
+    /// What keeps the model from any rotational symmetry whatever its shape: no solid, or
+    /// what a sector cannot carry yet.
+    pub fn rotation_unsupported(&self) -> Option<String> {
+        if self.solid.is_none() || self.waveguide.is_some() {
+            return Some("needs a solid (geometry.solid): a waveguide has no rotational symmetry to cut".into());
+        }
+        if !self.symmetry.is_empty() || self.periodic.is_some() || self.open.is_some() {
+            return Some("not supported yet: with symmetry planes, periodic boundaries or an open boundary".into());
+        }
+        if !self.features.is_empty() || !self.inclusions.is_empty() || !self.lumped.is_empty() || !self.sources.is_empty() {
+            return Some("not supported yet: with bodies, inclusions, lumped ports or sources (the solid alone)".into());
+        }
+        None
+    }
+
     /// Whether the model is the same turned by 2π/n about the axis: its solid (a cylinder or a
     /// sphere about its own axis, a box square across z about its middle and n = 4, an imported
     /// surface whose vertices turn onto its vertices), and nothing the sector cannot carry yet.
     fn rotation_issue_of(&self, r: &Rotation) -> Option<String> {
         let issue = || -> std::result::Result<(), String> {
-            let solid = self.solid.as_ref().ok_or("needs a solid (geometry.solid): a waveguide has no rotational symmetry to cut")?;
-            if self.waveguide.is_some() {
-                return Err("needs a solid, not a waveguide".into());
+            if let Some(why) = self.rotation_unsupported() {
+                return Err(why);
             }
-            if !self.symmetry.is_empty() || self.periodic.is_some() || self.open.is_some() {
-                return Err("not supported yet: with symmetry planes, periodic boundaries or an open boundary".into());
-            }
-            if !self.features.is_empty() || !self.inclusions.is_empty() || !self.lumped.is_empty() || !self.sources.is_empty() {
-                return Err("not supported yet: with bodies, inclusions, lumped ports or sources (the solid alone)".into());
-            }
+            let solid = self.solid.as_ref().ok_or("needs a solid")?;
             let b = solid.shape.bounds();
             let scale = (b.max - b.min).norm().max(f64::MIN_POSITIVE);
             let tol = 1e-9 * scale;

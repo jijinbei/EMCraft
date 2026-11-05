@@ -135,6 +135,14 @@ const MODELS: &[Model] = &[
         r#"[{"command": "solve.frequency", "params": {"points": 3}}]"#,
         &[],
     ),
+    // A cavity of revolution: its rotation found (not set), then set and drawn with its turns.
+    (r#"[{"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 10, "length": 15}}]"#, "[]", &["boundaries"]),
+    (
+        r#"[{"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 10, "length": 15}},
+            {"command": "model.rotation.find", "params": {}}]"#,
+        "[]",
+        &["boundaries"],
+    ),
     // A layered guide with strips and a via (not meshed).
     (
         r#"[{"command": "model.material.create", "params": {"name": "fill", "eps_r": 2.2}},

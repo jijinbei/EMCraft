@@ -99,12 +99,8 @@ pub(super) fn on_cut_face(mesh: &Mesh, rot: &Rotation, nodes: &[u32; 3]) -> bool
     // As the partners are matched (the mesher rounds a node by about 1e-7 of the size).
     let tol = 1e-6 * size;
     [rot.start(), rot.start() + rot.angle()].iter().any(|&angle| {
-        nodes.iter().all(|n| {
-            mesh.nodes.get(*n as usize).is_some_and(|p| {
-                let (x, y) = (p.x - rot.centre[0], p.y - rot.centre[1]);
-                (-x * angle.sin() + y * angle.cos()).abs() <= tol && x * angle.cos() + y * angle.sin() >= -tol
-            })
-        })
+        // Each half-plane alone: all three nodes on the same one.
+        nodes.iter().all(|n| mesh.nodes.get(*n as usize).is_some_and(|p| rot.on_half_plane(*p, angle, tol)))
     })
 }
 

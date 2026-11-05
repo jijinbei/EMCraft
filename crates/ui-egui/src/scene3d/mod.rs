@@ -260,6 +260,34 @@ fn mirrored_halves(m: &emcraft_model::Model, overlay: Overlay, scene: &mut emcra
     }
 }
 
+/// A sector of a rotationally symmetric model drawn whole: what is meshed and its n − 1 turns
+/// about the axis. The Mesh step tells them apart as it does mirror images: faint, no edges.
+fn turned_sectors(m: &emcraft_model::Model, overlay: Overlay, scene: &mut emcraft_render::view3d::Scene) {
+    let Some(r) = m.rotation else { return };
+    let faint = overlay == Overlay::Mesh;
+    let (tris, lines) = (scene.tris.clone(), scene.lines.clone());
+    for k in 1..r.n {
+        let angle = f64::from(k) * r.angle();
+        let turn = |p: [f64; 3]| {
+            let q = r.turned_by(emcraft_model::Point3::new(p[0], p[1], p[2]), angle);
+            [q.x, q.y, q.z]
+        };
+        // A turn keeps the winding.
+        scene.tris.extend(tris.iter().map(|t| {
+            let mut c = *t;
+            c.p = t.p.map(turn);
+            if faint {
+                c.alpha = t.alpha / 3;
+                c.wire = None;
+            }
+            c
+        }));
+        if !faint {
+            scene.lines.extend(lines.iter().map(|l| emcraft_render::view3d::Line { a: turn(l.a), b: turn(l.b), ..*l }));
+        }
+    }
+}
+
 /// Builds the scene, with the field's planes for [`Overlay::Field`] and what is selected
 /// highlighted.
 pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], selected: &[Pick]) -> Built {
@@ -289,10 +317,12 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
                 }),
             );
             mirrored_halves(m, overlay, &mut out.scene);
+            turned_sectors(m, overlay, &mut out.scene);
         }
         None => {
             geometry::from_geometry(m, overlay, &mut out);
             extras::symmetry_planes(m, &mut out);
+            extras::sector_cuts(m, &mut out);
             // A board's region before it is meshed: its copper and substrates in place.
             if let Some(b) = &m.pcb {
                 board::in_model(b, &mut out);

@@ -183,6 +183,8 @@ pub struct Workflow {
     /// The planes the model is symmetric about ([`emcraft_model::Model::find_symmetry`]), found
     /// once per revision for the Boundaries step.
     pub symmetry: Option<(u64, Vec<emcraft_model::Found>)>,
+    /// The rotational symmetry it allows ([`emcraft_model::Model::find_rotation`]), alike.
+    pub rotation: Option<(u64, Option<emcraft_model::rotation::FoundRotation>)>,
     /// [`statuses_now`] worked out once for the frame, with what it was worked out from.
     shown: Option<(Shown, [StepState; 9])>,
     /// The estimate of the step's run (the Mesh step: one solve at an order; Setup and Run: the
@@ -265,6 +267,9 @@ pub fn prepare(app: &mut EmcraftApp) {
     }
     if app.place.step() == Some(Step::Boundaries) && app.workflow.symmetry.as_ref().is_none_or(|(k, _)| *k != key) {
         app.workflow.symmetry = Some((key, app.session.model().find_symmetry()));
+    }
+    if app.place.step() == Some(Step::Boundaries) && app.workflow.rotation.as_ref().is_none_or(|(k, _)| *k != key) {
+        app.workflow.rotation = Some((key, app.session.model().find_rotation()));
     }
     // A refusal lasts while something blocks Run.
     if let Some(r) = app.workflow.refusal.take()

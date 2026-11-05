@@ -490,6 +490,7 @@
     "Find symmetry": "対称面を探す",
     "Rotation": "回転対称",
     "Cyclic modes": "回転対称モード",
+    "Find rotation": "回転対称を探す",
     "model's symmetry": "モデルの対称",
     "solved": "解く範囲",
     "no mirror plane": "鏡映面なし",
@@ -678,6 +679,11 @@
     "perfect conductor": "完全導体",
     "periodic": "周期",
     "periodic boundaries: {cell}": "周期境界：{cell}",
+    "rotation: {group}, harmonic {m}": "回転対称：{group}、高調波 {m}",
+    "C{n} · 1/{n} of the model, harmonic {m}": "C{n} · モデルの 1/{n}、高調波 {m}",
+    "model's rotation": "モデルの回転対称",
+    "Find rotation can solve it on a sector": "「回転対称を探す」で扇形だけを解ける",
+    "rotation": "回転対称",
     "phase (°)": "位相 (°)",
     "port": "ポート",
     "port / mode": "ポート / モード",
@@ -1085,6 +1091,14 @@
         "m": "高調波 0〜n − 1（既定 0）",
         "centre": "軸の [x, y]（既定はソリッドの中央）",
         "clear": "回転対称を削除"
+      }
+    },
+    "model.rotation.find": {
+      "label": "回転対称を探す",
+      "doc": "モデルが持つ z 方向の軸まわりの回転対称を探して設定する：円柱や球なら自身の軸（円形：扇形の数は任意）、正方形の直方体なら中央（1/4 ずつ）、取り込み面なら頂点の重心を軸とし、面を自身に重ねる最大の扇形の数（64 まで）。返り値の `group` が群の名前（C∞、Cₙ）。見つからないとき、または扇形でまだ扱えないものを含むとき（model.rotation と同じ）は拒否する。",
+      "params": {
+        "n": "扇形の数：円形のソリッドなら 3〜64 の任意（既定 4）、それ以外は最大数の約数（既定は最大数）",
+        "m": "高調波 0〜n − 1（既定 0）"
       }
     },
     "solve.cyclic": {

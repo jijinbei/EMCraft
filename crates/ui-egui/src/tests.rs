@@ -264,6 +264,11 @@ fn scenario_symmetry_plane() {
 }
 
 #[test]
+fn scenario_rotation_sector() {
+    scenario("rotation_sector");
+}
+
+#[test]
 fn scenario_stub_and_via() {
     scenario("stub_and_via");
 }

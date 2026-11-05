@@ -102,11 +102,18 @@ impl Surface {
 
 /// The faces of the cell that a mesh's periodic boundaries tie: per axis, the mesh's extent,
 /// if the axis is tied.
-pub(super) struct PeriodicPlanes([Option<(f64, f64)>; 3]);
+/// A sector's two cut faces are tied alike (rotational symmetry: the rotation and a tolerance).
+pub(super) struct PeriodicPlanes([Option<(f64, f64)>; 3], Option<(emcraft_model::Rotation, f64)>);
 
 impl PeriodicPlanes {
     pub(super) fn of(m: &Model, mesh: &emcraft_model::Mesh) -> PeriodicPlanes {
-        let Some(p) = &m.periodic else { return PeriodicPlanes([None; 3]) };
+        let cut = m.rotation.map(|r| {
+            let (lo, hi) = mesh.nodes.iter().fold(([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]), |(lo, hi), q| {
+                (std::array::from_fn(|k| lo[k].min(q[k])), std::array::from_fn(|k| hi[k].max(q[k])))
+            });
+            (r, 1e-6 * (0..3).map(|k| hi[k] - lo[k]).fold(0.0f64, f64::max))
+        });
+        let Some(p) = &m.periodic else { return PeriodicPlanes([None; 3], cut) };
         let tied = [p.x, p.y, p.z];
         let mut out = [None; 3];
         for d in 0..3 {
@@ -117,16 +124,21 @@ impl PeriodicPlanes {
                 }
             }
         }
-        PeriodicPlanes(out)
+        PeriodicPlanes(out, cut)
     }
 
     /// Whether the face through `nodes` lies on a tied face of the cell.
     pub(super) fn holds(&self, mesh: &emcraft_model::Mesh, nodes: &[u32; 3]) -> bool {
-        self.0.iter().enumerate().any(|(d, pl)| {
-            pl.is_some_and(|(lo, hi)| {
-                let tol = 1e-9 * (hi - lo);
-                [lo, hi].iter().any(|c| nodes.iter().all(|n| mesh.nodes.get(*n as usize).is_some_and(|q| (q[d] - c).abs() <= tol)))
+        let node = |n: &u32| mesh.nodes.get(*n as usize).copied();
+        let on_cut = self.1.is_some_and(|(r, tol)| {
+            [r.start(), r.start() + r.angle()].iter().any(|&a| nodes.iter().all(|n| node(n).is_some_and(|p| r.on_half_plane(p, a, tol))))
+        });
+        on_cut
+            || self.0.iter().enumerate().any(|(d, pl)| {
+                pl.is_some_and(|(lo, hi)| {
+                    let tol = 1e-9 * (hi - lo);
+                    [lo, hi].iter().any(|c| nodes.iter().all(|n| mesh.nodes.get(*n as usize).is_some_and(|q| (q[d] - c).abs() <= tol)))
+                })
             })
-        })
     }
 }

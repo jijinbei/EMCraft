@@ -813,6 +813,18 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::geometry::rotation,
     },
     CommandSpec {
+        id: "model.rotation.find",
+        label: "Find rotation",
+        doc: "Finds the rotational symmetry about an axis along z the model has and sets it: a cylinder's or a sphere's own axis (round: any number of sectors), a square box's middle (quarters), or the centroid of an imported surface's vertices with the most sectors, up to 64, that turn it onto itself. The reply's `group` names it (C∞, Cₙ). Refused when none is found or the model holds what a sector cannot carry yet (as model.rotation).",
+        params: &[
+            opt("n", K::Integer, "the sectors: any of 3 to 64 for a round solid (default 4), a divisor of the most else (default the most)"),
+            opt("m", K::Integer, "the harmonic, 0 to n − 1 (default 0)"),
+        ],
+        effect: Effect::Record,
+        invalidates: Some(Change::Geometry),
+        run: crate::geometry::find_rotation,
+    },
+    CommandSpec {
         id: "model.periodic",
         label: "Periodic boundaries",
         doc: "Makes the model the unit cell of an infinite array: the faces x = 0 and x = a (`x`), y = 0 and y = b (`y`) or z = 0 and z = length (`z`) tied by Floquet's condition E(r + L) = e^{−jψ}E(r) (master/slave elimination; the system is then solved by LU, being Hermitian rather than complex symmetric). Across x and y the phases come from a plane wave incident at `theta` from the z axis and azimuth `phi` from x, in the first port's medium; the ports on the cell's ends become Floquet ports (the harmonics TE and TM (m, n), the (0, 0) of `polarization` excited and read, the rest absorbing). Along z the cell is a period of a guide whose dispersion `solve.dispersion` finds (no ports). Waveguide geometries only (the structured mesh's opposite faces match); not with symmetry planes, open boundaries, lumped ports or the time domain. `clear` removes them.",

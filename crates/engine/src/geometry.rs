@@ -707,3 +707,22 @@ pub(crate) fn rotation_shown(s: &Session) -> Value {
         Some(r) => json!({"n": r.n, "m": r.m, "centre": [s.show_length(r.centre[0]), s.show_length(r.centre[1])], "fraction": 1.0 / f64::from(r.n)}),
     }
 }
+
+/// `model.rotation.find`.
+pub fn find_rotation(s: &mut Session, p: &Params) -> Result<Value> {
+    let found = s.model.find_rotation().ok_or_else(|| {
+        let why = s.model.rotation_unsupported().unwrap_or_else(|| "the solid does not turn onto itself about any axis along z".into());
+        EngineError::failed(format!("no rotational symmetry found: {why}"))
+    })?;
+    let max = emcraft_model::rotation::MAX_SECTORS as usize;
+    // Round: a quarter by default; else the most sectors there are.
+    let n = p.integer("n", emcraft_model::rotation::MIN_SECTORS as usize..=max).or(found.most.unwrap_or(4) as usize)? as u32;
+    if !found.allows(n) {
+        return Err(p.error("n", format!("must divide {} (the model is {})", found.most.unwrap_or(n), found.group())));
+    }
+    let m = p.integer("m", 0..=n as usize - 1).or(0)? as u32;
+    s.model.set_rotation(Some(emcraft_model::Rotation::new(n, m, found.centre)?))?;
+    let mut reply = rotation_shown(s);
+    reply["group"] = json!(found.group());
+    Ok(reply)
+}

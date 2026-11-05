@@ -406,3 +406,23 @@ fn a_symmetry_plane_is_drawn_faintly_before_the_mesh() {
     assert!(sheet.iter().all(|t| t.alpha < 128 && t.p.iter().all(|p| (p[0] - 0.01143).abs() < 1e-12)));
     assert!(built.scene.lines.iter().filter(|l| l.color == colour).count() >= 4);
 }
+
+/// A sector is drawn whole: its n − 1 turns beside it, faint and without edges in the Mesh step;
+/// before the mesh, its two cut half-planes faintly.
+#[test]
+fn a_sector_is_drawn_with_its_turns() {
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 15})).unwrap();
+    s.execute("model.rotation", &json!({"n": 4})).unwrap();
+    let colour = super::style::sc().periodic;
+    let cuts = build(&s, Overlay::Boundaries).scene.tris.iter().filter(|t| t.color == colour && t.alpha < 128).count();
+    assert_eq!(cuts, 4);
+    s.execute("mesh.generate", &json!({"size": 5})).unwrap();
+    let whole = build(&s, Overlay::Plain);
+    let mesh = build(&s, Overlay::Mesh);
+    // Every corner of the whole is within the radius, and the turns reach every quadrant.
+    let quadrants: std::collections::BTreeSet<(bool, bool)> = whole.scene.tris.iter().flat_map(|t| t.p).map(|p| (p[0] > 1e-4, p[1] > 1e-4)).collect();
+    assert_eq!(quadrants.len(), 4);
+    let faint = mesh.scene.tris.iter().filter(|t| t.wire.is_none()).count();
+    assert!(faint * 4 >= mesh.scene.tris.len() * 3 - 4, "{faint} of {}", mesh.scene.tris.len());
+}

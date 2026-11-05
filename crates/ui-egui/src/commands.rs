@@ -75,6 +75,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("solve.cyclic", Some("Cyclic modes"), Some(Glyph::Eigen), true),
     ui("model.symmetry.find", Some("Find symmetry"), Some(Glyph::Symmetry), false),
     ui("model.rotation", Some("Rotation"), Some(Glyph::Symmetry), false),
+    ui("model.rotation.find", Some("Find rotation"), Some(Glyph::Symmetry), false),
     ui("model.periodic", Some("Periodic boundaries"), Some(Glyph::Periodic), false),
     ui("model.port.create", Some("Port"), Some(Glyph::Port), false),
     ui("model.port.edit", None, Some(Glyph::Port), false),

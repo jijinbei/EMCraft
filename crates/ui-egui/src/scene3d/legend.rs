@@ -53,6 +53,10 @@ pub(super) fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
                 let angles = if p.x || p.y { format!(", θ {:.1}°, φ {:.1}°", p.theta.to_degrees(), p.phi.to_degrees()) } else { String::new() };
                 out.legend.push((trf("periodic boundaries: {cell}", args!(cell = format!("{}{angles}", axes.join(", ")))), sc().periodic));
             }
+            if let Some(r) = &m.rotation {
+                let group = format!("C{}", r.n);
+                out.legend.push((trf("rotation: {group}, harmonic {m}", args!(group = group, m = r.m)), sc().periodic));
+            }
             let walls = match m.wall_conductivity {
                 Some(s) => trf("walls σ = {sigma} S/m", args!(sigma = format!("{s:.3e}"))),
                 None => tr("walls: perfect conductor").into(),

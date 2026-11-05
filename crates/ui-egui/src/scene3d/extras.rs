@@ -141,6 +141,24 @@ pub(super) fn symmetry_planes(m: &Model, out: &mut Built) {
     }
 }
 
+/// A rotational symmetry's sector, drawn faint as its two cut half-planes from the axis out to
+/// the model's extent: the faces tied by the harmonic's phase.
+pub(super) fn sector_cuts(m: &Model, out: &mut Built) {
+    let (Some(r), Some((lo, hi))) = (m.rotation, out.bounds) else { return };
+    let reach = [lo[0], hi[0]].iter().flat_map(|x| [lo[1], hi[1]].map(|y| (x - r.centre[0]).hypot(y - r.centre[1]))).fold(0.0, f64::max);
+    let colour = sc().periodic;
+    for phi in [r.start(), r.start() + r.angle()] {
+        let (s, c) = phi.sin_cos();
+        let (x, y) = (r.centre[0] + reach * c, r.centre[1] + reach * s);
+        let q = [[r.centre[0], r.centre[1], lo[2]], [x, y, lo[2]], [x, y, hi[2]], [r.centre[0], r.centre[1], hi[2]]];
+        out.scene.tri(q[0], q[1], q[2], colour, 80);
+        out.scene.tri(q[0], q[2], q[3], colour, 80);
+        for i in 0..4 {
+            out.scene.line(q[i], q[(i + 1) % 4], colour, 235);
+        }
+    }
+}
+
 /// Ports' labels (`driven`: the input's index), lumped ports, sources and the open boundary's
 /// layer.
 pub(super) fn extras(m: &Model, driven: Option<usize>, overlay: Overlay, out: &mut Built) {

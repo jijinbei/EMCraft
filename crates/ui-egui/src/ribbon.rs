@@ -54,7 +54,10 @@ pub const TABS: &[(RibbonTab, &[(&str, &[&str])])] = &[
     // The tabs follow the step bar: the boundaries are step 4, after the ports (step 3).
     (
         RibbonTab::Boundaries,
-        &[("BOUNDARIES", &["model.walls", "model.open", "model.symmetry", "model.symmetry.find", "model.rotation", "model.periodic"])],
+        &[(
+            "BOUNDARIES",
+            &["model.walls", "model.open", "model.symmetry", "model.symmetry.find", "model.rotation", "model.rotation.find", "model.periodic"],
+        )],
     ),
     (RibbonTab::Mesh, &[("MESH", &["mesh.generate", "mesh.adapt"])]),
     (
