@@ -265,6 +265,7 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
         ),
         None => {
             geometry::from_geometry(m, overlay, &mut out);
+            extras::symmetry_planes(m, &mut out);
             // A board's region before it is meshed: its copper and substrates in place.
             if let Some(b) = &m.pcb {
                 board::in_model(b, &mut out);

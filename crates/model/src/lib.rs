@@ -63,7 +63,7 @@ pub use port::{DEFAULT_TERMINAL_IMPEDANCE, End, Frame, MAX_PORT_MODES, MAX_TERMI
 pub use prism::MAX_PRISM_POINTS;
 pub use quantity::{Conductivity, Hertz, LossTangent, MAX_CONDUCTIVITY, MAX_LOSS_TANGENT, Metres, Ohms, Positive, Quantity};
 pub use shape::{Axis, BoxSize, Combine, FaceSurface, Feature, Inclusion, MAX_SURFACE_TRIANGLES, Shape, Solid, solid_angle};
-pub use symmetry::{Image, Symmetry, SymmetryKind};
+pub use symmetry::{Found, Image, Symmetry, SymmetryKind};
 pub use waveguide::{Layer, Section, Span, Strip, Via, Waveguide};
 
 pub mod pcb;

@@ -45,6 +45,15 @@ pub struct Symmetry {
     pub kind: SymmetryKind,
 }
 
+/// A plane the model is symmetric about ([`Model::find_symmetry`]): its axis, position (m) and
+/// the wall its ports ask for (`None`: no port decides).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Found {
+    pub axis: Axis,
+    pub at: f64,
+    pub kind: Option<SymmetryKind>,
+}
+
 /// A point mirrored onto the side of the symmetry planes that is kept, with the signs the
 /// image's field components take there (±1 per x, y, z component of E and of H).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -277,6 +286,68 @@ impl Model {
     /// The fraction of the model the symmetry planes keep: ½ per plane.
     pub fn symmetry_fraction(&self) -> f64 {
         0.5f64.powi(self.symmetry.len().min(2) as i32)
+    }
+
+    /// The planes the model is symmetric about (each axis' middle that [`Model::set_symmetry`]
+    /// would take), with the wall its ports' first modes ask for: a plane across a rectangular
+    /// port's broad side keeps TE10 with a magnetic wall (its E tangential and even), one across
+    /// the narrow side with an electric wall (its E normal to it). `kind` is `None` where no port
+    /// decides it (an eigenmode search: either wall keeps a family of modes) and the plane is left
+    /// out where the ports ask for different walls or one's first mode is not TE10.
+    ///
+    /// ```
+    /// use emcraft_model::{Axis, End, Metres, Model, Port, Section, SymmetryKind, Waveguide};
+    ///
+    /// let mut m = Model::new();
+    /// let (width, height) = (Metres::new(0.02286)?, Metres::new(0.01016)?); // m
+    /// let sections = vec![Section::new(Metres::new(0.03)?, "vacuum")];
+    /// m.set_waveguide(Waveguide { width, height, sections, layers: vec![], strips: vec![], vias: vec![] })?;
+    /// // No port: both middles, either wall.
+    /// let found = m.find_symmetry();
+    /// assert_eq!(found.iter().map(|f| (f.axis, f.kind)).collect::<Vec<_>>(), [(Axis::X, None), (Axis::Y, None)]);
+    /// assert!((found[0].at - 0.01143).abs() < 1e-15);
+    /// // Ports at the ends: TE10 asks for a magnetic wall across the broad side, an electric one
+    /// // across the narrow side.
+    /// m.add_port(Port::new("1", End::Start))?;
+    /// m.add_port(Port::new("2", End::End))?;
+    /// let kinds: Vec<_> = m.find_symmetry().iter().map(|f| f.kind).collect();
+    /// assert_eq!(kinds, [Some(SymmetryKind::Magnetic), Some(SymmetryKind::Electric)]);
+    /// # Ok::<(), emcraft_model::ModelError>(())
+    /// ```
+    pub fn find_symmetry(&self) -> Vec<Found> {
+        let Some(b) = self.bounds() else { return Vec::new() };
+        let mut out = Vec::new();
+        for axis in Axis::ALL {
+            let at = 0.5 * (b.min[axis.index()] + b.max[axis.index()]);
+            let plane = Symmetry { axis, at, kind: SymmetryKind::Magnetic };
+            if self.symmetry_issue_of(&[plane]).is_some() {
+                continue;
+            }
+            let walls: Vec<Option<SymmetryKind>> = self.ports.iter().map(|p| self.wall_for(p, axis)).collect();
+            let kind = match walls.first() {
+                None => None,
+                Some(&first) if first.is_some() && walls.iter().all(|w| *w == first) => first,
+                Some(_) => continue,
+            };
+            out.push(Found { axis, at, kind });
+        }
+        out
+    }
+
+    /// The wall a plane across `axis` needs to keep port `p`'s TE10: `None` when its face is not
+    /// a rectangle with a broad side (a square, a circle) or the plane does not cross it.
+    fn wall_for(&self, p: &crate::Port, axis: Axis) -> Option<SymmetryKind> {
+        let crate::PortShape::Rect { a, b, .. } = self.port_shape_of(p).ok()? else { return None };
+        if (a - b).abs() <= 1e-9 * a.max(b) {
+            return None;
+        }
+        let (u, v, _) = p.frame().axes();
+        let (broad, narrow) = if a > b { (u, v) } else { (v, u) };
+        match axis.index() {
+            d if d == broad => Some(SymmetryKind::Magnetic),
+            d if d == narrow => Some(SymmetryKind::Electric),
+            _ => None,
+        }
     }
 
     fn symmetry_issue_of(&self, planes: &[Symmetry]) -> Option<String> {

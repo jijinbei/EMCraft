@@ -487,6 +487,7 @@
     "Switch between a field plane in the 3D model and a flat plot": "3D モデルの中の電磁界の面と平面のグラフを切り替える",
     "Switching the device…": "デバイスを切り替え中…",
     "Symmetry": "対称面",
+    "Find symmetry": "対称面を探す",
     "Symmetry: {axis} = {at} {unit}, electric wall": "対称面：{axis} = {at} {unit}、電気壁",
     "Symmetry: {axis} = {at} {unit}, magnetic wall": "対称面：{axis} = {at} {unit}、磁気壁",
     "TDR": "TDR",
@@ -1052,6 +1053,13 @@
         "kind": "`electric`（PEC 壁）または `magnetic`（PMC 壁）",
         "at": "面の位置（既定はモデルの中央。これのみ可）",
         "clear": "`axis` を横切る面を削除。`axis` がなければすべての面を削除"
+      }
+    },
+    "model.symmetry.find": {
+      "label": "対称面を探す",
+      "doc": "モデルが対称な面（形状・材料・ポートを合わせて、各軸の中央）を探して設定する（2 面まで）。壁の種類は各ポートの TE10 が求めるもの（広い辺を横切る面は磁気壁、狭い辺を横切る面は電気壁）。ポートがないとき（固有モード探索）はどちらの壁でもモードの一群が残るので `kind` で選ぶ。面が見つからなければ拒否する。",
+      "params": {
+        "kind": "ポートが決めない面の壁：`electric` または `magnetic`"
       }
     },
     "model.periodic": {

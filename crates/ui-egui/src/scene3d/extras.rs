@@ -128,6 +128,30 @@ pub(crate) fn quad_centre(q: &[[f64; 3]; 4]) -> [f64; 3] {
     [0, 1, 2].map(|k| 0.25 * (q[0][k] + q[1][k] + q[2][k] + q[3][k]))
 }
 
+/// The symmetry planes before the model is meshed: each a faint sheet across the model's box,
+/// framed, in its wall's colour (meshed, the half below it is what is drawn, its cut the plane).
+pub(super) fn symmetry_planes(m: &Model, out: &mut Built) {
+    let Some((lo, hi)) = out.bounds else { return };
+    for s in &m.symmetry {
+        let k = s.axis.index();
+        let (u, v) = ((k + 1) % 3, (k + 2) % 3);
+        let at = |a: f64, b: f64| {
+            let mut p = [0.0; 3];
+            p[k] = s.at;
+            p[u] = a;
+            p[v] = b;
+            p
+        };
+        let q = [at(lo[u], lo[v]), at(hi[u], lo[v]), at(hi[u], hi[v]), at(lo[u], hi[v])];
+        let color = super::style::symmetry_rgb(s.kind);
+        out.scene.tri(q[0], q[1], q[2], color, 40);
+        out.scene.tri(q[0], q[2], q[3], color, 40);
+        for i in 0..4 {
+            out.scene.line(q[i], q[(i + 1) % 4], color, 170);
+        }
+    }
+}
+
 /// Ports' labels (`driven`: the input's index), lumped ports, sources and the open boundary's
 /// layer.
 pub(super) fn extras(m: &Model, driven: Option<usize>, overlay: Overlay, out: &mut Built) {

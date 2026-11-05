@@ -49,7 +49,9 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
         "model.symmetry" => {
             let axis = p.string("axis").optional()?;
             match m.symmetry.iter().find(|q| axis.is_none_or(|a| q.axis.id() == a)) {
-                Some(q) => json!({"axis": q.axis.id(), "kind": q.kind, "at": l(q.at)}),
+                // Not its position: the only one allowed is the model's middle across the axis,
+                // which the command takes when `at` is left out (another axis' would be refused).
+                Some(q) => json!({"axis": q.axis.id(), "kind": q.kind}),
                 None => json!({}),
             }
         }

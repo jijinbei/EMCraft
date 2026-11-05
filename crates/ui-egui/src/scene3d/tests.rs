@@ -384,3 +384,19 @@ fn a_halved_model_is_framed_and_its_ports_marked_on_the_half_that_is_there() {
         assert!((a.start[2] - half / 2.0).abs() < 1e-12 && (a.end[2] - half / 2.0).abs() < 1e-12, "{a:?}");
     }
 }
+
+/// A symmetry plane shows before the model is meshed: a faint sheet in its wall's colour across
+/// the model's box, framed.
+#[test]
+fn a_symmetry_plane_is_drawn_faintly_before_the_mesh() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "cavity"})).unwrap();
+    s.execute("model.symmetry", &json!({"axis": "x", "kind": "magnetic"})).unwrap();
+    assert!(s.model().mesh.is_none());
+    let built = build(&s, Overlay::Plain);
+    let colour = super::style::symmetry_rgb(emcraft_model::SymmetryKind::Magnetic);
+    let sheet: Vec<_> = built.scene.tris.iter().filter(|t| t.color == colour).collect();
+    assert_eq!(sheet.len(), 2);
+    assert!(sheet.iter().all(|t| t.alpha < 64 && t.p.iter().all(|p| (p[0] - 0.01143).abs() < 1e-12)));
+    assert!(built.scene.lines.iter().filter(|l| l.color == colour).count() >= 4);
+}

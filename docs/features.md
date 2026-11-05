@@ -543,6 +543,14 @@ Cuts a model symmetric about its middle on that plane: only the side below it is
 | `at` | number | length | no | the plane's position (default the model's middle, the only one allowed) |
 | `clear` | boolean |  | no | remove the plane across `axis`, or every plane without it |
 
+## `model.symmetry.find` — Find symmetry
+
+Finds the planes the model is symmetric about (its geometry, materials and ports; each axis' middle) and sets them, at most two: each wall from what its ports' TE10 asks for (magnetic across a broad side, electric across a narrow one). Without ports (an eigenmode search) either wall keeps a family of modes: `kind` chooses it. Refused when no plane is found.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `kind` | string |  | no | the wall for a plane no port decides: `electric` or `magnetic` |
+
 ## `model.periodic` — Periodic boundaries
 
 Makes the model the unit cell of an infinite array: the faces x = 0 and x = a (`x`), y = 0 and y = b (`y`) or z = 0 and z = length (`z`) tied by Floquet's condition E(r + L) = e^{−jψ}E(r) (master/slave elimination; the system is then solved by LU, being Hermitian rather than complex symmetric). Across x and y the phases come from a plane wave incident at `theta` from the z axis and azimuth `phi` from x, in the first port's medium; the ports on the cell's ends become Floquet ports (the harmonics TE and TM (m, n), the (0, 0) of `polarization` excited and read, the rest absorbing). Along z the cell is a period of a guide whose dispersion `solve.dispersion` finds (no ports). Waveguide geometries only (the structured mesh's opposite faces match); not with symmetry planes, open boundaries, lumped ports or the time domain. `clear` removes them.

@@ -74,3 +74,33 @@ fn a_face_port_given_narrow_side_first_is_read_by_its_broad_side() {
     let bands = crate::guides::bands(&s);
     assert_eq!(bands.first().map(|b| b.name.as_str()), Some("WR-90"), "{bands:?}");
 }
+
+/// The planes are found, not typed: a guide's ports ask for a magnetic wall across the broad
+/// side and an electric one across the narrow side; an E-plane bend's for the magnetic wall
+/// its template sets by hand; a cavity without ports needs `kind`; a bend is not symmetric
+/// across its arms.
+#[test]
+fn symmetry_planes_are_found_with_the_walls_the_ports_ask_for() {
+    let planes = |s: &crate::Session| s.model().symmetry.iter().map(|q| (q.axis.id(), q.kind.id())).collect::<Vec<_>>();
+    let mut s = crate::Session::new();
+    s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    s.execute("model.symmetry.find", &json!({})).unwrap();
+    assert_eq!(planes(&s), [("x", "magnetic"), ("y", "electric")]);
+
+    let mut s = crate::Session::new();
+    s.execute("file.sample", &json!({"name": "td-e-bend"})).unwrap();
+    let by_hand = planes(&s);
+    s.execute("model.symmetry", &json!({"clear": true})).unwrap();
+    let r = s.execute("model.symmetry.find", &json!({})).unwrap();
+    assert_eq!(planes(&s), by_hand, "{r}");
+    assert!((r["planes"][0]["at"].as_f64().unwrap() - 11.43).abs() < 1e-9, "{r}");
+
+    let mut s = crate::Session::new();
+    s.execute("file.sample", &json!({"name": "cavity"})).unwrap();
+    s.execute("model.symmetry", &json!({"clear": true})).unwrap();
+    let e = s.execute("model.symmetry.find", &json!({})).unwrap_err();
+    assert!(e.to_string().contains("kind"), "{e}");
+    assert!(s.model().symmetry.is_empty());
+    s.execute("model.symmetry.find", &json!({"kind": "magnetic"})).unwrap();
+    assert_eq!(planes(&s), [("x", "magnetic"), ("y", "magnetic")]);
+}

@@ -604,6 +604,28 @@ pub fn symmetry(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"planes": shown, "fraction": s.model.symmetry_fraction()}))
 }
 
+/// `model.symmetry.find`.
+pub fn find_symmetry(s: &mut Session, p: &Params) -> Result<Value> {
+    let kind: Option<SymmetryKind> = p.choice("kind").optional()?;
+    let found = s.model.find_symmetry();
+    if found.is_empty() {
+        return Err(EngineError::failed("the model is not symmetric about the middle of any axis (its geometry, materials and ports together)"));
+    }
+    // The planes the ports decide first, then those `kind` does; two at most.
+    let mut planes: Vec<Symmetry> = found.iter().filter_map(|f| f.kind.map(|k| Symmetry { axis: f.axis, at: f.at, kind: k })).collect();
+    planes.extend(found.iter().filter(|f| f.kind.is_none()).filter_map(|f| kind.map(|k| Symmetry { axis: f.axis, at: f.at, kind: k })));
+    planes.truncate(2);
+    if planes.is_empty() {
+        let axes: Vec<&str> = found.iter().map(|f| f.axis.id()).collect();
+        return Err(p.error("kind", format!("is needed: the model is symmetric across {}, and no port decides the wall", axes.join(" and "))));
+    }
+    planes.sort_by_key(|q| q.axis.index());
+    s.model.set_symmetry(planes)?;
+    let shown: Vec<Value> = s.model.symmetry.iter().map(|q| json!({"axis": q.axis.id(), "at": s.show_length(q.at), "kind": q.kind})).collect();
+    let all: Vec<Value> = found.iter().map(|f| json!({"axis": f.axis.id(), "at": s.show_length(f.at), "kind": f.kind})).collect();
+    Ok(json!({"planes": shown, "fraction": s.model.symmetry_fraction(), "found": all}))
+}
+
 pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
     let name = p.string("name").required()?;
     let axis: Option<Axis> = p.choice("axis").optional()?;
