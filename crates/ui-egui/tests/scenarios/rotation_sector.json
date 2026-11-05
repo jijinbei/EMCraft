@@ -21,5 +21,17 @@
   {"shot": "rotation-mesh"},
   {"call": "ui.set", "params": {"step": "boundaries"}},
   {"frames": 2},
-  {"shot": "rotation-whole"}
+  {"shot": "rotation-whole"},
+  {"note": "Ports on the ends in harmonic 1: the rotating TE11+ solved on the quarter, its field drawn over the whole guide"},
+  {"call": "engine.execute", "params": {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 10, "length": 30}}},
+  {"call": "engine.execute", "params": {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}}},
+  {"call": "engine.execute", "params": {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}}},
+  {"call": "engine.execute", "params": {"command": "model.rotation", "params": {"n": 4, "m": 1}}},
+  {"call": "engine.execute", "params": {"command": "mesh.generate", "params": {"size": 4}}},
+  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"frequencies": [12], "order": 1}}},
+  {"until": {"busy": false}},
+  {"click": "view:field"},
+  {"call": "ui.set", "params": {"animate": false}},
+  {"frames": 3},
+  {"shot": "rotation-field"}
 ]

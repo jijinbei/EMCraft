@@ -41,6 +41,11 @@ pub fn at(s: &Session, frequency: f64, excitation: usize) -> Result<Value> {
     // ports' waves are power waves of real impedances: their |S|² is power.)
     let lumped = sw.driven.ports.is_empty();
     for entry in entries.iter().filter(|_| !lumped) {
+        match sw.driven.complex_mode_propagates(entry.port, frequency)? {
+            Some(true) => continue,
+            Some(false) => return Err(EngineError::failed("not supported yet: real power fractions for evanescent pseudo-waves")),
+            None => {}
+        }
         let terms = sw.driven.port_terms(entry.port, frequency)?;
         let gamma = terms.first().ok_or_else(|| EngineError::failed("port has no mode"))?.gamma;
         if gamma.im <= 0.0 || (entry.reference.is_none() && gamma.re.abs() > 1e-9 * gamma.im.abs().max(1.0)) {

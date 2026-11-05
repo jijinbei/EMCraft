@@ -164,13 +164,17 @@ impl crate::Model {
     }
 
     /// Sets the rotational symmetry (none clears it) after checking the model allows it; the
-    /// mesh is dropped (a sector's is not the whole's).
+    /// mesh is dropped (a sector's is not the whole's) unless only the harmonic changes.
     pub fn set_rotation(&mut self, rotation: Option<Rotation>) -> Result<()> {
         if let Some(why) = rotation.and_then(|r| self.rotation_issue_of(&r)) {
             return Err(invalid("rotation", why));
         }
+        // Another harmonic keeps the sector and its mesh: only the cut faces' phase moves.
+        let same_sector = |a: &Rotation, b: &Rotation| a.n == b.n && a.centre == b.centre;
+        if !matches!((&self.rotation, &rotation), (Some(a), Some(b)) if same_sector(a, b)) {
+            self.mesh = None;
+        }
         self.rotation = rotation;
-        self.mesh = None;
         Ok(())
     }
 

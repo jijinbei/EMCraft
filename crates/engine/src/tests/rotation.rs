@@ -103,11 +103,21 @@ fn what_a_sector_cannot_carry_is_refused() {
     let mut l = pillbox();
     l.execute("model.port.lumped", &json!({"name": "L1", "from": [5, 0, 0], "to": [5, 0, 1], "impedance": 50})).unwrap();
     assert!(l.execute("model.rotation", &json!({"n": 4})).is_err());
+    // A port on a sector must be a circle on the axis: a square box's end is not.
+    b.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 1})).unwrap();
+    b.execute("mesh.generate", &json!({"size": 5})).unwrap();
+    let e = b.execute("solve.frequency", &json!({"frequencies": [20], "order": 1})).unwrap_err();
+    assert!(e.to_string().contains("circle centred on the axis"), "{e}");
     // On a sector the modes are per harmonic.
     s.execute("model.rotation", &json!({"n": 4})).unwrap();
     s.execute("mesh.generate", &json!({"size": 5})).unwrap();
     let e = s.execute("solve.eigenmodes", &json!({"near": 12})).unwrap_err();
     assert!(e.to_string().contains("solve.cyclic"), "{e}");
+    // Another harmonic keeps the sector's mesh; another sector drops it.
+    s.execute("model.rotation", &json!({"n": 4, "m": 1})).unwrap();
+    assert!(s.model.mesh.is_some());
+    s.execute("model.rotation", &json!({"n": 5})).unwrap();
+    assert!(s.model.mesh.is_none());
 }
 
 #[test]
@@ -144,4 +154,77 @@ fn the_rotation_a_model_has_is_found() {
     f.execute("geometry.inclusion", &json!({"shape": "sphere", "radius": 2, "at": [0, 0, 7]})).unwrap();
     let e = f.execute("model.rotation.find", &json!({})).unwrap_err();
     assert!(e.to_string().contains("not supported yet"), "{e}");
+}
+
+/// A straight circular guide, radius 10 mm and 30 mm long, ports on both ends, on a quarter.
+fn guide_quarter(m: u32, size: f64) -> Session {
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 30})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 2})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "modes": 2})).unwrap();
+    s.execute("model.rotation", &json!({"n": 4, "m": m})).unwrap();
+    s.execute("mesh.generate", &json!({"size": size})).unwrap();
+    s
+}
+
+/// The quarter in harmonic `m` at `f` GHz passes its first rotating mode (Bessel root `x` of
+/// its cut-off) as e^{−jβL} within `tol`.
+fn passes(m: u32, size: f64, f: f64, x: f64, tol: f64) {
+    let mut s = guide_quarter(m, size);
+    let r = s.execute("solve.frequency", &json!({"frequencies": [f], "order": 2})).unwrap();
+    let (s11, s21) = (super::s(&r, 0, "s11"), super::s(&r, 0, "s21"));
+    let k = 2.0 * std::f64::consts::PI * f * 1e9 / emcraft_model::units::C0;
+    let beta = (k * k - (x / 0.01).powi(2)).sqrt();
+    let want = emcraft_solver::Complex64::from_polar(1.0, -beta * 0.03);
+    eprintln!("m {m}: S11 {:.2e}, |S21 − exact| {:.2e}", s11.norm(), (s21 - want).norm());
+    assert!(s11.norm() < tol && (s21 - want).norm() < tol, "m {m}: S11 {s11}, S21 {s21}, exact {want}");
+}
+
+#[test]
+fn a_circular_guide_on_a_quarter_passes_its_rotating_modes() {
+    // TE11+ (ν = 1) and TM01 (ν = 0).
+    passes(1, 4.0, 12.0, X11P, 0.01);
+    passes(0, 4.0, 14.0, X01, 0.01);
+}
+
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn a_quarter_s_rotating_modes_converge() {
+    // TE21+ (ν = 2, with TE21− beside it): 3.0e-2, 4.5e-3, 8.9e-4 at 4, 3, 2 mm.
+    passes(2, 3.0, 17.0, X21P, 0.01);
+    passes(2, 2.0, 17.0, X21P, 2e-3);
+}
+
+/// The Bessel roots of TE11, TM01 and TE21's cut-offs (Abramowitz–Stegun, Table 9.5).
+const X11P: f64 = 1.841_183_781_340_659;
+const X01: f64 = 2.404_825_557_695_773;
+const X21P: f64 = 3.054_236_928_227_140;
+
+#[test]
+fn fields_beyond_the_sector_are_its_turns_phased() {
+    let mut s = guide_quarter(1, 5.0);
+    s.execute("solve.frequency", &json!({"frequencies": [12], "order": 1})).unwrap();
+    // A point in the sector and its turns by a quarter, a half and three quarters.
+    let r = s.execute("results.probe", &json!({"frequency": 12, "at": [[4, 1, 15], [-1, 4, 15], [-4, -1, 15], [1, -4, 15]]})).unwrap();
+    let e: Vec<[emcraft_solver::Complex64; 3]> = r["points"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| std::array::from_fn(|k| emcraft_solver::Complex64::new(p["e"][k][0].as_f64().unwrap(), p["e"][k][1].as_f64().unwrap())))
+        .collect();
+    let j = emcraft_solver::Complex64::new(0.0, 1.0);
+    for k in 1..4 {
+        // E(R r) = e^{−jπ/2} R E(r), once per quarter.
+        let mut want = e[0];
+        for _ in 0..k {
+            want = [-want[1] * -j, want[0] * -j, want[2] * -j];
+        }
+        for c in 0..3 {
+            assert!((e[k][c] - want[c]).norm() <= 1e-9 * e[0][0].norm().max(1.0), "turn {k}, component {c}: {} against {}", e[k][c], want[c]);
+        }
+    }
+    assert!(e[0][0].norm() > 0.0);
+    // The rotating mode's power: all of it through.
+    let p = s.execute("results.power", &json!({"frequency": 12})).unwrap();
+    assert!(p["reflected"].as_f64().unwrap() < 1e-3, "{p}");
 }

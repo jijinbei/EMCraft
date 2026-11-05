@@ -73,6 +73,7 @@ use crate::smatrix::SMatrix;
 use crate::sparse::Csr;
 
 mod assembly;
+pub mod cyclic;
 mod dofs;
 mod fields;
 mod floquet;
@@ -217,6 +218,8 @@ pub struct Driven {
     /// The model's periodic boundaries and the reduction they make (a unit cell).
     pub periodic: Option<emcraft_model::Periodic>,
     pub tie: Option<Tie>,
+    /// The model's rotational symmetry: the mesh is one sector, solved in its harmonic.
+    pub rotation: Option<emcraft_model::Rotation>,
     /// The symbolic factorization of the system's pattern, made at the first frequency and
     /// shared by the others (the pattern does not change with the frequency).
     analysis: std::sync::OnceLock<crate::ldlt::Analysis>,
@@ -358,8 +361,8 @@ impl Driven {
     }
 
     fn build(model: &Model, order: Order, ends: Ends, walls: Walls) -> Result<Driven> {
-        if model.rotation.is_some() && ends != Ends::Closed {
-            return Err(invalid("rotational symmetry", "not supported yet: only a cavity's modes are solved on a sector (solve.cyclic)"));
+        if model.rotation.is_some() && model.open.is_some() {
+            return Err(invalid("rotational symmetry", "not supported yet: an open boundary on a sector"));
         }
         let issues: Vec<String> =
             model.check().into_iter().filter(|i| ends == Ends::Ports || *i != emcraft_model::Issue::NoPorts).map(|i| i.to_string()).collect();
@@ -385,17 +388,14 @@ impl Driven {
             .ports
             .iter()
             .zip(&faces.ports)
-            .map(|(p, f)| match &model.periodic {
-                Some(per) => Ok(PortData {
-                    name: p.name.clone(),
-                    end: p.end,
-                    modes: PortModes::Floquet(Box::new(floquet::prepare(model, per, p, f)?)),
-                    reference: None,
-                    deembed: 0.0,
-                    terminals: 0,
-                    planes: Vec::new(),
-                }),
-                None => ports::prepare(model, p, &space, f),
+            .map(|(p, f)| {
+                let complex =
+                    |modes| PortData { name: p.name.clone(), end: p.end, modes, reference: None, deembed: 0.0, terminals: 0, planes: Vec::new() };
+                match (&model.periodic, &model.rotation) {
+                    (Some(per), _) => Ok(complex(PortModes::Floquet(Box::new(floquet::prepare(model, per, p, f)?)))),
+                    (None, Some(rot)) => Ok(complex(PortModes::Cyclic(Box::new(cyclic::prepare(model, rot, p, f)?)))),
+                    (None, None) => ports::prepare(model, p, &space, f),
+                }
             })
             .collect::<Result<Vec<_>>>()?;
         let lumped = model.lumped.iter().map(|lp| lumped::prepare(lp, &space)).collect::<Result<Vec<_>>>()?;
@@ -446,6 +446,7 @@ impl Driven {
             symmetry: model.symmetry.clone(),
             periodic: model.periodic,
             tie,
+            rotation: model.rotation,
             analysis: std::sync::OnceLock::new(),
             iterative: false,
             mesh,

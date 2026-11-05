@@ -1,5 +1,5 @@
 //! Fields from the solution coefficients: E and H at points (beyond a symmetry plane, the
-//! images of those inside), their L² error against an exact field, and integrals of them over
+//! images of those inside; beyond a rotational sector, the field inside turned on and phased), their L² error against an exact field, and integrals of them over
 //! the volume and the walls.
 
 use emcraft_model::units::angular;
@@ -16,27 +16,51 @@ impl Driven {
     /// The field (E in V/m or H in A/m) at a point for the coefficients `x` at `frequency`.
     /// Beyond a symmetry plane, the image of the field inside.
     pub fn field(&self, x: &[C], frequency: f64, which: Field, p: Point3) -> Option<CVec3> {
+        let (p, turns) = self.back_to_sector(p);
         let Image { point: q, e: se, h: sh } = Symmetry::image_through(&self.symmetry, p);
         let (t, _) = emcraft_mesh::locate(&self.mesh, q)?;
         let el = self.element_of(t).ok()?;
         let v = self.field_in((t, &el), el.barycentric(q), x, frequency, which);
-        Some(flipped(
+        let v = flipped(
             v,
             match which {
                 Field::E => se,
                 Field::H => sh,
             },
-        ))
+        );
+        Some(self.turned_on(v, turns))
+    }
+
+    /// A point beyond a rotational sector: the point inside it `k` sectors back, and k (0 within
+    /// it, and without a rotation).
+    fn back_to_sector(&self, p: Point3) -> (Point3, u32) {
+        let Some(r) = &self.rotation else { return (p, 0) };
+        let phi = (p.y - r.centre[1]).atan2(p.x - r.centre[0]);
+        let k = ((phi - r.start()).rem_euclid(std::f64::consts::TAU) / r.angle()).floor() as u32 % r.n.max(1);
+        (r.turned_by(p, -f64::from(k) * r.angle()), k)
+    }
+
+    /// A field inside the sector carried `k` sectors on: turned with them and times
+    /// e^{−jkψ}, the harmonic's phase per sector (the cyclic condition E(R r) = e^{−jψ} R E(r)).
+    fn turned_on(&self, v: CVec3, k: u32) -> CVec3 {
+        let Some(r) = self.rotation.as_ref().filter(|_| k > 0) else { return v };
+        let a = f64::from(k) * r.angle();
+        let (s, c) = a.sin_cos();
+        let phase = C::from_polar(1.0, -f64::from(k) * r.phase());
+        CVec3 { x: (v.x * c - v.y * s) * phase, y: (v.x * s + v.y * c) * phase, z: v.z * phase }
     }
 
     /// E and H at a point, `None` outside the mesh (beyond a symmetry plane, the image of the
     /// field inside).
     pub fn fields(&self, x: &[C], frequency: f64, p: Point3) -> Option<(CVec3, CVec3)> {
+        let (p, turns) = self.back_to_sector(p);
         let Image { point: q, e: se, h: sh } = Symmetry::image_through(&self.symmetry, p);
         let (t, _) = emcraft_mesh::locate(&self.mesh, q)?;
         let el = self.element_of(t).ok()?;
         let l = el.barycentric(q);
-        Some((flipped(self.field_in((t, &el), l, x, frequency, Field::E), se), flipped(self.field_in((t, &el), l, x, frequency, Field::H), sh)))
+        let (e, h) =
+            (flipped(self.field_in((t, &el), l, x, frequency, Field::E), se), flipped(self.field_in((t, &el), l, x, frequency, Field::H), sh));
+        Some((self.turned_on(e, turns), self.turned_on(h, turns)))
     }
 
     /// The field `which` at barycentric coordinates `l` of tetrahedron `t` (its element `el`).

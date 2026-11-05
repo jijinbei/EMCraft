@@ -253,6 +253,17 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   there by a magnetic or an electric wall, and beyond the plane the image of the half's (the
   ports' modes of that parity; fields shown beyond the plane).
 
+## Rotational symmetry (Cₙ)
+
+- J.-M. Jin, *The Finite Element Method in Electromagnetics*, 3rd ed., Wiley 2014, periodic
+  structures — the cyclic condition E(R r) = e^{−j2πm/n} R E(r) tying a sector's two cut faces,
+  by the master/slave reduction of the periodic cell (`emcraft-model::Rotation`,
+  `emcraft-solver::driven::periodic::Tie::rotational`, `emcraft-solver::bloch::cyclic_modes`).
+- N. Marcuvitz, *Waveguide Handbook*, McGraw-Hill 1951, §2.3; D. M. Pozar, *Microwave
+  Engineering*, 4th ed., Wiley 2012, §3.4 — a circular guide's modes; their standing cos/sin
+  polarizations a quarter-period apart sum to the rotating ones e^{∓jnφ} a sector's ports on its
+  axis take, in the Floquet ports' conjugate port condition (`emcraft-solver::driven::cyclic`).
+
 ## Bodies of revolution
 
 - J.-F. Lee, G. M. Wilkins, R. Mittra, *Finite-element analysis of axisymmetric cavity

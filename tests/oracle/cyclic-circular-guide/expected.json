@@ -1,0 +1,85 @@
+{
+ "title": "Empty circular waveguide, radius 10 mm, 30 mm long, on a quarter (rotational symmetry C4): rotating TE11+, TM01 and TE21+ transmission",
+ "kind": "theory",
+ "source": "Circular waveguide modes, S21 = exp(−jβL) with β = √(k0² − (x/a)²), x = x'₁₁ = 1.841183781340659 (TE11), x₀₁ = 2.404825557695773 (TM01), x'₂₁ = 3.054236928227140 (TE21) (M. Abramowitz, I. A. Stegun, Handbook of Mathematical Functions, 1964, Table 9.5; D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.4); a rotating mode e^{∓jnφ} is the sum of the two standing polarizations with a quarter-period between them and propagates alike",
+ "quantities": [
+  {
+   "id": "te11_phase_10_5",
+   "quantity": "phase of S21 at 10.5 GHz, TE11+ (degrees)",
+   "measure": {
+    "step": "m1",
+    "pointer": "/points/0/s21/deg"
+   },
+   "value": 152.81716026371134,
+   "tolerance": {
+    "absolute": 0.3
+   },
+   "reason": "3 mm tetrahedra of one quarter, second order, the wall curved: +0.04° over 30 mm near cut-off, as the whole guide (`circular-guide`, +0.03°)"
+  },
+  {
+   "id": "te11_mag_10_5",
+   "quantity": "|S21| at 10.5 GHz, TE11+",
+   "measure": {
+    "step": "m1",
+    "pointer": "/points/0/s21/mag"
+   },
+   "value": 1.0,
+   "tolerance": {
+    "absolute": 0.0001
+   },
+   "reason": "lossless: power is conserved; |S21| moves only by the small reflection"
+  },
+  {
+   "id": "te11_s11_10_5",
+   "quantity": "|S11| at 10.5 GHz, TE11+ (no discontinuity)",
+   "measure": {
+    "step": "m1",
+    "pointer": "/points/0/s11/mag"
+   },
+   "value": 0.0,
+   "tolerance": {
+    "absolute": 0.002
+   },
+   "reason": "the rotating Bessel modes at the ports against the sector's curved cross-section: 6e-5"
+  },
+  {
+   "id": "te11_phase_13_5",
+   "quantity": "phase of S21 at 13.5 GHz, TE11+ (degrees)",
+   "measure": {
+    "step": "m1",
+    "pointer": "/points/1/s21/deg"
+   },
+   "value": -9.277633913320471,
+   "tolerance": {
+    "absolute": 0.3
+   },
+   "reason": "as at 10.5 GHz, farther from cut-off: +0.06°"
+  },
+  {
+   "id": "tm01_phase_14",
+   "quantity": "phase of S21 at 14 GHz, TM01 (degrees)",
+   "measure": {
+    "step": "m0",
+    "pointer": "/points/0/s21/deg"
+   },
+   "value": 71.03268601359088,
+   "tolerance": {
+    "absolute": 0.5
+   },
+   "reason": "harmonic 0 on the same mesh (only the cut faces' phase moves): +0.04°"
+  },
+  {
+   "id": "te21_phase_17",
+   "quantity": "phase of S21 at 17 GHz, TE21+ (degrees)",
+   "measure": {
+    "step": "m2",
+    "pointer": "/points/0/s21/deg"
+   },
+   "value": 44.63691973319163,
+   "tolerance": {
+    "absolute": 0.5
+   },
+   "reason": "harmonic 2: two azimuthal periods over the turn, half of one across the quarter, the coarsest-resolved mode here: +0.26° (converging as the mesh is refined)"
+  }
+ ]
+}

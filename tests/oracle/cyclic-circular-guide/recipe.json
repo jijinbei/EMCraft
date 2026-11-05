@@ -1,0 +1,12 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 10, "length": 30}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}},
+ {"command": "model.rotation", "params": {"n": 4, "m": 1}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "solve.frequency", "params": {"frequencies": [10.5, 13.5], "order": 2}, "id": "m1"},
+ {"command": "model.rotation", "params": {"n": 4, "m": 0}},
+ {"command": "solve.frequency", "params": {"frequencies": [14], "order": 2}, "id": "m0"},
+ {"command": "model.rotation", "params": {"n": 4, "m": 2}},
+ {"command": "solve.frequency", "params": {"frequencies": [17], "order": 2}, "id": "m2"}
+]

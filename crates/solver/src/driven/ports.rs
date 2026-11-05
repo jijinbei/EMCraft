@@ -67,6 +67,9 @@ pub enum PortModes {
     /// A Floquet port on an end of a periodic cell ([`super::floquet`]): plane-wave harmonics
     /// whose vectors depend on the frequency and the incidence.
     Floquet(Box<super::floquet::FloquetPort>),
+    /// A port on the axis of a sector's rotation ([`super::cyclic`]): a circle's rotating
+    /// modes of the harmonic solved.
+    Cyclic(Box<super::cyclic::CyclicPort>),
 }
 
 /// A port whose modes come from [`crate::portmode`].
@@ -463,6 +466,22 @@ pub fn port_modes(model: &Model, order: Order, frequency: f64) -> Result<Vec<(St
         .ports
         .iter()
         .map(|p| {
+            // A sector's ports take the rotating modes of its harmonic.
+            if let (Some(rot), Ok(emcraft_model::PortShape::Circle { r, .. })) = (&model.rotation, model.port_shape_of(p)) {
+                let m = model.port_material(p.end)?;
+                let k = k0 * (m.eps_r.get() * m.mu_r.get()).sqrt();
+                let list = super::cyclic::rotating_modes(r, rot.centre, rot.n, rot.m, p.modes as usize)
+                    .iter()
+                    .map(|md| ModeInfo {
+                        name: md.name(),
+                        beta2: k * k - md.standing.cutoff().powi(2),
+                        closed_form: true,
+                        impedance: None,
+                        gamma: None,
+                    })
+                    .collect();
+                return Ok((p.name.clone(), list));
+            }
             let list = match closed_form_shape(model, p) {
                 Some(shape) => {
                     let m = model.port_material(p.end)?;

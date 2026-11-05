@@ -169,6 +169,19 @@ impl PortTerm<'_> {
 }
 
 impl Driven {
+    /// For a port of complex modes (a Floquet port, a sector's port on its axis), whether its
+    /// first mode propagates at `frequency`; `None` for the other ports, whose terms
+    /// ([`Driven::port_terms`]) say it with their γ.
+    pub fn complex_mode_propagates(&self, p: usize, frequency: f64) -> Result<Option<bool>> {
+        match self.ports.get(p).map(|x| &x.modes) {
+            Some(PortModes::Floquet(_) | PortModes::Cyclic(_)) => {
+                let (_, terms) = self.complex_terms(frequency)?;
+                Ok(Some(terms.get(p).and_then(|l| l.first()).is_some_and(|t| t.propagating)))
+            }
+            _ => Ok(None),
+        }
+    }
+
     /// Every port's terms at `frequency`, refusing it where a port's first mode carries no wave
     /// S can be read in: below its cut-off, a mode without an unconjugated power (a closed form
     /// below its cut-off has one: S is then read in pseudo-waves, [`super::sparams::read_s`]).
@@ -203,10 +216,8 @@ impl Driven {
                 let k = omega / C0 * (eps_r * mu_r).sqrt();
                 Some(0.5 * mode.norm() * fraction * mode.gamma(k).1 / (omega * MU0 * mu_r))
             }
-            PortModes::Floquet(fp) => {
-                let periodic = self.periodic.as_ref()?;
-                let (kx, ky) = super::floquet::incidence(periodic, fp, frequency);
-                let terms = self.floquet_terms(frequency, kx, ky).ok()?;
+            PortModes::Floquet(_) | PortModes::Cyclic(_) => {
+                let terms = self.complex_terms(frequency).ok()?.1;
                 Some(0.5 * terms.get(p)?.first()?.proxy / (omega * MU0))
             }
         }
@@ -273,9 +284,9 @@ impl Driven {
                 Some(modes) => self.lossy_numeric_terms(n, modes, frequency),
                 None => self.numeric_terms(n, k0, port.terminals, &port.planes),
             },
-            PortModes::Floquet(_) => Err(invalid(
+            PortModes::Floquet(_) | PortModes::Cyclic(_) => Err(invalid(
                 format!("port `{}`", port.name),
-                "a Floquet port's modes are complex: its terms come with the periodic solve (not supported yet: the fast sweep and the symmetric solver paths)",
+                "a Floquet or a sector's port's modes are complex: its terms come with the periodic solve (not supported yet: the fast sweep and the symmetric solver paths)",
             )),
         }
     }

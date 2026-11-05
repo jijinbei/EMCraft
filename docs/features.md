@@ -578,7 +578,7 @@ Finds the planes the model is symmetric about (its geometry, materials and ports
 
 ## `model.rotation` — Rotational symmetry
 
-Makes the model the same turned by 2π/`n` about an axis along z through `centre`: only one sector is meshed and solved, its two cut faces tied by e^{−j2πm/n} (the fields of the whole going as e^{−jm′φ} with m′ ≡ `m` mod n). The solid must be a cylinder or a sphere about its own axis, a box square across z (n = 4) or an imported surface whose vertices turn onto its vertices; not yet with inclusions, features, symmetry planes, periodic or open boundaries, ports or sources: a cavity's modes per harmonic (solve.cyclic). `clear` removes it. Drops the mesh.
+Makes the model the same turned by 2π/`n` about an axis along z through `centre`: only one sector is meshed and solved, its two cut faces tied by e^{−j2πm/n} (the fields of the whole going as e^{−jm′φ} with m′ ≡ `m` mod n). The solid must be a cylinder or a sphere about its own axis, a box square across z (n = 4) or an imported surface whose vertices turn onto its vertices; not yet with inclusions, features, symmetry planes, periodic or open boundaries, lumped ports or sources. A cavity's modes per harmonic come from solve.cyclic; a cylinder's ports on its ends (circles on the axis) take the rotating modes e^{−jνφ}, ν ≡ m mod n, in closed form, and solve.frequency gives harmonic m's S-parameters (TE11+ for m = 1, TM01 for m = 0). `clear` removes it. Drops the mesh, unless only `m` changes.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|

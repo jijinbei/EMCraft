@@ -293,6 +293,34 @@ impl Driven {
             .collect()
     }
 
+    /// The tie's phases and every port's complex modes' terms at `frequency`: a periodic cell's
+    /// Floquet ports at the incidence's phases, or a sector's ports on its axis at its harmonic's.
+    pub(super) fn complex_terms(&self, frequency: f64) -> Result<([f64; 3], Vec<Vec<FloquetTerm>>)> {
+        let (Some(tie), first) = (&self.tie, self.ports.first().map(|p| &p.modes)) else {
+            return Err(invalid("periodic solve", "the model is neither periodic nor a sector"));
+        };
+        match (&self.periodic, &self.rotation, first) {
+            (Some(periodic), _, Some(super::PortModes::Floquet(first))) => {
+                let (kx, ky) = incidence(periodic, first, frequency);
+                Ok((tie.phases(kx, ky, 0.0), self.floquet_terms(frequency, kx, ky)?))
+            }
+            (None, Some(rot), Some(_)) => {
+                let space = self.space();
+                let terms = self
+                    .ports
+                    .iter()
+                    .map(|p| match &p.modes {
+                        super::PortModes::Cyclic(cp) => cp.terms(&space, frequency),
+                        _ => Err(invalid(format!("port `{}`", p.name), "a sector's ports must lie on its axis")),
+                    })
+                    .collect::<Result<_>>()?;
+                Ok(([rot.phase(), 0.0, 0.0], terms))
+            }
+            (Some(_), _, _) => Err(super::SolveError::NotReady("no Floquet ports: create them with model.port.create on the cell's ends".into())),
+            _ => Err(super::SolveError::NotReady("no ports: create them with model.port.create on the solid's ends".into())),
+        }
+    }
+
     /// Solves the periodic cell at one frequency (checked by [`Driven::solve`]): Tᴴ A T
     /// bordered by the Floquet modes, by LU.
     pub(super) fn solve_periodic(&self, frequency: f64) -> Result<FrequencyResult> {
@@ -312,19 +340,12 @@ impl Driven {
     /// right-hand side of each port's excitation by its first mode, the modes' terms and the
     /// phases per period.
     fn periodic_system(&self, frequency: f64) -> Result<PeriodicSystem> {
-        let (Some(tie), Some(periodic)) = (&self.tie, &self.periodic) else { return Err(invalid("periodic solve", "the model is not periodic")) };
-        let Some(super::PortModes::Floquet(first)) = self.ports.first().map(|p| &p.modes) else {
-            return Err(super::SolveError::NotReady("no Floquet ports: create them with model.port.create on the cell's ends".into()));
-        };
-        let (kx, ky) = incidence(periodic, first, frequency);
-        let psi = tie.phases(kx, ky, 0.0);
-        let terms = self.floquet_terms(frequency, kx, ky)?;
+        let tie = self.tie.as_ref().ok_or_else(|| invalid("periodic solve", "the model is not periodic"))?;
+        let (psi, terms) = self.complex_terms(frequency)?;
         for (p, list) in self.ports.iter().zip(&terms) {
             if !list.first().is_some_and(|t| t.propagating) {
-                return Err(invalid(
-                    "frequency",
-                    format!("{frequency} Hz: the excited Floquet mode does not propagate at port `{}` (beyond grazing incidence there)", p.name),
-                ));
+                let why = if self.periodic.is_some() { "beyond grazing incidence there" } else { "below its cut-off" };
+                return Err(invalid("frequency", format!("{frequency} Hz: the excited mode does not propagate at port `{}` ({why})", p.name)));
             }
         }
         let reduced = tie.reduce(&self.unbordered(frequency)?.val, psi);
