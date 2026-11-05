@@ -505,3 +505,19 @@ fn dielectric_posts_round_the_axis_on_a_quarter_give_the_whole_s_modes() {
         }
     }
 }
+
+#[test]
+fn a_body_of_revolution_s_field_is_drawn() {
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 30})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 2})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "modes": 2})).unwrap();
+    let dir = std::env::temp_dir().join(format!("emcraft-bor-field-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("field.png");
+    let r = s.execute("view.revolution_field", &json!({"path": path.to_str().unwrap(), "frequency": 12, "m": 1, "size": 1})).unwrap();
+    assert_eq!(r["mode"], "TE11");
+    assert!(std::fs::metadata(&path).unwrap().len() > 1000);
+    assert!(s.execute("view.revolution_field", &json!({"path": path.to_str().unwrap(), "frequency": 12, "port": "9"})).is_err());
+    let _ = std::fs::remove_dir_all(&dir);
+}

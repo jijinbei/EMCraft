@@ -974,6 +974,20 @@ E (V/m) and H (A/m), complex, at points, for a solved frequency and an excited p
 | `at` | array | length | yes | points `[[x, y, z], …]` |
 | `excitation` | string |  | no | the excited port (default the driven one: view.driven) |
 
+## `view.revolution_field` — Body of revolution field
+
+Writes a PNG of the field of the model as a body of revolution (as solve.revolution.frequency solves it) on its meridian half-plane, for a unit wave of `port`'s first mode of order `m` into it: |E| in colour (E_r, E_z and E_φ together) and (E_r, E_z) at φ = 0 as arrows, the axis on the left; outside the body blank.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `path` | string |  | yes | PNG file to write |
+| `theme` | string |  | no | a built-in theme (`light`, the default, `dark`, `mono`, `graphite`, `sepia`, `midnight`, `forest`) or the path of a theme file (docs/themes.md) |
+| `frequency` | number | frequency | no | the frequency (default the band's top) |
+| `m` | integer |  | no | the azimuthal order, 0 to 64 (default 1) |
+| `port` | string |  | no | the port the wave comes in at (default the first) |
+| `size` | number | length | no | the triangles' size |
+| `width` | integer |  | no | picture width in pixels (default 600) |
+
 ## `view.port_mode` — Port mode picture
 
 Writes a PNG of a port mode's shape: its transverse E across the port's face, |E_t| in colour and E_t as arrows, conductors grey (from the closed forms, or the port's cross-section solved as solve.port_modes does). The amplitude is arbitrary; the subtitle says whether the mode propagates.

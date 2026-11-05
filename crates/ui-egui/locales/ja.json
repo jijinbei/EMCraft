@@ -1290,6 +1290,19 @@
         "excitation": "励振するポート（既定は駆動ポート：view.driven）"
       }
     },
+    "view.revolution_field": {
+      "label": "回転体の場",
+      "doc": "モデルを回転体として（solve.revolution.frequency と同じく）解いたときの子午面上の場の PNG を書く：`port` の次数 `m` の第 1 モードの単位入射波に対して、|E|（E_r、E_z、E_φ を合わせたもの）を色で、φ = 0 での (E_r, E_z) を矢印で描く。軸は左端、物体の外は空白。",
+      "params": {
+        "path": "書き出す PNG ファイル",
+        "theme": "組み込みテーマ（`light`（既定）、`dark`、`mono`、`graphite`、`sepia`、`midnight`、`forest`）またはテーマファイルのパス（docs/themes.md）",
+        "frequency": "周波数（既定は帯域の上端）",
+        "m": "方位次数 0〜64（既定 1）",
+        "port": "波が入るポート（既定は最初のもの）",
+        "size": "三角形の大きさ",
+        "width": "画像の幅（ピクセル、既定 600）"
+      }
+    },
     "view.port_mode": {
       "label": "ポートモード画像",
       "doc": "ポートモードの形状の PNG を書き出す：ポート面上の横方向 E。|E_t| を色、E_t を矢印で示し、導体は灰色（閉形式から、または solve.port_modes と同様にポートの断面を解いて求める）。振幅は任意。サブタイトルにモードが伝搬するかどうかを示す。",

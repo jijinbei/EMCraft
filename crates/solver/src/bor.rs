@@ -619,6 +619,12 @@ const GAUSS: [(f64, f64); 5] = [
 /// assert!(s_parameters(&p, 1, &[BorPort { z: 0.5, modes: 1 }], 12e9).is_err());
 /// ```
 pub fn s_parameters(p: &Profile, m: u32, ports: &[BorPort], frequency: f64) -> Result<BorSweepPoint> {
+    Ok(solved(p, m, ports, frequency)?.0)
+}
+
+/// [`s_parameters`] with the unknowns' numbering and each excitation's solution (port q's first
+/// mode, a unit wave in).
+fn solved(p: &Profile, m: u32, ports: &[BorPort], frequency: f64) -> Result<(BorSweepPoint, Dofs, Vec<Vec<C>>)> {
     if ports.is_empty() || ports.len() > 16 {
         return Err(invalid("ports", "1 to 16 ports on the profile's ends"));
     }
@@ -739,6 +745,7 @@ pub fn s_parameters(p: &Profile, m: u32, ports: &[BorPort], frequency: f64) -> R
     let mut s = crate::SMatrix::zeros(n_ports);
     let first: Vec<&Term> = terms.iter().map(|l| &l[0]).collect();
     let proxy = |t: &Term| t.norm * t.kappa.im;
+    let mut solutions = Vec::with_capacity(n_ports);
     for (q, tq) in first.iter().enumerate() {
         let mut x = vec![C::new(0.0, 0.0); d.count];
         for &(i, bi) in &tq.b {
@@ -751,8 +758,91 @@ pub fn s_parameters(p: &Profile, m: u32, ports: &[BorPort], frequency: f64) -> R
             let (wp, wq) = (proxy(tp), proxy(tq));
             s[(pp, q)] = if wp > 0.0 && wq > 0.0 { direct * (wp / wq).sqrt() } else { direct };
         }
+        solutions.push(x);
     }
-    Ok(BorSweepPoint { frequency, s, modes: first.iter().map(|t| t.name.clone()).collect(), unknowns: d.count })
+    let point = BorSweepPoint { frequency, s, modes: first.iter().map(|t| t.name.clone()).collect(), unknowns: d.count };
+    Ok((point, d, solutions))
+}
+
+/// The field of a body of revolution on its meridian half-plane: (E_r, E_z, E_φ) at φ = 0 on an
+/// `nx` × `ny` grid over the profile's box (r across, z up), none outside it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HalfPlaneField {
+    pub r: (f64, f64),
+    pub z: (f64, f64),
+    pub nx: usize,
+    pub ny: usize,
+    pub e: Vec<Option<[C; 3]>>,
+    /// The ports' first modes' S, as [`s_parameters`] gives them.
+    pub point: BorSweepPoint,
+}
+
+/// The most grid points of a [`HalfPlaneField`] along a side.
+pub const MAX_FIELD_SIDE: usize = 1024;
+
+/// The field in order `m` at `frequency` for a unit wave of port `excitation`'s first mode in
+/// (as [`s_parameters`] solves it), on a grid of `[nx, ny]` points: in each triangle, E_t from the edges'
+/// Whitney functions and E_φ = j v / r from the nodes' (the mode's own amplitude scale).
+pub fn field(p: &Profile, m: u32, ports: &[BorPort], frequency: f64, excitation: usize, [nx, ny]: [usize; 2]) -> Result<HalfPlaneField> {
+    if !(2..=MAX_FIELD_SIDE).contains(&nx) || !(2..=MAX_FIELD_SIDE).contains(&ny) {
+        return Err(invalid("grid", format!("2 to {MAX_FIELD_SIDE} points a side")));
+    }
+    let (point, d, xs) = solved(p, m, ports, frequency)?;
+    let x = xs.get(excitation).ok_or_else(|| invalid("excitation", "no such port"))?;
+    let (r0, r1, z0, z1) = p.points.iter().fold((f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY), |b, q| {
+        (b.0.min(q[0]), b.1.max(q[0]), b.2.min(q[1]), b.3.max(q[1]))
+    });
+    let at = |i: usize, j: usize| [r0 + (r1 - r0) * i as f64 / (nx - 1) as f64, z0 + (z1 - z0) * j as f64 / (ny - 1) as f64];
+    let mut e: Vec<Option<[C; 3]>> = vec![None; nx * ny];
+    for t in &p.triangles {
+        let q = t.map(|v| p.points.get(v as usize).copied().unwrap_or_default());
+        let det = (q[1][0] - q[0][0]) * (q[2][1] - q[0][1]) - (q[2][0] - q[0][0]) * (q[1][1] - q[0][1]);
+        if det.abs() <= 0.0 {
+            continue;
+        }
+        let g = [0, 1, 2].map(|i| {
+            let (j, k) = ((i + 1) % 3, (i + 2) % 3);
+            [(q[j][1] - q[k][1]) / det, (q[k][0] - q[j][0]) / det]
+        });
+        // The grid points in the triangle's box, then those inside it.
+        let (lo, hi) = (
+            [q[0][0].min(q[1][0]).min(q[2][0]), q[0][1].min(q[1][1]).min(q[2][1])],
+            [q[0][0].max(q[1][0]).max(q[2][0]), q[0][1].max(q[1][1]).max(q[2][1])],
+        );
+        let index = |v: f64, a: f64, b: f64, n: usize| ((v - a) / (b - a).max(f64::MIN_POSITIVE) * (n - 1) as f64).clamp(0.0, (n - 1) as f64);
+        let (i0, i1) = (index(lo[0], r0, r1, nx).ceil() as usize, index(hi[0], r0, r1, nx).floor() as usize);
+        let (j0, j1) = (index(lo[1], z0, z1, ny).ceil() as usize, index(hi[1], z0, z1, ny).floor() as usize);
+        for j in j0..=j1.min(ny - 1) {
+            for i in i0..=i1.min(nx - 1) {
+                let pt = at(i, j);
+                let lam = [0, 1, 2].map(|k| {
+                    let (a, b) = (q[(k + 1) % 3], q[(k + 2) % 3]);
+                    ((b[0] - a[0]) * (pt[1] - a[1]) - (pt[0] - a[0]) * (b[1] - a[1])) / det
+                });
+                if lam.iter().any(|&l| l < -1e-12) {
+                    continue;
+                }
+                let mut et = [C::new(0.0, 0.0); 2];
+                let mut v = C::new(0.0, 0.0);
+                for k in 0..3 {
+                    let (a, b) = (t[k], t[(k + 1) % 3]);
+                    if let Some(&u) = d.edge.get(&[a.min(b), a.max(b)]) {
+                        let (ii, jj) = if a < b { (k, (k + 1) % 3) } else { ((k + 1) % 3, k) };
+                        let c = x.get(u).copied().unwrap_or_default();
+                        for dim in 0..2 {
+                            et[dim] += c * (lam[ii] * g[jj][dim] - lam[jj] * g[ii][dim]);
+                        }
+                    }
+                    if let Some(Some(u)) = d.node.get(t[k] as usize) {
+                        v += x.get(*u).copied().unwrap_or_default() * lam[k];
+                    }
+                }
+                let ephi = if pt[0] > 1e-12 * r1.max(1e-300) { C::new(0.0, 1.0) * v / pt[0] } else { C::new(0.0, 0.0) };
+                e[j * nx + i] = Some([et[0], et[1], ephi]);
+            }
+        }
+    }
+    Ok(HalfPlaneField { r: (r0, r1), z: (z0, z1), nx, ny, e, point })
 }
 
 #[cfg(test)]
@@ -790,6 +880,20 @@ mod port_tests {
         passes(0, 14e9, 2.404_825_557_695_773, "TM01", 2e-3);
         passes(1, 12e9, 1.841_183_781_340_659, "TE11", 1e-2);
         passes(2, 17e9, 3.054_236_928_227_14, "TE21", 2e-2);
+    }
+
+    #[test]
+    fn a_travelling_tm01_has_no_azimuthal_e_and_a_steady_magnitude() {
+        let ports = [BorPort { z: 0.0, modes: 2 }, BorPort { z: 0.03, modes: 2 }];
+        let f = field(&guide(0.5e-3), 0, &ports, 14e9, 0, [21, 61]).unwrap();
+        let at = |i: usize, j: usize| f.e[j * f.nx + i].unwrap();
+        // Lowest-order edge functions vary within a triangle (about 10 % point to point): the
+        // means over the guide's two halves agree.
+        let mean = |js: std::ops::Range<usize>| js.clone().map(|j| at(10, j)[0].norm()).sum::<f64>() / js.len() as f64;
+        let (lo, hi) = (mean(5..30), mean(31..56));
+        assert!(hi > 0.0 && (hi - lo).abs() / hi < 0.03, "|E_r| at r = 5 mm: {lo} and {hi} over the two halves");
+        let ephi = f.e.iter().flatten().map(|e| e[2].norm()).fold(0.0f64, f64::max);
+        assert!(ephi < 1e-6 * hi, "E_φ {ephi}");
     }
 
     #[test]

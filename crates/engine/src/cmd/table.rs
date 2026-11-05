@@ -1276,6 +1276,23 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::results::probe,
     },
     CommandSpec {
+        id: "view.revolution_field",
+        label: "Body of revolution field",
+        doc: "Writes a PNG of the field of the model as a body of revolution (as solve.revolution.frequency solves it) on its meridian half-plane, for a unit wave of `port`'s first mode of order `m` into it: |E| in colour (E_r, E_z and E_φ together) and (E_r, E_z) at φ = 0 as arrows, the axis on the left; outside the body blank.",
+        params: &[
+            PNG,
+            THEME,
+            opt("frequency", K::Number, "the frequency (default the band's top)").of(F),
+            opt("m", K::Integer, "the azimuthal order, 0 to 64 (default 1)"),
+            opt("port", K::String, "the port the wave comes in at (default the first)"),
+            opt("size", K::Number, "the triangles' size").of(L),
+            opt("width", K::Integer, "picture width in pixels (default 600)"),
+        ],
+        effect: Effect::None,
+        invalidates: None,
+        run: crate::view::commands::revolution_field,
+    },
+    CommandSpec {
         id: "view.port_mode",
         label: "Port mode picture",
         doc: "Writes a PNG of a port mode's shape: its transverse E across the port's face, |E_t| in colour and E_t as arrows, conductors grey (from the closed forms, or the port's cross-section solved as solve.port_modes does). The amplitude is arbitrary; the subtitle says whether the mode propagates.",

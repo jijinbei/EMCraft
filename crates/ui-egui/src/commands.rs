@@ -113,6 +113,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("view.driven", None, Some(Glyph::Port), false),
     ui("view.chart.style", None, Some(Glyph::Chart), false),
     ui("results.probe", None, Some(Glyph::Probe), false),
+    ui("view.revolution_field", None, None, false),
     ui("view.port_mode", None, None, false),
     ui("results.tdr", Some("TDR"), Some(Glyph::Chart), false),
     ui("view.tdr", None, Some(Glyph::Chart), false),

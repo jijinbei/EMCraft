@@ -492,30 +492,8 @@ fn densest(pr: &emcraft_model::rotation::MeridianProfile) -> f64 {
 pub fn revolution_frequency(s: &mut Session, p: &Params) -> Result<Value> {
     let freqs = frequencies(s, p)?;
     let m = p.integer("m", 0..=64).or(1)? as u32;
-    let length = match s.model.solid.as_ref().map(|x| &x.shape) {
-        Some(emcraft_model::Shape::Cylinder { length, .. }) => length.get(),
-        _ => return Err(EngineError::failed("not supported yet: ports on a body of revolution other than a cylinder's ends")),
-    };
-    if s.model.ports.is_empty() {
-        return Err(EngineError::failed("no ports: create them on the cylinder's ends with model.port.create"));
-    }
-    let ports = s
-        .model
-        .ports
-        .iter()
-        .map(|x| match x.face {
-            None => Ok(emcraft_solver::bor::BorPort { z: if x.end == emcraft_model::End::Start { 0.0 } else { length }, modes: x.modes as usize }),
-            Some(_) => {
-                Err(EngineError::failed(format!("not supported yet: port {} on a face (a body of revolution's ports lie on its ends)", x.name)))
-            }
-        })
-        .collect::<Result<Vec<_>>>()?;
     let top = freqs.last().copied().unwrap_or(1e10);
-    let pr = s.model.meridian_profile(1e-3)?;
-    let span = pr.points.iter().fold(0.0f64, |a, q| a.max(q[0]).max(q[1].abs()));
-    let wavelength = emcraft_model::units::C0 / (top * densest(&pr).sqrt());
-    let size = p.positive_length("size").optional()?.unwrap_or_else(|| (wavelength / 40.0).min(span / 20.0));
-    let profile = profile_mesh(&pr, size)?;
+    let (profile, ports) = revolution_setup(s, p, top)?;
     let mut rows = Vec::with_capacity(freqs.len());
     let mut names = Vec::new();
     let mut unknowns = 0;
@@ -534,6 +512,35 @@ pub fn revolution_frequency(s: &mut Session, p: &Params) -> Result<Value> {
         unknowns = r.unknowns;
     }
     Ok(json!({"m": m, "modes": names, "points": rows, "triangles": profile.triangles.len(), "unknowns": unknowns}))
+}
+
+/// The model as a body of revolution with its ports on its cylinder's ends: its profile in
+/// triangles of `size` (default a fortieth of the wavelength at `top` Hz in its densest
+/// material, at most a twentieth of the profile) and its ports.
+pub(crate) fn revolution_setup(s: &Session, p: &Params, top: f64) -> Result<(emcraft_solver::bor::Profile, Vec<emcraft_solver::bor::BorPort>)> {
+    let length = match s.model.solid.as_ref().map(|x| &x.shape) {
+        Some(emcraft_model::Shape::Cylinder { length, .. }) => length.get(),
+        _ => return Err(EngineError::failed("not supported yet: ports on a body of revolution other than a cylinder's ends")),
+    };
+    if s.model.ports.is_empty() {
+        return Err(EngineError::failed("no ports: create them on the cylinder's ends with model.port.create"));
+    }
+    let ports = s
+        .model
+        .ports
+        .iter()
+        .map(|x| match x.face {
+            None => Ok(emcraft_solver::bor::BorPort { z: if x.end == emcraft_model::End::Start { 0.0 } else { length }, modes: x.modes as usize }),
+            Some(_) => {
+                Err(EngineError::failed(format!("not supported yet: port {} on a face (a body of revolution's ports lie on its ends)", x.name)))
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let pr = s.model.meridian_profile(1e-3)?;
+    let span = pr.points.iter().fold(0.0f64, |a, q| a.max(q[0]).max(q[1].abs()));
+    let wavelength = emcraft_model::units::C0 / (top * densest(&pr).sqrt());
+    let size = p.positive_length("size").optional()?.unwrap_or_else(|| (wavelength / 40.0).min(span / 20.0));
+    Ok((profile_mesh(&pr, size)?, ports))
 }
 
 /// `solve.cyclic`: a rotationally symmetric cavity's modes per harmonic, from its sector.

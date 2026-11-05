@@ -121,6 +121,63 @@ pub fn port_mode(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(reply)
 }
 
+/// `view.revolution_field`: the field of the model as a body of revolution on its meridian
+/// half-plane for a wave into one of its ports: |E| in colour, (E_r, E_z) as arrows (φ = 0, phase
+/// 0), the axis on the left.
+pub fn revolution_field(s: &mut Session, p: &Params) -> Result<Value> {
+    use emcraft_render::plot::{Arrows, FieldPlot, Scalar, ScalarKind};
+    let path = p.string("path").required()?;
+    let width = p.side("width", s.limits.picture_side, 600)?;
+    let frequency = args::frequency_or_band_top(s, p, "frequency", args::SET_THE_BAND)?;
+    let m = p.integer("m", 0..=64).or(1)? as u32;
+    let palette = crate::theme::palette_of(p)?;
+    let (profile, ports) = crate::solve::revolution_setup(s, p, frequency)?;
+    let excitation = match p.string("port").optional()? {
+        Some(name) => s.model.ports.iter().position(|x| x.name == name).ok_or_else(|| p.error("port", format!("no port `{name}`")))?,
+        None => 0,
+    };
+    let (r0, r1, z0, z1) = profile.points.iter().fold((f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY), |b, q| {
+        (b.0.min(q[0]), b.1.max(q[0]), b.2.min(q[1]), b.3.max(q[1]))
+    });
+    // Square cells: the longer side 160 points.
+    let side = 160.0 / (r1 - r0).max(z1 - z0).max(f64::MIN_POSITIVE);
+    let (nx, ny) = (((r1 - r0) * side).round().max(2.0) as usize, ((z1 - z0) * side).round().max(2.0) as usize);
+    let f = emcraft_solver::bor::field(&profile, m, &ports, frequency, excitation, [nx, ny])?;
+    let l = s.display.length;
+    let lu = l.symbol();
+    let magnitude: Vec<f64> = f.e.iter().map(|e| e.map_or(f64::NAN, |e| (e[0].norm_sqr() + e[1].norm_sqr() + e[2].norm_sqr()).sqrt())).collect();
+    let step = (nx.max(ny) / 20).max(1);
+    let mut arrows = Vec::new();
+    for j in (step / 2..ny).step_by(step) {
+        for i in (step / 2..nx).step_by(step) {
+            if let Some(e) = f.e[j * nx + i] {
+                let q = [r0 + (r1 - r0) * i as f64 / (nx - 1) as f64, z0 + (z1 - z0) * j as f64 / (ny - 1) as f64];
+                arrows.push(([l.from_si(q[0]), l.from_si(q[1])], [e[0].re, e[1].re]));
+            }
+        }
+    }
+    let fu = s.display.frequency;
+    let name = f.point.modes.get(excitation).cloned().unwrap_or_default();
+    let plot = FieldPlot {
+        title: format!(
+            "Body of revolution, m = {m}, {name} into port {}  f = {:.4} {}",
+            s.model.ports.get(excitation).map_or("", |x| x.name.as_str()),
+            fu.from_si(frequency),
+            fu.symbol()
+        ),
+        subtitle: "the meridian half-plane (axis on the left): |E| in colour, (E_r, E_z) at φ = 0".into(),
+        x: emcraft_render::Axis::new(&format!("r ({lu})"), l.from_si(r0), l.from_si(r1)),
+        y: emcraft_render::Axis::new(&format!("z ({lu})"), l.from_si(z0), l.from_si(z1)),
+        scalar: Some(Scalar { label: "$|E|$".into(), nx, ny, values: magnitude, kind: ScalarKind::Magnitude, range: None }),
+        arrows: vec![Arrows { label: "E (in plane)".into(), pen: emcraft_render::Pen::EArrows, arrows, scale: None }],
+        lines: Vec::new(),
+        arrow_length: l.from_si((r1 - r0).max(z1 - z0)) / 20.0 * 0.9,
+    };
+    let mut reply = write_plot(path, &plot, width, &palette)?;
+    reply["mode"] = json!(name);
+    Ok(reply)
+}
+
 /// The most frames an animation may have.
 pub const MAX_FRAMES: usize = 120;
 
