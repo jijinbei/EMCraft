@@ -367,3 +367,20 @@ fn a_board_shows_its_copper_by_role_with_its_heights_stretched() {
     assert!(hi[1] - lo[1] > 0.05 * (hi[0] - lo[0]), "{lo:?} {hi:?}");
     assert!(b.legend.iter().any(|(text, _)| text.starts_with("heights")));
 }
+
+/// With a symmetry plane only the side below it is meshed: the view frames that half, and each
+/// port's arrows stand on the middle of its part of the face (an E-plane bend halved across its
+/// broad side), not on the plane at the face's edge.
+#[test]
+fn a_halved_model_is_framed_and_its_ports_marked_on_the_half_that_is_there() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "td-e-bend"})).unwrap();
+    let half = s.model().symmetry[0].at;
+    let built = build(&s, Overlay::Plain);
+    let (_, hi) = built.bounds.unwrap();
+    assert!((hi[2] - half).abs() < 1e-12, "{hi:?}");
+    assert_eq!(built.arrows.len(), 3);
+    for a in &built.arrows {
+        assert!((a.start[2] - half / 2.0).abs() < 1e-12 && (a.end[2] - half / 2.0).abs() < 1e-12, "{a:?}");
+    }
+}

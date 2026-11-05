@@ -239,7 +239,17 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
         }
         return out;
     }
-    let mut out = Built { bounds: m.bounds().map(|b| (p3(b.min), p3(b.max))), ..Default::default() };
+    // Meshed, the model is the side below each symmetry plane: the view frames that.
+    let below = |(lo, mut hi): ([f64; 3], [f64; 3])| {
+        for s in m.symmetry.iter().filter(|_| m.mesh.is_some()) {
+            let k = s.axis.index();
+            if s.at > lo[k] {
+                hi[k] = hi[k].min(s.at);
+            }
+        }
+        (lo, hi)
+    };
+    let mut out = Built { bounds: m.bounds().map(|b| below((p3(b.min), p3(b.max)))), ..Default::default() };
     match &m.mesh {
         Some(_) => mesh::from_mesh(
             session,

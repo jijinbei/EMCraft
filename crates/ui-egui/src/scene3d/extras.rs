@@ -23,7 +23,18 @@ pub(super) fn port_face(m: &Model, p: &emcraft_model::Port) -> Vec<[[f64; 3]; 3]
     let on = |u: f64, v: f64| p3(frame.global(emcraft_model::Point3::new(u, v, w)));
     match m.port_shape_of(p) {
         Ok(emcraft_model::PortShape::Rect { x0, y0, a, b }) => {
-            let q = [on(x0, y0), on(x0 + a, y0), on(x0 + a, y0 + b), on(x0, y0 + b)];
+            // Meshed, only the side below each symmetry plane is there: the face's part of it.
+            let (u, v, _) = frame.axes();
+            let (mut x1, mut y1) = (x0 + a, y0 + b);
+            for s in m.symmetry.iter().filter(|_| m.mesh.is_some()) {
+                let k = s.axis.index();
+                if k == u && s.at > x0 {
+                    x1 = x1.min(s.at);
+                } else if k == v && s.at > y0 {
+                    y1 = y1.min(s.at);
+                }
+            }
+            let q = [on(x0, y0), on(x1, y0), on(x1, y1), on(x0, y1)];
             vec![[q[0], q[1], q[2]], [q[0], q[2], q[3]]]
         }
         Ok(emcraft_model::PortShape::Circle { cx, cy, r }) => {
