@@ -446,27 +446,42 @@ impl Renderer {
         }
     }
 
-    fn upload(&mut self, device: &wgpu::Device, p: &Packed) -> Result<(), Gpu3dError> {
+    /// The scene's vertices on the GPU, sent again only when the scene changed: into the
+    /// buffers it already has while they are big enough (no new allocation, nothing cleared
+    /// first), else into new ones.
+    fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, p: &Packed) -> Result<(), Gpu3dError> {
         if self.scene.as_ref().is_some_and(|s| s.id == p.id) {
             return Ok(());
         }
-        self.scene = None;
+        let old = self.scene.take();
         let max = self.caps.max_buffer;
-        let buffer = |label, bytes: &[u8], count: u32| {
-            (!bytes.is_empty() && (bytes.len() as u64) <= max).then(|| {
-                let b = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let refill = |kept: Option<(wgpu::Buffer, u32)>, label, bytes: &[u8], count: u32| {
+            let size = bytes.len() as u64;
+            if bytes.is_empty() || size > max {
+                return None;
+            }
+            if !size.is_multiple_of(wgpu::COPY_BUFFER_ALIGNMENT) {
+                let usage = wgpu::BufferUsages::VERTEX;
+                return Some((device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some(label), contents: bytes, usage }), count));
+            }
+            let b = match kept {
+                Some((b, _)) if b.size() >= size => b,
+                _ => device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some(label),
-                    contents: bytes,
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
-                (b, count)
-            })
+                    size,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }),
+            };
+            queue.write_buffer(&b, 0, bytes);
+            Some((b, count))
         };
+        let (opaque, glass, lines) = old.map_or((None, None, None), |s| (s.opaque, s.glass, s.lines));
         let s = scoped(device, || SceneBuffers {
             id: p.id,
-            opaque: buffer("emcraft_view3d_opaque", &p.opaque, p.opaque_vertices()),
-            glass: buffer("emcraft_view3d_glass", &p.glass, p.glass_vertices()),
-            lines: buffer("emcraft_view3d_lines", &p.lines, p.line_count()),
+            opaque: refill(opaque, "emcraft_view3d_opaque", &p.opaque, p.opaque_vertices()),
+            glass: refill(glass, "emcraft_view3d_glass", &p.glass, p.glass_vertices()),
+            lines: refill(lines, "emcraft_view3d_lines", &p.lines, p.line_count()),
         })
         .map_err(Gpu3dError::Frame)?;
         self.scene = Some(s);
@@ -604,7 +619,7 @@ impl Renderer {
         let size = [frame.size[0].clamp(1, side), frame.size[1].clamp(1, side)];
         let out = [frame.out[0].clamp(1, side), frame.out[1].clamp(1, side)];
         self.last = None;
-        self.upload(device, &frame.packed)?;
+        self.upload(device, queue, &frame.packed)?;
         self.targets(device, size)?;
         self.g_targets(device, out)?;
         self.upload_field(device, queue, frame)?;
