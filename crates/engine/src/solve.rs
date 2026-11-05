@@ -445,6 +445,29 @@ pub fn revolution(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"modes": shown, "triangles": profile.triangles.len(), "points": profile.points.len()}))
 }
 
+/// `solve.cyclic`: a rotationally symmetric cavity's modes per harmonic, from its sector.
+pub fn cyclic(s: &mut Session, p: &Params) -> Result<Value> {
+    let rot = s.model.rotation.ok_or_else(|| EngineError::failed("no rotational symmetry: set it with model.rotation"))?;
+    let near = crate::args::frequency_or_band_top(s, p, "frequency", crate::args::SET_THE_BAND)?;
+    let count = p.integer("count", 1..=emcraft_solver::bloch::MAX_BANDS).or(4)?;
+    let order = p.order()?;
+    let harmonics: Vec<u32> = match p.integer("m", 0..=rot.n as usize - 1).optional()? {
+        Some(m) => vec![m as u32],
+        None => (0..=rot.n / 2).collect(),
+    };
+    let mut rows = Vec::with_capacity(harmonics.len());
+    for (k, &m) in harmonics.iter().enumerate() {
+        crate::progress::report(k, harmonics.len(), "harmonic")?;
+        // The sector's mesh is the same for every harmonic: only the cut faces' phase moves.
+        let mut model = s.model.clone();
+        model.rotation = Some(emcraft_model::Rotation { m, ..rot });
+        let modes = emcraft_solver::bloch::cyclic_modes(&model, order, count, near)?;
+        let shown: Vec<f64> = modes.iter().map(|&f| s.show_frequency(f)).collect();
+        rows.push(json!({"m": m, "modes": shown}));
+    }
+    Ok(json!({"n": rot.n, "order": order.as_u8(), "harmonics": rows}))
+}
+
 pub fn port_modes(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!(port_modes_of(s, p)?))
 }

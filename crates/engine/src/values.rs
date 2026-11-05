@@ -55,6 +55,10 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
                 None => json!({}),
             }
         }
+        "model.rotation" => match m.rotation {
+            None => json!({}),
+            Some(r) => json!({"n": r.n, "m": r.m, "centre": [s.show_length(r.centre[0]), s.show_length(r.centre[1])]}),
+        },
         "model.periodic" => match m.periodic {
             None => json!({}),
             Some(q) => json!({

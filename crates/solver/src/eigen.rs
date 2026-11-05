@@ -408,6 +408,9 @@ pub fn eigenmodes(model: &Model, order: Order, count: usize, near: f64) -> Resul
         return Err(invalid("mode count", format!("must be 1 to {MAX_MODES}")));
     }
     check_frequency(near)?;
+    if model.rotation.is_some() {
+        return Err(invalid("eigenmodes", "a sector's modes depend on the harmonic: use solve.cyclic"));
+    }
     if model.periodic.is_some() {
         return Err(invalid("eigenmodes", "a periodic cell's eigenmodes depend on the phase across it: use solve.dispersion"));
     }

@@ -776,6 +776,20 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::solve::revolution,
     },
     CommandSpec {
+        id: "solve.cyclic",
+        label: "Cyclic modes",
+        doc: "The cavity modes of a rotationally symmetric model (model.rotation) from its meshed sector, per harmonic m: the `count` lowest eigenfrequencies of each above the null space, by shift-invert subspace iteration on the phase-tied (Hermitian) eigenproblem. Without `m`, the harmonics 0 to n/2 (m and n − m have the same frequencies: the fields turning either way). Put `frequency` a little above the highest mode wanted. The model is left as it is.",
+        params: &[
+            opt("frequency", K::Number, "the shift: a little above the highest mode wanted (default the band's top)").of(F),
+            opt("m", K::Integer, "one harmonic, 0 to n − 1 (default 0 to n/2)"),
+            opt("count", K::Integer, "modes per harmonic, 1 to 20 (default 4)"),
+            ORDER,
+        ],
+        effect: Effect::None,
+        invalidates: None,
+        run: crate::solve::cyclic,
+    },
+    CommandSpec {
         id: "model.symmetry.find",
         label: "Find symmetry",
         doc: "Finds the planes the model is symmetric about (its geometry, materials and ports; each axis' middle) and sets them, at most two: each wall from what its ports' TE10 asks for (magnetic across a broad side, electric across a narrow one). Without ports (an eigenmode search) either wall keeps a family of modes: `kind` chooses it. Refused when no plane is found.",
@@ -783,6 +797,20 @@ pub static COMMANDS: &[CommandSpec] = &[
         effect: Effect::Record,
         invalidates: Some(Change::Geometry),
         run: crate::geometry::find_symmetry,
+    },
+    CommandSpec {
+        id: "model.rotation",
+        label: "Rotational symmetry",
+        doc: "Makes the model the same turned by 2π/`n` about an axis along z through `centre`: only one sector is meshed and solved, its two cut faces tied by e^{−j2πm/n} (the fields of the whole going as e^{−jm′φ} with m′ ≡ `m` mod n). The solid must be a cylinder or a sphere about its own axis, a box square across z (n = 4) or an imported surface whose vertices turn onto its vertices; not yet with inclusions, features, symmetry planes, periodic or open boundaries, ports or sources: a cavity's modes per harmonic (solve.cyclic). `clear` removes it. Drops the mesh.",
+        params: &[
+            opt("n", K::Integer, "the sectors in a turn, 3 to 64 (required unless `clear`)"),
+            opt("m", K::Integer, "the harmonic, 0 to n − 1 (default 0)"),
+            opt("centre", K::Array, "the axis' [x, y] (default the solid's middle)").of(L),
+            opt("clear", K::Boolean, "remove the rotational symmetry"),
+        ],
+        effect: Effect::Record,
+        invalidates: Some(Change::Geometry),
+        run: crate::geometry::rotation,
     },
     CommandSpec {
         id: "model.periodic",

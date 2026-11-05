@@ -12,6 +12,7 @@ mod open;
 mod pcb_fem;
 mod project;
 mod properties;
+mod rotation;
 mod saved;
 mod session;
 mod sides;

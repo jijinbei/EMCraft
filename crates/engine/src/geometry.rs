@@ -676,3 +676,34 @@ pub fn measure(s: &mut Session, p: &Params) -> Result<Value> {
         "unit": l.symbol(),
     }))
 }
+
+/// `model.rotation`.
+pub fn rotation(s: &mut Session, p: &Params) -> Result<Value> {
+    if p.flag("clear").or(false)? {
+        if p.has("n") || p.has("m") || p.has("centre") {
+            return Err(p.error("clear", "takes nothing else"));
+        }
+        s.model.set_rotation(None)?;
+        return Ok(rotation_shown(s));
+    }
+    let max = emcraft_model::rotation::MAX_SECTORS as usize;
+    let n = p.integer("n", emcraft_model::rotation::MIN_SECTORS as usize..=max).required()?;
+    let m = p.integer("m", 0..=n - 1).or(0)?;
+    // The solid's middle across z by default: the axis of a cylinder, a sphere or a square box.
+    let middle = s.model.bounds().map(|b| vec![0.5 * (b.min[0] + b.max[0]), 0.5 * (b.min[1] + b.max[1])]);
+    let centre = p.lengths("centre").or_maybe(middle).required_or("no geometry to take the middle of")?;
+    let [x, y] = centre[..] else {
+        return Err(p.error("centre", "must be [x, y]"));
+    };
+    let rot = emcraft_model::Rotation::new(n as u32, m as u32, [x, y])?;
+    s.model.set_rotation(Some(rot))?;
+    Ok(rotation_shown(s))
+}
+
+/// The rotational symmetry as `model.rotation` replies it (in display units).
+pub(crate) fn rotation_shown(s: &Session) -> Value {
+    match s.model.rotation {
+        None => json!({"rotation": null}),
+        Some(r) => json!({"n": r.n, "m": r.m, "centre": [s.show_length(r.centre[0]), s.show_length(r.centre[1])], "fraction": 1.0 / f64::from(r.n)}),
+    }
+}

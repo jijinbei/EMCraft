@@ -358,6 +358,9 @@ impl Driven {
     }
 
     fn build(model: &Model, order: Order, ends: Ends, walls: Walls) -> Result<Driven> {
+        if model.rotation.is_some() && ends != Ends::Closed {
+            return Err(invalid("rotational symmetry", "not supported yet: only a cavity's modes are solved on a sector (solve.cyclic)"));
+        }
         let issues: Vec<String> =
             model.check().into_iter().filter(|i| ends == Ends::Ports || *i != emcraft_model::Issue::NoPorts).map(|i| i.to_string()).collect();
         if !issues.is_empty() {

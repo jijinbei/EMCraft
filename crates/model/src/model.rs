@@ -89,6 +89,8 @@ pub enum Issue {
     Symmetry(String),
     /// Periodic boundaries the model does not allow (why).
     Periodic(String),
+    /// A rotational symmetry the model does not allow (why).
+    Rotation(String),
     NoGeometry,
     NoPorts,
     NoMesh,
@@ -99,6 +101,7 @@ impl std::fmt::Display for Issue {
         match self {
             Issue::Symmetry(why) => write!(f, "symmetry: {why} (clear it with model.symmetry, clear true)"),
             Issue::Periodic(why) => write!(f, "periodic: {why} (clear it with model.periodic, clear true)"),
+            Issue::Rotation(why) => write!(f, "rotation: {why} (clear it with model.rotation, clear true)"),
             Issue::NoGeometry => f.write_str("no geometry: create one with geometry.waveguide or geometry.solid"),
             Issue::NoPorts => f.write_str("no ports: create one with model.port.create or model.port.lumped"),
             Issue::NoMesh => f.write_str("no mesh: mesh the geometry with mesh.generate"),
@@ -327,6 +330,9 @@ impl Model {
         }
         if let Some(why) = self.periodic_issue() {
             issues.push(Issue::Periodic(why));
+        }
+        if let Some(why) = self.rotation_issue() {
+            issues.push(Issue::Rotation(why));
         }
         if self.waveguide.is_none() && self.solid.is_none() {
             issues.push(Issue::NoGeometry);

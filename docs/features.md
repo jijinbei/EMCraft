@@ -557,6 +557,17 @@ The eigenmodes of a closed cavity invariant under rotation about the z axis, fro
 | `eps_r` | number |  | no | the filling's relative permittivity (default 1) |
 | `mu_r` | number |  | no | the filling's relative permeability (default 1) |
 
+## `solve.cyclic` — Cyclic modes
+
+The cavity modes of a rotationally symmetric model (model.rotation) from its meshed sector, per harmonic m: the `count` lowest eigenfrequencies of each above the null space, by shift-invert subspace iteration on the phase-tied (Hermitian) eigenproblem. Without `m`, the harmonics 0 to n/2 (m and n − m have the same frequencies: the fields turning either way). Put `frequency` a little above the highest mode wanted. The model is left as it is.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `frequency` | number | frequency | no | the shift: a little above the highest mode wanted (default the band's top) |
+| `m` | integer |  | no | one harmonic, 0 to n − 1 (default 0 to n/2) |
+| `count` | integer |  | no | modes per harmonic, 1 to 20 (default 4) |
+| `order` | integer |  | no | element order: 1 or 2 (default) |
+
 ## `model.symmetry.find` — Find symmetry
 
 Finds the planes the model is symmetric about (its geometry, materials and ports; each axis' middle) and sets them, at most two: each wall from what its ports' TE10 asks for (magnetic across a broad side, electric across a narrow one). Without ports (an eigenmode search) either wall keeps a family of modes: `kind` chooses it. Refused when no plane is found.
@@ -564,6 +575,17 @@ Finds the planes the model is symmetric about (its geometry, materials and ports
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `kind` | string |  | no | the wall for a plane no port decides: `electric` or `magnetic` |
+
+## `model.rotation` — Rotational symmetry
+
+Makes the model the same turned by 2π/`n` about an axis along z through `centre`: only one sector is meshed and solved, its two cut faces tied by e^{−j2πm/n} (the fields of the whole going as e^{−jm′φ} with m′ ≡ `m` mod n). The solid must be a cylinder or a sphere about its own axis, a box square across z (n = 4) or an imported surface whose vertices turn onto its vertices; not yet with inclusions, features, symmetry planes, periodic or open boundaries, ports or sources: a cavity's modes per harmonic (solve.cyclic). `clear` removes it. Drops the mesh.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `n` | integer |  | no | the sectors in a turn, 3 to 64 (required unless `clear`) |
+| `m` | integer |  | no | the harmonic, 0 to n − 1 (default 0) |
+| `centre` | array | length | no | the axis' [x, y] (default the solid's middle) |
+| `clear` | boolean |  | no | remove the rotational symmetry |
 
 ## `model.periodic` — Periodic boundaries
 

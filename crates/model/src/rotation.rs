@@ -84,3 +84,71 @@ impl Rotation {
         self.turned_by(p, self.angle())
     }
 }
+
+impl crate::Model {
+    /// Sets the rotational symmetry (none clears it) after checking the model allows it; the
+    /// mesh is dropped (a sector's is not the whole's).
+    pub fn set_rotation(&mut self, rotation: Option<Rotation>) -> Result<()> {
+        if let Some(why) = rotation.and_then(|r| self.rotation_issue_of(&r)) {
+            return Err(invalid("rotation", why));
+        }
+        self.rotation = rotation;
+        self.mesh = None;
+        Ok(())
+    }
+
+    /// Why the model's rotational symmetry cannot hold, if it cannot (the geometry may have
+    /// changed since it was set).
+    pub fn rotation_issue(&self) -> Option<String> {
+        self.rotation.as_ref().and_then(|r| self.rotation_issue_of(r))
+    }
+
+    /// Whether the model is the same turned by 2π/n about the axis: its solid (a cylinder or a
+    /// sphere about its own axis, a box square across z about its middle and n = 4, an imported
+    /// surface whose vertices turn onto its vertices), and nothing the sector cannot carry yet.
+    fn rotation_issue_of(&self, r: &Rotation) -> Option<String> {
+        let issue = || -> std::result::Result<(), String> {
+            let solid = self.solid.as_ref().ok_or("needs a solid (geometry.solid): a waveguide has no rotational symmetry to cut")?;
+            if self.waveguide.is_some() {
+                return Err("needs a solid, not a waveguide".into());
+            }
+            if !self.symmetry.is_empty() || self.periodic.is_some() || self.open.is_some() {
+                return Err("not supported yet: with symmetry planes, periodic boundaries or an open boundary".into());
+            }
+            if !self.features.is_empty() || !self.inclusions.is_empty() || !self.lumped.is_empty() || !self.sources.is_empty() {
+                return Err("not supported yet: with bodies, inclusions, lumped ports or sources (the solid alone)".into());
+            }
+            let b = solid.shape.bounds();
+            let scale = (b.max - b.min).norm().max(f64::MIN_POSITIVE);
+            let tol = 1e-9 * scale;
+            let on_axis = |x: f64, y: f64| (r.centre[0] - x).abs() <= tol && (r.centre[1] - y).abs() <= tol;
+            match &solid.shape {
+                crate::Shape::Cylinder { .. } | crate::Shape::Sphere { .. } if on_axis(0.0, 0.0) => Ok(()),
+                crate::Shape::Cylinder { .. } | crate::Shape::Sphere { .. } => Err("the axis must be the body's own: x = 0, y = 0".into()),
+                crate::Shape::Box { size } => {
+                    let square = (size.x - size.y).abs() <= tol;
+                    if !(square && r.n == 4) {
+                        return Err("a box turns onto itself only by quarter turns about its middle, and only when square across z (n = 4)".into());
+                    }
+                    if !on_axis(0.5 * size.x, 0.5 * size.y) {
+                        return Err(format!("the axis must be the box's middle: x = {} m, y = {} m", 0.5 * size.x, 0.5 * size.y));
+                    }
+                    Ok(())
+                }
+                crate::Shape::Surface { positions, .. } => {
+                    let key = |p: crate::Point3| {
+                        [(p.x / (1e-6 * scale)).round() as i64, (p.y / (1e-6 * scale)).round() as i64, (p.z / (1e-6 * scale)).round() as i64]
+                    };
+                    let keys: std::collections::BTreeSet<[i64; 3]> = positions.iter().map(|p| key(*p)).collect();
+                    let near = |k: [i64; 3]| (-1..=1).any(|i| (-1..=1).any(|j| (-1..=1).any(|l| keys.contains(&[k[0] + i, k[1] + j, k[2] + l]))));
+                    if positions.iter().all(|p| near(key(r.turned(*p)))) {
+                        Ok(())
+                    } else {
+                        Err(format!("the imported surface does not turn onto itself by 2π/{} about the axis", r.n))
+                    }
+                }
+            }
+        };
+        issue().err()
+    }
+}

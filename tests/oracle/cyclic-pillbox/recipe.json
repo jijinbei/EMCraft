@@ -1,0 +1,7 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 10, "length": 15}},
+ {"command": "model.rotation", "params": {"n": 4}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "solve.cyclic", "params": {"frequency": 19, "m": 0, "count": 2, "order": 2}, "id": "m0"},
+ {"command": "solve.cyclic", "params": {"frequency": 19, "m": 1, "count": 2, "order": 2}, "id": "m1"}
+]
