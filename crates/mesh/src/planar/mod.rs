@@ -354,6 +354,79 @@ fn second_pass(r: &Request, lattice: Lattice, top: [f64; 2], first: FirstPass) -
     Ok(compact(&mesh.points, &mesh.triangles, nets, lattice))
 }
 
+/// A simple polygon `ring` (metres, either way round) triangulated to about `size` (m): its
+/// points and counterclockwise triangles, on the lattice of [`lattice::STEP`] (so the same input
+/// gives the same mesh, and a point on x = 0 stays exactly there). Each edge is split to the size
+/// first; the inside is refined to it (Delaunay refinement).
+///
+/// ```
+/// // A 10 × 15 mm rectangle in 1 mm triangles.
+/// let ring = [[0.0, 0.0], [0.01, 0.0], [0.01, 0.015], [0.0, 0.015]];
+/// let (points, triangles) = emcraft_mesh::planar::polygon(&ring, 0.001)?;
+/// assert!(triangles.len() > 300 && points.iter().all(|p| (0.0..=0.01).contains(&p[0])));
+/// assert!(emcraft_mesh::planar::polygon(&ring[..2], 0.001).is_err());
+/// # Ok::<(), emcraft_mesh::MeshError>(())
+/// ```
+pub fn polygon(ring: &[[f64; 2]], size: f64) -> Result<(Vec<[f64; 2]>, Vec<[u32; 3]>)> {
+    if ring.len() < 3 || ring.len() > MAX_POINTS || !ring.iter().flatten().all(|v| v.is_finite()) {
+        return Err(invalid("a polygon needs 3 or more finite points"));
+    }
+    let (lo, hi) = ring
+        .iter()
+        .fold(([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]), |(lo, hi), p| ([lo[0].min(p[0]), lo[1].min(p[1])], [hi[0].max(p[0]), hi[1].max(p[1])]));
+    if hi[0] - lo[0] > MAX_SIDE || hi[1] - lo[1] > MAX_SIDE {
+        return Err(invalid(format!("a polygon at most {MAX_SIDE} m across")));
+    }
+    let extent = (hi[0] - lo[0]).max(hi[1] - lo[1]);
+    if !(size.is_finite() && size > 0.0) || extent / size > 4096.0 {
+        return Err(invalid("the element size must be finite, > 0 and at least 1/4096 of the polygon"));
+    }
+    let lattice = Lattice::new(lo);
+    let h = size / lattice::STEP;
+    let mut points = Points::default();
+    let mut ids: Vec<u32> = Vec::new();
+    for k in 0..ring.len() {
+        let (a, b) = (lattice.on(ring[k]), lattice.on(ring[(k + 1) % ring.len()]));
+        let n = ((b[0] - a[0]).hypot(b[1] - a[1]) / h).ceil().clamp(1.0, 1e5) as usize;
+        for i in 0..n {
+            let t = i as f64 / n as f64;
+            let id = points.id([(a[0] + t * (b[0] - a[0])).round(), (a[1] + t * (b[1] - a[1])).round()]);
+            if ids.last() != Some(&id) {
+                ids.push(id);
+            }
+        }
+    }
+    while ids.len() > 1 && ids.first() == ids.last() {
+        ids.pop();
+    }
+    if ids.len() < 3 {
+        return Err(invalid("a polygon with no area"));
+    }
+    let segments: Vec<([u32; 2], Kind)> = (0..ids.len()).map(|k| ([ids[k], ids[(k + 1) % ids.len()]], Kind::Outline)).collect();
+    let mut cdt = Cdt::build(&exact(&points.xy)?, &segments, MAX_TRIANGLES)?;
+    cdt.refine(&|_| h, &|_, _| true)?;
+    let t = cdt.into_triangulation();
+    let mut id = vec![u32::MAX; t.points.len()];
+    let mut out: Vec<[f64; 2]> = Vec::new();
+    let mut triangles = Vec::with_capacity(t.triangles.len());
+    for tri in &t.triangles {
+        let mut c = [0u32; 3];
+        for (k, &v) in tri.iter().enumerate() {
+            let slot = id.get_mut(v as usize).ok_or_else(|| invalid("a point id out of range"))?;
+            if *slot == u32::MAX {
+                *slot = out.len() as u32;
+                out.push(lattice.back(t.points.get(v as usize).copied().ok_or_else(|| invalid("a point id out of range"))?));
+            }
+            c[k] = *slot;
+        }
+        triangles.push(c);
+    }
+    if triangles.is_empty() {
+        return Err(invalid("a polygon with no area"));
+    }
+    Ok((out, triangles))
+}
+
 /// The points (as fractions of the way, strictly between 0 and 1) splitting the edge `a`–`b`
 /// into pieces of about the local size `size`: the k-th where ∫ ds / h reaches k times the whole
 /// integral over its rounded-up value (a graded spacing, finer where `size` is smaller). `finest`

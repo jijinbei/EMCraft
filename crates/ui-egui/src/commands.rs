@@ -71,6 +71,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("mesh.adapt", None, Some(Glyph::Mesh), true),
     ui("model.walls", Some("Walls"), Some(Glyph::Walls), false),
     ui("model.symmetry", Some("Symmetry"), Some(Glyph::Symmetry), false),
+    ui("solve.revolution", None, Some(Glyph::Cylinder), true),
     ui("model.symmetry.find", Some("Find symmetry"), Some(Glyph::Symmetry), false),
     ui("model.periodic", Some("Periodic boundaries"), Some(Glyph::Periodic), false),
     ui("model.port.create", Some("Port"), Some(Glyph::Port), false),

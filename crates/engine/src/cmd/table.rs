@@ -759,6 +759,23 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::geometry::symmetry,
     },
     CommandSpec {
+        id: "solve.revolution",
+        label: "Body of revolution",
+        doc: "The eigenmodes of a closed cavity invariant under rotation about the z axis, from its meridian profile: the polygon `points` [[r, z], …] (r ≥ 0; an edge on r = 0 is the axis, every other edge a perfect conductor) filled with one material, meshed in triangles of about `size` and solved per azimuthal order `m` on the half-plane — a 2D problem in place of the 3D one (hybrid edge/nodal elements, Lee–Wilkins–Mittra). The `count` modes of order `m` nearest `frequency`, lowest first. The model is left as it is.",
+        params: &[
+            req("points", K::Array, "the profile's corners [[r, z], …] in order, at least three, r ≥ 0").of(L),
+            req("frequency", K::Number, "the frequency to look near").of(F),
+            opt("m", K::Integer, "the azimuthal order, 0 to 64: the fields go as e^{−jmφ} (default 0)"),
+            opt("count", K::Integer, "the modes, 1 to 50 (default 5)"),
+            opt("size", K::Number, "the triangles' size (default a tenth of the wavelength at `frequency`, at most a twentieth of the profile)").of(L),
+            opt("eps_r", K::Number, "the filling's relative permittivity (default 1)"),
+            opt("mu_r", K::Number, "the filling's relative permeability (default 1)"),
+        ],
+        effect: Effect::None,
+        invalidates: None,
+        run: crate::solve::revolution,
+    },
+    CommandSpec {
         id: "model.symmetry.find",
         label: "Find symmetry",
         doc: "Finds the planes the model is symmetric about (its geometry, materials and ports; each axis' middle) and sets them, at most two: each wall from what its ports' TE10 asks for (magnetic across a broad side, electric across a narrow one). Without ports (an eigenmode search) either wall keeps a family of modes: `kind` chooses it. Refused when no plane is found.",

@@ -420,6 +420,31 @@ pub struct PortModeRow {
     pub closed_form: bool,
 }
 
+/// `solve.revolution`.
+pub fn revolution(s: &mut Session, p: &Params) -> Result<Value> {
+    let ring = p.pairs("points", 4096).required()?;
+    let near = p.hertz("frequency").required()?.get();
+    let m = p.integer("m", 0..=64).or(0)? as u32;
+    let count = p.integer("count", 1..=50).or(5)?;
+    let positive = |name: &str| -> Result<f64> {
+        let v = p.number(name).or(1.0)?;
+        if v.is_finite() && v > 0.0 { Ok(v) } else { Err(p.error(name, "must be a finite number > 0")) }
+    };
+    let (eps, mu) = (positive("eps_r")?, positive("mu_r")?);
+    let extent = ring.iter().fold([f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY], |b, q| {
+        [b[0].min(q[0]), b[1].max(q[0]), b[2].min(q[1]), b[3].max(q[1])]
+    });
+    let span = (extent[1] - extent[0]).max(extent[3] - extent[2]);
+    let wavelength = emcraft_model::units::C0 / (near * (eps * mu).sqrt());
+    let size = p.positive_length("size").optional()?.unwrap_or_else(|| (0.1 * wavelength).min(span / 20.0));
+    let (points, triangles) = emcraft_mesh::planar::polygon(&ring, size)?;
+    let material = vec![(eps, mu); triangles.len()];
+    let profile = emcraft_solver::bor::Profile { points, triangles, material };
+    let modes = emcraft_solver::bor::eigenmodes(&profile, m, count, near)?;
+    let shown: Vec<Value> = modes.iter().map(|md| json!({"frequency": s.show_frequency(md.frequency), "m": md.m})).collect();
+    Ok(json!({"modes": shown, "triangles": profile.triangles.len(), "points": profile.points.len()}))
+}
+
 pub fn port_modes(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!(port_modes_of(s, p)?))
 }

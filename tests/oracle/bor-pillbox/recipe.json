@@ -1,0 +1,4 @@
+[
+ {"command": "solve.revolution", "params": {"points": [[0, 0], [10, 0], [10, 15], [0, 15]], "frequency": 11, "m": 0, "count": 2, "size": 0.5}, "id": "m0"},
+ {"command": "solve.revolution", "params": {"points": [[0, 0], [10, 0], [10, 15], [0, 15]], "frequency": 13, "m": 1, "count": 2, "size": 0.5}, "id": "m1"}
+]
