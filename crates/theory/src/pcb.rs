@@ -235,148 +235,167 @@ pub fn inspect(board: &Board, net: &str, ground: &str) -> Result<Report, String>
         model_available: true,
         length: traces.iter().map(|s| distance(s.start, s.end)).sum(),
     };
-    let mut finding = |code, detail: String, segment: Option<String>| report.findings.push(Finding { code, detail, segment });
     match path(&traces) {
         Some(p) => report.path = p,
-        None => {
-            report.model_available = false;
-            finding(Code::RouteTopology, "Branched, disconnected or closed route: a two-terminal line model cannot represent it.".into(), None);
-        }
+        None => report.unmodelled(
+            Code::RouteTopology,
+            "Branched, disconnected or closed route: a two-terminal line model cannot represent it.".into(),
+            None,
+        ),
     }
     let signal_vias: Vec<_> = board.vias.iter().filter(|v| v.net == net).collect();
     if !signal_vias.is_empty() {
-        report.model_available = false;
-        finding(Code::ViaTransition, "Signal vias require a via/transition model; no two-port prediction is made.".into(), None);
+        report.unmodelled(Code::ViaTransition, "Signal vias require a via/transition model; no two-port prediction is made.".into(), None);
     }
     let mut budget = 1_000_000;
     for s in &traces {
-        let Some(index) = board.layers.iter().position(|l| l.name == s.layer) else {
-            return Err("unknown layer".into());
-        };
-        let reference = board
-            .layers
-            .iter()
-            .enumerate()
-            .filter(|(i, l)| *i != index && board.copper.iter().any(|c| c.net == ground && c.layer == l.name))
-            .min_by(|(_, a), (_, b)| (a.z - board.layers[index].z).abs().total_cmp(&(b.z - board.layers[index].z).abs()));
-        let Some((ri, plane)) = reference else {
-            report.model_available = false;
-            finding(Code::NoReference, format!("No filled {ground} reference copper on another layer."), Some(s.id.clone()));
-            continue;
-        };
-        let h = (plane.z - board.layers[index].z).abs();
-        let polys: Vec<&[[f64; 2]]> =
-            board.copper.iter().filter(|c| c.net == ground && c.layer == plane.name).map(|c| c.polygon.as_slice()).collect();
-        let uncovered = gaps(s.start, s.end, &polys, &mut budget)?;
-        if !uncovered.is_empty() {
-            report.model_available = false;
-            finding(
-                Code::ReturnGap,
-                format!("The route crosses missing {ground} copper on {}. Restore a continuous reference or reroute.", plane.name),
-                Some(s.id.clone()),
-            );
-        }
-        let d = sub(s.end, s.start);
-        let len = distance(s.start, s.end);
-        let offset = [-d[1] / len * (h + s.width / 2.0), d[0] / len * (h + s.width / 2.0)];
-        for sign in [-1.0, 1.0] {
-            let a = [s.start[0] + sign * offset[0], s.start[1] + sign * offset[1]];
-            let b = [s.end[0] + sign * offset[0], s.end[1] + sign * offset[1]];
-            if !gaps(a, b, &polys, &mut budget)?.is_empty() {
-                report.model_available = false;
-                finding(
-                    Code::ReferenceEdge,
-                    "Reference copper is missing within h + W/2 of this route; infinite-plane impedance is not applicable.".into(),
-                    Some(s.id.clone()),
-                );
-                break;
-            }
-        }
-        let dielectric = index.min(ri);
-        let er = board.layers[dielectric].eps_below;
-        let outer = index == 0 || index + 1 == board.layers.len();
-        if !outer || index.abs_diff(ri) != 1 || !(0.01..=100.0).contains(&(s.width / h)) {
-            report.model_available = false;
-            finding(
-                Code::UnsupportedCrossSection,
-                "Only adjacent-plane outer microstrip within 0.01 ≤ W/h ≤ 100 is supported by this model.".into(),
-                Some(s.id.clone()),
-            );
-        }
-        let ee = microstrip::eps_eff(s.width / h, er);
-        let impedance = microstrip::z0(s.width / h, er);
-        if !impedance.is_finite() || !ee.is_finite() {
-            return Err("non-finite line estimate".into());
-        }
-        report.sections.push(Section {
-            id: s.id.clone(),
-            reference: plane.name.clone(),
-            length: len,
-            h,
-            impedance,
-            delay: len * ee.sqrt() / C0,
-            uncovered,
-        });
-        for other in board.segments.iter().filter(|o| o.net != net && o.net != ground && o.layer == s.layer) {
-            if budget == 0 {
-                return Err("coupling screening work limit exceeded".into());
-            }
-            budget -= 1;
-            let gap = [
-                near(other.start, s.start, s.end).0,
-                near(other.end, s.start, s.end).0,
-                near(s.start, other.start, other.end).0,
-                near(s.end, other.start, other.end).0,
-            ]
-            .into_iter()
-            .fold(f64::INFINITY, f64::min)
-                - (s.width + other.width) / 2.0;
-            let od = sub(other.end, other.start);
-            let parallel = cross(d, od).abs() / (len * distance(other.start, other.end));
-            if gap < 3.0 * h && parallel < 0.1 {
-                finding(
-                    Code::NearbySignal,
-                    format!(
-                        "{} runs close and parallel (gap {:0.3e} m). This is geometric screening, not calculated crosstalk.",
-                        other.net,
-                        gap.max(0.0)
-                    ),
-                    Some(s.id.clone()),
-                );
-                break;
-            }
-        }
+        screen(board, s, ground, &mut report, &mut budget)?;
     }
     if report.sections.len() != traces.len() {
         report.model_available = false;
     }
-    for via in signal_vias {
-        let refs: BTreeSet<_> = report.sections.iter().map(|s| s.reference.as_str()).collect();
-        if refs.len() < 2 {
-            continue;
-        }
-        let stitched = board.vias.iter().any(|v| {
-            v.net == ground
-                && distance(v.at, via.at) <= 0.002
-                && refs.iter().all(|r| {
-                    let i = board.layers.iter().position(|l| l.name == *r);
-                    let a = board.layers.iter().position(|l| l.name == v.layers[0]);
-                    let b = board.layers.iter().position(|l| l.name == v.layers[1]);
-                    match (i, a, b) {
-                        (Some(i), Some(a), Some(b)) => i >= a.min(b) && i <= a.max(b),
-                        _ => false,
-                    }
-                })
-        });
-        if !stitched {
-            finding(
-                Code::MissingReturnVia,
-                "No reference-net via within 2 mm spanning the selected reference layers. Verify the return transition.".into(),
-                None,
-            );
+    let refs: BTreeSet<_> = report.sections.iter().map(|s| s.reference.clone()).collect();
+    if refs.len() >= 2 {
+        for via in signal_vias {
+            if !stitched(board, via.at, &refs, ground) {
+                report.note(
+                    Code::MissingReturnVia,
+                    "No reference-net via within 2 mm spanning the selected reference layers. Verify the return transition.".into(),
+                    None,
+                );
+            }
         }
     }
     Ok(report)
+}
+
+impl Report {
+    fn note(&mut self, code: Code, detail: String, segment: Option<&Segment>) {
+        self.findings.push(Finding { code, detail, segment: segment.map(|s| s.id.clone()) });
+    }
+
+    /// A finding that leaves the net without its line model.
+    fn unmodelled(&mut self, code: Code, detail: String, segment: Option<&Segment>) {
+        self.model_available = false;
+        self.note(code, detail, segment);
+    }
+}
+
+/// Segment `s` of the net screened against its `ground` reference: the nearest reference
+/// layer, the gaps under and beside it, its cross-section and line estimate (a [`Section`]),
+/// and a nearby signal. `budget` bounds the work shared by every segment.
+fn screen(board: &Board, s: &Segment, ground: &str, report: &mut Report, budget: &mut usize) -> Result<(), String> {
+    let Some(index) = board.layers.iter().position(|l| l.name == s.layer) else {
+        return Err("unknown layer".into());
+    };
+    let reference = board
+        .layers
+        .iter()
+        .enumerate()
+        .filter(|(i, l)| *i != index && board.copper.iter().any(|c| c.net == ground && c.layer == l.name))
+        .min_by(|(_, a), (_, b)| (a.z - board.layers[index].z).abs().total_cmp(&(b.z - board.layers[index].z).abs()));
+    let Some((ri, plane)) = reference else {
+        report.unmodelled(Code::NoReference, format!("No filled {ground} reference copper on another layer."), Some(s));
+        return Ok(());
+    };
+    let h = (plane.z - board.layers[index].z).abs();
+    let polys: Vec<&[[f64; 2]]> = board.copper.iter().filter(|c| c.net == ground && c.layer == plane.name).map(|c| c.polygon.as_slice()).collect();
+    let uncovered = gaps(s.start, s.end, &polys, budget)?;
+    if !uncovered.is_empty() {
+        report.unmodelled(
+            Code::ReturnGap,
+            format!("The route crosses missing {ground} copper on {}. Restore a continuous reference or reroute.", plane.name),
+            Some(s),
+        );
+    }
+    let d = sub(s.end, s.start);
+    let len = distance(s.start, s.end);
+    let offset = [-d[1] / len * (h + s.width / 2.0), d[0] / len * (h + s.width / 2.0)];
+    for sign in [-1.0, 1.0] {
+        let a = [s.start[0] + sign * offset[0], s.start[1] + sign * offset[1]];
+        let b = [s.end[0] + sign * offset[0], s.end[1] + sign * offset[1]];
+        if !gaps(a, b, &polys, budget)?.is_empty() {
+            report.unmodelled(
+                Code::ReferenceEdge,
+                "Reference copper is missing within h + W/2 of this route; infinite-plane impedance is not applicable.".into(),
+                Some(s),
+            );
+            break;
+        }
+    }
+    let dielectric = index.min(ri);
+    let er = board.layers[dielectric].eps_below;
+    let outer = index == 0 || index + 1 == board.layers.len();
+    if !outer || index.abs_diff(ri) != 1 || !(0.01..=100.0).contains(&(s.width / h)) {
+        report.unmodelled(
+            Code::UnsupportedCrossSection,
+            "Only adjacent-plane outer microstrip within 0.01 ≤ W/h ≤ 100 is supported by this model.".into(),
+            Some(s),
+        );
+    }
+    let ee = microstrip::eps_eff(s.width / h, er);
+    let impedance = microstrip::z0(s.width / h, er);
+    if !impedance.is_finite() || !ee.is_finite() {
+        return Err("non-finite line estimate".into());
+    }
+    report.sections.push(Section {
+        id: s.id.clone(),
+        reference: plane.name.clone(),
+        length: len,
+        h,
+        impedance,
+        delay: len * ee.sqrt() / C0,
+        uncovered,
+    });
+    if let Some((other, gap)) = nearby_signal(board, s, ground, h, budget)? {
+        report.note(
+            Code::NearbySignal,
+            format!("{other} runs close and parallel (gap {:0.3e} m). This is geometric screening, not calculated crosstalk.", gap.max(0.0)),
+            Some(s),
+        );
+    }
+    Ok(())
+}
+
+/// The first other signal on `s`'s layer that runs parallel within 3h of it, and the gap
+/// between their edges (m).
+fn nearby_signal<'b>(board: &'b Board, s: &Segment, ground: &str, h: f64, budget: &mut usize) -> Result<Option<(&'b str, f64)>, String> {
+    let d = sub(s.end, s.start);
+    let len = distance(s.start, s.end);
+    for other in board.segments.iter().filter(|o| o.net != s.net && o.net != ground && o.layer == s.layer) {
+        if *budget == 0 {
+            return Err("coupling screening work limit exceeded".into());
+        }
+        *budget -= 1;
+        let gap = [
+            near(other.start, s.start, s.end).0,
+            near(other.end, s.start, s.end).0,
+            near(s.start, other.start, other.end).0,
+            near(s.end, other.start, other.end).0,
+        ]
+        .into_iter()
+        .fold(f64::INFINITY, f64::min)
+            - (s.width + other.width) / 2.0;
+        let od = sub(other.end, other.start);
+        let parallel = cross(d, od).abs() / (len * distance(other.start, other.end));
+        if gap < 3.0 * h && parallel < 0.1 {
+            return Ok(Some((other.net.as_str(), gap)));
+        }
+    }
+    Ok(None)
+}
+
+/// Whether a `ground` via within 2 mm of `at` spans every reference layer of `refs`.
+fn stitched(board: &Board, at: [f64; 2], refs: &BTreeSet<String>, ground: &str) -> bool {
+    let layer = |name: &str| board.layers.iter().position(|l| l.name == name);
+    board.vias.iter().any(|v| {
+        v.net == ground
+            && distance(v.at, at) <= 0.002
+            && refs.iter().all(|r| match (layer(r), layer(&v.layers[0]), layer(&v.layers[1])) {
+                (Some(i), Some(a), Some(b)) => i >= a.min(b) && i <= a.max(b),
+                _ => false,
+            })
+    })
 }
 
 /// S11 and S21 at `frequency` (Hz) of the route's sections cascaded as lossless lines, referred
