@@ -3,13 +3,12 @@
 //! metres whose triangles carry their B-rep face, and each face's exact surface from the design
 //! itself, not fitted.
 
+use std::sync::{Arc, Mutex, PoisonError};
+
 use emcraft_model::{FaceSurface, Point3, Vec3};
 use solidcraft_exchange as sx;
 
 use crate::{Error, MAX_COORD, MAX_TRIANGLES, Result, Surface};
-
-/// Metres per millimetre: the snapshot's lengths are millimetres.
-const MM: f64 = 1e-3;
 
 /// A body of a design: its surface, each face's persistent name and exact surface (by tag).
 #[derive(Clone, Debug, PartialEq)]
@@ -37,6 +36,24 @@ fn failed(e: sx::Error) -> Error {
     Error::Invalid(format!("SolidCraft design: {e}"))
 }
 
+/// The design last opened, by its bytes: a template's card redrawn as its parameters change
+/// reads the same design again and again, and a kept design recomputes only the features the
+/// changed parameters reach. One design is kept.
+static LAST: Mutex<Option<(Vec<u8>, Arc<sx::Design>)>> = Mutex::new(None);
+
+/// The design of `bytes`, the one kept when it is the same file.
+fn design(bytes: &[u8]) -> Result<Arc<sx::Design>> {
+    let mut last = LAST.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some((kept, design)) = last.as_ref()
+        && kept.as_slice() == bytes
+    {
+        return Ok(Arc::clone(design));
+    }
+    let design = Arc::new(sx::open(bytes).map_err(failed)?);
+    *last = Some((bytes.to_vec(), Arc::clone(&design)));
+    Ok(design)
+}
+
 /// The design's parameters as it stores them.
 ///
 /// ```
@@ -49,15 +66,14 @@ fn failed(e: sx::Error) -> Error {
 /// assert!(emcraft_io::solidcraft::is_design("post.solidcraft") && !emcraft_io::solidcraft::is_design("post.3mf"));
 /// ```
 pub fn parameters(bytes: &[u8]) -> Result<Vec<Parameter>> {
-    let design = sx::open(bytes).map_err(failed)?;
-    Ok(design
+    Ok(design(bytes)?
         .parameters()
         .into_iter()
         .map(|p| {
-            let value = match p.value {
-                sx::ParameterValue::Quantity(sx::Quantity::Length(l)) => Some(l.0),
-                sx::ParameterValue::Quantity(sx::Quantity::Angle(a)) => Some(a.to_degrees()),
-                sx::ParameterValue::Quantity(sx::Quantity::Number(n)) => Some(n),
+            let value = match p.quantity() {
+                Some(sx::Quantity::Length(l)) => Some(l.0),
+                Some(sx::Quantity::Angle(a)) => Some(a.to_degrees()),
+                Some(sx::Quantity::Number(n)) => Some(n),
                 _ => None,
             };
             Parameter { name: p.name.0, value, unit: p.display_unit }
@@ -68,16 +84,12 @@ pub fn parameters(bytes: &[u8]) -> Result<Vec<Parameter>> {
 /// The design's bodies with `overrides` (parameter name, expression as the design takes it:
 /// `3 mm`, `w / 2`) at chord tolerance `tolerance_mm`.
 pub fn read(bytes: &[u8], overrides: &[(String, String)], tolerance_mm: Option<f64>) -> Result<Vec<Body>> {
-    let design = sx::open(bytes).map_err(failed)?;
-    let mut options = sx::Options::default();
-    for (name, expression) in overrides {
-        options = options.with_override(name.as_str(), expression.as_str());
-    }
+    let mut options = sx::Options::default().with_overrides(overrides.iter().map(|(n, e)| (n.as_str(), e.as_str())));
     if let Some(t) = tolerance_mm {
         options = options.with_tolerance(sx::Tolerance::Absolute(t));
     }
-    let snapshot = design.snapshot(&options).map_err(failed)?;
-    let triangles: usize = snapshot.bodies.iter().flat_map(|b| &b.faces).map(|f| f.triangles.len()).sum();
+    let snapshot = design(bytes)?.snapshot(&options).map_err(failed)?;
+    let triangles = snapshot.triangle_count();
     if triangles > MAX_TRIANGLES {
         return Err(Error::Invalid(format!("the design's bodies have {triangles} triangles; at most {MAX_TRIANGLES} are read")));
     }
@@ -85,7 +97,7 @@ pub fn read(bytes: &[u8], overrides: &[(String, String)], tolerance_mm: Option<f
 }
 
 fn point(p: sx::Point) -> Point3 {
-    let [x, y, z] = p.0.map(|c| c * MM);
+    let [x, y, z] = p.to_metres();
     Point3::new(x, y, z)
 }
 
@@ -99,22 +111,17 @@ fn body(b: &sx::Body) -> Result<Body> {
     if positions.iter().flat_map(|p| p.to_array()).any(|c| !c.is_finite() || c.abs() > MAX_COORD) {
         return Err(Error::Invalid(format!("body `{}`: a coordinate is out of range", b.name)));
     }
-    let mut surface = Surface { name: b.name.to_string(), positions, ..Surface::default() };
-    for f in &b.faces {
-        for t in &f.triangles {
-            surface.triangles.push(t.map(|v| v.0));
-            surface.tags.push(f.index.0);
-        }
-    }
+    let (triangles, tags) = b.tagged_triangles();
+    let surface = Surface { name: b.name.to_string(), positions, triangles, tags };
     let surfaces = b
         .faces
         .iter()
         .map(|f| match f.surface {
             sx::Surface::Plane { point: p, normal } => Some(FaceSurface::Plane { normal: vector(normal), point: point(p) }),
             sx::Surface::Cylinder { origin, axis, radius } => {
-                Some(FaceSurface::Cylinder { origin: point(origin), axis: vector(axis), radius: radius.0 * MM })
+                Some(FaceSurface::Cylinder { origin: point(origin), axis: vector(axis), radius: radius.to_metres() })
             }
-            sx::Surface::Sphere { center, radius } => Some(FaceSurface::Sphere { center: point(center), radius: radius.0 * MM }),
+            sx::Surface::Sphere { center, radius } => Some(FaceSurface::Sphere { center: point(center), radius: radius.to_metres() }),
             sx::Surface::Cone { apex, axis, half_angle } => {
                 Some(FaceSurface::Cone { apex: point(apex), axis: vector(axis), half_angle: half_angle.0 })
             }
@@ -123,4 +130,32 @@ fn body(b: &sx::Body) -> Result<Body> {
         })
         .collect();
     Ok(Body { surface, face_names: b.faces.iter().map(|f| f.name.to_string()).collect(), surfaces })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const POST: &[u8] = include_bytes!("../../../tests/oracle/design-post/post.solidcraft");
+
+    /// The same file is opened once and its design kept; another file replaces it; the kept
+    /// design gives what a fresh one gives.
+    #[test]
+    fn the_last_design_is_kept_by_its_bytes() {
+        let a = design(POST).unwrap();
+        assert!(Arc::ptr_eq(&a, &design(POST).unwrap()), "the same bytes reuse the design");
+        let fresh: Vec<Body> = {
+            let d = sx::open(POST).unwrap();
+            let s = d.snapshot(&sx::Options::default().with_override("d", "4 mm")).unwrap();
+            s.bodies.iter().map(body).collect::<Result<_>>().unwrap()
+        };
+        let overrides = [("d".to_string(), "4 mm".to_string())];
+        let _ = read(POST, &[], None).unwrap();
+        assert_eq!(read(POST, &overrides, None).unwrap(), fresh, "a kept design gives what a fresh one does");
+        let mut other = POST.to_vec();
+        other.push(b' ');
+        if let Ok(b) = design(&other) {
+            assert!(!Arc::ptr_eq(&a, &b), "other bytes open their own design");
+        }
+    }
 }

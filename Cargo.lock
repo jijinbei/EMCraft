@@ -229,15 +229,6 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "approx"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f2a05fd1bd10b2527e20a2cd32d8873d115b8b39fe219ee25f42a8aca6ba278"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
-name = "approx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cab112f0a86d568ea0e627cc1d6be74a1e9cd55214684db5561995f6dad897c6"
@@ -293,12 +284,6 @@ dependencies = [
  "quote",
  "syn 2.0.119",
 ]
-
-[[package]]
-name = "array-macro"
-version = "2.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "220a2c618ab466efe41d0eace94dfeff1c35e3aa47891bdb95e1c0fefffd3c99"
 
 [[package]]
 name = "arrayvec"
@@ -589,15 +574,6 @@ dependencies = [
 
 [[package]]
 name = "branches"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f11502672c5570f77f6bdf573332483f8475bab6a7fda00f1fae8ddb5a6245c0"
-dependencies = [
- "rustc_version",
-]
-
-[[package]]
-name = "branches"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7436b21fd6195415058eb41c9090e156b556bc7e0377bb57c5c026a421521525"
@@ -673,9 +649,9 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "cadmpeg-codec-freecad"
-version = "0.6.3"
+version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c4a8fa61748cbb3ce80838b00a8cebfe553460583941f5aba6e2b97c16b4d37"
+checksum = "6fe0ed1935ace2c203b87107a064818dec2bb2ec2f250c4ad121767f3da75d1b"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
@@ -689,9 +665,9 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-rhino"
-version = "0.6.3"
+version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7af41440d4c1d69e88e612de02cc3c9bad79d03429531e640ac924fef53c6bf"
+checksum = "7dd2b76bd1d9301c949fbd731fd22cff9d37d10d1f481c754b557c2187bd0171"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
@@ -708,9 +684,9 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-step"
-version = "0.6.3"
+version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35e1b6d17cf26b31f59f2edab8ef5c29d2a33216c581fd913f012ad4869bd559"
+checksum = "f3cbce33ed681a28b62d8b01ae64cca2b01f11f31b9a3e5e2455b9ffde915712"
 dependencies = [
  "base64 0.23.1",
  "cadmpeg-container",
@@ -725,9 +701,9 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-container"
-version = "0.6.3"
+version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ab7bcef48ac7480b4917820272d85cd2c9533e17904e15b0e4d22f19a6045bd"
+checksum = "03f0d1c22b875294c5fbf4a4738aec8f8c0a4ad035eb28ece404f1dec21f371a"
 dependencies = [
  "cadmpeg-core",
  "crc32fast",
@@ -737,9 +713,9 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-core"
-version = "0.6.3"
+version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e86bb7a40521832504bb1f5953a1c706b2c52aad73bf6d84e1b35e5cb0beae3f"
+checksum = "795bdc6e2a10ecc0627138874c17e2948a3925cd22c6c6b0c2e4f6621d92f89c"
 dependencies = [
  "flate2",
  "memchr",
@@ -752,9 +728,9 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-ir"
-version = "0.6.3"
+version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b570a1a8c579e407a9fd7bb10fa1900f8827f1d578b8fcb4ea2a056b5f323c72"
+checksum = "5592036516aaf2574b159a86a3d1ae872dc245261de86e4c0ce6773fed00a249"
 dependencies = [
  "base64 0.23.1",
  "cadmpeg-core",
@@ -767,9 +743,9 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-registry"
-version = "0.6.3"
+version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2be23469a9bca0b684f1811118fffb581ebd32ded08e6cc8b0716a41f8c1377"
+checksum = "fc163233d5f664337267192848505854de6aeed4843181adf87f58baddcee9a0"
 dependencies = [
  "cadmpeg-codec-freecad",
  "cadmpeg-codec-rhino",
@@ -878,17 +854,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ced0551234e87afee12411d535648dd89d2e7f34c78b753395567aff3d447ff"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "cgmath"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a98d30140e3296250832bbaaff83b27dcd6fa3cc70fb6f1f3e5c9c0023b5317"
-dependencies = [
- "approx 0.4.0",
- "num-traits",
- "serde",
 ]
 
 [[package]]
@@ -1040,12 +1005,6 @@ name = "constcat"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "136d3e02915a2cea4d74caa8681e2d44b1c3254bdbf17d11d41d587ff858832c"
-
-[[package]]
-name = "convert_case"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 
 [[package]]
 name = "convert_case"
@@ -1273,7 +1232,7 @@ dependencies = [
  "cfg_aliases",
  "cubecl-environment",
  "derive-new",
- "derive_more 2.1.1",
+ "derive_more",
  "float4",
  "float8",
  "half",
@@ -1303,7 +1262,7 @@ dependencies = [
  "cubecl-runtime",
  "cubecl-zspace",
  "derive-new",
- "derive_more 2.1.1",
+ "derive_more",
  "float-ord",
  "half",
  "hashbrown 0.17.1",
@@ -1331,7 +1290,7 @@ dependencies = [
  "cubecl-opt",
  "cubecl-runtime",
  "derive-new",
- "derive_more 2.1.1",
+ "derive_more",
  "half",
  "itertools 0.15.0",
  "log",
@@ -1394,7 +1353,7 @@ checksum = "47ce80124d1638f8c1207e5067b8ce1e33fd908a243276924f53f03ca306de37"
 dependencies = [
  "async-channel",
  "backtrace",
- "branches 0.4.6",
+ "branches",
  "bytemuck",
  "cfg-if",
  "cfg_aliases",
@@ -1468,7 +1427,7 @@ dependencies = [
  "cubecl-environment",
  "cubecl-macros-internal",
  "derive-new",
- "derive_more 2.1.1",
+ "derive_more",
  "float-ord",
  "foldhash 0.2.0",
  "half",
@@ -1517,7 +1476,7 @@ checksum = "32f3157901f432ac7ff1e9d40ece3183e8bafd9111c7e5502f5bf661928c8b13"
 dependencies = [
  "darling 0.24.1",
  "derive-new",
- "derive_more 2.1.1",
+ "derive_more",
  "ident_case",
  "inflections",
  "itertools 0.15.0",
@@ -1590,7 +1549,7 @@ dependencies = [
  "cubecl-environment",
  "cubecl-ir",
  "derive-new",
- "derive_more 2.1.1",
+ "derive_more",
  "downcast-rs 2.0.2",
  "foldhash 0.2.0",
  "hashbrown 0.17.1",
@@ -1618,7 +1577,7 @@ dependencies = [
  "cubecl-monitoring",
  "cubecl-zspace",
  "derive-new",
- "derive_more 2.1.1",
+ "derive_more",
  "foldhash 0.2.0",
  "futures-util",
  "hashbrown 0.17.1",
@@ -1649,7 +1608,7 @@ dependencies = [
  "cubecl-runtime",
  "cubecl-zspace",
  "derive-new",
- "derive_more 2.1.1",
+ "derive_more",
  "foldhash 0.2.0",
  "futures-util",
  "hashbrown 0.17.1",
@@ -1723,7 +1682,7 @@ dependencies = [
  "cubecl-server",
  "cubecl-spirv",
  "derive-new",
- "derive_more 2.1.1",
+ "derive_more",
  "half",
  "hashbrown 0.17.1",
  "itertools 0.15.0",
@@ -1851,19 +1810,6 @@ checksum = "2cdc8d50f426189eef89dac62fabfa0abb27d5cc008f25bf4156a0203325becc"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "derive_more"
-version = "0.99.20"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6edb4b64a43d977b8e99788fe3a04d483834fba1215a7e02caa415b626497f7f"
-dependencies = [
- "convert_case 0.4.0",
- "proc-macro2",
- "quote",
- "rustc_version",
  "syn 2.0.119",
 ]
 
@@ -2234,7 +2180,7 @@ dependencies = [
 name = "emcraft-engine"
 version = "0.1.0"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "emcraft-fdtd",
  "emcraft-fem",
  "emcraft-gpu",
@@ -2257,7 +2203,7 @@ dependencies = [
 name = "emcraft-fdtd"
 version = "0.1.0"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "emcraft-model",
  "emcraft-theory",
  "num-complex",
@@ -2268,7 +2214,7 @@ dependencies = [
 name = "emcraft-fem"
 version = "0.1.0"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "emcraft-model",
  "num-complex",
  "thiserror 2.0.21",
@@ -2293,7 +2239,7 @@ dependencies = [
 name = "emcraft-io"
 version = "0.1.0"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "emcraft-model",
  "proptest",
  "quick-xml 0.42.0",
@@ -2314,7 +2260,7 @@ dependencies = [
 name = "emcraft-mesh"
 version = "0.1.0"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "emcraft-fem",
  "emcraft-model",
  "emcraft-tetmesh",
@@ -2326,7 +2272,7 @@ dependencies = [
 name = "emcraft-model"
 version = "0.1.0"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "emcraft-macros",
  "num-complex",
  "serde",
@@ -2339,7 +2285,7 @@ name = "emcraft-render"
 version = "0.1.0"
 dependencies = [
  "ab_glyph",
- "approx 0.5.1",
+ "approx",
  "emcraft-macros",
  "emcraft-model",
  "png",
@@ -2349,7 +2295,7 @@ dependencies = [
 name = "emcraft-solver"
 version = "0.1.0"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "emcraft-fem",
  "emcraft-mesh",
  "emcraft-model",
@@ -2371,7 +2317,7 @@ dependencies = [
 name = "emcraft-testkit"
 version = "0.1.0"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "emcraft-engine",
  "emcraft-macros",
  "serde",
@@ -2383,7 +2329,7 @@ dependencies = [
 name = "emcraft-tetmesh"
 version = "0.1.0"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "num-bigint",
  "num-rational",
  "num-traits",
@@ -2395,7 +2341,7 @@ dependencies = [
 name = "emcraft-theory"
 version = "0.1.0"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "emcraft-fem",
  "emcraft-macros",
  "emcraft-model",
@@ -2409,7 +2355,7 @@ dependencies = [
 name = "emcraft-ui-egui"
 version = "0.1.0"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "eframe",
  "egui",
  "emcraft-engine",
@@ -3710,15 +3656,6 @@ dependencies = [
 
 [[package]]
 name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
@@ -3818,17 +3755,6 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "katexit"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ccfb0b7ce7938f84a5ecbdca5d0a991e46bc9d6d078934ad5e92c5270fe547db"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
 ]
 
 [[package]]
@@ -4035,16 +3961,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1525a2a28c7f4fa0fc98bb91ae755d1e2d1505079e05539e35bc876b5d65ae9"
 dependencies = [
  "regex-automata",
-]
-
-[[package]]
-name = "matext4cgmath"
-version = "0.1.0"
-source = "git+https://github.com/jijinbei/solidcraft?rev=3390d0511e9f97a530114fc845fe26bc424b8fd6#3390d0511e9f97a530114fc845fe26bc424b8fd6"
-dependencies = [
- "cgmath",
- "katexit",
- "num-complex",
 ]
 
 [[package]]
@@ -5152,7 +5068,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae0a48754284b6cd23479c3736f328e7443aa1ca06db82d07ee6afeeb3c3ea47"
 dependencies = [
  "derive-new",
- "derive_more 2.1.1",
+ "derive_more",
  "itertools 0.15.0",
  "pliron",
  "thiserror 2.0.21",
@@ -5312,30 +5228,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e67ba7e9b2b56446f1d419b1d807906278ffa1a658a8a5d8a39dcb1f5a78614f"
 dependencies = [
  "toml_edit",
-]
-
-[[package]]
-name = "proc-macro-error"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da25490ff9892aab3fcf7c36f08cfb902dd3e71ca0f9f9517bea02a73a5ce38c"
-dependencies = [
- "proc-macro-error-attr",
- "proc-macro2",
- "quote",
- "syn 1.0.109",
- "version_check",
-]
-
-[[package]]
-name = "proc-macro-error-attr"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1be40180e52ecc98ad80b184934baf3d0d29f979574e439af5a55274b35f869"
-dependencies = [
- "proc-macro2",
- "quote",
- "version_check",
 ]
 
 [[package]]
@@ -5683,15 +5575,6 @@ checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
-]
-
-[[package]]
-name = "rclite"
-version = "0.2.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e09665c494a9de2bd230e1aedc0c2fb20481a51f28f7db84d0c9bcfe2fe537b2"
-dependencies = [
- "branches 0.3.0",
 ]
 
 [[package]]
@@ -6381,9 +6264,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4fdfe13e1c42e45f497416afb8dc4e783bf0e25b7be9077c1c77c5fb14cb998"
 
 [[package]]
+name = "solidcore"
+version = "1.0.1"
+source = "git+https://github.com/tangency-labs/solidcore?rev=8ddce901671f1cebd9214a31d21895d725e886c8#8ddce901671f1cebd9214a31d21895d725e886c8"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "solidcore-record"
+version = "0.1.0"
+source = "git+https://github.com/tangency-labs/solidcore?rev=f5e8e9a29e0c9b7cf6c4040a5bc8878382b3c62f#f5e8e9a29e0c9b7cf6c4040a5bc8878382b3c62f"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "solidcraft-derive"
-version = "0.26.1"
-source = "git+https://github.com/jijinbei/solidcraft?rev=3390d0511e9f97a530114fc845fe26bc424b8fd6#3390d0511e9f97a530114fc845fe26bc424b8fd6"
+version = "0.40.0-rc.2"
+source = "git+https://github.com/jijinbei/solidcraft?rev=18caf68b91ccddaff456ee6bb013e94f1867b14d#18caf68b91ccddaff456ee6bb013e94f1867b14d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6392,16 +6293,18 @@ dependencies = [
 
 [[package]]
 name = "solidcraft-doc"
-version = "0.26.1"
-source = "git+https://github.com/jijinbei/solidcraft?rev=3390d0511e9f97a530114fc845fe26bc424b8fd6#3390d0511e9f97a530114fc845fe26bc424b8fd6"
+version = "0.40.0-rc.2"
+source = "git+https://github.com/jijinbei/solidcraft?rev=18caf68b91ccddaff456ee6bb013e94f1867b14d#18caf68b91ccddaff456ee6bb013e94f1867b14d"
 dependencies = [
  "log",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "solidcore-record",
  "solidcraft-derive",
  "solidcraft-geom",
  "solidcraft-kernel",
+ "solidcraft-profile",
  "solidcraft-render",
  "solidcraft-sketch",
  "thiserror 2.0.21",
@@ -6410,11 +6313,12 @@ dependencies = [
 
 [[package]]
 name = "solidcraft-exchange"
-version = "0.26.1"
-source = "git+https://github.com/jijinbei/solidcraft?rev=3390d0511e9f97a530114fc845fe26bc424b8fd6#3390d0511e9f97a530114fc845fe26bc424b8fd6"
+version = "0.40.0-rc.2"
+source = "git+https://github.com/jijinbei/solidcraft?rev=18caf68b91ccddaff456ee6bb013e94f1867b14d#18caf68b91ccddaff456ee6bb013e94f1867b14d"
 dependencies = [
  "serde",
  "serde_json",
+ "solidcore-record",
  "solidcraft-doc",
  "solidcraft-geom",
  "solidcraft-io",
@@ -6424,17 +6328,18 @@ dependencies = [
 
 [[package]]
 name = "solidcraft-geom"
-version = "0.26.1"
-source = "git+https://github.com/jijinbei/solidcraft?rev=3390d0511e9f97a530114fc845fe26bc424b8fd6#3390d0511e9f97a530114fc845fe26bc424b8fd6"
+version = "0.40.0-rc.2"
+source = "git+https://github.com/jijinbei/solidcraft?rev=18caf68b91ccddaff456ee6bb013e94f1867b14d#18caf68b91ccddaff456ee6bb013e94f1867b14d"
 dependencies = [
  "serde",
+ "solidcore-record",
  "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "solidcraft-io"
-version = "0.26.1"
-source = "git+https://github.com/jijinbei/solidcraft?rev=3390d0511e9f97a530114fc845fe26bc424b8fd6#3390d0511e9f97a530114fc845fe26bc424b8fd6"
+version = "0.40.0-rc.2"
+source = "git+https://github.com/jijinbei/solidcraft?rev=18caf68b91ccddaff456ee6bb013e94f1867b14d#18caf68b91ccddaff456ee6bb013e94f1867b14d"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
@@ -6449,58 +6354,94 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "solidcore-record",
  "solidcraft-doc",
  "solidcraft-geom",
  "solidcraft-kernel",
+ "solidcraft-profile",
  "thiserror 2.0.21",
  "zip",
 ]
 
 [[package]]
 name = "solidcraft-kernel"
-version = "0.26.1"
-source = "git+https://github.com/jijinbei/solidcraft?rev=3390d0511e9f97a530114fc845fe26bc424b8fd6#3390d0511e9f97a530114fc845fe26bc424b8fd6"
+version = "0.40.0-rc.2"
+source = "git+https://github.com/jijinbei/solidcraft?rev=18caf68b91ccddaff456ee6bb013e94f1867b14d#18caf68b91ccddaff456ee6bb013e94f1867b14d"
 dependencies = [
  "log",
  "rayon",
  "serde",
  "serde_json",
+ "solidcore-record",
  "solidcraft-geom",
+ "solidcraft-profile",
+ "solidcraft-smlib",
+ "solidcraft-step",
  "spade",
  "thiserror 2.0.21",
- "truck-meshalgo",
- "truck-modeling",
- "truck-shapeops",
- "truck-stepio",
- "truck-topology",
+ "web-time",
+]
+
+[[package]]
+name = "solidcraft-profile"
+version = "0.40.0-rc.2"
+source = "git+https://github.com/jijinbei/solidcraft?rev=18caf68b91ccddaff456ee6bb013e94f1867b14d#18caf68b91ccddaff456ee6bb013e94f1867b14d"
+dependencies = [
+ "serde_json",
  "web-time",
 ]
 
 [[package]]
 name = "solidcraft-render"
-version = "0.26.1"
-source = "git+https://github.com/jijinbei/solidcraft?rev=3390d0511e9f97a530114fc845fe26bc424b8fd6#3390d0511e9f97a530114fc845fe26bc424b8fd6"
+version = "0.40.0-rc.2"
+source = "git+https://github.com/jijinbei/solidcraft?rev=18caf68b91ccddaff456ee6bb013e94f1867b14d#18caf68b91ccddaff456ee6bb013e94f1867b14d"
 dependencies = [
  "image",
  "moxcms",
  "png",
  "serde",
  "sha2 0.10.9",
+ "solidcore-record",
  "solidcraft-geom",
+ "web-time",
  "weezl",
 ]
 
 [[package]]
 name = "solidcraft-sketch"
-version = "0.26.1"
-source = "git+https://github.com/jijinbei/solidcraft?rev=3390d0511e9f97a530114fc845fe26bc424b8fd6#3390d0511e9f97a530114fc845fe26bc424b8fd6"
+version = "0.40.0-rc.2"
+source = "git+https://github.com/jijinbei/solidcraft?rev=18caf68b91ccddaff456ee6bb013e94f1867b14d#18caf68b91ccddaff456ee6bb013e94f1867b14d"
 dependencies = [
  "harfrust",
  "serde",
+ "solidcore-record",
  "solidcraft-geom",
  "thiserror 2.0.21",
  "ttf-parser",
  "unicode-bidi",
+]
+
+[[package]]
+name = "solidcraft-smlib"
+version = "0.40.0-rc.2"
+source = "git+https://github.com/jijinbei/solidcraft?rev=18caf68b91ccddaff456ee6bb013e94f1867b14d#18caf68b91ccddaff456ee6bb013e94f1867b14d"
+dependencies = [
+ "log",
+ "serde_json",
+ "solidcore",
+ "solidcore-record",
+ "solidcraft-geom",
+ "solidcraft-profile",
+]
+
+[[package]]
+name = "solidcraft-step"
+version = "0.40.0-rc.2"
+source = "git+https://github.com/jijinbei/solidcraft?rev=18caf68b91ccddaff456ee6bb013e94f1867b14d#18caf68b91ccddaff456ee6bb013e94f1867b14d"
+dependencies = [
+ "solidcore-record",
+ "solidcraft-geom",
+ "solidcraft-profile",
 ]
 
 [[package]]
@@ -7011,148 +6952,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "truck-base"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c279de9e92e5dc20a188deb0bb9a4bd421a6a185e57e03e19025e84a36c5a05"
-dependencies = [
- "cgmath",
- "matext4cgmath",
- "rustc-hash 2.1.3",
- "serde",
-]
-
-[[package]]
-name = "truck-derivers"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "421ff1c5a303aed64e295d9b30e8424ee7a2fa251617a59ae4acfd078496009f"
-dependencies = [
- "proc-macro-error",
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "truck-geometry"
-version = "0.5.0"
-source = "git+https://github.com/jijinbei/solidcraft?rev=3390d0511e9f97a530114fc845fe26bc424b8fd6#3390d0511e9f97a530114fc845fe26bc424b8fd6"
-dependencies = [
- "serde",
- "thiserror 1.0.69",
- "truck-base",
- "truck-geotrait",
-]
-
-[[package]]
-name = "truck-geotrait"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97a31fe98d5a0589ad20576260e214af23dea21a8d125da81ad3bbcb666f411f"
-dependencies = [
- "getrandom 0.2.17",
- "rand 0.8.8",
- "thiserror 1.0.69",
- "truck-base",
- "truck-derivers",
-]
-
-[[package]]
-name = "truck-meshalgo"
-version = "0.4.0"
-source = "git+https://github.com/jijinbei/solidcraft?rev=3390d0511e9f97a530114fc845fe26bc424b8fd6#3390d0511e9f97a530114fc845fe26bc424b8fd6"
-dependencies = [
- "array-macro",
- "derive_more 0.99.20",
- "itertools 0.13.0",
- "rayon",
- "rustc-hash 2.1.3",
- "spade",
- "truck-base",
- "truck-geometry",
- "truck-modeling",
- "truck-polymesh",
- "truck-topology",
-]
-
-[[package]]
-name = "truck-modeling"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8082c2dfac8c2732a014d81807fb5d24dbac0d72ee4de2a705b7fbc05fa05b18"
-dependencies = [
- "derive_more 0.99.20",
- "rustc-hash 2.1.3",
- "serde",
- "thiserror 1.0.69",
- "truck-base",
- "truck-geometry",
- "truck-geotrait",
- "truck-polymesh",
- "truck-topology",
-]
-
-[[package]]
-name = "truck-polymesh"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8f22def310af4a89c37beb4839bbf702b302d2c112ea29553759f0e16622fbf"
-dependencies = [
- "array-macro",
- "bytemuck",
- "itertools 0.13.0",
- "rustc-hash 2.1.3",
- "serde",
- "thiserror 1.0.69",
- "truck-base",
- "truck-geotrait",
-]
-
-[[package]]
-name = "truck-shapeops"
-version = "0.4.0"
-source = "git+https://github.com/jijinbei/solidcraft?rev=3390d0511e9f97a530114fc845fe26bc424b8fd6#3390d0511e9f97a530114fc845fe26bc424b8fd6"
-dependencies = [
- "derive_more 0.99.20",
- "itertools 0.13.0",
- "rustc-hash 2.1.3",
- "truck-base",
- "truck-geometry",
- "truck-geotrait",
- "truck-meshalgo",
- "truck-topology",
-]
-
-[[package]]
-name = "truck-stepio"
-version = "0.3.0"
-source = "git+https://github.com/jijinbei/solidcraft?rev=3390d0511e9f97a530114fc845fe26bc424b8fd6#3390d0511e9f97a530114fc845fe26bc424b8fd6"
-dependencies = [
- "chrono",
- "truck-geometry",
- "truck-modeling",
- "truck-polymesh",
- "truck-topology",
-]
-
-[[package]]
-name = "truck-topology"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf62a1610405c5e39ab5eb6948f326fc1641689734a6b8207a80792133fe0e78"
-dependencies = [
- "parking_lot",
- "rayon",
- "rclite",
- "rustc-hash 2.1.3",
- "serde",
- "thiserror 1.0.69",
- "truck-base",
- "truck-geotrait",
-]
-
-[[package]]
 name = "ttf-parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7187,7 +6986,7 @@ dependencies = [
  "aristo",
  "bigdecimal",
  "bitflags 2.13.2",
- "branches 0.4.6",
+ "branches",
  "bumpalo",
  "bytemuck",
  "cfg_aliases",

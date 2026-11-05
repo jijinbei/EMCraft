@@ -1,6 +1,7 @@
 # ADR 0003: SolidCraft designs through `solidcraft-exchange`
 
-Status: accepted (2026-10-31).
+Status: accepted (2026-10-31); pin moved to the rebuilt #8845 on SolidCraft's solidcore kernel
+(2026-11-05).
 
 ## Decision
 
@@ -18,19 +19,24 @@ reads 3MF, without fitting surfaces the design already knows.
 - **One facade.** EMCraft depends on `solidcraft-exchange` alone (the user's direction,
   2026-10-28: a big dependency is acceptable, many SolidCraft crates or their internals are
   not). What it pulls in — SolidCraft's geom, kernel, doc, io, sketch, render and derive crates,
-  the truck B-rep crates SolidCraft patches, cadmpeg's codecs — comes through it.
+  solidcore and solidcore-record (SolidCraft's kernel since 2026-11), cadmpeg's codecs — comes
+  through it.
 - **Pinned.** The dependency is SolidCraft's git repository at one commit (`rev` in the
-  workspace's Cargo.toml), and the truck crates are patched from the same commit. A change in
+  workspace's Cargo.toml). SolidCraft vendors no B-rep crates since its solidcore kernel, so
+  nothing is patched from it any more (its remaining patches, egui-wgpu and winit, are its UI's,
+  which the exchange does not use). A change in
   SolidCraft reaches EMCraft only when that commit is moved, in an EMCraft change whose tests
   and oracle run against it. Until SolidCraft's pull request #8845 (the exchange snapshot) is
   merged, the commit is that pull request's head; afterwards a commit of SolidCraft's main.
-- **Toolchain.** `rust-toolchain.toml` pins the stable channel CI uses: a nightly compiler turns
-  on `branches`' unstable path (through truck's `rclite`), which later nightlies break.
+- **Toolchain.** `rust-toolchain.toml` pins the stable channel CI uses. (It was chosen when a
+  nightly compiler turned on `branches`' unstable path through truck's `rclite`; truck has left
+  the dependency tree with the solidcore kernel.)
 
 ## Licences
 
-Every crate it adds is MIT, Apache-2.0, or either (SolidCraft: MIT OR Apache-2.0; truck and
-cadmpeg: Apache-2.0; `encoding_rs`: (Apache-2.0 OR MIT) AND BSD-3-Clause). None is GPL or LGPL.
+Every crate it adds is MIT, Apache-2.0, or either (SolidCraft: MIT OR Apache-2.0; solidcore,
+solidcore-record and cadmpeg: Apache-2.0; `encoding_rs`: (Apache-2.0 OR MIT) AND BSD-3-Clause).
+None is GPL or LGPL.
 
 ## Verified
 
