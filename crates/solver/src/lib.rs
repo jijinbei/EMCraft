@@ -6,6 +6,7 @@
 pub mod accel;
 pub mod adapt;
 pub mod bloch;
+pub mod bor;
 pub mod dense;
 pub mod driven;
 pub mod eigen;

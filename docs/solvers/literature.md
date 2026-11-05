@@ -253,6 +253,19 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   there by a magnetic or an electric wall, and beyond the plane the image of the half's (the
   ports' modes of that parity; fields shown beyond the plane).
 
+## Bodies of revolution
+
+- J.-F. Lee, G. M. Wilkins, R. Mittra, *Finite-element analysis of axisymmetric cavity
+  resonator using a hybrid edge element technique*, IEEE Trans. Microwave Theory Tech.
+  41(11):1981–1987, 1993 — the meridian half-plane's unknowns: edge functions for E_t = (E_r,
+  E_z), nodal ones for r E_φ, one azimuthal order at a time (`emcraft-solver::bor`).
+- A. D. Greenwood, J.-M. Jin, *A novel efficient algorithm for scattering from a complex BOR
+  using mixed finite elements and cylindrical PML*, IEEE Trans. Antennas Propag. 47(4):620–629,
+  1999 — the same mixed elements for open bodies; the axis conditions per order.
+- The pillbox's and the coaxial cavity's closed forms that check it: D. M. Pozar, *Microwave
+  Engineering*, 4th ed., Wiley 2012, §6.3; the Bessel zeros from M. Abramowitz, I. A. Stegun,
+  *Handbook of Mathematical Functions*, 1964, Table 9.5.
+
 ## Losses
 - T. B. A. Senior, J. L. Volakis, *Approximate Boundary Conditions in Electromagnetics*, IEE 1995,
   §2.2 — the Leontovich surface-impedance condition for walls of finite conductivity; §2.4 —
