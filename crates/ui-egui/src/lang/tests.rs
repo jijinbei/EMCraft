@@ -344,6 +344,8 @@ fn tour() -> Record {
                     step(&mut h, json!({"click": "field:plane:e"}));
                     step(&mut h, json!({"click": "field:keep"}));
                     step(&mut h, json!({"click": "field:phase:play"}));
+                    // One frame playing says so; more only draw the field again at each phase.
+                    h.app.field.player.playing = false;
                 }
             }
         }
@@ -430,7 +432,8 @@ fn tour() -> Record {
         }
         // The Results step's 3D view, its field playing and paused, orthographic.
         call(&mut h, "ui.set", json!({"view": "model"}));
-        h.frames(2);
+        h.app.field.player.playing = h.app.session.results().any();
+        h.frames(1);
         h.app.field.player.playing = false;
         call(&mut h, "ui.set", json!({"camera": {"projection": "orthographic"}}));
         h.frames(2);
