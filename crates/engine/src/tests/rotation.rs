@@ -360,3 +360,46 @@ fn a_widened_cavity_s_profile_agrees_with_its_quarter() {
         assert!((a / b - 1.0).abs() < 2e-3, "body of revolution {a} GHz, quarter {b} GHz");
     }
 }
+
+/// A circular guide with three layers of four posts round its axis, each layer turned 30° on (a
+/// twist: C4, no mirror plane), its ports on the ends; solved whole or on a quarter.
+fn twisted(quarter: bool) -> Session {
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 30})).unwrap();
+    for (z, a0) in [(8.0, 0.0), (13.0, 30.0), (18.0, 60.0)] {
+        for k in 0..4 {
+            let a = (a0 + 90.0 * f64::from(k)).to_radians();
+            let at = [(5.5 * a.cos() * 1e9).round() / 1e9, (5.5 * a.sin() * 1e9).round() / 1e9, z];
+            s.execute("geometry.feature", &json!({"combine": "subtract", "shape": "cylinder", "radius": 1.2, "length": 3, "at": at, "axis": "z"}))
+                .unwrap();
+        }
+    }
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 2})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "modes": 2})).unwrap();
+    if quarter {
+        s.execute("model.rotation", &json!({"n": 4, "m": 1})).unwrap();
+    }
+    s.execute("mesh.generate", &json!({"size": 3})).unwrap();
+    s
+}
+
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn posts_round_the_axis_on_a_quarter_give_the_whole_s_s() {
+    // The whole's TE11 (its cos polarization) against the quarter's standing c from harmonics 1
+    // and 3 (second order at 3 mm: S11 0.060 / 0.056, S21 0.9982∠54.41° / 0.9984∠54.63°; first
+    // order here, within the test's memory), and the standing S unitary (what the twist turns
+    // into the s polarization included).
+    let w = twisted(false).execute("solve.frequency", &json!({"frequencies": [12], "order": 1})).unwrap();
+    let q = twisted(true).execute("solve.harmonics", &json!({"frequencies": [12], "m": [1, 3], "order": 1})).unwrap();
+    let st = |k: &str| {
+        let e = &q["standing"]["points"][0][k];
+        emcraft_solver::Complex64::new(e["re"].as_f64().unwrap(), e["im"].as_f64().unwrap())
+    };
+    for (pq, key) in [("s11", "s1c1c"), ("s21", "s2c1c")] {
+        let (a, b) = (super::s(&w, 0, pq), st(key));
+        assert!((a - b).norm() < 0.03, "{pq}: whole {a}, quarter {b}");
+    }
+    let power: f64 = ["s1c1c", "s1s1c", "s2c1c", "s2s1c"].iter().map(|k| st(k).norm_sqr()).sum();
+    assert!((power - 1.0).abs() < 1e-6, "{power}");
+}
