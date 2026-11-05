@@ -557,6 +557,19 @@ The eigenmodes of a closed cavity invariant under rotation about the z axis, fro
 | `eps_r` | number |  | no | the filling's relative permittivity (default 1) |
 | `mu_r` | number |  | no | the filling's relative permeability (default 1) |
 
+## `solve.revolution.frequency` — Body of revolution S
+
+The S-parameters of the model as a body of revolution about z (its cylinder and the features about the axis, as solve.revolution takes them) between its ports on the cylinder's ends, in one azimuthal order `m` on the meridian half-plane: each port's modes of that order (TE_mp, TM_mp of its circle, in closed form) in its condition, S between their first modes (m = 1: TE11, the whole's dominant mode in either polarization; m = 0: TM01). Triangles of about `size` (default a fortieth of the wavelength at the top frequency, at most a twentieth of the profile). The model is left as it is.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `frequencies` | array | frequency | no | frequencies to solve |
+| `start` | number | frequency | no | first frequency (default the band's start) |
+| `stop` | number | frequency | no | last frequency (default the band's stop) |
+| `points` | integer |  | no | frequencies from `start` to `stop` (default 11) |
+| `m` | integer |  | no | the azimuthal order, 0 to 64 (default 1) |
+| `size` | number | length | no | the triangles' size |
+
 ## `solve.cyclic` — Cyclic modes
 
 The cavity modes of a rotationally symmetric model (model.rotation) from its meshed sector, per harmonic m: the `count` lowest eigenfrequencies of each above the null space, by shift-invert subspace iteration on the phase-tied (Hermitian) eigenproblem. Without `m`, the harmonics 0 to n/2 (m and n − m have the same frequencies: the fields turning either way). Put `frequency` a little above the highest mode wanted. The model is left as it is.

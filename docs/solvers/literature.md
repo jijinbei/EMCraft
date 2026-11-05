@@ -273,6 +273,10 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
 - A. D. Greenwood, J.-M. Jin, *A novel efficient algorithm for scattering from a complex BOR
   using mixed finite elements and cylindrical PML*, IEEE Trans. Antennas Propag. 47(4):620–629,
   1999 — the same mixed elements for open bodies; the axis conditions per order.
+- Ports on the half-plane: the 3D ports' rank-one condition with a circle's modes of the order
+  solved (TE_mp, TM_mp in closed form, N. Marcuvitz, *Waveguide Handbook*, 1951, §2.3), each
+  projected through its counter-rotating twin, the reaction pairing a field with a test function
+  (`emcraft-solver::bor::s_parameters`).
 - The pillbox's and the coaxial cavity's closed forms that check it: D. M. Pozar, *Microwave
   Engineering*, 4th ed., Wiley 2012, §6.3; the Bessel zeros from M. Abramowitz, I. A. Stegun,
   *Handbook of Mathematical Functions*, 1964, Table 9.5.

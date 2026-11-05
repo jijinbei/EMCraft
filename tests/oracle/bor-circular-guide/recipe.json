@@ -1,0 +1,7 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 10, "length": 30}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}},
+ {"command": "solve.revolution.frequency", "params": {"frequencies": [10.5, 13.5], "m": 1, "size": 0.25}, "id": "m1"},
+ {"command": "solve.revolution.frequency", "params": {"frequencies": [14], "m": 0, "size": 0.25}, "id": "m0"}
+]

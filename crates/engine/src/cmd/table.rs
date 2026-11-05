@@ -776,6 +776,22 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::solve::revolution,
     },
     CommandSpec {
+        id: "solve.revolution.frequency",
+        label: "Body of revolution S",
+        doc: "The S-parameters of the model as a body of revolution about z (its cylinder and the features about the axis, as solve.revolution takes them) between its ports on the cylinder's ends, in one azimuthal order `m` on the meridian half-plane: each port's modes of that order (TE_mp, TM_mp of its circle, in closed form) in its condition, S between their first modes (m = 1: TE11, the whole's dominant mode in either polarization; m = 0: TM01). Triangles of about `size` (default a fortieth of the wavelength at the top frequency, at most a twentieth of the profile). The model is left as it is.",
+        params: &[
+            opt("frequencies", K::Array, "frequencies to solve").of(F),
+            opt("start", K::Number, "first frequency (default the band's start)").of(F),
+            opt("stop", K::Number, "last frequency (default the band's stop)").of(F),
+            opt("points", K::Integer, "frequencies from `start` to `stop` (default 11)"),
+            opt("m", K::Integer, "the azimuthal order, 0 to 64 (default 1)"),
+            opt("size", K::Number, "the triangles' size").of(L),
+        ],
+        effect: Effect::None,
+        invalidates: None,
+        run: crate::solve::revolution_frequency,
+    },
+    CommandSpec {
         id: "solve.cyclic",
         label: "Cyclic modes",
         doc: "The cavity modes of a rotationally symmetric model (model.rotation) from its meshed sector, per harmonic m: the `count` lowest eigenfrequencies of each above the null space, by shift-invert subspace iteration on the phase-tied (Hermitian) eigenproblem. Without `m`, the harmonics 0 to n/2 (m and n − m have the same frequencies: the fields turning either way). Put `frequency` a little above the highest mode wanted. The model is left as it is.",

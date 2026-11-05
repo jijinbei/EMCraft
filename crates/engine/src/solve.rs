@@ -463,6 +463,56 @@ pub fn revolution(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"modes": shown, "triangles": profile.triangles.len(), "points": profile.points.len()}))
 }
 
+/// `solve.revolution.frequency`: the model as a body of revolution with its ports on its ends,
+/// its S-parameters in one azimuthal order on the meridian half-plane.
+pub fn revolution_frequency(s: &mut Session, p: &Params) -> Result<Value> {
+    let freqs = frequencies(s, p)?;
+    let m = p.integer("m", 0..=64).or(1)? as u32;
+    let length = match s.model.solid.as_ref().map(|x| &x.shape) {
+        Some(emcraft_model::Shape::Cylinder { length, .. }) => length.get(),
+        _ => return Err(EngineError::failed("not supported yet: ports on a body of revolution other than a cylinder's ends")),
+    };
+    if s.model.ports.is_empty() {
+        return Err(EngineError::failed("no ports: create them on the cylinder's ends with model.port.create"));
+    }
+    let ports = s
+        .model
+        .ports
+        .iter()
+        .map(|x| match x.face {
+            None => Ok(emcraft_solver::bor::BorPort { z: if x.end == emcraft_model::End::Start { 0.0 } else { length }, modes: x.modes as usize }),
+            Some(_) => {
+                Err(EngineError::failed(format!("not supported yet: port {} on a face (a body of revolution's ports lie on its ends)", x.name)))
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let top = freqs.last().copied().unwrap_or(1e10);
+    let pr = s.model.meridian_profile(1e-3)?;
+    let span = pr.points.iter().fold(0.0f64, |a, q| a.max(q[0]).max(q[1].abs()));
+    let wavelength = emcraft_model::units::C0 / (top * (pr.eps_r * pr.mu_r).sqrt());
+    let size = p.positive_length("size").optional()?.unwrap_or_else(|| (wavelength / 40.0).min(span / 20.0));
+    let (points, triangles) = emcraft_mesh::planar::pslg(&pr.points, &pr.segments, size)?;
+    let profile = emcraft_solver::bor::Profile { material: vec![(pr.eps_r, pr.mu_r); triangles.len()], points, triangles };
+    let mut rows = Vec::with_capacity(freqs.len());
+    let mut names = Vec::new();
+    let mut unknowns = 0;
+    for (k, &f) in freqs.iter().enumerate() {
+        crate::progress::report(k, freqs.len(), "frequency")?;
+        let r = emcraft_solver::bor::s_parameters(&profile, m, &ports, f)?;
+        let mut row = serde_json::Map::new();
+        row.insert("frequency".into(), json!(s.show_frequency(f)));
+        for a in 0..ports.len() {
+            for b in 0..ports.len() {
+                row.insert(format!("s{}{}", a + 1, b + 1), complex(r.s.get(a, b).unwrap_or_default()));
+            }
+        }
+        rows.push(Value::Object(row));
+        names = r.modes;
+        unknowns = r.unknowns;
+    }
+    Ok(json!({"m": m, "modes": names, "points": rows, "triangles": profile.triangles.len(), "unknowns": unknowns}))
+}
+
 /// `solve.cyclic`: a rotationally symmetric cavity's modes per harmonic, from its sector.
 pub fn cyclic(s: &mut Session, p: &Params) -> Result<Value> {
     let rot = s.model.rotation.ok_or_else(|| EngineError::failed("no rotational symmetry: set it with model.rotation"))?;

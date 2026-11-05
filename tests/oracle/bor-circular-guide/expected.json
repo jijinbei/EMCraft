@@ -1,0 +1,59 @@
+{
+ "title": "Empty circular waveguide, radius 10 mm, 30 mm long, as a body of revolution: TE11 (m = 1) and TM01 (m = 0) transmission",
+ "kind": "theory",
+ "source": "Circular waveguide modes, S21 = exp(−jβL) with β = √(k0² − (x/a)²), x = x'₁₁ = 1.841183781340659 (TE11), x₀₁ = 2.404825557695773 (TM01) (M. Abramowitz, I. A. Stegun, Handbook of Mathematical Functions, 1964, Table 9.5; D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.4)",
+ "quantities": [
+  {
+   "id": "te11_phase_10_5",
+   "quantity": "phase of S21 at 10.5 GHz, TE11 (degrees)",
+   "measure": {
+    "step": "m1",
+    "pointer": "/points/0/s21/deg"
+   },
+   "value": 152.81716026371134,
+   "tolerance": {
+    "absolute": 0.3
+   },
+   "reason": "lowest-order edge and nodal elements on 0.25 mm triangles of the half-plane, second order in the size; near cut-off (λg = 52 mm) — +0.11°"
+  },
+  {
+   "id": "te11_s11_10_5",
+   "quantity": "|S11| at 10.5 GHz, TE11 (no discontinuity)",
+   "measure": {
+    "step": "m1",
+    "pointer": "/points/0/s11/mag"
+   },
+   "value": 0.0,
+   "tolerance": {
+    "absolute": 0.001
+   },
+   "reason": "the closed-form modes of order 1 at the ports against the half-plane's straight edge: 3e-5"
+  },
+  {
+   "id": "te11_phase_13_5",
+   "quantity": "phase of S21 at 13.5 GHz, TE11 (degrees)",
+   "measure": {
+    "step": "m1",
+    "pointer": "/points/1/s21/deg"
+   },
+   "value": -9.277633913320471,
+   "tolerance": {
+    "absolute": 0.3
+   },
+   "reason": "as at 10.5 GHz, farther from cut-off: +0.12°"
+  },
+  {
+   "id": "tm01_phase_14",
+   "quantity": "phase of S21 at 14 GHz, TM01 (degrees)",
+   "measure": {
+    "step": "m0",
+    "pointer": "/points/0/s21/deg"
+   },
+   "value": 71.03268601359088,
+   "tolerance": {
+    "absolute": 0.3
+   },
+   "reason": "order 0 on the same profile: −0.02°"
+  }
+ ]
+}

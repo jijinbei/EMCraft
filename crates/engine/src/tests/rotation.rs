@@ -403,3 +403,23 @@ fn posts_round_the_axis_on_a_quarter_give_the_whole_s_s() {
     let power: f64 = ["s1c1c", "s1s1c", "s2c1c", "s2s1c"].iter().map(|k| st(k).norm_sqr()).sum();
     assert!((power - 1.0).abs() < 1e-6, "{power}");
 }
+
+#[test]
+fn a_widened_guide_as_a_body_of_revolution_gives_its_s() {
+    // The guide widened to 14 mm over 6 mm of its middle, its TE11 on the half-plane (m = 1)
+    // against the whole in 3D (second order, 2.5 mm: |S11| 0.1316 at 11 GHz, 0.5713 at 13 GHz,
+    // converging down by about 0.004 from 3.5 mm) and lossless.
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 30})).unwrap();
+    s.execute("geometry.feature", &json!({"combine": "add", "shape": "cylinder", "radius": 14, "length": 6, "at": [0, 0, 12], "axis": "z"})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 2})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "modes": 2})).unwrap();
+    let r = s.execute("solve.revolution.frequency", &json!({"frequencies": [11, 13], "m": 1, "size": 0.25})).unwrap();
+    assert_eq!(r["modes"], json!(["TE11", "TE11"]));
+    for (i, whole) in [0.1316, 0.5713].iter().enumerate() {
+        let (s11, s21) = (super::s(&r, i, "s11"), super::s(&r, i, "s21"));
+        eprintln!("point {i}: |S11| {:.4}, S21 {:.4}∠{:.2}°", s11.norm(), s21.norm(), s21.arg().to_degrees());
+        assert!((s11.norm() - whole).abs() < 0.01, "point {i}: |S11| {} against the whole's {whole}", s11.norm());
+        assert!((s11.norm_sqr() + s21.norm_sqr() - 1.0).abs() < 1e-6);
+    }
+}
