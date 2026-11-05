@@ -73,6 +73,9 @@ pub struct Model {
     /// Periodic boundaries: the model is the unit cell of an infinite array.
     #[serde(default)]
     pub periodic: Option<Periodic>,
+    /// Rotational symmetry: the model is meshed and solved on one sector of it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<crate::rotation::Rotation>,
     /// The mesh of the waveguide (made by `emcraft-mesh`), shared: the copies of the model a
     /// session keeps to undo to share it rather than copy it.
     #[serde(skip)]
@@ -123,6 +126,7 @@ impl Default for Model {
             job: crate::job::Job::Open,
             symmetry: Vec::new(),
             periodic: None,
+            rotation: None,
             mesh: None,
         }
     }

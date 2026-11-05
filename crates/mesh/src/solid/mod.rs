@@ -14,6 +14,7 @@ mod curved;
 mod grid;
 mod mesher;
 mod narrow;
+mod sector;
 mod tessellation;
 
 use emcraft_model::{
@@ -183,6 +184,9 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
     // inclusion's) with the layer's shell, meshed as a region of its own between it and the
     // solid's sphere — so the shell's tetrahedra are a layer of their own.
     let layer = spherical_layer(model)?;
+    if model.rotation.is_some() && (!model.inclusions.is_empty() || !model.symmetry.is_empty() || layer.is_some()) {
+        return Err(MeshError::invalid("rotational symmetry", "not supported yet with inclusions, symmetry planes or a spherical layer"));
+    }
     let mut main = match layer {
         Some(SphericalLayer { inner, .. }) => {
             let ball = Shape::Sphere { radius: Metres::new(inner)? };
@@ -198,13 +202,20 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
     if !features.is_empty() {
         main = combine_all(main, &features, shape, size)?;
     }
+    // The sector a rotation keeps: cut by a wedge last, its two cut faces then matched.
+    let mut frozen = Vec::new();
+    if let (Some(rot), Some(b)) = (&model.rotation, model.bounds()) {
+        let (matched, tags) = sector::sector(main, rot, size, (b.max - b.min).norm())?;
+        main = matched;
+        frozen.extend(tags);
+    }
     // Gaps narrower than a tenth of the size filled with elements as small as they are.
     let (gaps, gap_tets) = narrow::gap_sizes(&main, size, combine::gaps(size).flush)?;
     if !gaps.is_empty() {
         too_large(estimate + gap_tets)?;
         locals.extend(gaps);
     }
-    let body = Body { model, shape, material: material as u32, size, inner_size, locals, shell: layer.is_some() };
+    let body = Body { model, shape, material: material as u32, size, inner_size, locals, shell: layer.is_some(), frozen };
     let regions = body.regions(main)?;
     let mut mesh = body.join(&regions)?;
     tag_symmetry_planes(&mut mesh, model, size);
@@ -307,6 +318,8 @@ struct Body<'a> {
     inner_size: Vec<f64>,
     locals: Vec<LocalSize>,
     shell: bool,
+    /// The solid's own faces kept as tessellated (a sector's two cut faces).
+    frozen: Vec<u32>,
 }
 
 /// A range of face tags: `first..first + count`.
@@ -379,7 +392,8 @@ impl Body<'_> {
                 next += count;
             }
             let frozen_from = if self.shell { 0 } else { out.first_tag };
-            let outer_mesh = region(&outer, size, (frozen_from..next).collect(), &self.locals)?;
+            let frozen: Vec<u32> = (frozen_from..next).chain(self.frozen.iter().copied()).collect();
+            let outer_mesh = region(&outer, size, frozen, &self.locals)?;
             let mut changed = false;
             for (t, tags) in interfaces.iter_mut().zip(&out.interfaces) {
                 changed |= adopt(t, extract(&outer_mesh, tags.first, tags.count, false), size);

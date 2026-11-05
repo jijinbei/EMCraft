@@ -402,27 +402,86 @@ pub fn polygon(ring: &[[f64; 2]], size: f64) -> Result<(Vec<[f64; 2]>, Vec<[u32;
     if ids.len() < 3 {
         return Err(invalid("a polygon with no area"));
     }
-    let segments: Vec<([u32; 2], Kind)> = (0..ids.len()).map(|k| ([ids[k], ids[(k + 1) % ids.len()]], Kind::Outline)).collect();
-    let mut cdt = Cdt::build(&exact(&points.xy)?, &segments, MAX_TRIANGLES)?;
+    let ring: Vec<[f64; 2]> = ids.iter().filter_map(|&v| points.xy.get(v as usize).map(|&q| lattice.back(q))).collect();
+    let segments: Vec<[u32; 2]> = (0..ring.len() as u32).map(|k| [k, (k + 1) % ring.len() as u32]).collect();
+    pslg(&ring, &segments, size)
+}
+
+/// A planar straight-line graph triangulated: `points` (metres, distinct on the lattice of
+/// [`lattice::STEP`]) and the `segments` between them that bound the region (outlines; the
+/// region is what they enclose, holes included), refined to about `size` (m). The points come
+/// back first, in their order (on the lattice), then those refinement added (on the segments
+/// too, where it splits one); the triangles counterclockwise.
+///
+/// ```
+/// // A square with a square hole: the hole stays empty.
+/// let p = [[0.0, 0.0], [0.004, 0.0], [0.004, 0.004], [0.0, 0.004], [0.001, 0.001], [0.003, 0.001], [0.003, 0.003], [0.001, 0.003]];
+/// let s = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4]];
+/// let (points, triangles) = emcraft_mesh::planar::pslg(&p, &s, 0.0005)?;
+/// assert_eq!(&points[..8], &p);
+/// let area: f64 = triangles.iter().map(|t| {
+///     let [a, b, c] = t.map(|v| points[v as usize]);
+///     0.5 * ((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]))
+/// }).sum();
+/// assert!((area - 12e-6).abs() < 1e-12);
+/// # Ok::<(), emcraft_mesh::MeshError>(())
+/// ```
+pub fn pslg(points: &[[f64; 2]], segments: &[[u32; 2]], size: f64) -> Result<(Vec<[f64; 2]>, Vec<[u32; 3]>)> {
+    if points.len() < 3 || points.len() > MAX_POINTS || !points.iter().flatten().all(|v| v.is_finite()) {
+        return Err(invalid("a planar graph needs 3 or more finite points"));
+    }
+    if segments.iter().flatten().any(|&v| v as usize >= points.len()) {
+        return Err(invalid("a segment's end is not a point"));
+    }
+    let (lo, hi) = points
+        .iter()
+        .fold(([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]), |(lo, hi), p| ([lo[0].min(p[0]), lo[1].min(p[1])], [hi[0].max(p[0]), hi[1].max(p[1])]));
+    if hi[0] - lo[0] > MAX_SIDE || hi[1] - lo[1] > MAX_SIDE {
+        return Err(invalid(format!("a planar graph at most {MAX_SIDE} m across")));
+    }
+    let extent = (hi[0] - lo[0]).max(hi[1] - lo[1]);
+    if !(size.is_finite() && size > 0.0) || extent / size > 4096.0 {
+        return Err(invalid("the element size must be finite, > 0 and at least 1/4096 of the graph"));
+    }
+    let lattice = Lattice::new(lo);
+    let on: Vec<[f64; 2]> = points.iter().map(|&p| lattice.on(p)).collect();
+    let mut seen = std::collections::BTreeSet::new();
+    if !on.iter().all(|p| seen.insert([p[0] as i64, p[1] as i64])) {
+        return Err(invalid("two points of the graph are the same lattice point"));
+    }
+    let kinds: Vec<([u32; 2], Kind)> = segments.iter().map(|&s| (s, Kind::Outline)).collect();
+    let mut cdt = Cdt::build(&exact(&on)?, &kinds, MAX_TRIANGLES)?;
+    let h = size / lattice::STEP;
     cdt.refine(&|_| h, &|_, _| true)?;
     let t = cdt.into_triangulation();
-    let mut id = vec![u32::MAX; t.points.len()];
-    let mut out: Vec<[f64; 2]> = Vec::new();
-    let mut triangles = Vec::with_capacity(t.triangles.len());
-    for tri in &t.triangles {
-        let mut c = [0u32; 3];
-        for (k, &v) in tri.iter().enumerate() {
-            let slot = id.get_mut(v as usize).ok_or_else(|| invalid("a point id out of range"))?;
-            if *slot == u32::MAX {
-                *slot = out.len() as u32;
-                out.push(lattice.back(t.points.get(v as usize).copied().ok_or_else(|| invalid("a point id out of range"))?));
-            }
-            c[k] = *slot;
-        }
-        triangles.push(c);
+    // Inside: a triangle whose middle the segments enclose an odd number of times (a hole's
+    // triangles are enclosed twice), counted along a ray across +x.
+    let lines: Vec<([f64; 2], [f64; 2])> = segments.iter().map(|s| (on[s[0] as usize], on[s[1] as usize])).collect();
+    let inside = |c: [f64; 2]| {
+        lines.iter().filter(|(a, b)| (a[1] > c[1]) != (b[1] > c[1]) && c[0] < a[0] + (c[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1])).count() % 2 == 1
+    };
+    let kept: Vec<[u32; 3]> = t
+        .triangles
+        .iter()
+        .copied()
+        .filter(|tri| {
+            let q = tri.map(|v| t.points.get(v as usize).copied().unwrap_or_default());
+            inside([(q[0][0] + q[1][0] + q[2][0]) / 3.0, (q[0][1] + q[1][1] + q[2][1]) / 3.0])
+        })
+        .collect();
+    // The points given keep their numbers; the super-triangle's corners (just after them) and
+    // what only the holes used go.
+    let n = points.len();
+    let mut id: Vec<u32> = (0..t.points.len() as u32).collect();
+    let mut out: Vec<[f64; 2]> = t.points.iter().take(n).map(|&q| lattice.back(q)).collect();
+    let used: std::collections::BTreeSet<u32> = kept.iter().flatten().copied().filter(|&v| v as usize >= n).collect();
+    for v in used {
+        id[v as usize] = out.len() as u32;
+        out.push(lattice.back(t.points.get(v as usize).copied().ok_or_else(|| invalid("a point id out of range"))?));
     }
+    let triangles: Vec<[u32; 3]> = kept.iter().map(|tri| tri.map(|v| id[v as usize])).collect();
     if triangles.is_empty() {
-        return Err(invalid("a polygon with no area"));
+        return Err(invalid("a planar graph that encloses nothing"));
     }
     Ok((out, triangles))
 }
