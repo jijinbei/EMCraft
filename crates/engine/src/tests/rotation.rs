@@ -423,3 +423,30 @@ fn a_widened_guide_as_a_body_of_revolution_gives_its_s() {
         assert!((s11.norm_sqr() + s21.norm_sqr() - 1.0).abs() < 1e-6);
     }
 }
+
+#[test]
+fn a_dielectric_plug_in_a_circular_guide_as_a_body_of_revolution() {
+    // The guide filled with εr = 2.2 over 5 mm from z = 12.5 mm (to 10 µm of the wall, as an
+    // inclusion must lie inside the solid): TE11 against the slab between
+    // two lines of its wave impedance (Z = ωμ/β), reference planes at the ports.
+    let mut s = Session::new();
+    s.execute("model.material.create", &json!({"name": "ptfe", "eps_r": 2.2})).unwrap();
+    s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 30})).unwrap();
+    s.execute("geometry.inclusion", &json!({"shape": "cylinder", "radius": 9.99, "length": 5, "at": [0, 0, 12.5], "material": "ptfe"})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 2})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "modes": 2})).unwrap();
+    let r = s.execute("solve.revolution.frequency", &json!({"frequencies": [11, 13], "m": 1, "size": 0.25})).unwrap();
+    for (i, f) in [11e9, 13e9].iter().enumerate() {
+        let k = 2.0 * std::f64::consts::PI * f / emcraft_model::units::C0;
+        let kc = X11P / 0.01;
+        let (b1, b2) = ((k * k - kc * kc).sqrt(), (2.2 * k * k - kc * kc).sqrt());
+        let gamma = (b1 - b2) / (b1 + b2); // (Z2 − Z1)/(Z2 + Z1), Z ∝ 1/β
+        let c = |x: f64| emcraft_solver::Complex64::from_polar(1.0, x);
+        let p = c(-b2 * 0.005);
+        let den = 1.0 - gamma * gamma * p * p;
+        let s11 = gamma * (1.0 - p * p) / den * c(-2.0 * b1 * 0.0125);
+        let s21 = p * (1.0 - gamma * gamma) / den * c(-b1 * 0.025);
+        let (g11, g21) = (super::s(&r, i, "s11"), super::s(&r, i, "s21"));
+        assert!((g11 - s11).norm() < 5e-3 && (g21 - s21).norm() < 5e-3, "{f} Hz: S11 {g11} against {s11}, S21 {g21} against {s21}");
+    }
+}

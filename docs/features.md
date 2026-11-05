@@ -545,7 +545,7 @@ Cuts a model symmetric about its middle on that plane: only the side below it is
 
 ## `solve.revolution` — Body of revolution
 
-The eigenmodes of a closed cavity invariant under rotation about the z axis, from its meridian profile: the polygon `points` [[r, z], …] (r ≥ 0; an edge on r = 0 is the axis, every other edge a perfect conductor) filled with one material, or without `points` the model's own (its cylinder or sphere about z and the cylinders along z about the axis its features add, subtract or intersect, in its material), meshed in triangles of about `size` and solved per azimuthal order `m` on the half-plane — a 2D problem in place of the 3D one (hybrid edge/nodal elements, Lee–Wilkins–Mittra). The `count` modes of order `m` nearest `frequency`, lowest first. The model is left as it is.
+The eigenmodes of a closed cavity invariant under rotation about the z axis, from its meridian profile: the polygon `points` [[r, z], …] (r ≥ 0; an edge on r = 0 is the axis, every other edge a perfect conductor) filled with one material, or without `points` the model's own (its cylinder or sphere about z, the cylinders along z about the axis its features add, subtract or intersect, and its inclusions that are such cylinders, dielectric or conducting), meshed in triangles of about `size` and solved per azimuthal order `m` on the half-plane — a 2D problem in place of the 3D one (hybrid edge/nodal elements, Lee–Wilkins–Mittra). The `count` modes of order `m` nearest `frequency`, lowest first. The model is left as it is.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|

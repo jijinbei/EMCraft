@@ -427,6 +427,35 @@ pub fn polygon(ring: &[[f64; 2]], size: f64) -> Result<(Vec<[f64; 2]>, Vec<[u32;
 /// # Ok::<(), emcraft_mesh::MeshError>(())
 /// ```
 pub fn pslg(points: &[[f64; 2]], segments: &[[u32; 2]], size: f64) -> Result<(Vec<[f64; 2]>, Vec<[u32; 3]>)> {
+    pslg_inner(points, segments, size, None)
+}
+
+/// [`pslg`] with the segments as constraints only, the triangles kept being those whose middle
+/// `keep` holds (a graph with interfaces inside it: regions of several materials, whose lines
+/// the parity rule would take for holes' outlines).
+///
+/// ```
+/// // A square split by a line into two regions: both kept, the line an edge of the triangles.
+/// let p = [[0.0, 0.0], [0.004, 0.0], [0.004, 0.004], [0.0, 0.004], [0.002, 0.0], [0.002, 0.004]];
+/// let s = [[0, 4], [4, 1], [1, 2], [2, 5], [5, 3], [3, 0], [4, 5]];
+/// let (points, triangles) = emcraft_mesh::planar::pslg_keep(&p, &s, 0.001, &|c| c[0] > 0.0 && c[0] < 0.004 && c[1] > 0.0 && c[1] < 0.004)?;
+/// let area: f64 = triangles.iter().map(|t| {
+///     let [a, b, c] = t.map(|v| points[v as usize]);
+///     0.5 * ((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]))
+/// }).sum();
+/// assert!((area - 16e-6).abs() < 1e-12);
+/// # Ok::<(), emcraft_mesh::MeshError>(())
+/// ```
+pub fn pslg_keep(points: &[[f64; 2]], segments: &[[u32; 2]], size: f64, keep: &dyn Fn([f64; 2]) -> bool) -> Result<(Vec<[f64; 2]>, Vec<[u32; 3]>)> {
+    pslg_inner(points, segments, size, Some(keep))
+}
+
+fn pslg_inner(
+    points: &[[f64; 2]],
+    segments: &[[u32; 2]],
+    size: f64,
+    keep: Option<&dyn Fn([f64; 2]) -> bool>,
+) -> Result<(Vec<[f64; 2]>, Vec<[u32; 3]>)> {
     if points.len() < 3 || points.len() > MAX_POINTS || !points.iter().flatten().all(|v| v.is_finite()) {
         return Err(invalid("a planar graph needs 3 or more finite points"));
     }
@@ -482,7 +511,11 @@ pub fn pslg(points: &[[f64; 2]], segments: &[[u32; 2]], size: f64) -> Result<(Ve
         .copied()
         .filter(|tri| {
             let q = tri.map(|v| t.points.get(v as usize).copied().unwrap_or_default());
-            inside([(q[0][0] + q[1][0] + q[2][0]) / 3.0, (q[0][1] + q[1][1] + q[2][1]) / 3.0])
+            let c = [(q[0][0] + q[1][0] + q[2][0]) / 3.0, (q[0][1] + q[1][1] + q[2][1]) / 3.0];
+            match keep {
+                Some(k) => k(lattice.back(c)),
+                None => inside(c),
+            }
         })
         .collect();
     // The points given keep their numbers; the super-triangle's corners (just after them) and

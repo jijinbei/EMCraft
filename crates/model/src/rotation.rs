@@ -290,13 +290,32 @@ pub const MAX_PROFILE_POINTS: usize = 4096;
 
 /// A body of revolution's meridian profile ([`crate::Model::meridian_profile`]): its outline on
 /// the half-plane r ≥ 0 as points (r, z) in metres and segments between them (a hole's outline
-/// among them; segments on r = 0 are the axis), and its filling's εr and μr.
+/// among them; segments on r = 0 are the axis; with inclusions, the interfaces between
+/// materials too), its filling's εr and μr, and for a profile of cells the material of each.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MeridianProfile {
     pub points: Vec<[f64; 2]>,
     pub segments: Vec<[u32; 2]>,
     pub eps_r: f64,
     pub mu_r: f64,
+    /// The grid's radii and ends and, per cell (r index fastest), its (εr, μr) or none outside.
+    pub cells: Option<(Vec<f64>, Vec<f64>, Vec<Option<(f64, f64)>>)>,
+}
+
+impl MeridianProfile {
+    /// The (εr, μr) at (r, z), `None` outside the body (in a conductor). A sphere's profile is
+    /// one material inside its outline.
+    pub fn material_at(&self, q: [f64; 2]) -> Option<(f64, f64)> {
+        let Some((rs, zs, cells)) = &self.cells else { return Some((self.eps_r, self.mu_r)) };
+        let find = |v: &[f64], x: f64| v.windows(2).position(|w| x >= w[0] && x <= w[1]);
+        let (i, j) = (find(rs, q[0])?, find(zs, q[1])?);
+        cells.get(j * (rs.len() - 1) + i).copied().flatten()
+    }
+
+    /// Whether the profile has regions of other materials (its triangles then take theirs).
+    pub fn is_layered(&self) -> bool {
+        self.cells.as_ref().is_some_and(|(_, _, c)| c.iter().flatten().any(|m| *m != (self.eps_r, self.mu_r)))
+    }
 }
 
 impl crate::Model {
@@ -319,8 +338,8 @@ impl crate::Model {
     /// ```
     pub fn meridian_profile(&self, size: f64) -> Result<MeridianProfile> {
         let solid = self.solid.as_ref().ok_or_else(|| invalid("body of revolution", "needs a solid (geometry.solid)"))?;
-        if self.waveguide.is_some() || !self.inclusions.is_empty() || self.open.is_some() {
-            return Err(invalid("body of revolution", "not supported yet: a waveguide, inclusions or an open boundary"));
+        if self.waveguide.is_some() || self.open.is_some() {
+            return Err(invalid("body of revolution", "not supported yet: a waveguide or an open boundary"));
         }
         let (_, mat) = self.material(&solid.material)?;
         let (eps_r, mu_r) = (mat.eps_r.get(), mat.mu_r.get());
@@ -332,15 +351,15 @@ impl crate::Model {
         let mut ends = Vec::new();
         match &solid.shape {
             crate::Shape::Sphere { radius } => {
-                if !self.features.is_empty() {
-                    return Err(invalid("body of revolution", "not supported yet: features on a sphere"));
+                if !self.features.is_empty() || !self.inclusions.is_empty() {
+                    return Err(invalid("body of revolution", "not supported yet: features or inclusions in a sphere"));
                 }
                 let r = radius.get();
                 let n = ((std::f64::consts::PI * r / size).ceil() as usize).clamp(8, MAX_PROFILE_POINTS - 1);
                 let points: Vec<[f64; 2]> =
                     (0..=n).map(|k| std::f64::consts::PI * k as f64 / n as f64).map(|t| [r * t.sin(), -r * t.cos()]).collect();
                 let segments = (0..=n as u32).map(|k| [k, (k + 1) % (n as u32 + 1)]).collect();
-                return Ok(MeridianProfile { points, segments, eps_r, mu_r });
+                return Ok(MeridianProfile { points, segments, eps_r, mu_r, cells: None });
             }
             crate::Shape::Cylinder { radius, length } => {
                 radii.push(radius.get());
@@ -357,6 +376,25 @@ impl crate::Model {
             }
             radii.push(radius.get());
             ends.extend([f.at.z, f.at.z + length.get()]);
+        }
+        // Inclusions: cylinders along z about the axis, dielectric or conducting.
+        let mut fillings = Vec::with_capacity(self.inclusions.len());
+        for (i, inc) in self.inclusions.iter().enumerate() {
+            let crate::Shape::Cylinder { radius, length } = inc.shape else {
+                return Err(invalid("body of revolution", format!("inclusion {} is not a cylinder about the axis", i + 1)));
+            };
+            if !on_axis(inc.at) {
+                return Err(invalid("body of revolution", format!("inclusion {} is not a cylinder about the axis", i + 1)));
+            }
+            radii.push(radius.get());
+            ends.extend([inc.at.z, inc.at.z + length.get()]);
+            fillings.push(match &inc.material {
+                Some(name) => {
+                    let (_, mt) = self.material(name)?;
+                    Some((mt.eps_r.get(), mt.mu_r.get()))
+                }
+                None => None,
+            });
         }
         let sorted = |mut v: Vec<f64>| {
             v.sort_by(f64::total_cmp);
@@ -376,20 +414,35 @@ impl crate::Model {
             })
         };
         let (nr, nz) = (rs.len() - 1, zs.len() - 1);
-        let cell = |i: usize, j: usize| i < nr && j < nz && inside(0.5 * (rs[i] + rs[i + 1]), 0.5 * (zs[j] + zs[j + 1]));
+        // Each cell's filling: the body's, an inclusion's (the first holding it), or none.
+        let filling = |r: f64, z: f64| -> Option<(f64, f64)> {
+            if !inside(r, z) {
+                return None;
+            }
+            let p = crate::Point3::new(r, 0.0, z);
+            match self.inclusions.iter().position(|inc| inc.contains(p)) {
+                Some(k) => fillings.get(k).copied().flatten(),
+                None => Some((eps_r, mu_r)),
+            }
+        };
+        let materials: Vec<Option<(f64, f64)>> =
+            (0..nr * nz).map(|c| filling(0.5 * (rs[c % nr] + rs[c % nr + 1]), 0.5 * (zs[c / nr] + zs[c / nr + 1]))).collect();
+        let cell = |i: usize, j: usize| if i < nr && j < nz { materials[j * nr + i] } else { None };
         let id = |i: usize, j: usize| (j * rs.len() + i) as u32;
         let mut segments = Vec::new();
         for j in 0..nz {
             for i in 0..=nr {
-                // The side at r = rs[i] between cells i − 1 and i.
-                if (i > 0 && cell(i - 1, j)) != cell(i, j) {
+                // The side at r = rs[i] between cells i − 1 and i: an outline or an interface.
+                let left = if i > 0 { cell(i - 1, j) } else { None };
+                if left != cell(i, j) {
                     segments.push([id(i, j), id(i, j + 1)]);
                 }
             }
         }
         for i in 0..nr {
             for j in 0..=nz {
-                if (j > 0 && cell(i, j - 1)) != cell(i, j) {
+                let below = if j > 0 { cell(i, j - 1) } else { None };
+                if below != cell(i, j) {
                     segments.push([id(i, j), id(i + 1, j)]);
                 }
             }
@@ -404,6 +457,6 @@ impl crate::Model {
         let renumber: std::collections::BTreeMap<u32, u32> = used.iter().enumerate().map(|(k, &v)| (v, k as u32)).collect();
         let points = used.iter().map(|&v| [rs[v as usize % rs.len()], zs[v as usize / rs.len()]]).collect();
         let segments = segments.iter().map(|s| s.map(|v| renumber[&v])).collect();
-        Ok(MeridianProfile { points, segments, eps_r, mu_r })
+        Ok(MeridianProfile { points, segments, eps_r, mu_r, cells: Some((rs, zs, materials)) })
     }
 }
