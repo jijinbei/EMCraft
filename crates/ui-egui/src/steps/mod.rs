@@ -180,6 +180,9 @@ emcraft_macros::named_enum! {
 #[derive(Default)]
 pub struct Workflow {
     status: Option<(u64, [StepState; 9])>,
+    /// The planes the model is symmetric about ([`emcraft_model::Model::find_symmetry`]), found
+    /// once per revision for the Boundaries step.
+    pub symmetry: Option<(u64, Vec<emcraft_model::Found>)>,
     /// [`statuses_now`] worked out once for the frame, with what it was worked out from.
     shown: Option<(Shown, [StepState; 9])>,
     /// The estimate of the step's run (the Mesh step: one solve at an order; Setup and Run: the
@@ -259,6 +262,9 @@ pub fn prepare(app: &mut EmcraftApp) {
     check_form(app);
     if app.workflow.status.as_ref().is_none_or(|(k, _)| *k != key) {
         app.workflow.status = Some((key, emcraft_engine::workflow::steps(&app.session)));
+    }
+    if app.place.step() == Some(Step::Boundaries) && app.workflow.symmetry.as_ref().is_none_or(|(k, _)| *k != key) {
+        app.workflow.symmetry = Some((key, app.session.model().find_symmetry()));
     }
     // A refusal lasts while something blocks Run.
     if let Some(r) = app.workflow.refusal.take()

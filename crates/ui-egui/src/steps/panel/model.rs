@@ -73,6 +73,26 @@ pub(super) fn boundaries(app: &EmcraftApp, ui: &mut egui::Ui) {
         })
         .collect();
     kv(ui, "symmetry", if planes.is_empty() { tr("none (the whole model)").into() } else { planes.join("; ") });
+    // The group the model has (its geometry and ports) and the one the solved planes make.
+    if let Some((_, found)) = &app.workflow.symmetry {
+        let axes = |list: Vec<&str>| {
+            if list.is_empty() { tr("no mirror plane").to_owned() } else { trf("mirrors across {axes}", args!(axes = list.join(", "))) }
+        };
+        let has = found.iter().map(|f| f.axis.id()).collect::<Vec<_>>();
+        kv(ui, "model's symmetry", format!("{} · {}", emcraft_model::symmetry::mirror_group(has.len()), axes(has.clone())));
+        let used = m.symmetry.iter().map(|s| s.axis.id()).collect::<Vec<_>>();
+        let share = 1u32 << used.len().min(3);
+        let solved = if used.is_empty() {
+            trf("the whole model ({group})", args!(group = emcraft_model::symmetry::mirror_group(0)))
+        } else {
+            trf("1/{share} of the model ({group})", args!(share = share, group = emcraft_model::symmetry::mirror_group(used.len())))
+        };
+        kv(ui, "solved", solved);
+        let unused: Vec<&str> = has.into_iter().filter(|a| !used.contains(a)).collect();
+        if !unused.is_empty() && used.len() < 2 {
+            ui_kit::small(ui, trf("Find symmetry can cut it across {axes} too", args!(axes = unused.join(", "))), Tokens::get().text_dim);
+        }
+    }
     if let Some(p) = &m.periodic {
         kv(ui, "periodic", crate::browser::periodic_text(p));
     }

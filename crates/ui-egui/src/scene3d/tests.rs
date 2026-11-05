@@ -397,6 +397,6 @@ fn a_symmetry_plane_is_drawn_faintly_before_the_mesh() {
     let colour = super::style::symmetry_rgb(emcraft_model::SymmetryKind::Magnetic);
     let sheet: Vec<_> = built.scene.tris.iter().filter(|t| t.color == colour).collect();
     assert_eq!(sheet.len(), 2);
-    assert!(sheet.iter().all(|t| t.alpha < 64 && t.p.iter().all(|p| (p[0] - 0.01143).abs() < 1e-12)));
+    assert!(sheet.iter().all(|t| t.alpha < 128 && t.p.iter().all(|p| (p[0] - 0.01143).abs() < 1e-12)));
     assert!(built.scene.lines.iter().filter(|l| l.color == colour).count() >= 4);
 }

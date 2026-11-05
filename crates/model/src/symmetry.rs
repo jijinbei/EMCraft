@@ -45,6 +45,24 @@ pub struct Symmetry {
     pub kind: SymmetryKind,
 }
 
+/// The point group that mirror planes across distinct axes make (Schoenflies' names): none C1,
+/// one Cs, two C2v (with the two-fold axis where they meet), three D2h. Each solved plane halves
+/// the model; the group's other parities are the other walls.
+///
+/// ```
+/// use emcraft_model::symmetry::mirror_group;
+///
+/// assert_eq!([0, 1, 2, 3].map(mirror_group), ["C1", "Cs", "C2v", "D2h"]);
+/// ```
+pub fn mirror_group(planes: usize) -> &'static str {
+    match planes {
+        0 => "C1",
+        1 => "Cs",
+        2 => "C2v",
+        _ => "D2h",
+    }
+}
+
 /// A plane the model is symmetric about ([`Model::find_symmetry`]): its axis, position (m) and
 /// the wall its ports ask for (`None`: no port decides).
 #[derive(Clone, Copy, Debug, PartialEq)]

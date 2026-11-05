@@ -144,10 +144,10 @@ pub(super) fn symmetry_planes(m: &Model, out: &mut Built) {
         };
         let q = [at(lo[u], lo[v]), at(hi[u], lo[v]), at(hi[u], hi[v]), at(lo[u], hi[v])];
         let color = super::style::symmetry_rgb(s.kind);
-        out.scene.tri(q[0], q[1], q[2], color, 40);
-        out.scene.tri(q[0], q[2], q[3], color, 40);
+        out.scene.tri(q[0], q[1], q[2], color, 80);
+        out.scene.tri(q[0], q[2], q[3], color, 80);
         for i in 0..4 {
-            out.scene.line(q[i], q[(i + 1) % 4], color, 170);
+            out.scene.line(q[i], q[(i + 1) % 4], color, 235);
         }
     }
 }
