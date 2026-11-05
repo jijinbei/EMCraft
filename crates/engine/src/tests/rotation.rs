@@ -228,3 +228,61 @@ fn fields_beyond_the_sector_are_its_turns_phased() {
     let p = s.execute("results.power", &json!({"frequency": 12})).unwrap();
     assert!(p["reflected"].as_f64().unwrap() < 1e-3, "{p}");
 }
+
+#[test]
+fn features_must_turn_onto_features() {
+    let post = |s: &mut Session, x: f64, y: f64| {
+        s.execute("geometry.feature", &json!({"combine": "subtract", "shape": "cylinder", "radius": 1, "length": 6, "at": [x, y, 12], "axis": "z"}))
+            .unwrap();
+    };
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 30})).unwrap();
+    // One post off the axis: no turn maps it onto itself.
+    post(&mut s, 5.0, 0.0);
+    let e = s.execute("model.rotation", &json!({"n": 4})).unwrap_err();
+    assert!(e.to_string().contains("feature 1 does not turn"), "{e}");
+    // Four round it: a quarter turn, not an eighth.
+    for (x, y) in [(0.0, 5.0), (-5.0, 0.0), (0.0, -5.0)] {
+        post(&mut s, x, y);
+    }
+    assert!(s.execute("model.rotation", &json!({"n": 8})).is_err());
+    let r = s.execute("model.rotation.find", &json!({})).unwrap();
+    assert_eq!((r["n"].as_u64(), r["group"].as_str()), (Some(4), Some("C4")), "{r}");
+    // A ring of the guide widened about the axis turns onto itself by any angle.
+    let mut w = Session::new();
+    w.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 30})).unwrap();
+    w.execute("geometry.feature", &json!({"combine": "add", "shape": "cylinder", "radius": 14, "length": 6, "at": [0, 0, 12], "axis": "z"})).unwrap();
+    w.execute("model.rotation", &json!({"n": 7})).unwrap();
+    assert_eq!(w.execute("model.rotation.find", &json!({})).unwrap()["group"], "C∞");
+}
+
+/// A circular guide widened to 14 mm over 6 mm of its middle (a feature about the axis), its
+/// ports on the ends: solved whole, or on a quarter in harmonic 1 (`quarter`).
+fn stepped(quarter: bool, size: f64) -> Value {
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 30})).unwrap();
+    s.execute("geometry.feature", &json!({"combine": "add", "shape": "cylinder", "radius": 14, "length": 6, "at": [0, 0, 12], "axis": "z"})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 2})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "modes": 2})).unwrap();
+    if quarter {
+        s.execute("model.rotation", &json!({"n": 4, "m": 1})).unwrap();
+    }
+    s.execute("mesh.generate", &json!({"size": size})).unwrap();
+    s.execute("solve.frequency", &json!({"frequencies": [11, 13], "order": 2})).unwrap()
+}
+
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn a_widened_guide_on_a_quarter_gives_the_whole_s_s() {
+    // The rotating TE11+ and the whole's standing TE11 see the same step (it is round): S alike,
+    // within what the two meshes differ by (both converge to within 0.5 % of each other).
+    let (w, q) = (stepped(false, 3.0), stepped(true, 3.0));
+    for i in 0..2 {
+        for pq in ["s11", "s21"] {
+            let (a, b) = (super::s(&w, i, pq), super::s(&q, i, pq));
+            assert!((a - b).norm() < 0.02, "{pq} at point {i}: whole {a}, quarter {b}");
+        }
+    }
+    let unknowns = |r: &Value| r["unknowns"].as_f64().unwrap();
+    assert!(unknowns(&q) < 0.8 * unknowns(&w), "quarter {} of whole {} unknowns", unknowns(&q), unknowns(&w));
+}

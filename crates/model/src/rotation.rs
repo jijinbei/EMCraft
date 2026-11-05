@@ -141,9 +141,18 @@ impl crate::Model {
         let solid = self.solid.as_ref()?;
         let fits = |n: u32, centre: [f64; 2]| self.rotation_issue_of(&Rotation { n, m: 0, centre }).is_none();
         match &solid.shape {
-            crate::Shape::Cylinder { .. } | crate::Shape::Sphere { .. } => {
+            // Round, and its features about the axis too: any number; else the most there are.
+            crate::Shape::Cylinder { .. } | crate::Shape::Sphere { .. } if self.features.is_empty() => {
                 let centre = [0.0, 0.0];
                 fits(MIN_SECTORS + 1, centre).then_some(FoundRotation { centre, most: None })
+            }
+            crate::Shape::Cylinder { .. } | crate::Shape::Sphere { .. } => {
+                let centre = [0.0, 0.0];
+                let all = (MIN_SECTORS..=MAX_SECTORS).all(|n| fits(n, centre));
+                if all {
+                    return Some(FoundRotation { centre, most: None });
+                }
+                (MIN_SECTORS..=MAX_SECTORS).rev().find(|&n| fits(n, centre)).map(|n| FoundRotation { centre, most: Some(n) })
             }
             crate::Shape::Box { size } => {
                 let centre = [0.5 * size.x, 0.5 * size.y];
@@ -193,10 +202,42 @@ impl crate::Model {
         if !self.symmetry.is_empty() || self.periodic.is_some() || self.open.is_some() {
             return Some("not supported yet: with symmetry planes, periodic boundaries or an open boundary".into());
         }
-        if !self.features.is_empty() || !self.inclusions.is_empty() || !self.lumped.is_empty() || !self.sources.is_empty() {
-            return Some("not supported yet: with bodies, inclusions, lumped ports or sources (the solid alone)".into());
+        if !self.inclusions.is_empty() || !self.lumped.is_empty() || !self.sources.is_empty() {
+            return Some("not supported yet: with inclusions, lumped ports or sources (the solid and its features alone)".into());
         }
         None
+    }
+
+    /// Whether every feature turns onto a feature of its combination (itself, centred on the axis,
+    /// or another, as posts round it do) and back: points sampled inside each (a grid over its
+    /// box, cell centres) turned by 2π/n lie inside the other, and the other's turned back inside
+    /// it. The features' order is kept by the turn, so their combination is too.
+    fn features_turn(&self, r: &Rotation) -> std::result::Result<(), String> {
+        const SIDE: usize = 9;
+        let samples = |f: &crate::Feature| -> Vec<Point3> {
+            let b = f.bounds();
+            let at = |i: usize, k: usize| b.min[k] + (i as f64 + 0.5) / SIDE as f64 * (b.max[k] - b.min[k]);
+            (0..SIDE * SIDE * SIDE)
+                .map(|n| Point3::new(at(n % SIDE, 0), at(n / SIDE % SIDE, 1), at(n / (SIDE * SIDE), 2)))
+                .filter(|p| f.contains(*p))
+                .collect()
+        };
+        let inside: Vec<Vec<Point3>> = self.features.iter().map(samples).collect();
+        for (i, f) in self.features.iter().enumerate() {
+            let onto = self.features.iter().zip(&inside).any(|(g, theirs)| {
+                g.combine == f.combine
+                    && inside[i].iter().all(|p| g.contains(r.turned(*p)))
+                    && theirs.iter().all(|q| f.contains(r.turned_by(*q, -r.angle())))
+            });
+            if !onto {
+                return Err(format!(
+                    "feature {} does not turn onto a feature of its kind by 2π/{}: the model is not symmetric under the turn",
+                    i + 1,
+                    r.n
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Whether the model is the same turned by 2π/n about the axis: its solid (a cylinder or a
@@ -208,6 +249,7 @@ impl crate::Model {
                 return Err(why);
             }
             let solid = self.solid.as_ref().ok_or("needs a solid")?;
+            self.features_turn(r)?;
             let b = solid.shape.bounds();
             let scale = (b.max - b.min).norm().max(f64::MIN_POSITIVE);
             let tol = 1e-9 * scale;

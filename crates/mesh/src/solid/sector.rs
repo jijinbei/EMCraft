@@ -245,6 +245,29 @@ fn close(t: Tessellation, rot: &Rotation, scale: f64, refine: Option<f64>, inner
     let first_corners: Vec<[f64; 2]> = corners(0).into_values().collect();
     let second_corners = corners(1);
     let seconds: BTreeSet<u32> = outlines[1].iter().flatten().copied().collect();
+    // The first outline's points, and each second point's distance to its neighbours along its
+    // own outline (before any moves).
+    let first_points: Vec<[f64; 2]> = first.iter().flat_map(|&(a, b)| [a, b]).collect();
+    let mut spacing: BTreeMap<u32, f64> = BTreeMap::new();
+    let mut own: BTreeMap<u32, Vec<([f64; 2], [f64; 2])>> = BTreeMap::new();
+    for e in &outlines[1] {
+        let (a, b) = (halves[1].local(pos[e[0] as usize]), halves[1].local(pos[e[1] as usize]));
+        let d = (a[0] - b[0]).hypot(a[1] - b[1]);
+        for v in e {
+            let s = spacing.entry(*v).or_insert(f64::INFINITY);
+            *s = s.min(d);
+            own.entry(*v).or_default().push((a, b));
+        }
+    }
+    // The open surface's triangles at each of the second outline's points.
+    let mut touching: BTreeMap<u32, Vec<[u32; 3]>> = BTreeMap::new();
+    for tri in &t.surface.triangles {
+        for &w in tri {
+            if seconds.contains(&w) {
+                touching.entry(w).or_default().push(*tri);
+            }
+        }
+    }
     for v in seconds {
         let q = halves[1].local(pos[v as usize]);
         let (gap, near) = if second_corners.contains_key(&v) {
@@ -258,7 +281,39 @@ fn close(t: Tessellation, rot: &Rotation, scale: f64, refine: Option<f64>, inner
         if gap > 0.05 * size {
             return Err(fail(format!("the sector's two cut faces differ by {gap:.3e} m: the solid is not symmetric under the turn")));
         }
-        pos[v as usize] = halves[1].point(near);
+        // A point of the first outline close by along it is taken instead: the union of two
+        // outlines' crossings would otherwise hold pairs a sliver apart, which the mesher refines
+        // down to. Moved along its own straight outline, by less than half the way to its
+        // neighbours, the point keeps its triangles' shapes and sides.
+        // (Taking a mesher's points back, none moves: the volume mesh holds them where they are.)
+        let along = if refine.is_none() || second_corners.contains_key(&v) || q[0].abs() <= merge {
+            near
+        } else {
+            let reach = (0.3 * size).min(0.4 * spacing.get(&v).copied().unwrap_or(0.0));
+            first_points
+                .iter()
+                .map(|&c| ((c[0] - near[0]).hypot(c[1] - near[1]), c))
+                // Not onto the axis (a point there is one vertex of both faces), and only along
+                // its own segments, never round a bend onto another stretch of the outline.
+                .filter(|(d, c)| *d < reach && c[0].abs() > merge)
+                .filter(|(_, c)| own.get(&v).is_some_and(|segs| segs.iter().any(|&(a, b)| nearest_on(a, b, *c).0 <= merge)))
+                .fold((f64::INFINITY, near), |best, x| if x.0 < best.0 { x } else { best })
+                .1
+        };
+        // Only where every triangle at the point keeps its side and most of its area.
+        let moved = halves[1].point(along);
+        let keeps = touching.get(&v).is_none_or(|tris| {
+            tris.iter().all(|tri| {
+                let normal = |p: &dyn Fn(u32) -> Point3| {
+                    let [a, b, c] = tri.map(p);
+                    (b - a).cross(c - a)
+                };
+                let before = normal(&|w| pos[w as usize]);
+                let after = normal(&|w| if w == v { moved } else { pos[w as usize] });
+                after.dot(before) > 0.5 * before.norm_sqr()
+            })
+        });
+        pos[v as usize] = if keeps { moved } else { halves[1].point(near) };
     }
     // The union of the outlines' points on the first plane, each with the vertex it was on each
     // face.
@@ -289,6 +344,15 @@ fn close(t: Tessellation, rot: &Rotation, scale: f64, refine: Option<f64>, inner
             point_of[f].insert(v, k);
         }
     }
+    // Points given on the axis (a mesher's, taken back) split its stretch of the outline: they
+    // are the only ones there, no other face reaching the axis inside the solid.
+    let near = 1e-6 * scale;
+    for &q in inner {
+        if q[0].abs() <= near && !union.iter().any(|u| (u[0] - q[0]).hypot(u[1] - q[1]) <= near) {
+            union.push([0.0, q[1]]);
+            vertex.push([None, None]);
+        }
+    }
     let outline_points = union.len();
     // The outline segments with every union point on them, from each face; the faces must agree.
     let segments = |f: usize| -> BTreeSet<[u32; 2]> {
@@ -311,7 +375,6 @@ fn close(t: Tessellation, rot: &Rotation, scale: f64, refine: Option<f64>, inner
     let segs: Vec<[u32; 2]> = first.into_iter().collect();
     // A mesher's points are its own rounding (about 1e-7 of the size) off ours: one within 1e-6
     // of a point already there or of the outline is that point, or the outline's.
-    let near = 1e-6 * scale;
     for &q in inner {
         let taken = union.iter().any(|u| (u[0] - q[0]).hypot(u[1] - q[1]) <= near);
         let on_outline = segs.iter().any(|e| nearest_on(union[e[0] as usize], union[e[1] as usize], q).0 <= near);
@@ -400,18 +463,36 @@ fn close(t: Tessellation, rot: &Rotation, scale: f64, refine: Option<f64>, inner
     // which puts the vertices of a face it may move on it but not these (the points added on the
     // outlines and in the splits lie on chords). A point on a cut plane stays only where its
     // projection does (a round wall about the axis moves it along the plane, outward).
+    // A vertex moves only onto the one curved surface its triangles share, and only where it
+    // stays on every plane it also lies on (a point where two curved faces meet, or a curved
+    // face meets a plane it would leave, stays: moving it could fold a neighbour over).
+    let mut touching: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
     for (tri, tag) in triangles.iter().zip(&out_tags) {
-        let Some(Some(surface)) = t.analytic.get(*tag as usize) else { continue };
-        if matches!(surface, emcraft_tetmesh::tet::geometry::AnalyticSurface::Plane { .. }) || *tag >= base {
+        for &v in tri {
+            touching.entry(v).or_default().insert(*tag);
+        }
+    }
+    let plane = |s: &emcraft_tetmesh::tet::geometry::AnalyticSurface| matches!(s, emcraft_tetmesh::tet::geometry::AnalyticSurface::Plane { .. });
+    for (&v, tags) in &touching {
+        // (A face without an exact surface is a facet the point may move within; a cut face's
+        // point moves only along its plane, below.)
+        let surfaces: Vec<&emcraft_tetmesh::tet::geometry::AnalyticSurface> =
+            tags.iter().filter_map(|&g| t.analytic.get(g as usize).and_then(Option::as_ref)).collect();
+        // (A curved face split into several tags is still one surface.)
+        let mut curved = surfaces.iter().filter(|s| !plane(s));
+        let Some(surface) = curved.next() else { continue };
+        if curved.any(|s| s != surface) {
             continue;
         }
-        for &v in tri {
-            let p = positions[v as usize];
-            let Some(q) = surface.project(super::mesher::mesher_point(p)).map(super::mesher::model_point) else { continue };
-            let cut = halves.iter().any(|h| h.holds(p));
-            if (q - p).norm() <= 0.2 * size && (!cut || halves.iter().any(|h| h.holds(q))) {
-                positions[v as usize] = q;
-            }
+        let p = positions[v as usize];
+        let Some(q) = surface.project(super::mesher::mesher_point(p)).map(super::mesher::model_point) else { continue };
+        let stays = surfaces
+            .iter()
+            .filter(|s| plane(s))
+            .all(|s| s.project(super::mesher::mesher_point(q)).map(super::mesher::model_point).is_some_and(|r| (r - q).norm() <= tol));
+        let cut = halves.iter().any(|h| h.holds(p));
+        if stays && (q - p).norm() <= 0.2 * size && (!cut || halves.iter().any(|h| h.holds(q))) {
+            positions[v as usize] = q;
         }
     }
     // Only the vertices the triangles use.
@@ -574,6 +655,36 @@ mod tests {
         matched(shape, Rotation::new(5, 2, [0.0, 0.0]).unwrap(), std::f64::consts::PI * r * r * l);
     }
 
+    /// A quarter of a cylinder takes well under the whole's tetrahedra at the same size: the two
+    /// cut outlines' crossings are merged where they lie a sliver apart, so the mesher does not
+    /// refine down to them along the cut lines.
+    #[test]
+    fn a_quarter_takes_a_fraction_of_the_whole_s_tetrahedra() {
+        let shape = Shape::Cylinder { radius: Metres::new(0.01).unwrap(), length: Metres::new(0.03).unwrap() };
+        let count = |rot: Option<Rotation>| {
+            let mut m = Model::new();
+            m.set_solid(Solid { shape: shape.clone(), material: "vacuum".into() }).unwrap();
+            m.rotation = rot;
+            crate::solid::solid(&m, Metres::new(0.003).unwrap()).unwrap().tets.len()
+        };
+        let (whole, quarter) = (count(None), count(Some(Rotation::new(4, 0, [0.0, 0.0]).unwrap())));
+        assert!(10 * quarter < 6 * whole, "{quarter} tetrahedra on a quarter against {whole} on the whole");
+    }
+
+    /// The axis stays split to the element size through the mesher's rounds: taken back from it,
+    /// the points on the axis (the cut faces' alone) are kept, not dropped into one long edge.
+    #[test]
+    fn the_axis_stays_split_to_the_size() {
+        let shape = Shape::Cylinder { radius: Metres::new(0.01).unwrap(), length: Metres::new(0.03).unwrap() };
+        let mut m = Model::new();
+        m.set_solid(Solid { shape, material: "vacuum".into() }).unwrap();
+        m.rotation = Some(Rotation::new(4, 1, [0.0, 0.0]).unwrap());
+        let mesh = crate::solid::solid(&m, Metres::new(0.005).unwrap()).unwrap();
+        let on_axis = mesh.nodes.iter().filter(|p| p[0].hypot(p[1]) < 1e-9).count();
+        assert!(on_axis >= 6, "{on_axis} nodes on the 30 mm axis at 5 mm");
+        matched_mesh(&mesh, m.rotation.unwrap());
+    }
+
     fn matched(shape: Shape, rot: Rotation, whole: f64) {
         let mut m = Model::new();
         m.set_solid(Solid { shape, material: "vacuum".into() }).unwrap();
@@ -582,6 +693,10 @@ mod tests {
         let v: f64 = crate::volumes(&mesh).iter().sum();
         let part = whole / f64::from(rot.n);
         assert!((v - part).abs() < 0.02 * part, "{v} against {part}");
+        matched_mesh(&mesh, rot);
+    }
+
+    fn matched_mesh(mesh: &emcraft_model::Mesh, rot: Rotation) {
         let r = 0.01;
         let tol = 1e-9 * r;
         let node = |n: u32| Point3::new(mesh.nodes[n as usize][0], mesh.nodes[n as usize][1], mesh.nodes[n as usize][2]);

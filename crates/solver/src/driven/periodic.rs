@@ -330,6 +330,10 @@ fn reduction(dofs: &Dofs, master: &[Master], self_tied_vanish: bool) -> Result<(
         if terms.iter().any(|t| dead[t.0]) {
             continue;
         }
+        // Kept, an unknown that is its own image is its own master: its phase is 1 (ψ = 0, the
+        // harmonic m = 0), so it carries no period, and the gradients and the fields read it as
+        // any other master (else the axis' unknowns fall out of the null space's basis).
+        let shift = if terms.iter().any(|t| t.0 == g) { &[0i8; 3] } else { shift };
         for &(m, sign) in terms {
             let reduced = match reduced_of[m].get() {
                 Some(r) => r,
