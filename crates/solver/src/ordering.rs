@@ -36,8 +36,10 @@ fn dissection(xyz: &[Point3], adjacency: &[Vec<usize>], cuts: &[f64], axes: usiz
     let most_axes = axes;
     let n = xyz.len();
     let mut order = Vec::with_capacity(n);
-    // 0 = not in the current part, 1 = left, 2 = right.
+    // 0 = not in the current part, 1 = in it, 3 = its separator.
     let mut side = vec![0u8; n];
+    // Each one's place in the current part's order along the axis being tried.
+    let mut place = vec![0usize; n];
     // An explicit stack instead of recursion: (part, separator to emit after it).
     enum Task {
         Split(Vec<usize>),
@@ -79,21 +81,35 @@ fn dissection(xyz: &[Point3], adjacency: &[Vec<usize>], cuts: &[f64], axes: usiz
         let mut sorted_by: Vec<Vec<usize>> = Vec::with_capacity(axes.len());
         // (index into `sorted_by`, cut, separator)
         let mut best: Option<(usize, usize, Vec<usize>)> = None;
+        for &v in &part {
+            if let Some(s) = side.get_mut(v) {
+                *s = 1;
+            }
+        }
         for &axis in &axes {
             let key = |v: usize| xyz.get(v).map_or(0.0, |p| p[axis]);
             let mut sorted = part.clone();
             sorted.sort_by(|&a, &b| key(a).total_cmp(&key(b)).then(a.cmp(&b)));
+            for (i, &v) in sorted.iter().enumerate() {
+                if let Some(p) = place.get_mut(v) {
+                    *p = i;
+                }
+            }
+            // The first and last places of each one's neighbours in the part: one in front of
+            // a cut touches the side behind it when its last neighbour is behind, and the other
+            // way round; every cut is then read without the graph.
+            let reach: Vec<(usize, usize)> = sorted
+                .iter()
+                .enumerate()
+                .map(|(i, &v)| {
+                    let near = adjacency.get(v).into_iter().flatten().filter(|w| side.get(**w) == Some(&1)).filter_map(|w| place.get(*w).copied());
+                    near.fold((i, i), |(lo, hi), p| (lo.min(p), hi.max(p)))
+                })
+                .collect();
             for &fraction in cuts {
                 let cut = ((part.len() as f64 * fraction) as usize).clamp(1, part.len() - 1);
-                for (i, &v) in sorted.iter().enumerate() {
-                    if let Some(s) = side.get_mut(v) {
-                        *s = if i < cut { 1 } else { 2 };
-                    }
-                }
-                let touches = |v: usize, other: u8| adjacency.get(v).is_some_and(|row| row.iter().any(|w| side.get(*w) == Some(&other)));
-                let (left, right) = sorted.split_at(cut);
-                let left_boundary: Vec<usize> = left.iter().copied().filter(|&v| touches(v, 2)).collect();
-                let right_boundary: Vec<usize> = right.iter().copied().filter(|&v| touches(v, 1)).collect();
+                let left_boundary: Vec<usize> = sorted[..cut].iter().zip(&reach).filter(|(_, r)| r.1 >= cut).map(|(&v, _)| v).collect();
+                let right_boundary: Vec<usize> = sorted[cut..].iter().zip(&reach[cut..]).filter(|(_, r)| r.0 < cut).map(|(&v, _)| v).collect();
                 let separator = if left_boundary.len() <= right_boundary.len() { left_boundary } else { right_boundary };
                 if best.as_ref().is_none_or(|(_, _, b)| separator.len() < b.len()) {
                     best = Some((sorted_by.len(), cut, separator));
@@ -102,6 +118,11 @@ fn dissection(xyz: &[Point3], adjacency: &[Vec<usize>], cuts: &[f64], axes: usiz
             sorted_by.push(sorted);
         }
         let Some((k, half, separator)) = best else {
+            for &v in &part {
+                if let Some(s) = side.get_mut(v) {
+                    *s = 0;
+                }
+            }
             order.extend(part);
             continue;
         };
@@ -393,6 +414,91 @@ mod tests {
         assert_eq!(sorted, (0..m * m).collect::<Vec<_>>());
         let best = fill_reducing_order(&xyz, &adj);
         assert!(fill(&adj, &best) <= fill(&adj, &order).min(fill(&adj, &g)));
+    }
+
+    /// The separator search as first written, each cut's boundaries found by reading the graph
+    /// again: the reference the one-pass reading must reproduce.
+    fn plain_dissection(xyz: &[Point3], adjacency: &[Vec<usize>]) -> Vec<usize> {
+        let n = xyz.len();
+        let (mut order, mut side) = (Vec::new(), vec![0u8; n]);
+        let mut stack: Vec<(bool, Vec<usize>)> = vec![(true, (0..n).collect())];
+        while let Some((split, part)) = stack.pop() {
+            if !split || part.len() <= LEAF {
+                order.extend(part);
+                continue;
+            }
+            let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+            for &v in &part {
+                for k in 0..3 {
+                    lo[k] = lo[k].min(xyz[v][k]);
+                    hi[k] = hi[k].max(xyz[v][k]);
+                }
+            }
+            let mut axes: Vec<usize> = (0..3).filter(|&k| hi[k] > lo[k]).collect();
+            axes.sort_by(|&a, &b| (hi[b] - lo[b]).total_cmp(&(hi[a] - lo[a])).then(a.cmp(&b)));
+            if axes.is_empty() {
+                axes.push(0);
+            }
+            let mut best: Option<(Vec<usize>, usize, Vec<usize>)> = None;
+            for &axis in &axes {
+                let mut sorted = part.clone();
+                sorted.sort_by(|&a, &b| xyz[a][axis].total_cmp(&xyz[b][axis]).then(a.cmp(&b)));
+                for &fraction in CUTS {
+                    let cut = ((part.len() as f64 * fraction) as usize).clamp(1, part.len() - 1);
+                    for (i, &v) in sorted.iter().enumerate() {
+                        side[v] = if i < cut { 1 } else { 2 };
+                    }
+                    let touches = |v: usize, other: u8| adjacency[v].iter().any(|w| side[*w] == other);
+                    let l: Vec<usize> = sorted[..cut].iter().copied().filter(|&v| touches(v, 2)).collect();
+                    let r: Vec<usize> = sorted[cut..].iter().copied().filter(|&v| touches(v, 1)).collect();
+                    let sep = if l.len() <= r.len() { l } else { r };
+                    if best.as_ref().is_none_or(|(_, _, b)| sep.len() < b.len()) {
+                        best = Some((sorted.clone(), cut, sep));
+                    }
+                }
+            }
+            let (sorted, half, sep) = best.unwrap();
+            for &v in &part {
+                side[v] = 0;
+            }
+            let a: Vec<usize> = sorted[..half].iter().copied().filter(|v| !sep.contains(v)).collect();
+            let b: Vec<usize> = sorted[half..].iter().copied().filter(|v| !sep.contains(v)).collect();
+            stack.push((false, sep));
+            stack.push((true, b));
+            stack.push((true, a));
+        }
+        order
+    }
+
+    #[test]
+    fn the_separators_are_those_the_plain_search_finds() {
+        // A jittered 3D lattice with its face and some diagonal neighbours, from a fixed seed.
+        let (nx, ny, nz) = (11, 8, 6);
+        let id = |i: usize, j: usize, k: usize| (i * ny + j) * nz + k;
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut rand = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let mut xyz = vec![Point3::ORIGIN; nx * ny * nz];
+        let mut adj = vec![Vec::new(); nx * ny * nz];
+        for i in 0..nx {
+            for j in 0..ny {
+                for k in 0..nz {
+                    xyz[id(i, j, k)] = Point3::new(i as f64 + 0.3 * rand(), j as f64 + 0.3 * rand(), k as f64 * 1.7 + 0.3 * rand());
+                    for (di, dj, dk) in [(1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 0), (0, 1, 1)] {
+                        let (a, b, c) = (i + di, j + dj, k + dk);
+                        if a < nx && b < ny && c < nz && (di + dj + dk == 1 || rand() < 0.5) {
+                            adj[id(i, j, k)].push(id(a, b, c));
+                            adj[id(a, b, c)].push(id(i, j, k));
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(nested_dissection(&xyz, &adj), plain_dissection(&xyz, &adj));
     }
 
     #[test]
