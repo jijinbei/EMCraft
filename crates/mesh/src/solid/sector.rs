@@ -159,14 +159,14 @@ fn clip(t: &mut crate::csg::Surface, d: &dyn Fn(Point3) -> f64, onto: &dyn Fn(Po
 }
 
 /// The solid's tessellation cut down to its sector, the two cut faces triangulated as each
-/// other's turn, and their tags (after the solid's) for the mesher to freeze. `size` is the
-/// element size, `scale` the model's (its box's diagonal).
-pub(super) fn sector(t: Tessellation, rot: &Rotation, size: f64, scale: f64) -> Result<(Tessellation, [u32; 2])> {
+/// other's turn, and the first of their tags for the mesher to freeze: every triangle of the
+/// cut faces has a tag of its own (so the mesher's boundary recovery does not join a face's
+/// triangles into one facet and triangulate it afresh), the first face's `base..base + T`, the
+/// second's `base + T..base + 2T`, triangle i of the one the turn of triangle i of the other.
+/// `size` is the element size, `scale` the model's (its box's diagonal).
+pub(super) fn sector(t: Tessellation, rot: &Rotation, size: f64, scale: f64) -> Result<(Tessellation, u32)> {
     let tol = 1e-9 * scale;
-    let merge = 1e-7 * scale;
     let halves = [Half::new(rot, rot.start(), tol), Half::new(rot, rot.start() + rot.angle(), tol)];
-    let base = t.surface.tags.iter().map(|g| g + 1).max().unwrap_or(0).max(t.analytic.len() as u32);
-    let tags = [base, base + 1];
     let mut t = t;
     // Inside the sector: past the first plane towards +φ, short of the second.
     for (f, h) in halves.iter().enumerate() {
@@ -180,6 +180,18 @@ pub(super) fn sector(t: Tessellation, rot: &Rotation, size: f64, scale: f64) -> 
     if t.surface.triangles.is_empty() {
         return Err(fail("nothing of the solid lies in the sector"));
     }
+    close(t, rot, scale, Some(size), &[])
+}
+
+/// The sector's open surface `t` (its cut faces missing) closed by two faces each other's turn:
+/// triangulated from the union of the two outlines' points and `inner` (points inside the
+/// first face, on its plane's (s, t)), refined to `refine` when given, else taken as they are.
+fn close(t: Tessellation, rot: &Rotation, scale: f64, refine: Option<f64>, inner: &[[f64; 2]]) -> Result<(Tessellation, u32)> {
+    let tol = 1e-9 * scale;
+    let merge = 1e-7 * scale;
+    let halves = [Half::new(rot, rot.start(), tol), Half::new(rot, rot.start() + rot.angle(), tol)];
+    let base = t.surface.tags.iter().map(|g| g + 1).max().unwrap_or(0).max(t.analytic.len() as u32);
+    let size = refine.unwrap_or(scale);
     let pos = t.surface.positions.clone();
     // The open outline the cut left on each plane, with the axis' stretches inside the solid
     // (where the two faces meet) closing it.
@@ -248,9 +260,6 @@ pub(super) fn sector(t: Tessellation, rot: &Rotation, size: f64, scale: f64) -> 
         }
         pos[v as usize] = halves[1].point(near);
     }
-    // Each face's outward side: out of the sector, back across the first plane, on across the
-    // second.
-    let facings = [false, true];
     // The union of the outlines' points on the first plane, each with the vertex it was on each
     // face.
     let mut union: Vec<[f64; 2]> = Vec::new();
@@ -280,13 +289,14 @@ pub(super) fn sector(t: Tessellation, rot: &Rotation, size: f64, scale: f64) -> 
             point_of[f].insert(v, k);
         }
     }
+    let outline_points = union.len();
     // The outline segments with every union point on them, from each face; the faces must agree.
     let segments = |f: usize| -> BTreeSet<[u32; 2]> {
         let mut out = BTreeSet::new();
         for e in &outlines[f] {
             let (a, b) = (point_of[f][&e[0]], point_of[f][&e[1]]);
             let mut chain = vec![a];
-            chain.extend(between(&union, union[a], union[b], merge));
+            chain.extend(between(&union[..outline_points], union[a], union[b], merge));
             chain.push(b);
             for w in chain.windows(2) {
                 out.insert([w[0].min(w[1]) as u32, w[0].max(w[1]) as u32]);
@@ -299,7 +309,20 @@ pub(super) fn sector(t: Tessellation, rot: &Rotation, size: f64, scale: f64) -> 
         return Err(fail("the sector's two cut faces differ: the solid is not symmetric under the turn"));
     }
     let segs: Vec<[u32; 2]> = first.into_iter().collect();
-    let (points, tris) = crate::planar::pslg(&union, &segs, size)?;
+    // A mesher's points are its own rounding (about 1e-7 of the size) off ours: one within 1e-6
+    // of a point already there or of the outline is that point, or the outline's.
+    let near = 1e-6 * scale;
+    for &q in inner {
+        let taken = union.iter().any(|u| (u[0] - q[0]).hypot(u[1] - q[1]) <= near);
+        let on_outline = segs.iter().any(|e| nearest_on(union[e[0] as usize], union[e[1] as usize], q).0 <= near);
+        if q[0] > near && !taken && !on_outline {
+            union.push(q);
+            vertex.push([None, None]);
+        }
+    }
+    // Refined to the size, or (taking a mesher's points back) only as fine as the points given.
+    let fine = if refine.is_some() { size } else { 4.0 * union.iter().fold(0.0f64, |m, q| m.max(q[0].abs()).max(q[1].abs())) };
+    let (points, tris) = crate::planar::pslg(&union, &segs, fine)?;
     // The faces' vertices: those the outlines had, put exactly on the triangulation's points, and
     // new ones; a point on the axis is one vertex of both faces.
     let mut positions = pos.clone();
@@ -372,19 +395,7 @@ pub(super) fn sector(t: Tessellation, rot: &Rotation, size: f64, scale: f64) -> 
         }
         out_tags.resize(triangles.len(), tag);
     }
-    for f in 0..2 {
-        for tri in &tris {
-            let mut c = tri.map(|k| ids[f][k as usize]);
-            let (a, b, d) = (positions[c[0] as usize], positions[c[1] as usize], positions[c[2] as usize]);
-            let n = (b - a).cross(d - a);
-            let h = halves[f].normal();
-            if (n.x * h[0] + n.y * h[1] > 0.0) != facings[f] {
-                c.swap(1, 2);
-            }
-            triangles.push(c);
-            out_tags.push(tags[f]);
-        }
-    }
+    push_faces((&mut triangles, &mut out_tags), &positions, &halves, &tris, &ids, base);
     // Only the vertices the triangles use.
     let mut id = vec![u32::MAX; positions.len()];
     let mut kept = Vec::new();
@@ -398,9 +409,99 @@ pub(super) fn sector(t: Tessellation, rot: &Rotation, size: f64, scale: f64) -> 
     }
     let mut out = t;
     out.surface = crate::csg::Surface { positions: kept, triangles, tags: out_tags };
-    out.analytic.resize(base as usize, None);
-    out.analytic.extend([None, None]);
-    Ok((out, tags))
+    out.analytic.resize(base as usize + 2 * tris.len(), None);
+    Ok((out, base))
+}
+
+/// The sector's surface as the tetrahedral mesher left it (boundary recovery adds points, even
+/// on frozen faces, and on the outline they share with the solid's other faces), its cut faces
+/// made each other's turn again: the other faces as meshed, the cut faces' points (the second's
+/// turned back onto the first) triangulated with the outlines' as they now are. `None` when the
+/// mesher changed nothing on them. `base` is the first cut-face tag, `t` the surface meshed.
+pub(super) fn refreeze(mesh: &super::mesher::RegionMesh, t: &Tessellation, rot: &Rotation, base: u32, scale: f64) -> Result<Option<Tessellation>> {
+    let tol = 1e-6 * scale;
+    let halves = [Half::new(rot, rot.start(), tol), Half::new(rot, rot.start() + rot.angle(), tol)];
+    let p = |v: u32| mesh.points.get(v as usize).copied().unwrap_or(Point3::ORIGIN);
+    // The mesh's boundary: the solid's other faces, outward, and the cut faces' points.
+    let mut index: BTreeMap<u32, u32> = BTreeMap::new();
+    let mut open = crate::csg::Surface::default();
+    let mut inner: Vec<[f64; 2]> = Vec::new();
+    let mut cut_triangles = 0usize;
+    for f in &mesh.boundary {
+        if f.tag >= base {
+            cut_triangles += 1;
+            for &v in &f.nodes {
+                let q = p(v);
+                if let Some(h) = halves.iter().find(|h| h.holds(q)) {
+                    inner.push(h.local(q));
+                }
+            }
+            continue;
+        }
+        let Some(tv) = mesh.tets.get(f.tet as usize) else { continue };
+        let Some(&apex) = tv.iter().find(|v| !f.nodes.contains(v)) else { continue };
+        let (a, b, c, d) = (p(f.nodes[0]), p(f.nodes[1]), p(f.nodes[2]), p(apex));
+        let tri = if (b - a).cross(c - a).dot(d - a) > 0.0 { [f.nodes[0], f.nodes[2], f.nodes[1]] } else { f.nodes };
+        let ids = tri.map(|v| {
+            *index.entry(v).or_insert_with(|| {
+                open.positions.push(p(v));
+                open.positions.len() as u32 - 1
+            })
+        });
+        open.triangles.push(ids);
+        open.tags.push(f.tag);
+    }
+    // Nothing to do when the mesh's two cut faces are each other's turn already: the points of
+    // the second, turned back, those of the first (the solid's other faces may have changed —
+    // a curved wall is refined to its curvature — without touching them).
+    let key = |q: [f64; 2]| [(q[0] / tol).round() as i64, (q[1] / tol).round() as i64];
+    let mut sides: [BTreeSet<[i64; 2]>; 2] = [BTreeSet::new(), BTreeSet::new()];
+    for f in mesh.boundary.iter().filter(|f| f.tag >= base) {
+        for &v in &f.nodes {
+            let q = p(v);
+            for (k, h) in halves.iter().enumerate() {
+                if h.holds(q) {
+                    sides[k].insert(key(h.local(q)));
+                }
+            }
+        }
+    }
+    let agree = sides[1].iter().all(|k| (-1..=1).any(|i| (-1..=1).any(|j| sides[0].contains(&[k[0] + i, k[1] + j]))));
+    if cut_triangles > 0 && sides[0].len() == sides[1].len() && agree {
+        return Ok(None);
+    }
+    let mut analytic = t.analytic.clone();
+    analytic.truncate(base as usize);
+    let walled = Tessellation { surface: open, analytic, ..t.clone() };
+    close(walled, rot, scale, None, &inner).map(|(t, _)| Some(t))
+}
+
+/// The two cut faces' triangles: `tris` on the first face's vertices `ids[0]` and the second's
+/// `ids[1]`, each oriented out of the sector, triangle i of each tagged `base + i` and
+/// `base + T + i`.
+fn push_faces(
+    (triangles, tags): (&mut Vec<[u32; 3]>, &mut Vec<u32>),
+    positions: &[Point3],
+    halves: &[Half; 2],
+    tris: &[[u32; 3]],
+    ids: &[Vec<u32>; 2],
+    base: u32,
+) {
+    let count = tris.len() as u32;
+    for f in 0..2 {
+        for (i, tri) in tris.iter().enumerate() {
+            let mut c = tri.map(|k| ids[f][k as usize]);
+            let (a, b, d) = (positions[c[0] as usize], positions[c[1] as usize], positions[c[2] as usize]);
+            let n = (b - a).cross(d - a);
+            let h = halves[f].normal();
+            // Out of the sector: back across the first plane, on across the second.
+            if (n.x * h[0] + n.y * h[1] > 0.0) != (f == 1) {
+                c.swap(1, 2);
+            }
+            triangles.push(c);
+            tags.push(base + f as u32 * count + i as u32);
+        }
+    }
 }
 
 /// `tri` split along its one edge with points added, as a fan from the corner across it.

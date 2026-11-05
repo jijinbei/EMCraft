@@ -449,14 +449,30 @@ pub fn pslg(points: &[[f64; 2]], segments: &[[u32; 2]], size: f64) -> Result<(Ve
     if !on.iter().all(|p| seen.insert([p[0] as i64, p[1] as i64])) {
         return Err(invalid("two points of the graph are the same lattice point"));
     }
-    let kinds: Vec<([u32; 2], Kind)> = segments.iter().map(|&s| (s, Kind::Outline)).collect();
-    let mut cdt = Cdt::build(&exact(&on)?, &kinds, MAX_TRIANGLES)?;
     let h = size / lattice::STEP;
+    // Each segment split to the size first: refinement then keeps its points off the segments
+    // (a long one left whole draws them to within a hair of it).
+    let mut on = on;
+    let mut kinds: Vec<([u32; 2], Kind)> = Vec::with_capacity(segments.len());
+    for s in segments {
+        let (a, b) = (on[s[0] as usize], on[s[1] as usize]);
+        let n = ((b[0] - a[0]).hypot(b[1] - a[1]) / h).ceil().clamp(1.0, 1e5) as usize;
+        let mut prev = s[0];
+        for i in 1..n {
+            let t = i as f64 / n as f64;
+            on.push([(a[0] + t * (b[0] - a[0])).round(), (a[1] + t * (b[1] - a[1])).round()]);
+            let next = on.len() as u32 - 1;
+            kinds.push(([prev, next], Kind::Outline));
+            prev = next;
+        }
+        kinds.push(([prev, s[1]], Kind::Outline));
+    }
+    let mut cdt = Cdt::build(&exact(&on)?, &kinds, MAX_TRIANGLES)?;
     cdt.refine(&|_| h, &|_, _| true)?;
     let t = cdt.into_triangulation();
     // Inside: a triangle whose middle the segments enclose an odd number of times (a hole's
     // triangles are enclosed twice), counted along a ray across +x.
-    let lines: Vec<([f64; 2], [f64; 2])> = segments.iter().map(|s| (on[s[0] as usize], on[s[1] as usize])).collect();
+    let lines: Vec<([f64; 2], [f64; 2])> = kinds.iter().map(|(s, _)| (on[s[0] as usize], on[s[1] as usize])).collect();
     let inside = |c: [f64; 2]| {
         lines.iter().filter(|(a, b)| (a[1] > c[1]) != (b[1] > c[1]) && c[0] < a[0] + (c[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1])).count() % 2 == 1
     };

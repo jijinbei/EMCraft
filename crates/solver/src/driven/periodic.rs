@@ -35,7 +35,7 @@ use std::collections::HashMap;
 
 use emcraft_fem::Order;
 use emcraft_mesh::Topology;
-use emcraft_model::{Mesh, Periodic, Point3};
+use emcraft_model::{Mesh, Periodic, Point3, Rotation};
 use num_complex::Complex64 as C;
 
 use super::{Dofs, Result, Slot, invalid};
@@ -89,6 +89,21 @@ pub(super) fn on_tied_face(mesh: &Mesh, periodic: &Periodic, nodes: &[u32; 3]) -
         let (lo, hi) = ext[d];
         let tol = 1e-9 * (hi - lo).abs().max(f64::MIN_POSITIVE);
         [lo, hi].iter().any(|&c| nodes.iter().all(|n| mesh.nodes.get(*n as usize).is_some_and(|p| (p[d] - c).abs() <= tol)))
+    })
+}
+
+/// Whether a boundary face (its nodes) lies on one of a sector's two cut faces: tied, not a wall.
+pub(super) fn on_cut_face(mesh: &Mesh, rot: &Rotation, nodes: &[u32; 3]) -> bool {
+    let size = extent(mesh).iter().map(|(a, b)| b - a).fold(0.0f64, f64::max).max(f64::MIN_POSITIVE);
+    // As the partners are matched (the mesher rounds a node by about 1e-7 of the size).
+    let tol = 1e-6 * size;
+    [rot.start(), rot.start() + rot.angle()].iter().any(|&angle| {
+        nodes.iter().all(|n| {
+            mesh.nodes.get(*n as usize).is_some_and(|p| {
+                let (x, y) = (p.x - rot.centre[0], p.y - rot.centre[1]);
+                (-x * angle.sin() + y * angle.cos()).abs() <= tol && x * angle.cos() + y * angle.sin() >= -tol
+            })
+        })
     })
 }
 
@@ -153,6 +168,46 @@ impl Partners {
             on_high[d] = high;
         }
         Ok((Partners { partner, on_high }, periods))
+    }
+
+    /// The partners of a sector's nodes ([`Rotation`]): each node on the second cut face (the
+    /// axis included) and its image on the first, turned back a sector — a node on the axis is
+    /// its own. The one "period" is the turn, along slot 0.
+    fn rotational(mesh: &Mesh, rot: &Rotation) -> Result<Partners> {
+        let size = extent(mesh).iter().map(|(a, b)| b - a).fold(0.0f64, f64::max).max(f64::MIN_POSITIVE);
+        // The mesher's own coordinates round a node by about 1e-7 of the size: images are matched
+        // to 1e-6 of it, far below any element.
+        let (tol, q) = (1e-6 * size, 1e-6 * size);
+        let on = |angle: f64, p: &Point3| {
+            let (x, y) = (p.x - rot.centre[0], p.y - rot.centre[1]);
+            (-x * angle.sin() + y * angle.cos()).abs() <= tol && x * angle.cos() + y * angle.sin() >= -tol
+        };
+        let (a0, a1) = (rot.start(), rot.start() + rot.angle());
+        let key = |p: Point3| [(p.x / q).round() as i64, (p.y / q).round() as i64, (p.z / q).round() as i64];
+        let first: HashMap<[i64; 3], u32> = mesh.nodes.iter().enumerate().filter(|(_, p)| on(a0, p)).map(|(i, p)| (key(*p), i as u32)).collect();
+        let mut part = vec![Slot::NONE; mesh.nodes.len()];
+        let mut high = vec![false; mesh.nodes.len()];
+        for (i, p) in mesh.nodes.iter().enumerate() {
+            if !on(a1, p) {
+                continue;
+            }
+            let back = rot.turned_by(*p, -rot.angle());
+            // The node within q of the image (its key's neighbours too: rounding may part them).
+            let k = key(back);
+            let found = (-1..=1)
+                .flat_map(|i| (-1..=1).flat_map(move |j| (-1..=1).map(move |l| [k[0] + i, k[1] + j, k[2] + l])))
+                .filter_map(|kk| first.get(&kk).copied())
+                .find(|&m| mesh.nodes.get(m as usize).is_some_and(|a| (*a - back).norm() <= q));
+            let m = found.ok_or_else(|| {
+                invalid("rotational symmetry", "the sector's cut faces do not match node for node (the mesh must be made with the rotation set)")
+            })?;
+            part[i] = Slot::from(m);
+            high[i] = true;
+        }
+        let empty = || (Vec::new(), Vec::new());
+        let (p1, h1) = empty();
+        let (p2, h2) = empty();
+        Ok(Partners { partner: [part, p1, p2], on_high: [high, h1, h2] })
     }
 
     /// The periods from node `n`'s master: 1 along each axis whose high face it lies on.
@@ -235,13 +290,14 @@ fn masters(topo: &Topology, dofs: &Dofs, partners: &Partners) -> Result<Vec<Mast
 }
 
 /// Each full unknown's slot among the kept ones (`None` when dropped), and a point per kept
-/// unknown (its master's).
-fn reduction(dofs: &Dofs, master: &[Master]) -> Result<(Vec<Option<Tied>>, Vec<Point3>)> {
+/// unknown (its master's). With `self_tied_vanish` an unknown that is its own image a period
+/// on (an edge on a rotation's axis, turned onto itself) is dropped: x = e^{−jψ} x with ψ ≠ 0.
+fn reduction(dofs: &Dofs, master: &[Master], self_tied_vanish: bool) -> Result<(Vec<Option<Tied>>, Vec<Point3>)> {
     let total = master.len();
     // A master slot is dead when any slot tied to it is eliminated (a wall on either face).
     let mut dead = vec![false; total];
     for (g, m) in master.iter().enumerate() {
-        if dofs.unknown_of(g).is_none() {
+        if dofs.unknown_of(g).is_none() || (self_tied_vanish && m.slot == g && m.shift != [0; 3]) {
             dead[m.slot] = true;
         }
     }
@@ -315,7 +371,7 @@ impl Tie {
         let axes = [periodic.x, periodic.y, periodic.z];
         let (partners, periods) = Partners::new(mesh, axes)?;
         let master = masters(topo, dofs, &partners)?;
-        let (map, points) = reduction(dofs, &master)?;
+        let (map, points) = reduction(dofs, &master, false)?;
         let reduced = points.len();
         let (pattern, entries) = kept_pattern(pattern, &map, reduced)?;
         let nodes = (0..mesh.nodes.len() as u32)
@@ -325,6 +381,28 @@ impl Tie {
             })
             .collect();
         Ok(Tie { map, reduced, points, periods, axes, pattern, entries, nodes })
+    }
+
+    /// The reduction of a sector's unknowns ([`Rotation`]): each on the second cut face tied to
+    /// its image on the first a turn back, the one phase (slot 0 of the phases) ψ = 2πm/n; the
+    /// unknowns on the axis that turn onto themselves dropped unless m = 0. Order 1 only (order
+    /// 2's face functions mix under the turn's reordering of a face's nodes).
+    pub(super) fn rotational(mesh: &Mesh, topo: &Topology, dofs: &Dofs, rot: &Rotation, pattern: &Csr) -> Result<Tie> {
+        if dofs.order != Order::One {
+            return Err(invalid("rotational symmetry", "not supported yet: order 2 on a sector (use order 1)"));
+        }
+        let partners = Partners::rotational(mesh, rot)?;
+        let master = masters(topo, dofs, &partners)?;
+        let (map, points) = reduction(dofs, &master, rot.m != 0)?;
+        let reduced = points.len();
+        let (pattern, entries) = kept_pattern(pattern, &map, reduced)?;
+        let nodes = (0..mesh.nodes.len() as u32)
+            .map(|n| {
+                let s = partners.shift_of(n);
+                (partners.translate(n, s), s)
+            })
+            .collect();
+        Ok(Tie { map, reduced, points, periods: [rot.angle(), 0.0, 0.0], axes: [true, false, false], pattern, entries, nodes })
     }
 
     /// Node `n`'s master node and the periods from it.

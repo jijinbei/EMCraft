@@ -295,6 +295,31 @@ where
     Ok(Dispersion { axis: sweep.axis, period, points, unknowns: tie.reduced })
 }
 
+/// The cavity modes of a rotationally symmetric model ([`emcraft_model::Rotation`]) in its
+/// harmonic m, from its sector: the `count` lowest frequencies (Hz) above the null space near
+/// `near`. The sector's cut faces are tied by e^{−j2πm/n}: the modes of the whole whose fields
+/// go as e^{−jm′φ} with m′ ≡ m (mod n).
+pub fn cyclic_modes(model: &Model, order: Order, count: usize, near: f64) -> Result<Vec<f64>> {
+    if !(1..=MAX_BANDS).contains(&count) {
+        return Err(invalid("modes", format!("must be 1 to {MAX_BANDS}")));
+    }
+    check_frequency(near)?;
+    let rot = model.rotation.ok_or_else(|| SolveError::NotReady("no rotational symmetry: set it with model.rotation".into()))?;
+    let d = Driven::cavity(model, order)?;
+    let (_, stiffness, mass) = d.matrices();
+    if d.is_dispersive() || mass.iter().any(|m| m.im != 0.0) || stiffness.iter().any(|k| k.im != 0.0) {
+        return Err(invalid("rotational symmetry", "not supported yet: lossy or dispersive materials on a sector"));
+    }
+    let tie = d.tie.as_ref().ok_or_else(|| invalid("rotational symmetry", "the sector has no reduction"))?;
+    if tie.reduced == 0 {
+        return Err(SolveError::NotReady("the sector has no unknowns".into()));
+    }
+    let an = Analysis::new(tie.pattern(), &tie.points, 0).map_err(SolveError::from)?;
+    let k = wavenumber(near);
+    let (k2, _) = bands_at(&d, tie, &an, [rot.phase(), 0.0, 0.0], count, k * k)?;
+    Ok(k2.iter().map(|l| l.sqrt() * C0 / (2.0 * PI)).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -335,6 +360,53 @@ mod tests {
             );
             for (f, e) in p.frequencies.iter().zip(&exact) {
                 assert!((f - e).abs() < 2e-3 * e, "ψ = {}: {f} vs {e} ({:?})", p.psi, p.frequencies);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod cyclic_tests {
+    use super::*;
+    use emcraft_model::{Metres, Rotation, Shape, Solid};
+
+    fn sector_modes(n: u32, m: u32, near: f64, size: f64) -> Vec<f64> {
+        let mut model = Model::new();
+        let shape = Shape::Cylinder { radius: Metres::new(0.01).unwrap(), length: Metres::new(0.015).unwrap() };
+        model.set_solid(Solid { shape, material: "vacuum".into() }).unwrap();
+        model.rotation = Some(Rotation::new(n, m, [0.0, 0.0]).unwrap());
+        model.mesh = Some(std::sync::Arc::new(emcraft_mesh::solid::solid(&model, Metres::new(size).unwrap()).unwrap()));
+        cyclic_modes(&model, Order::One, 2, near).unwrap()
+    }
+
+    /// The pillbox's modes: harmonic 0 holds TM010 and TM011, harmonic 1 TE111 and TM110.
+    fn exact() -> [(u32, [f64; 2]); 2] {
+        let f = |x: f64, p: f64| ((x / 0.01f64).powi(2) + (p * PI / 0.015).powi(2)).sqrt() * C0 / (2.0 * PI);
+        [(0, [f(2.404_825_557_695_773, 0.0), f(2.404_825_557_695_773, 1.0)]), (1, [f(1.841_183_781_340_659, 1.0), f(3.831_705_970_207_512, 0.0)])]
+    }
+
+    /// A pillbox (radius 10 mm, 15 mm long) on a quarter: harmonic 0 holds the azimuthal orders
+    /// 0, ±4, … (TM010, TM011), harmonic 1 the orders 1, −3, … (TE111 once — its partner of order
+    /// −1 is harmonic 3's — and TM110); the closed forms of Pozar §6.4 with the Bessel zeros of
+    /// Abramowitz & Stegun Table 9.5. Order 1 on 2.5 mm tetrahedra: within 1 % (−0.6 % at most).
+    #[test]
+    fn a_quarter_of_a_pillbox_resonates_in_each_harmonic_as_the_whole() {
+        for (m, exact) in exact() {
+            let got = sector_modes(4, m, 0.9 * exact[0], 0.0025);
+            for (g, e) in got.iter().zip(&exact) {
+                assert!((g - e).abs() / e < 0.01, "m = {m}: {got:?} against {exact:?}");
+            }
+        }
+    }
+
+    /// As the quarter, on 1.5 mm tetrahedra: within 0.3 % (−0.2 % at most).
+    #[test]
+    #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+    fn a_quarter_of_a_pillbox_converges_on_a_finer_mesh() {
+        for (m, exact) in exact() {
+            let got = sector_modes(4, m, 0.9 * exact[0], 0.0015);
+            for (g, e) in got.iter().zip(&exact) {
+                assert!((g - e).abs() / e < 0.003, "m = {m}: {got:?} against {exact:?}");
             }
         }
     }

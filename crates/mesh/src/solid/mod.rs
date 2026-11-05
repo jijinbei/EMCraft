@@ -205,9 +205,9 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
     // The sector a rotation keeps: cut by a wedge last, its two cut faces then matched.
     let mut frozen = Vec::new();
     if let (Some(rot), Some(b)) = (&model.rotation, model.bounds()) {
-        let (matched, tags) = sector::sector(main, rot, size, (b.max - b.min).norm())?;
+        let (matched, base) = sector::sector(main, rot, size, (b.max - b.min).norm())?;
         main = matched;
-        frozen.extend(tags);
+        frozen.push(base);
     }
     // Gaps narrower than a tenth of the size filled with elements as small as they are.
     let (gaps, gap_tets) = narrow::gap_sizes(&main, size, combine::gaps(size).flush)?;
@@ -318,7 +318,7 @@ struct Body<'a> {
     inner_size: Vec<f64>,
     locals: Vec<LocalSize>,
     shell: bool,
-    /// The solid's own faces kept as tessellated (a sector's two cut faces).
+    /// A sector's cut faces: the first of their tags (theirs are the solid's last; frozen).
     frozen: Vec<u32>,
 }
 
@@ -378,6 +378,8 @@ impl Body<'_> {
             .map(|(inc, h)| placed(tessellate(&inc.shape, interface_size(&inc.shape, size.min(*h), inc.material.is_none())), inc.at))
             .collect();
         let mut out = Regions { meshes: Vec::new(), start_face: main.start_face, end_face: main.end_face, first_tag: 0, interfaces: Vec::new() };
+        // A sector's cut faces not yet each other's turn after the last round's meshing.
+        let mut unmatched = false;
         for _ in 0..MAX_INTERFACE_ROUNDS {
             // Tags: the solid's faces (with a spherical layer, the inner sphere's triangles), then
             // each interface's triangles in turn.
@@ -392,8 +394,21 @@ impl Body<'_> {
                 next += count;
             }
             let frozen_from = if self.shell { 0 } else { out.first_tag };
-            let frozen: Vec<u32> = (frozen_from..next).chain(self.frozen.iter().copied()).collect();
+            // A sector: every face of the solid kept as tessellated (the cut faces must stay each
+            // other's turn, and the outline they share with the solid's other faces with them).
+            let cut = self.frozen.first().map_or(0..0, |_| 0..out.first_tag);
+            let frozen: Vec<u32> = (frozen_from..next).chain(cut).collect();
             let outer_mesh = region(&outer, size, frozen, &self.locals)?;
+            // A sector's cut faces with points the mesher added: matched again and meshed again.
+            if let (Some(rot), Some(&base)) = (&model.rotation, self.frozen.first()) {
+                let scale = model.bounds().map_or(size, |bx| (bx.max - bx.min).norm());
+                unmatched = false;
+                if let Some(t) = sector::refreeze(&outer_mesh, &main, rot, base, scale)? {
+                    main = t;
+                    unmatched = true;
+                    continue;
+                }
+            }
             let mut changed = false;
             for (t, tags) in interfaces.iter_mut().zip(&out.interfaces) {
                 changed |= adopt(t, extract(&outer_mesh, tags.first, tags.count, false), size);
@@ -423,6 +438,12 @@ impl Body<'_> {
             if !changed {
                 break;
             }
+        }
+        if unmatched {
+            return Err(MeshError::invalid(
+                "rotational symmetry",
+                "the mesher kept adding points to the sector's cut faces; try another element size",
+            ));
         }
         Ok(out)
     }

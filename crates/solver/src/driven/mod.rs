@@ -305,7 +305,11 @@ impl BoundaryFaces {
     fn classify(model: &Model, mesh: &Mesh, ends: Ends, perfect_walls: bool) -> Result<BoundaryFaces> {
         // Faces on a periodic boundary are neither walls nor ports: they are tied to the
         // opposite face.
-        let tied = |i: usize| model.periodic.as_ref().is_some_and(|p| periodic::on_tied_face(mesh, p, &mesh.boundary[i].nodes));
+        let tied = |i: usize| {
+            let nodes = &mesh.boundary[i].nodes;
+            model.periodic.as_ref().is_some_and(|p| periodic::on_tied_face(mesh, p, nodes))
+                || model.rotation.as_ref().is_some_and(|r| periodic::on_cut_face(mesh, r, nodes))
+        };
         let ports: Vec<Vec<usize>> = match ends {
             Ends::Ports => model.ports.iter().map(|p| ports::faces_of_port(mesh, p)).collect::<Result<_>>()?,
             Ends::Closed => Vec::new(),
@@ -398,14 +402,21 @@ impl Driven {
         let pattern = space.pattern(gaps.map(|c| c.iter().map(|(u, _)| *u).collect()));
         let in_pml = pml.as_ref().map(Layer::tets).unwrap_or_default();
         let volume = space.volume_matrices(&pattern, &media, |t| !in_pml.contains(&t))?;
-        let tie = match &model.periodic {
-            Some(per) => {
+        let tie = match (&model.periodic, &model.rotation) {
+            (Some(_), Some(_)) => return Err(invalid("rotational symmetry", "not supported yet: with periodic boundaries")),
+            (Some(per), None) => {
                 if !lumped.is_empty() || !elements.is_empty() || pml.is_some() {
                     return Err(invalid("periodic boundaries", "not supported yet: lumped ports or a matched layer in a periodic cell"));
                 }
                 Some(periodic::Tie::new(&mesh, &topo, &dofs, per, &pattern)?)
             }
-            None => None,
+            (None, Some(rot)) => {
+                if !lumped.is_empty() || !elements.is_empty() || pml.is_some() {
+                    return Err(invalid("rotational symmetry", "not supported yet: lumped ports, elements or a matched layer on a sector"));
+                }
+                Some(periodic::Tie::rotational(&mesh, &topo, &dofs, rot, &pattern)?)
+            }
+            (None, None) => None,
         };
         let wall = match sigma {
             Some(sigma) => Some(WallLoss {
