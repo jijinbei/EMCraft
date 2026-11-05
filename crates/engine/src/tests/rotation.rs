@@ -198,7 +198,7 @@ fn a_quarter_s_rotating_modes_converge() {
 /// The Bessel roots of TE11, TM01 and TE21's cut-offs (Abramowitz–Stegun, Table 9.5).
 const X11P: f64 = 1.841_183_781_340_659;
 const X01: f64 = 2.404_825_557_695_773;
-const X21P: f64 = 3.054_236_928_227_140;
+const X21P: f64 = 3.054_236_928_227_14;
 
 #[test]
 fn fields_beyond_the_sector_are_its_turns_phased() {
