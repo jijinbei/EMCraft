@@ -269,7 +269,8 @@ pub fn cutoffs(s: &Session) -> Vec<Cutoff> {
         let n = (mat.eps_r.get() * mat.mu_r.get()).sqrt();
         let owner = format!("port {}", p.name);
         match shape {
-            emcraft_model::PortShape::Rect { a, b, .. } => {
+            rect @ emcraft_model::PortShape::Rect { .. } => {
+                let Some((a, b)) = rect.sides() else { continue };
                 add(C0 / (2.0 * a * n), "TE10", &owner, true, &mut out);
                 add(C0 / (a * n), "TE20", &owner, false, &mut out);
                 add(C0 / (2.0 * b * n), "TE01", &owner, false, &mut out);
@@ -432,7 +433,7 @@ fn excitation(s: &Session) -> StepState {
     // decays (an experiment may want just that), a note that leaves the step's standing.
     let Some(start) = m.job.range().map(|b| b.start.get()) else { return st };
     for p in m.ports.iter().filter(|_| m.periodic.is_none()) {
-        let (Ok(emcraft_model::PortShape::Rect { a, .. }), Ok(mat)) = (m.port_shape_of(p), m.port_material(p.end)) else { continue };
+        let (Some((a, _)), Ok(mat)) = (m.port_shape_of(p).ok().and_then(|s| s.sides()), m.port_material(p.end)) else { continue };
         let cutoff = C0 / (2.0 * a * (mat.eps_r.get() * mat.mu_r.get()).sqrt());
         if start <= cutoff {
             st.note(

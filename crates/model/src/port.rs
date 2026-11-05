@@ -19,6 +19,26 @@ pub enum PortShape {
     Circle { cx: f64, cy: f64, r: f64 },
 }
 
+impl PortShape {
+    /// A rectangle's broad side and narrow side (m), whichever way round the face gives them:
+    /// TE10 varies across the broad one.
+    ///
+    /// ```
+    /// use emcraft_model::PortShape;
+    ///
+    /// // An E-plane bend's port: the face's first side is the guide's narrow one.
+    /// let p = PortShape::Rect { x0: 0.0, y0: 0.0, a: 0.01016, b: 0.02286 };
+    /// assert_eq!(p.sides(), Some((0.02286, 0.01016)));
+    /// assert_eq!(PortShape::Circle { cx: 0.0, cy: 0.0, r: 0.01 }.sides(), None);
+    /// ```
+    pub fn sides(&self) -> Option<(f64, f64)> {
+        match *self {
+            PortShape::Rect { a, b, .. } => Some((a.max(b), a.min(b))),
+            PortShape::Circle { .. } => None,
+        }
+    }
+}
+
 emcraft_macros::named_enum! {
     /// Which end of the waveguide a port closes (for a port on a face, which side of its plane
     /// the guide lies: start above it along the face's axis, end below it).

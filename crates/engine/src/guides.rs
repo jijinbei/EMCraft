@@ -95,7 +95,7 @@ pub fn bands(s: &Session) -> Vec<GuideBand> {
     let m = &s.model;
     let mut widths: Vec<(f64, f64)> = Vec::new();
     for p in m.ports.iter().take(64) {
-        let (Ok(emcraft_model::PortShape::Rect { a, .. }), Ok(mat)) = (m.port_shape_of(p), m.port_material(p.end)) else { continue };
+        let (Some((a, _)), Ok(mat)) = (m.port_shape_of(p).ok().and_then(|s| s.sides()), m.port_material(p.end)) else { continue };
         widths.push((a, (mat.eps_r.get() * mat.mu_r.get()).sqrt()));
     }
     if widths.is_empty()

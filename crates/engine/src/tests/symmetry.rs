@@ -58,3 +58,19 @@ fn a_port_the_plane_does_not_cut_through_its_middle_is_refused() {
     let e = s.execute("model.symmetry", &json!({"axis": "x", "kind": "magnetic"})).unwrap_err();
     assert!(e.to_string().contains("port"), "{e}");
 }
+
+/// A face port's sides come either way round: an E-plane bend's faces give the narrow side
+/// first, and its dominant mode is still across the broad one — no "below cut-off" note at the
+/// X band, its first cut-off TE10 at c/2a, and the X band its ports' band.
+#[test]
+fn a_face_port_given_narrow_side_first_is_read_by_its_broad_side() {
+    let mut s = crate::Session::new();
+    s.execute("file.sample", &json!({"name": "td-e-bend"})).unwrap();
+    let steps = crate::workflow::steps(&s);
+    let notes: Vec<&str> = steps.iter().flat_map(|st| st.messages.iter().map(|m| m.text.as_str())).collect();
+    assert!(!notes.iter().any(|t| t.contains("cut-off")), "{notes:?}");
+    let first = crate::workflow::cutoffs(&s).into_iter().find(|c| c.first).unwrap();
+    assert!((first.frequency - emcraft_model::units::C0 / (2.0 * 0.02286)).abs() < 1e3 && first.label.starts_with("TE10"), "{first:?}");
+    let bands = crate::guides::bands(&s);
+    assert_eq!(bands.first().map(|b| b.name.as_str()), Some("WR-90"), "{bands:?}");
+}
