@@ -4,16 +4,18 @@
 
 use super::*;
 
-/// What draws the 3D view.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Drawer {
-    /// The window's GPU, in a paint callback ([`crate::gpu3d::paint`]).
-    Window,
-    /// A device of the process's own, its picture read back into a texture (a window without a
-    /// wgpu device, the headless harness, `ui.render`).
-    Offscreen,
-    /// No adapter at all: a message.
-    None,
+emcraft_macros::named_enum! {
+    /// What draws the 3D view.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Drawer {
+        /// The window's GPU, in a paint callback ([`crate::gpu3d::paint`]).
+        Window = "gpu",
+        /// A device of the process's own, its picture read back into a texture (a window without a
+        /// wgpu device, the headless harness, `ui.render`).
+        Offscreen = "offscreen",
+        /// No adapter at all: a message.
+        None = "none",
+    }
 }
 
 impl Drawer {
@@ -23,14 +25,6 @@ impl Drawer {
             (true, _) => Drawer::Window,
             (false, true) => Drawer::Offscreen,
             (false, false) => Drawer::None,
-        }
-    }
-
-    pub fn id(self) -> &'static str {
-        match self {
-            Drawer::Window => "gpu",
-            Drawer::Offscreen => "offscreen",
-            Drawer::None => "none",
         }
     }
 }

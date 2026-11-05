@@ -30,14 +30,8 @@ use crate::{TheoryError, decaying_sqrt};
 
 const J: C = C::new(0.0, 1.0);
 
-/// A polarization relative to the plane of incidence.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Polarization {
-    /// E normal to the plane of incidence.
-    Te,
-    /// H normal to it.
-    Tm,
-}
+/// A polarization relative to the plane of incidence: the model's own (TE: E normal to it, TM: H).
+pub use emcraft_model::Polarization;
 
 /// A layer of the stack: its thickness (m) and material (ε may be complex, ε′ − jε″).
 #[derive(Clone, Copy, Debug, PartialEq)]

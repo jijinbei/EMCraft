@@ -164,22 +164,15 @@ impl Fields {
     }
 }
 
-/// Device choice progresses once from Pending to Automatic; any user command makes it
-/// Explicit. Opening another project preserves the choice for this machine.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum DeviceSelection {
-    #[default]
-    Pending,
-    Automatic,
-    Explicit,
-}
-impl DeviceSelection {
-    pub fn id(self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Automatic => "automatic",
-            Self::Explicit => "explicit",
-        }
+emcraft_macros::named_enum! {
+    /// Device choice progresses once from Pending to Automatic; any user command makes it
+    /// Explicit. Opening another project preserves the choice for this machine.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub enum DeviceSelection {
+        #[default]
+        Pending = "pending",
+        Automatic = "automatic",
+        Explicit = "explicit",
     }
 }
 

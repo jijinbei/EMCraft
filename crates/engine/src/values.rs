@@ -7,7 +7,7 @@
 //! gives an empty object.
 
 use emcraft_model::units::Display;
-use emcraft_model::{Model, OpenShape, Polarization, Shape, Source};
+use emcraft_model::{Model, Shape, Source};
 use serde_json::{Map, Value, json};
 
 use crate::bodies::{BodyRef, METAL};
@@ -39,8 +39,7 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
         "model.open" => match m.open {
             None => json!({}),
             Some(o) => {
-                let mut v =
-                    json!({"thickness": l(o.thickness.get()), "shape": match o.shape { OpenShape::Box => "box", OpenShape::Sphere => "sphere" }});
+                let mut v = json!({"thickness": l(o.thickness.get()), "shape": o.shape.id()});
                 if let Some(r) = o.reflection {
                     v["reflection"] = json!(r);
                 }
@@ -58,7 +57,7 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
             None => json!({}),
             Some(q) => json!({
                 "x": q.x, "y": q.y, "z": q.z, "theta": q.theta.to_degrees(), "phi": q.phi.to_degrees(),
-                "polarization": match q.polarization { Polarization::Te => "te", Polarization::Tm => "tm" },
+                "polarization": q.polarization.id(),
             }),
         },
         "geometry.waveguide" => waveguide(m, s.display),

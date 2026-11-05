@@ -20,7 +20,7 @@ fn shown(p: &Option<Periodic>) -> Value {
             "periodic": true,
             "x": p.x, "y": p.y, "z": p.z,
             "theta": p.theta.to_degrees(), "phi": p.phi.to_degrees(),
-            "polarization": match p.polarization { Polarization::Te => "te", Polarization::Tm => "tm" },
+            "polarization": p.polarization.id(),
         }),
     }
 }
@@ -176,11 +176,7 @@ pub fn stack_reference(s: &Session) -> Result<emcraft_theory::floquet::Stack> {
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let polarization = match p.polarization {
-        Polarization::Te => emcraft_theory::floquet::Polarization::Te,
-        Polarization::Tm => emcraft_theory::floquet::Polarization::Tm,
-    };
-    Ok(emcraft_theory::floquet::Stack { layers, theta: p.theta, polarization })
+    Ok(emcraft_theory::floquet::Stack { layers, theta: p.theta, polarization: p.polarization })
 }
 
 #[cfg(test)]

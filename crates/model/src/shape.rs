@@ -526,15 +526,6 @@ emcraft_macros::named_enum! {
 emcraft_macros::named_serde!(Combine);
 
 impl Combine {
-    /// The operation's name, for display.
-    pub fn kind(self) -> &'static str {
-        match self {
-            Combine::Add => "add",
-            Combine::Subtract => "subtract",
-            Combine::Intersect => "intersect",
-        }
-    }
-
     /// Whether a point lies in the combination, given whether it lies in the body so far and
     /// in the feature.
     pub fn apply(self, body: bool, feature: bool) -> bool {
