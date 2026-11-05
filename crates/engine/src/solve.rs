@@ -1,10 +1,11 @@
 //! The solvers' commands: the driven sweep, the time domain, eigenmodes and port modes.
 
-use std::f64::consts::{LOG10_E, PI};
+use emcraft_model::units::wavenumber;
+use std::f64::consts::LOG10_E;
 use std::sync::Arc;
 
 use emcraft_gpu::{Backend, Fronts, Gpu, Precision};
-use emcraft_model::units::{C0, Length};
+use emcraft_model::units::Length;
 use emcraft_solver::accel::Accelerator;
 use emcraft_solver::{Driven, FrequencyResult};
 use serde_json::{Value, json};
@@ -427,7 +428,7 @@ pub fn port_modes(s: &mut Session, p: &Params) -> Result<Value> {
 fn port_modes_of(s: &mut Session, p: &Params) -> Result<PortModes> {
     let f = crate::args::frequency_or_band_top(s, p, "frequency", crate::args::SET_THE_BAND)?;
     let list = emcraft_solver::driven::port_modes(&s.model, p.order()?, f)?;
-    let k0 = 2.0 * PI * f / C0;
+    let k0 = wavenumber(f);
     // Per display length: a quantity per metre times the metres in one unit.
     let per_unit = s.display.length.to_si(1.0);
     let ports = list

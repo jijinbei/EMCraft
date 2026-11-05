@@ -53,9 +53,10 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+use emcraft_model::units::{angular, wavenumber};
 use std::f64::consts::PI;
 
-use emcraft_model::units::{C0, EPS0, MU0};
+use emcraft_model::units::{EPS0, MU0};
 use emcraft_model::{Conductivity, Hertz, Material, Model, Quantity, Span, Waveguide};
 use num_complex::Complex64 as C;
 
@@ -223,7 +224,7 @@ impl Losses {
     /// The conductivity σ = ω_r ε₀ εr tan δ (S/m) and magnetic conductivity σ_m = ω_r μ₀ μr
     /// tan δ_m (Ω/m) standing for `m`'s loss tangents (εr is ε∞ with dispersion).
     pub fn of(&self, m: &Material) -> (f64, f64) {
-        let w = 2.0 * PI * self.reference;
+        let w = angular(self.reference);
         (w * EPS0 * m.eps_r.get() * m.loss_tangent.get(), w * MU0 * m.mu_r.get() * m.magnetic_loss_tangent.get())
     }
 
@@ -339,7 +340,7 @@ impl PortGuide {
 
     /// k² − (π/a)² at `f`, k² = k₀² ε μ.
     pub(crate) fn kz2(&self, f: f64) -> C {
-        let k0 = 2.0 * PI * f / C0;
+        let k0 = wavenumber(f);
         let (eps, mu) = self.losses.eps_mu(&self.material, f);
         eps * mu * (k0 * k0) - (PI / self.width).powi(2)
     }

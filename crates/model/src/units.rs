@@ -26,6 +26,24 @@ pub const EPS0: f64 = 1.0 / (MU0 * C0 * C0);
 /// Free-space wave impedance η₀ = μ₀c (Ω).
 pub const ETA0: f64 = MU0 * C0;
 
+/// The angular frequency ω = 2πf (rad/s) of `f` (Hz).
+///
+/// ```
+/// use emcraft_model::units::{C0, angular, wavenumber};
+///
+/// let f = 10e9; // Hz
+/// assert_eq!(angular(f), 2.0 * std::f64::consts::PI * f); // rad/s, this very sum
+/// assert!((wavenumber(f) - angular(f) / C0).abs() < 1e-12); // 1/m
+/// ```
+pub fn angular(f: f64) -> f64 {
+    2.0 * std::f64::consts::PI * f
+}
+
+/// The free-space wavenumber k₀ = 2πf/c (1/m) of `f` (Hz).
+pub fn wavenumber(f: f64) -> f64 {
+    2.0 * std::f64::consts::PI * f / C0
+}
+
 /// A unit of the display system: how many SI units one of it is, and its symbol. The
 /// conversions to and from SI are written once, here.
 pub trait Unit: Copy {

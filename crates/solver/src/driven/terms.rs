@@ -14,8 +14,8 @@
 //! reciprocal ([`super::sparams`]). The modes are orthogonal in that unconjugated form, the
 //! one the projection c = vᵀx/D needs.
 
+use emcraft_model::units::angular;
 use std::borrow::Cow;
-use std::f64::consts::PI;
 
 use emcraft_fem::modes::Mode;
 use emcraft_model::units::{C0, MU0};
@@ -193,7 +193,7 @@ impl Driven {
     /// The power (W) a unit TE₁₀ wave carries into port `p`: ½ ‖e‖² β/(ωμ).
     pub fn incident_power(&self, p: usize, frequency: f64) -> Option<f64> {
         let port = self.ports.get(p)?;
-        let omega = 2.0 * PI * frequency;
+        let omega = angular(frequency);
         match &port.modes {
             PortModes::Analytic { medium: Some(_), .. } | PortModes::Numeric(_) => {
                 Some(0.5 * self.port_terms(p, frequency).ok()?.first()?.proxy.re / (omega * MU0))

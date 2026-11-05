@@ -24,7 +24,7 @@
 //! apart along an inhomogeneous line). Ports read in their first mode keep their own waves, or
 //! the reference impedance's as in [`Driven::refer`], in the same transformation.
 
-use std::f64::consts::PI;
+use emcraft_model::units::angular;
 
 use emcraft_model::DEFAULT_TERMINAL_IMPEDANCE;
 use emcraft_model::units::MU0;
@@ -152,7 +152,7 @@ impl Driven {
         // The fields: entry k's unit wave is the modes' incident waves D X e_k at their faces,
         // each mode's field per unit power wave its unit coefficient's over √P (P: the power a
         // unit coefficient carries on the whole line).
-        let omega = 2.0 * PI * frequency;
+        let omega = angular(frequency);
         let whole = 2f64.powi(self.symmetry.len() as i32);
         let mut weight = Vec::with_capacity(n);
         for e in 0..n {

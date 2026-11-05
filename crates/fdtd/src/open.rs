@@ -26,6 +26,7 @@
 //! sources share one Gaussian-modulated pulse; impedances are ratios of transforms, so its
 //! spectrum cancels, and fields are reported per volt (or ampere) of source spectrum.
 
+use emcraft_model::units::angular;
 use std::f64::consts::PI;
 use std::ops::{ControlFlow, Range};
 
@@ -862,7 +863,7 @@ impl Transforms {
         self.at_samples.clear();
         self.at_samples.extend(hbox.samples.iter().map(|x| x.fields(fields)));
         for (fi, &f) in self.freqs.iter().enumerate() {
-            let w = 2.0 * PI * f;
+            let w = angular(f);
             let pe = C::from_polar(dt, -w * t_e);
             let ph = C::from_polar(dt, -w * t_h);
             for ((de, dh), &(e, h)) in self.e[fi].iter_mut().zip(self.h[fi].iter_mut()).zip(&self.at_samples) {
@@ -877,7 +878,7 @@ impl Transforms {
         let dt = self.dt;
         let t_h = (step as f64 + 0.5) * dt;
         for (fi, &f) in self.freqs.iter().enumerate() {
-            let ph = C::from_polar(dt, -2.0 * PI * f * t_h);
+            let ph = C::from_polar(dt, -angular(f) * t_h);
             self.source[fi] += ph * s;
             for (pi, (v, i)) in ports.iter().enumerate() {
                 self.voltage[pi][fi] += ph * *v;

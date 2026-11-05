@@ -27,6 +27,7 @@
 //! the same step along it, gives the incident wave at its face. Then S_qq = (V_q − V_qⁱⁿᶜ)/V_qⁱⁿᶜ
 //! and S_pq = V_p/V_qⁱⁿᶜ in power waves (amplitudes V/‖e‖, power ∝ ‖e‖ β/μ), at the ports' faces.
 
+use emcraft_model::units::angular;
 use std::f64::consts::PI;
 use std::ops::ControlFlow;
 
@@ -588,7 +589,7 @@ impl Run<'_> {
         let psi = BoxPsi::new(&fields);
         let kernel = OpenKernel { fields: &fields, coef: &coef, cpml: &cpml, psi: &psi, steps: &steps, dt: self.dt };
         let nf = self.frequencies.len();
-        let advance: Vec<C> = self.frequencies.iter().map(|f| C::from_polar(1.0, -2.0 * PI * f * self.dt)).collect();
+        let advance: Vec<C> = self.frequencies.iter().map(|f| C::from_polar(1.0, -angular(*f) * self.dt)).collect();
         let mut phasor = advance.clone();
         let mut sums = vec![vec![C::new(0.0, 0.0); nf]; planes.len()];
         let mut settling = Settling::new(self.o.decay);

@@ -1,6 +1,7 @@
 //! Commands of open problems: the perfectly matched layer, sources, the radiation solve and far
 //! fields. Their pattern chart is `view`'s.
 
+use emcraft_model::units::wavenumber;
 use std::f64::consts::PI;
 use std::sync::Arc;
 
@@ -168,7 +169,7 @@ fn scattered(s: &Session, f: f64, power: f64, reply: &mut Value) {
     let l = s.display.length.from_si(1.0);
     reply["scattering_cross_section"] = json!(sigma * l * l);
     if let Some((a, er)) = lone_sphere(s) {
-        let x = 2.0 * PI * f / C0 * a;
+        let x = wavenumber(f) * a;
         let q = emcraft_theory::radiation::mie_efficiencies(x, er.map(f64::sqrt)).0;
         reply["exact_scattering_cross_section"] = json!(q * PI * a * a * l * l);
     }
@@ -220,7 +221,7 @@ enum Exact {
 
 impl Exact {
     fn of(s: &Session, frequency: f64) -> Exact {
-        let k = 2.0 * PI * frequency / C0;
+        let k = wavenumber(frequency);
         if let Some((incidence, polarization)) = plane_wave(s) {
             return match lone_sphere(s) {
                 Some((a, Some(er))) => {

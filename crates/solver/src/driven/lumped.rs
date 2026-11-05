@@ -1,6 +1,7 @@
 //! Lumped ports: a gap between two points (or a band round it) carrying a source and an
 //! impedance; its vector cᵢ = ∫ Nᵢ · ŝ dl couples the field to the gap's voltage.
 
+use emcraft_model::units::angular;
 use std::f64::consts::PI;
 
 use emcraft_model::units::MU0;
@@ -24,7 +25,7 @@ impl LumpedData {
     /// The factor jωμ₀/R of the port's term (jωμ₀/R) c cᵀ at `frequency`: the current
     /// I = (V_s + cᵀx)/R through its gap.
     pub(crate) fn factor(&self, frequency: f64) -> C {
-        let omega = 2.0 * PI * frequency;
+        let omega = angular(frequency);
         C::new(0.0, omega * MU0 / self.impedance)
     }
 }
@@ -38,7 +39,7 @@ impl super::Driven {
             .iter()
             .map(|l| {
                 let mut b = vec![C::new(0.0, 0.0); len];
-                let f = C::new(0.0, -2.0 * PI * frequency * MU0) * (2.0 / l.impedance.sqrt());
+                let f = C::new(0.0, -angular(frequency) * MU0) * (2.0 / l.impedance.sqrt());
                 for &(i, ci) in &l.c {
                     if let Some(x) = b.get_mut(i) {
                         *x += f * ci;
@@ -76,7 +77,7 @@ impl ElementData {
     /// The factor jωμ₀Y(ω) of the element's term jωμ₀Y c cᵀ: the current I = Y V through its gap
     /// for the gap's voltage V = −cᵀx, as a lumped port's with no source and Y = 1/R.
     pub(crate) fn factor(&self, frequency: f64) -> C {
-        let omega = 2.0 * PI * frequency;
+        let omega = angular(frequency);
         C::new(0.0, omega * MU0) * self.element.admittance(frequency)
     }
 }

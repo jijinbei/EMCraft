@@ -2,9 +2,9 @@
 //! parallel — a passive load on the field (a chip resistor bridging two traces, a tuning
 //! capacitor across a gap), not a port.
 
-use std::f64::consts::PI;
-
 use num_complex::Complex64 as C;
+
+use crate::units::angular;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{ModelError, Result, invalid, named};
@@ -87,7 +87,7 @@ impl LumpedElement {
     /// assert!(LumpedElement { resistance: 0.0, ..r }.check().is_err());
     /// ```
     pub fn admittance(&self, frequency: f64) -> C {
-        let w = 2.0 * PI * frequency;
+        let w = angular(frequency);
         let (r, l, c) = (self.resistance, self.inductance, self.capacitance);
         match self.arrangement {
             Arrangement::Series => {
@@ -134,6 +134,7 @@ impl Model {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::f64::consts::PI;
 
     fn element(arrangement: Arrangement, r: f64, l: f64, c: f64) -> LumpedElement {
         LumpedElement {

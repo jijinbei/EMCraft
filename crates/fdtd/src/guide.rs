@@ -2,6 +2,7 @@
 //! (area-weighted materials, dispersive edges), the CPML along z, the TE₁₀ source and
 //! projections, and one leapfrog run recording the projections' transforms.
 
+use emcraft_model::units::angular;
 use std::f64::consts::PI;
 use std::ops::{ControlFlow, Range};
 
@@ -114,7 +115,7 @@ impl Grid {
         let losses = Losses::new(band.fc);
         let wall = match model.wall_conductivity {
             None => None,
-            Some(sigma) => Some((losses.wall(sigma, band.f1)?, crate::surface::inverse_sqrt(2.0 * PI * band.f0, 2.0 * PI * band.f1))),
+            Some(sigma) => Some((losses.wall(sigma, band.f1)?, crate::surface::inverse_sqrt(angular(band.f0), angular(band.f1)))),
         };
         // Dispersive materials in the model's order (deterministic).
         let mut poles: Vec<Vec<Pole>> = Vec::new();

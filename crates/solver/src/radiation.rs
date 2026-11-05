@@ -15,6 +15,7 @@
 //! Electromagnetics*, 2nd ed., Wiley 2012, §6.8, eqs. 6-122, 6-125), r' from the box's (sphere's) centre.
 //! The power through the same box is ½ Re ∮ (E × H*) · n̂ dS.
 
+use emcraft_model::units::angular;
 use std::f64::consts::PI;
 
 use emcraft_model::units::{C0, MU0};
@@ -207,7 +208,7 @@ impl Driven {
             ));
         }
         Surface::of(model)?;
-        let omega = 2.0 * PI * frequency;
+        let omega = angular(frequency);
         let k0 = omega / C0;
         let system = self.system(frequency)?;
         let f = self.factor(&system)?;

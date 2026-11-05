@@ -1,6 +1,7 @@
 //! Losses and stored energy: the walls' surface resistance and their Leontovich term, the
 //! powers the dielectrics and the walls absorb, and the energy a resonance stores.
 
+use emcraft_model::units::angular;
 use std::f64::consts::PI;
 
 use emcraft_model::units::{C0, MU0};
@@ -29,7 +30,7 @@ impl Driven {
     /// The power (W) the dielectrics absorb for the coefficients `x`: ½ ω ε₀ ∫ εr tan δ |E|² dV
     /// (fields in peak values).
     pub fn dielectric_loss(&self, x: &[C], frequency: f64) -> Result<f64> {
-        let omega = 2.0 * PI * frequency;
+        let omega = angular(frequency);
         let loss = |t: usize| -self.eps_at(t, frequency).im;
         let total = self.integrate_e(x, frequency, |t| loss(t) != 0.0, |t, e| loss(t) * e.norm_sqr())?;
         Ok(0.5 * omega * eps0() * total)
@@ -41,7 +42,7 @@ impl Driven {
         if !self.media.magnetically_lossy() {
             return Ok(0.0);
         }
-        let omega = 2.0 * PI * frequency;
+        let omega = angular(frequency);
         let loss = |t: usize| -self.mu_of(t).im;
         let total = self.integrate_field(x, frequency, Field::H, |t| loss(t) != 0.0, |t, h| loss(t) * h.norm_sqr())?;
         Ok(0.5 * omega * MU0 * total)
@@ -128,7 +129,7 @@ pub fn wall_impedance(frequency: f64, sigma: f64, thickness: Option<f64>) -> C {
 
 /// jωμ₀/Z_s (1/m): ωμ₀(1 + j)/(2R_s) for thick walls ([`wall_impedance`]).
 pub(crate) fn wall_factor(frequency: f64, sigma: f64, thickness: Option<f64>) -> C {
-    let omega = 2.0 * PI * frequency;
+    let omega = angular(frequency);
     let z = wall_impedance(frequency, sigma, thickness);
     if z == C::new(z.re, z.re) {
         // Thick walls: the Leontovich factor as it always was, to the bit.

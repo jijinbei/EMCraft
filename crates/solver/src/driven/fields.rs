@@ -2,7 +2,7 @@
 //! images of those inside), their L² error against an exact field, and integrals of them over
 //! the volume and the walls.
 
-use std::f64::consts::PI;
+use emcraft_model::units::angular;
 
 use emcraft_fem::Element;
 use emcraft_model::units::MU0;
@@ -51,7 +51,7 @@ impl Driven {
             // H = −∇ × E / (jωμ).
             Field::H => {
                 let mu = self.mu_of(t);
-                let omega_mu0 = 2.0 * PI * frequency * MU0;
+                let omega_mu0 = angular(frequency) * MU0;
                 if mu.im == 0.0 { -field / C::new(0.0, omega_mu0 * mu.re) } else { -field / (C::new(0.0, omega_mu0) * mu) }
             }
         }

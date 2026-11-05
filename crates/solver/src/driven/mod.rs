@@ -62,11 +62,8 @@
 //! (`solution`), S read from the solutions (`sparams`), fields (`fields`), losses (`losses`),
 //! and the periodic cell: its reduction (`periodic`) and its Floquet ports (`floquet`).
 
-use std::f64::consts::PI;
-
 use emcraft_fem::{Element, Order};
 use emcraft_mesh::Topology;
-use emcraft_model::units::C0;
 use emcraft_model::{Boundary, Hertz, Mesh, Model, Quantity, Symmetry, SymmetryKind};
 use num_complex::Complex64 as C;
 use rayon::prelude::*;
@@ -177,10 +174,8 @@ pub(crate) fn present(slots: &[Slot]) -> impl Iterator<Item = (usize, usize)> + 
     slots.iter().enumerate().filter_map(|(i, s)| Some((i, s.get()?)))
 }
 
-/// The free-space wavenumber k₀ = 2πf/c (1/m) at `frequency` (Hz).
-pub(crate) fn wavenumber(frequency: f64) -> f64 {
-    2.0 * PI * frequency / C0
-}
+/// The free-space wavenumber k₀ = 2πf/c (1/m) at a frequency (Hz).
+pub(crate) use emcraft_model::units::wavenumber;
 
 /// Refuses a frequency that breaks [`Hertz`]'s rule (finite, > 0): for the public calls that
 /// take a frequency as an `f64` (the model's own frequencies are [`Hertz`] already).

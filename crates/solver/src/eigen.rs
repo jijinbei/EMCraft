@@ -31,6 +31,7 @@
 //! with the lossless mode, Q_c = ωU/P_c from the walls' ½R_s∫|H_t|² and Q_d = ωU/P_d from the
 //! dielectrics' ½ωε₀∫ε″|E|², 1/Q = 1/Q_c + 1/Q_d.
 
+use emcraft_model::units::angular;
 use std::f64::consts::PI;
 
 use emcraft_fem::Order;
@@ -384,7 +385,7 @@ fn iterate<A: Arithmetic>(model: &Model, driven: &Driven, count: usize, sigma: f
             continue;
         }
         let frequency = A::frequency(lambda);
-        let omega = 2.0 * PI * frequency;
+        let omega = angular(frequency);
         let u = driven.stored_energy(&vector, frequency)?;
         let q_walls = match model.wall_conductivity {
             Some(s) => {

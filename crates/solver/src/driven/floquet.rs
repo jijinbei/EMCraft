@@ -24,7 +24,6 @@
 
 use std::f64::consts::PI;
 
-use emcraft_model::units::C0;
 use emcraft_model::{Model, Periodic, Polarization, Port, Vec3};
 use num_complex::Complex64 as C;
 
@@ -247,7 +246,7 @@ impl FloquetPort {
 /// The incident transverse wavevector (k_x, k_y) at `frequency` from the model's angles, in the
 /// first port's medium.
 pub(super) fn incidence(periodic: &Periodic, first: &FloquetPort, frequency: f64) -> (f64, f64) {
-    let k1 = 2.0 * PI * frequency / C0 * (first.eps_r * first.mu_r).sqrt();
+    let k1 = wavenumber(frequency) * (first.eps_r * first.mu_r).sqrt();
     let kt = k1 * periodic.theta.sin();
     (kt * periodic.phi.cos(), kt * periodic.phi.sin())
 }

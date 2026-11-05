@@ -8,6 +8,7 @@
 //! 0 (sources, transforms, checks). Every value is computed by one thread in one fixed order,
 //! so the result does not depend on how many threads there are.
 
+use emcraft_model::units::angular;
 use std::f64::consts::PI;
 use std::ops::{ControlFlow, Range};
 use std::sync::Barrier;
@@ -141,7 +142,7 @@ const ORDER: f64 = 3.0;
 impl Grading {
     /// The grading of a layer of cells of `h` for a time step `dt`, centred on `fc`.
     pub(crate) fn new(h: f64, dt: f64, fc: f64) -> Grading {
-        Grading { sigma_max: 0.8 * (ORDER + 1.0) / (ETA0 * h), alpha_max: 2.0 * PI * fc * EPS0 * 0.05, dt }
+        Grading { sigma_max: 0.8 * (ORDER + 1.0) / (ETA0 * h), alpha_max: angular(fc) * EPS0 * 0.05, dt }
     }
 
     /// The coefficients at depth `d` into the layer, a fraction of its thickness (≤ 0 outside).
@@ -226,7 +227,7 @@ impl Pulse {
 
     #[inline]
     pub(crate) fn at(&self, t: f64) -> f64 {
-        (-((t - self.t0) / self.tau).powi(2)).exp() * (2.0 * PI * self.fc * (t - self.t0)).sin()
+        (-((t - self.t0) / self.tau).powi(2)).exp() * (angular(self.fc) * (t - self.t0)).sin()
     }
 }
 
@@ -267,7 +268,7 @@ pub(crate) struct RunningDft<const N: usize> {
 
 impl<const N: usize> RunningDft<N> {
     pub(crate) fn new(freqs: &[f64], dt: f64) -> RunningDft<N> {
-        let advance: Vec<C> = freqs.iter().map(|f| C::from_polar(1.0, -2.0 * PI * f * dt)).collect();
+        let advance: Vec<C> = freqs.iter().map(|f| C::from_polar(1.0, -angular(*f) * dt)).collect();
         RunningDft { phasor: advance.clone(), sums: std::array::from_fn(|_| vec![C::new(0.0, 0.0); freqs.len()]), advance }
     }
 

@@ -14,6 +14,7 @@
 //! Both are shown over one alias period 1/Δf, a Hann window taming the band edge's ringing; the
 //! resolution is about 1/(f_max − f_min) (band pass) or 1/(2 f_max) (low pass).
 
+use emcraft_model::units::angular;
 use std::f64::consts::PI;
 
 use emcraft_solver::Complex64 as C;
@@ -129,7 +130,7 @@ fn impulse_envelope(freqs: &[f64], s: &[C], times: &[f64]) -> Vec<f64> {
     times
         .iter()
         .map(|t| {
-            let h: C = s.iter().zip(freqs).enumerate().map(|(k, (c, f))| c * w(k) * C::from_polar(1.0, 2.0 * PI * f * t)).sum();
+            let h: C = s.iter().zip(freqs).enumerate().map(|(k, (c, f))| c * w(k) * C::from_polar(1.0, angular(*f) * t)).sum();
             h.norm() / total
         })
         .collect()
