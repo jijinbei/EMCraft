@@ -39,19 +39,33 @@ fn failed(e: sx::Error) -> Error {
 /// The design last opened, by its bytes: a template's card redrawn as its parameters change
 /// reads the same design again and again, and a kept design recomputes only the features the
 /// changed parameters reach. One design is kept.
-static LAST: Mutex<Option<(Vec<u8>, Arc<sx::Design>)>> = Mutex::new(None);
+static LAST: Kept = Kept::new();
+
+/// One kept design and the bytes it was opened from.
+struct Kept(Mutex<Option<(Vec<u8>, Arc<sx::Design>)>>);
+
+impl Kept {
+    const fn new() -> Self {
+        Self(Mutex::new(None))
+    }
+
+    /// The design of `bytes`, the kept one when it is the same file.
+    fn design(&self, bytes: &[u8]) -> Result<Arc<sx::Design>> {
+        let mut last = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some((kept, design)) = last.as_ref()
+            && kept.as_slice() == bytes
+        {
+            return Ok(Arc::clone(design));
+        }
+        let design = Arc::new(sx::open(bytes).map_err(failed)?);
+        *last = Some((bytes.to_vec(), Arc::clone(&design)));
+        Ok(design)
+    }
+}
 
 /// The design of `bytes`, the one kept when it is the same file.
 fn design(bytes: &[u8]) -> Result<Arc<sx::Design>> {
-    let mut last = LAST.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some((kept, design)) = last.as_ref()
-        && kept.as_slice() == bytes
-    {
-        return Ok(Arc::clone(design));
-    }
-    let design = Arc::new(sx::open(bytes).map_err(failed)?);
-    *last = Some((bytes.to_vec(), Arc::clone(&design)));
-    Ok(design)
+    LAST.design(bytes)
 }
 
 /// The design's parameters as it stores them.
@@ -142,8 +156,11 @@ mod tests {
     /// design gives what a fresh one gives.
     #[test]
     fn the_last_design_is_kept_by_its_bytes() {
-        let a = design(POST).unwrap();
-        assert!(Arc::ptr_eq(&a, &design(POST).unwrap()), "the same bytes reuse the design");
+        // A cache of its own: other tests opening other designs at the same time cannot
+        // replace the kept one.
+        let kept = Kept::new();
+        let a = kept.design(POST).unwrap();
+        assert!(Arc::ptr_eq(&a, &kept.design(POST).unwrap()), "the same bytes reuse the design");
         let fresh: Vec<Body> = {
             let d = sx::open(POST).unwrap();
             let s = d.snapshot(&sx::Options::default().with_override("d", "4 mm")).unwrap();
@@ -154,7 +171,7 @@ mod tests {
         assert_eq!(read(POST, &overrides, None).unwrap(), fresh, "a kept design gives what a fresh one does");
         let mut other = POST.to_vec();
         other.push(b' ');
-        if let Ok(b) = design(&other) {
+        if let Ok(b) = kept.design(&other) {
             assert!(!Arc::ptr_eq(&a, &b), "other bytes open their own design");
         }
     }
