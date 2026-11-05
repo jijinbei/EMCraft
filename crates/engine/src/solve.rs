@@ -422,22 +422,40 @@ pub struct PortModeRow {
 
 /// `solve.revolution`.
 pub fn revolution(s: &mut Session, p: &Params) -> Result<Value> {
-    let ring = p.pairs("points", 4096).required()?;
+    let ring = p.pairs("points", emcraft_model::rotation::MAX_PROFILE_POINTS).optional()?;
     let near = p.hertz("frequency").required()?.get();
     let m = p.integer("m", 0..=64).or(0)? as u32;
     let count = p.integer("count", 1..=50).or(5)?;
-    let positive = |name: &str| -> Result<f64> {
-        let v = p.number(name).or(1.0)?;
+    let positive = |name: &str, model: f64| -> Result<f64> {
+        let v = p.number(name).or(model)?;
         if v.is_finite() && v > 0.0 { Ok(v) } else { Err(p.error(name, "must be a finite number > 0")) }
     };
-    let (eps, mu) = (positive("eps_r")?, positive("mu_r")?);
-    let extent = ring.iter().fold([f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY], |b, q| {
+    // Without `points`, the model's own profile: its solid and the features about its axis.
+    let model = match &ring {
+        Some(_) => None,
+        None => Some(s.model.meridian_profile(p.positive_length("size").optional()?.unwrap_or(1e-3))?),
+    };
+    let (eps, mu) = match &model {
+        Some(pr) => {
+            if p.has("eps_r") || p.has("mu_r") {
+                return Err(p.error("eps_r", "is the model's material's when the profile is the model's"));
+            }
+            (pr.eps_r, pr.mu_r)
+        }
+        None => (positive("eps_r", 1.0)?, positive("mu_r", 1.0)?),
+    };
+    let corners: &[[f64; 2]] = ring.as_deref().or_else(|| model.as_ref().map(|pr| pr.points.as_slice())).unwrap_or(&[]);
+    let extent = corners.iter().fold([f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY], |b, q| {
         [b[0].min(q[0]), b[1].max(q[0]), b[2].min(q[1]), b[3].max(q[1])]
     });
     let span = (extent[1] - extent[0]).max(extent[3] - extent[2]);
     let wavelength = emcraft_model::units::C0 / (near * (eps * mu).sqrt());
     let size = p.positive_length("size").optional()?.unwrap_or_else(|| (0.1 * wavelength).min(span / 20.0));
-    let (points, triangles) = emcraft_mesh::planar::polygon(&ring, size)?;
+    let (points, triangles) = match (&ring, &model) {
+        (Some(ring), _) => emcraft_mesh::planar::polygon(ring, size)?,
+        (None, Some(pr)) => emcraft_mesh::planar::pslg(&pr.points, &pr.segments, size)?,
+        (None, None) => return Err(p.error("points", "is required without a model to take the profile of")),
+    };
     let material = vec![(eps, mu); triangles.len()];
     let profile = emcraft_solver::bor::Profile { points, triangles, material };
     let modes = emcraft_solver::bor::eigenmodes(&profile, m, count, near)?;

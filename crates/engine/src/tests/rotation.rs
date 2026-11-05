@@ -314,3 +314,49 @@ fn the_harmonics_assemble_the_whole_guide_s_standing_modes() {
         assert!(c(key).norm() < 0.01, "{key} {}", c(key));
     }
 }
+
+/// `solve.revolution`'s modes (GHz) of the model's own profile.
+fn revolution_modes(s: &mut Session, m: u32, near: f64, count: usize, size: f64) -> Vec<f64> {
+    let r = s.execute("solve.revolution", &json!({"frequency": near, "m": m, "count": count, "size": size})).unwrap();
+    r["modes"].as_array().unwrap().iter().map(|x| x["frequency"].as_f64().unwrap()).collect()
+}
+
+#[test]
+fn a_body_of_revolution_takes_the_model_s_profile() {
+    // The pillbox from its cylinder: TM010 and TM011.
+    let mut s = pillbox();
+    let f = revolution_modes(&mut s, 0, 11.0, 2, 0.5);
+    let x01 = X01;
+    for (got, want) in f.iter().zip([exact(x01, 0.0), exact(x01, 1.0)]) {
+        assert!((got / want - 1.0).abs() < 2e-3, "{got} GHz against {want}");
+    }
+    // A sphere of radius 10 mm: its lowest modes (TM101, m = 0 among its orders).
+    let mut b = Session::new();
+    b.execute("geometry.solid", &json!({"shape": "sphere", "radius": 10})).unwrap();
+    let f = revolution_modes(&mut b, 1, 12.0, 1, 0.5);
+    let want = emcraft_theory::bessel::sphere_cavity_resonances(0.01, 1.0, 1)[0].0 / 1e9;
+    assert!((f[0] / want - 1.0).abs() < 5e-3, "{} GHz against {want}", f[0]);
+    // Features off the axis have no profile.
+    let mut o = pillbox();
+    o.execute("geometry.feature", &json!({"combine": "subtract", "shape": "cylinder", "radius": 1, "length": 6, "at": [5, 0, 4], "axis": "z"}))
+        .unwrap();
+    assert!(o.execute("solve.revolution", &json!({"frequency": 11})).is_err());
+}
+
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn a_widened_cavity_s_profile_agrees_with_its_quarter() {
+    // A 30 mm guide widened to 14 mm over 6 mm of its middle, closed: harmonic 1's lowest two
+    // modes as a body of revolution (2D) and on a quarter in 3D.
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 30})).unwrap();
+    s.execute("geometry.feature", &json!({"combine": "add", "shape": "cylinder", "radius": 14, "length": 6, "at": [0, 0, 12], "axis": "z"})).unwrap();
+    let bor = revolution_modes(&mut s, 1, 12.0, 2, 0.5);
+    s.execute("model.rotation", &json!({"n": 4, "m": 1})).unwrap();
+    s.execute("mesh.generate", &json!({"size": 3})).unwrap();
+    let r = s.execute("solve.cyclic", &json!({"frequency": 12, "m": 1, "count": 2, "order": 2})).unwrap();
+    let quarter = modes(&r, 1);
+    for (a, b) in bor.iter().zip(&quarter) {
+        assert!((a / b - 1.0).abs() < 2e-3, "body of revolution {a} GHz, quarter {b} GHz");
+    }
+}

@@ -761,9 +761,9 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "solve.revolution",
         label: "Body of revolution",
-        doc: "The eigenmodes of a closed cavity invariant under rotation about the z axis, from its meridian profile: the polygon `points` [[r, z], …] (r ≥ 0; an edge on r = 0 is the axis, every other edge a perfect conductor) filled with one material, meshed in triangles of about `size` and solved per azimuthal order `m` on the half-plane — a 2D problem in place of the 3D one (hybrid edge/nodal elements, Lee–Wilkins–Mittra). The `count` modes of order `m` nearest `frequency`, lowest first. The model is left as it is.",
+        doc: "The eigenmodes of a closed cavity invariant under rotation about the z axis, from its meridian profile: the polygon `points` [[r, z], …] (r ≥ 0; an edge on r = 0 is the axis, every other edge a perfect conductor) filled with one material, or without `points` the model's own (its cylinder or sphere about z and the cylinders along z about the axis its features add, subtract or intersect, in its material), meshed in triangles of about `size` and solved per azimuthal order `m` on the half-plane — a 2D problem in place of the 3D one (hybrid edge/nodal elements, Lee–Wilkins–Mittra). The `count` modes of order `m` nearest `frequency`, lowest first. The model is left as it is.",
         params: &[
-            req("points", K::Array, "the profile's corners [[r, z], …] in order, at least three, r ≥ 0").of(L),
+            opt("points", K::Array, "the profile's corners [[r, z], …] in order, at least three, r ≥ 0 (default the model's profile)").of(L),
             req("frequency", K::Number, "the frequency to look near").of(F),
             opt("m", K::Integer, "the azimuthal order, 0 to 64: the fields go as e^{−jmφ} (default 0)"),
             opt("count", K::Integer, "the modes, 1 to 50 (default 5)"),
