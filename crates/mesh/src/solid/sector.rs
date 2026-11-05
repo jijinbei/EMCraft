@@ -396,6 +396,24 @@ fn close(t: Tessellation, rot: &Rotation, scale: f64, refine: Option<f64>, inner
         out_tags.resize(triangles.len(), tag);
     }
     push_faces((&mut triangles, &mut out_tags), &positions, &halves, &tris, &ids, base);
+    // The solid's other faces' vertices on their exact surfaces: they are frozen for the mesher,
+    // which puts the vertices of a face it may move on it but not these (the points added on the
+    // outlines and in the splits lie on chords). A point on a cut plane stays only where its
+    // projection does (a round wall about the axis moves it along the plane, outward).
+    for (tri, tag) in triangles.iter().zip(&out_tags) {
+        let Some(Some(surface)) = t.analytic.get(*tag as usize) else { continue };
+        if matches!(surface, emcraft_tetmesh::tet::geometry::AnalyticSurface::Plane { .. }) || *tag >= base {
+            continue;
+        }
+        for &v in tri {
+            let p = positions[v as usize];
+            let Some(q) = surface.project(super::mesher::mesher_point(p)).map(super::mesher::model_point) else { continue };
+            let cut = halves.iter().any(|h| h.holds(p));
+            if (q - p).norm() <= 0.2 * size && (!cut || halves.iter().any(|h| h.holds(q))) {
+                positions[v as usize] = q;
+            }
+        }
+    }
     // Only the vertices the triangles use.
     let mut id = vec![u32::MAX; positions.len()];
     let mut kept = Vec::new();
@@ -455,19 +473,30 @@ pub(super) fn refreeze(mesh: &super::mesher::RegionMesh, t: &Tessellation, rot: 
     // the second, turned back, those of the first (the solid's other faces may have changed —
     // a curved wall is refined to its curvature — without touching them).
     let key = |q: [f64; 2]| [(q[0] / tol).round() as i64, (q[1] / tol).round() as i64];
-    let mut sides: [BTreeSet<[i64; 2]>; 2] = [BTreeSet::new(), BTreeSet::new()];
+    // Each cut face's triangles by their corners' places (s, t) on its plane, sorted: the two
+    // agree when the second's are the first's (to a key's neighbour either way).
+    let mut sides: [BTreeSet<[[i64; 2]; 3]>; 2] = [BTreeSet::new(), BTreeSet::new()];
+    let mut loose: [Vec<[[f64; 2]; 3]>; 2] = [Vec::new(), Vec::new()];
     for f in mesh.boundary.iter().filter(|f| f.tag >= base) {
-        for &v in &f.nodes {
-            let q = p(v);
-            for (k, h) in halves.iter().enumerate() {
-                if h.holds(q) {
-                    sides[k].insert(key(h.local(q)));
-                }
+        let q = f.nodes.map(p);
+        for (k, h) in halves.iter().enumerate() {
+            if q.iter().all(|x| h.holds(*x)) {
+                let mut c = q.map(|x| key(h.local(x)));
+                c.sort_unstable();
+                sides[k].insert(c);
+                loose[k].push(q.map(|x| h.local(x)));
             }
         }
     }
-    let agree = sides[1].iter().all(|k| (-1..=1).any(|i| (-1..=1).any(|j| sides[0].contains(&[k[0] + i, k[1] + j]))));
-    if cut_triangles > 0 && sides[0].len() == sides[1].len() && agree {
+    let same = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).abs() <= 2.0 * tol && (a[1] - b[1]).abs() <= 2.0 * tol;
+    // By key first; a triangle whose corners round across a key's edge by the slower search.
+    let agree = sides[0].len() == sides[1].len()
+        && loose[1].iter().all(|t1| {
+            let mut c = t1.map(key);
+            c.sort_unstable();
+            sides[0].contains(&c) || loose[0].iter().any(|t0| t1.iter().all(|x| t0.iter().any(|y| same(*x, *y))))
+        });
+    if cut_triangles > 0 && agree {
         return Ok(None);
     }
     let mut analytic = t.analytic.clone();

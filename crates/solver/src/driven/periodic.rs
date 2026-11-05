@@ -33,7 +33,6 @@
 
 use std::collections::HashMap;
 
-use emcraft_fem::Order;
 use emcraft_mesh::Topology;
 use emcraft_model::{Mesh, Periodic, Point3, Rotation};
 use num_complex::Complex64 as C;
@@ -41,7 +40,8 @@ use num_complex::Complex64 as C;
 use super::{Dofs, Result, Slot, invalid};
 use crate::sparse::Csr;
 
-/// Where a full unknown goes: its kept unknown, its orientation and the periods to its master.
+/// One term of where a full unknown goes: a kept unknown, its coefficient (an orientation ±1, or
+/// a face function's share of its image's two) and the periods to its master.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Tied {
     reduced: usize,
@@ -52,8 +52,9 @@ struct Tied {
 /// The periodic reduction x = T x_r of a mesh's unknowns.
 #[derive(Clone, Debug)]
 pub struct Tie {
-    /// Per full unknown, `None` when dropped.
-    map: Vec<Option<Tied>>,
+    /// Per full unknown, its terms (one, or two for a face function a turn mixes); none when
+    /// dropped.
+    map: Vec<Vec<Tied>>,
     /// Kept unknowns.
     pub reduced: usize,
     /// A point per kept unknown, for the ordering.
@@ -65,7 +66,7 @@ pub struct Tie {
     /// The kept pattern and, for each entry of the full pattern, its entry there (none when
     /// dropped) with its phase's period difference and sign product.
     pattern: Csr,
-    entries: Vec<(Slot, [i8; 3], f64)>,
+    entries: Vec<Vec<(Slot, [i8; 3], f64)>>,
     /// Each node's master node and the periods to it.
     nodes: Vec<(u32, [i8; 3])>,
 }
@@ -227,12 +228,27 @@ impl Partners {
     }
 }
 
-/// A slot's master slot, its orientation relative to it, and the periods to it.
-#[derive(Clone, Copy)]
+/// A slot's master slots with their coefficients (itself with 1 when it lies on no high face; a
+/// face function a turn maps onto a mix of its image's two, both), and the periods to them.
+#[derive(Clone)]
 struct Master {
-    slot: usize,
-    sign: f64,
+    terms: Vec<(usize, f64)>,
     shift: [i8; 3],
+}
+
+/// The coefficients of face function `F(x, y, z) = λ_x w_yz` (x, y, z a permutation of the face's
+/// sorted nodes a < b < c) in the face's two, F(a, b, c) and F(b, c, a): F(c, a, b) is minus their
+/// sum (Σ_cyclic λ_i w_jk = 0), and w_zy = −w_yz.
+fn face_share(sorted: [u32; 3], xyz: [u32; 3]) -> Option<[f64; 2]> {
+    let pos = |v: u32| sorted.iter().position(|&s| s == v);
+    let (i, j, k) = (pos(xyz[0])?, pos(xyz[1])?, pos(xyz[2])?);
+    let cyclic = (j + 3 - i) % 3 == 1 && (k + 3 - j) % 3 == 1;
+    let start = match i {
+        0 => [1.0, 0.0],
+        1 => [0.0, 1.0],
+        _ => [-1.0, -1.0],
+    };
+    Some(if cyclic { start } else { start.map(|c| -c) })
 }
 
 /// Each slot's master (itself when it lies on no high face): an edge's or a face's translate on
@@ -242,7 +258,7 @@ fn masters(topo: &Topology, dofs: &Dofs, partners: &Partners) -> Result<Vec<Mast
     let face_id: HashMap<[u32; 3], u32> = topo.faces.iter().enumerate().map(|(i, f)| (*f, i as u32)).collect();
     let (pe, pf) = (dofs.order.per_edge(), dofs.order.per_face());
     let total = dofs.edges * pe + dofs.faces * pf;
-    let mut master: Vec<Master> = (0..total).map(|g| Master { slot: g, sign: 1.0, shift: [0i8; 3] }).collect();
+    let mut master: Vec<Master> = (0..total).map(|g| Master { terms: vec![(g, 1.0)], shift: [0i8; 3] }).collect();
     for (e, &[a, b]) in topo.edges.iter().enumerate() {
         let (sa, sb) = (partners.shift_of(a), partners.shift_of(b));
         let s = [0, 1, 2].map(|d| sa[d].min(sb[d]));
@@ -254,12 +270,9 @@ fn masters(topo: &Topology, dofs: &Dofs, partners: &Partners) -> Result<Vec<Mast
         let m =
             *edge_id.get(&key).ok_or_else(|| invalid("periodic boundaries", "an edge on a periodic face has no translate on the opposite face"))?;
         let sign = if ma < mb { 1.0 } else { -1.0 };
-        if sign < 0.0 && dofs.order == Order::Two {
-            return Err(invalid("periodic boundaries", "not supported yet: order 2 on a mesh whose translates reverse an edge (use order 1)"));
-        }
         for j in 0..pe {
             // The Whitney function turns with its edge, the edge's gradient ∇(λ_iλ_j) does not.
-            master[e * pe + j] = Master { slot: m as usize * pe + j, sign: if j == 0 { sign } else { 1.0 }, shift: s };
+            master[e * pe + j] = Master { terms: vec![(m as usize * pe + j, if j == 0 { sign } else { 1.0 })], shift: s };
         }
     }
     if pf > 0 {
@@ -272,17 +285,26 @@ fn masters(topo: &Topology, dofs: &Dofs, partners: &Partners) -> Result<Vec<Mast
             let image = nodes.map(|n| partners.translate(n, s));
             let mut key = image;
             key.sort_unstable();
-            if key != image {
-                return Err(invalid(
-                    "periodic boundaries",
-                    "not supported yet: order 2 on a mesh whose translates reorder a face's nodes (use order 1)",
-                ));
-            }
             let m = *face_id
                 .get(&key)
                 .ok_or_else(|| invalid("periodic boundaries", "a face on a periodic face has no translate on the opposite face"))?;
-            for j in 0..pf {
-                master[dofs.edges * pe + f * pf + j] = Master { slot: dofs.edges * pe + m as usize * pf + j, sign: 1.0, shift: s };
+            // The face's functions F(p, q, r) and F(q, r, p) (its nodes p < q < r) are the image's
+            // F(p′, q′, r′) and F(q′, r′, p′): α and β of the image's own two, so the field's
+            // coefficients x on the image give these y with [α β] y = x.
+            let [p, q, r] = image;
+            let (Some(alpha), Some(beta)) = (face_share(key, [p, q, r]), face_share(key, [q, r, p])) else {
+                return Err(invalid("periodic boundaries", "a face's image does not have its nodes"));
+            };
+            let det = alpha[0] * beta[1] - beta[0] * alpha[1];
+            if det.abs() < 0.5 {
+                return Err(invalid("periodic boundaries", "a face's image functions are not independent"));
+            }
+            // y = [α β]⁻¹ x.
+            let inv = [[beta[1] / det, -beta[0] / det], [-alpha[1] / det, alpha[0] / det]];
+            let first = dofs.edges * pe + m as usize * pf;
+            for (j, row) in inv.iter().enumerate().take(pf) {
+                let terms = row.iter().enumerate().filter(|(_, c)| **c != 0.0).map(|(k, c)| (first + k, *c)).collect();
+                master[dofs.edges * pe + f * pf + j] = Master { terms, shift: s };
             }
         }
     }
@@ -292,34 +314,39 @@ fn masters(topo: &Topology, dofs: &Dofs, partners: &Partners) -> Result<Vec<Mast
 /// Each full unknown's slot among the kept ones (`None` when dropped), and a point per kept
 /// unknown (its master's). With `self_tied_vanish` an unknown that is its own image a period
 /// on (an edge on a rotation's axis, turned onto itself) is dropped: x = e^{−jψ} x with ψ ≠ 0.
-fn reduction(dofs: &Dofs, master: &[Master], self_tied_vanish: bool) -> Result<(Vec<Option<Tied>>, Vec<Point3>)> {
+fn reduction(dofs: &Dofs, master: &[Master], self_tied_vanish: bool) -> Result<(Vec<Vec<Tied>>, Vec<Point3>)> {
     let total = master.len();
     // A master slot is dead when any slot tied to it is eliminated (a wall on either face).
     let mut dead = vec![false; total];
     for (g, m) in master.iter().enumerate() {
-        if dofs.unknown_of(g).is_none() || (self_tied_vanish && m.slot == g && m.shift != [0; 3]) {
-            dead[m.slot] = true;
+        let self_tied = m.terms.iter().any(|t| t.0 == g) && m.shift != [0; 3];
+        if dofs.unknown_of(g).is_none() || (self_tied_vanish && self_tied) {
+            for t in &m.terms {
+                dead[t.0] = true;
+            }
         }
     }
     let mut reduced_of = vec![Slot::NONE; total];
     let mut points = Vec::new();
-    let mut map = vec![None; dofs.unknowns];
-    for (g, &Master { slot: m, sign, shift }) in master.iter().enumerate() {
+    let mut map = vec![Vec::new(); dofs.unknowns];
+    for (g, Master { terms, shift }) in master.iter().enumerate() {
         let Some(u) = dofs.unknown_of(g) else { continue };
-        if dead[m] {
+        if terms.iter().any(|t| dead[t.0]) {
             continue;
         }
-        let reduced = match reduced_of[m].get() {
-            Some(r) => r,
-            None => {
-                let mu = dofs.unknown_of(m).ok_or_else(|| invalid("periodic boundaries", "a master unknown was eliminated"))?;
-                let r = points.len();
-                reduced_of[m] = Slot::new(r);
-                points.push(dofs.points.get(mu).copied().unwrap_or(Point3::ORIGIN));
-                r
-            }
-        };
-        map[u] = Some(Tied { reduced, sign, shift });
+        for &(m, sign) in terms {
+            let reduced = match reduced_of[m].get() {
+                Some(r) => r,
+                None => {
+                    let mu = dofs.unknown_of(m).ok_or_else(|| invalid("periodic boundaries", "a master unknown was eliminated"))?;
+                    let r = points.len();
+                    reduced_of[m] = Slot::new(r);
+                    points.push(dofs.points.get(mu).copied().unwrap_or(Point3::ORIGIN));
+                    r
+                }
+            };
+            map[u].push(Tied { reduced, sign, shift: *shift });
+        }
     }
     Ok((map, points))
 }
@@ -327,13 +354,12 @@ fn reduction(dofs: &Dofs, master: &[Master], self_tied_vanish: bool) -> Result<(
 /// The kept pattern — every pair of kept unknowns some full entry couples — and, for each entry
 /// of the full `pattern`, its entry there (none when dropped) with its phase's period difference
 /// and sign product.
-fn kept_pattern(pattern: &Csr, map: &[Option<Tied>], reduced: usize) -> Result<(Csr, Vec<(Slot, [i8; 3], f64)>)> {
+fn kept_pattern(pattern: &Csr, map: &[Vec<Tied>], reduced: usize) -> Result<(Csr, Vec<Vec<(Slot, [i8; 3], f64)>>)> {
     let mut rows: Vec<Vec<usize>> = vec![Vec::new(); reduced];
     for i in 0..pattern.n {
-        let Some(si) = map[i] else { continue };
-        for &j in &pattern.col[pattern.row(i)] {
-            if let Some(sj) = map[j] {
-                rows[si.reduced].push(sj.reduced);
+        for si in &map[i] {
+            for &j in &pattern.col[pattern.row(i)] {
+                rows[si.reduced].extend(map[j].iter().map(|sj| sj.reduced));
             }
         }
     }
@@ -349,15 +375,15 @@ fn kept_pattern(pattern: &Csr, map: &[Option<Tied>], reduced: usize) -> Result<(
     for i in 0..pattern.n {
         for k in pattern.row(i) {
             let j = pattern.col[k];
-            let e = match (map[i], map[j]) {
-                (Some(si), Some(sj)) => {
+            let mut e = Vec::with_capacity(1);
+            for si in &map[i] {
+                for sj in &map[j] {
                     let (r, c) = (si.reduced, sj.reduced);
                     let row = &kept.col[kept.row(r)];
                     let at = row.binary_search(&c).map_err(|_| invalid("periodic boundaries", "an entry outside the kept pattern"))?;
-                    (Slot::new(kept.ptr[r] + at), [0, 1, 2].map(|d| sj.shift[d] - si.shift[d]), si.sign * sj.sign)
+                    e.push((Slot::new(kept.ptr[r] + at), [0, 1, 2].map(|d| sj.shift[d] - si.shift[d]), si.sign * sj.sign));
                 }
-                _ => (Slot::NONE, [0; 3], 0.0),
-            };
+            }
             entries.push(e);
         }
     }
@@ -385,12 +411,10 @@ impl Tie {
 
     /// The reduction of a sector's unknowns ([`Rotation`]): each on the second cut face tied to
     /// its image on the first a turn back, the one phase (slot 0 of the phases) ψ = 2πm/n; the
-    /// unknowns on the axis that turn onto themselves dropped unless m = 0. Order 1 only (order
-    /// 2's face functions mix under the turn's reordering of a face's nodes).
+    /// unknowns on the axis that turn onto themselves dropped unless m = 0. A turn may reverse an
+    /// edge and reorder a face's nodes: order 2's face functions then map onto a mix of their
+    /// image's two.
     pub(super) fn rotational(mesh: &Mesh, topo: &Topology, dofs: &Dofs, rot: &Rotation, pattern: &Csr) -> Result<Tie> {
-        if dofs.order != Order::One {
-            return Err(invalid("rotational symmetry", "not supported yet: order 2 on a sector (use order 1)"));
-        }
         let partners = Partners::rotational(mesh, rot)?;
         let master = masters(topo, dofs, &partners)?;
         let (map, points) = reduction(dofs, &master, rot.m != 0)?;
@@ -412,7 +436,15 @@ impl Tie {
 
     /// The kept unknown of full unknown `u` when `u` is its own master (no periods to it).
     pub fn master_of(&self, u: usize) -> Option<usize> {
-        self.map.get(u).copied().flatten().filter(|s| s.shift == [0; 3] && s.sign > 0.0).map(|s| s.reduced)
+        match self.map.get(u).map(Vec::as_slice) {
+            Some([s]) if s.shift == [0; 3] && s.sign > 0.0 => Some(s.reduced),
+            _ => None,
+        }
+    }
+
+    /// Whether full unknown `u` is dropped (on a wall, or turned onto itself out of phase).
+    pub fn dropped(&self, u: usize) -> bool {
+        self.map.get(u).is_none_or(Vec::is_empty)
     }
 
     /// The kept pattern (Tᴴ A T's).
@@ -433,15 +465,25 @@ impl Tie {
 
     /// The coefficient c of full unknown `u` (x_u = c x_r), `None` when dropped.
     pub fn coefficient(&self, u: usize, psi: [f64; 3]) -> Option<(usize, C)> {
-        self.map.get(u).copied().flatten().map(|s| (s.reduced, phase(psi, s.shift) * s.sign))
+        match self.map.get(u).map(Vec::as_slice) {
+            Some([s]) => Some((s.reduced, phase(psi, s.shift) * s.sign)),
+            _ => None,
+        }
+    }
+
+    /// The terms of full unknown `u`: x_u = Σ c x_r (none when dropped).
+    pub fn terms(&self, u: usize, psi: [f64; 3]) -> impl Iterator<Item = (usize, C)> + '_ {
+        self.map.get(u).into_iter().flatten().map(move |s| (s.reduced, phase(psi, s.shift) * s.sign))
     }
 
     /// Tᴴ A T for a matrix `a` on the full pattern (values `val`).
     pub fn reduce(&self, val: &[C], psi: [f64; 3]) -> Csr {
         let mut out = self.pattern.clone();
-        for (&(e, s, sign), v) in self.entries.iter().zip(val) {
-            if let Some(e) = e.get() {
-                out.val[e] += phase(psi, s) * sign * *v;
+        for (terms, v) in self.entries.iter().zip(val) {
+            for &(e, s, sign) in terms {
+                if let Some(e) = e.get() {
+                    out.val[e] += phase(psi, s) * sign * *v;
+                }
             }
         }
         out
@@ -449,12 +491,12 @@ impl Tie {
 
     /// Tᴴ v for a test-side vector over the full unknowns.
     pub fn reduce_test(&self, v: &[(usize, C)], psi: [f64; 3]) -> Vec<(usize, C)> {
-        Self::gather(v.iter().filter_map(|&(u, x)| self.coefficient(u, psi).map(|(r, c)| (r, c.conj() * x))))
+        Self::gather(v.iter().flat_map(|&(u, x)| self.terms(u, psi).map(move |(r, c)| (r, c.conj() * x))))
     }
 
     /// Tᵀ v for a trial-side vector (a functional of x = T x_r).
     pub fn reduce_trial(&self, v: &[(usize, C)], psi: [f64; 3]) -> Vec<(usize, C)> {
-        Self::gather(v.iter().filter_map(|&(u, x)| self.coefficient(u, psi).map(|(r, c)| (r, c * x))))
+        Self::gather(v.iter().flat_map(|&(u, x)| self.terms(u, psi).map(move |(r, c)| (r, c * x))))
     }
 
     fn gather(items: impl Iterator<Item = (usize, C)>) -> Vec<(usize, C)> {
@@ -467,6 +509,6 @@ impl Tie {
 
     /// x = T x_r over the full unknowns.
     pub fn expand(&self, xr: &[C], psi: [f64; 3]) -> Vec<C> {
-        (0..self.map.len()).map(|u| self.coefficient(u, psi).map_or(C::new(0.0, 0.0), |(r, c)| c * xr.get(r).copied().unwrap_or_default())).collect()
+        (0..self.map.len()).map(|u| self.terms(u, psi).map(|(r, c)| c * xr.get(r).copied().unwrap_or_default()).sum()).collect()
     }
 }
