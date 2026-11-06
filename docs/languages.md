@@ -7,8 +7,10 @@ changes at once and the choice is kept with the preferences (`language` in `pref
 ## How it works
 
 - **Text is looked up by its English**, as gettext does, where it leaves for the screen. The
-  window's text helpers take a `lang::Shown`: a `&str` is English to look up, a `String` (or
-  `lang::Raw`) is data shown as it is — a name, a number, a path, an engine message.
+  window's text helpers take a `lang::Shown`: a `lang::Text` (`t!("…")`) is English to look
+  up, a `String` (or `lang::Raw`) is data shown as it is — a name, a number, a path, an engine
+  message. The dialogs name parameters in words (`param_labels`) and show choices' values
+  (`start`, `auto`, …) in words; the ids stay what scripts write.
   - `ui.text(Style::…, "…")` for a line of text, `ui.act(…, hint, …)` and `Response::hint` for
     hover texts, the `ui_kit` controls (`styled`, `button`, `section`, `caption`, `small`, `row`,
     `header`, `error_band`);
@@ -60,11 +62,13 @@ changes at once and the choice is kept with the preferences (`language` in `pref
 
 ## What stays English
 
-- What the engine says: its messages and errors (a refused command, a step's checks), the
-  session's default project name.
-- The text drawn inside pictures — charts, field plots, the dispersion diagram, the far-field
-  pattern: `emcraft-render` sets it in DejaVu Sans, which has no Japanese.
-- Ids: command ids, parameter names (the dialogs' field labels, as scripts write them), units,
+- What the engine says: its messages and errors (a refused command), the session's default
+  project name. Its steps' checks are translated (templates the build checks).
+- Text in pictures a chart's templates do not hold (`crate::chart_words::TEMPLATES`: titles,
+  axes, legends and marks of the charts are translated, the values they hold in turn;
+  `emcraft-render` draws characters DejaVu Sans lacks from the language's font,
+  `emcraft_render::text::set_fallback`), and the field plots' and exported PNGs' own words.
+- Ids: command ids, units,
   symbols (S21, TE10, εr), file names, the theme names of user themes.
 - The command line (`emcraft-cli`) and the control channel's replies and errors (bar the
   window's own messages and field errors, which are in the window's language).

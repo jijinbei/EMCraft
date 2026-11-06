@@ -95,6 +95,7 @@ impl Fonts {
         }
         let needed = crate::lang::script_chars(language);
         let (state, defs) = if cfg!(test) {
+            emcraft_render::text::set_fallback(tests_face());
             (State::Found("Noto Sans JP (tests)".into()), tests_fonts())
         } else if needed.is_empty() {
             (State::NotNeeded, egui::FontDefinitions::default())
@@ -102,7 +103,11 @@ impl Fonts {
             let file = self.file.clone();
             let library = self.library.get_or_insert_with(|| system::Library::system(file.as_deref()));
             match library.find(&needed) {
-                Ok(found) => (State::Found(found.family.clone()), with_installed(found)),
+                Ok(found) => {
+                    // The pictures' text (charts, labels) shows the language with it too.
+                    emcraft_render::text::set_fallback(Some((found.bytes.clone(), found.index)));
+                    (State::Found(found.family.clone()), with_installed(found))
+                }
                 Err(missing) => (State::Missing(missing), egui::FontDefinitions::default()),
             }
         };
@@ -153,6 +158,17 @@ fn tests_fonts() -> egui::FontDefinitions {
 #[cfg(not(test))]
 fn tests_fonts() -> egui::FontDefinitions {
     egui::FontDefinitions::default()
+}
+
+/// The tests' face for the pictures' text.
+#[cfg(test)]
+fn tests_face() -> Option<(Vec<u8>, u32)> {
+    Some((NOTO_SANS_JP_OTF.to_vec(), 0))
+}
+
+#[cfg(not(test))]
+fn tests_face() -> Option<(Vec<u8>, u32)> {
+    None
 }
 
 #[cfg(test)]

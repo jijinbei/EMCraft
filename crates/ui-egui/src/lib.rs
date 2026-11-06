@@ -50,6 +50,7 @@ mod app_dialogs;
 mod app_run;
 pub mod autosave;
 pub mod browser;
+mod chart_words;
 pub mod commands;
 pub mod control;
 pub mod dialog_ui;

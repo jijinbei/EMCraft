@@ -5,12 +5,16 @@
 //! Labels may hold TeX math between `$` signs ([`crate::math`]): scripts, fractions, roots,
 //! Greek letters.
 //!
+//! A character DejaVu Sans lacks (a translation's kana and kanji) is drawn from the fallback
+//! face the window sets ([`set_fallback`]: the font it shows its language with); without one
+//! it shows as DejaVu's missing glyph.
+//!
 //! A label's size is its `scale`, as for the bitmap font it replaces: the text's box is about
 //! 7 × `scale` pixels high, from its top at the y given down to the baseline, descenders below.
 
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock, RwLock};
 
-use ab_glyph::{Font, FontRef, GlyphId, PxScale, ScaleFont, point};
+use ab_glyph::{Font, FontRef, FontVec, GlyphId, PxScale, ScaleFont, point};
 
 use crate::{font, math};
 
@@ -29,6 +33,34 @@ fn face() -> Option<&'static FontRef<'static>> {
     FACE.get_or_init(|| FontRef::try_from_slice(FACE_BYTES).ok()).as_ref()
 }
 
+/// The face for characters DejaVu Sans lacks.
+static FALLBACK: RwLock<Option<Arc<FontVec>>> = RwLock::new(None);
+
+/// Sets the face characters DejaVu Sans lacks are drawn from (face `index` of a font file's
+/// bytes), or none; whether it could be read.
+///
+/// ```
+/// assert!(!emcraft_render::text::set_fallback(Some((b"not a font".to_vec(), 0))));
+/// assert!(emcraft_render::text::set_fallback(None));
+/// ```
+pub fn set_fallback(font: Option<(Vec<u8>, u32)>) -> bool {
+    let face = match font {
+        Some((bytes, index)) => match FontVec::try_from_vec_and_index(bytes, index) {
+            Ok(f) => Some(Arc::new(f)),
+            Err(_) => return false,
+        },
+        None => None,
+    };
+    if let Ok(mut f) = FALLBACK.write() {
+        *f = face;
+    }
+    true
+}
+
+fn fallback() -> Option<Arc<FontVec>> {
+    FALLBACK.read().ok().and_then(|f| f.clone())
+}
+
 fn em(scale: usize) -> f32 {
     EM_PER_SCALE * scale.clamp(1, 16) as f32
 }
@@ -37,8 +69,20 @@ fn em(scale: usize) -> f32 {
 /// its baseline: `x` along, `y` down.
 #[derive(Clone, Copy, Debug)]
 enum Mark {
-    Glyph { id: GlyphId, x: f32, y: f32, size: f32 },
-    Rule { x: f32, y: f32, w: f32, h: f32 },
+    /// `alt`: from the fallback face.
+    Glyph {
+        id: GlyphId,
+        x: f32,
+        y: f32,
+        size: f32,
+        alt: bool,
+    },
+    Rule {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    },
 }
 
 /// Laid-out text: its marks, its width and how far it reaches above and below the baseline.
@@ -54,7 +98,7 @@ impl Boxed {
     /// Appends `other` moved by (dx, dy).
     fn place(&mut self, other: Boxed, dx: f32, dy: f32) {
         self.marks.extend(other.marks.into_iter().map(|m| match m {
-            Mark::Glyph { id, x, y, size } => Mark::Glyph { id, x: x + dx, y: y + dy, size },
+            Mark::Glyph { id, x, y, size, alt } => Mark::Glyph { id, x: x + dx, y: y + dy, size, alt },
             Mark::Rule { x, y, w, h } => Mark::Rule { x: x + dx, y: y + dy, w, h },
         }));
         self.ascent = self.ascent.max(other.ascent - dy);
@@ -133,15 +177,26 @@ fn set(face: &FontRef<'static>, nodes: &[math::Node], size: f32) -> Boxed {
 /// Plain characters at em `size`, kerned.
 fn run(face: &FontRef<'static>, text: &str, size: f32) -> Boxed {
     let scaled = face.as_scaled(PxScale::from(size));
+    let alt = fallback();
     let mut caret = 0.0f32;
     let mut previous: Option<GlyphId> = None;
     let mut marks = Vec::with_capacity(text.len());
     for ch in text.chars() {
         let id = face.glyph_id(ch);
+        if id.0 == 0
+            && let Some(a) = alt.as_deref()
+            && a.glyph_id(ch).0 != 0
+        {
+            let aid = a.glyph_id(ch);
+            marks.push(Mark::Glyph { id: aid, x: caret, y: 0.0, size, alt: true });
+            caret += a.as_scaled(PxScale::from(size)).h_advance(aid);
+            previous = None;
+            continue;
+        }
         if let Some(p) = previous {
             caret += scaled.kern(p, id);
         }
-        marks.push(Mark::Glyph { id, x: caret, y: 0.0, size });
+        marks.push(Mark::Glyph { id, x: caret, y: 0.0, size, alt: false });
         caret += scaled.h_advance(id);
         previous = Some(id);
     }
@@ -173,11 +228,16 @@ pub fn rasterize(text: &str, scale: usize, mut plot: impl FnMut(i64, i64, f32)) 
         return;
     };
     let baseline = (CAP_HEIGHT * em(scale)).round();
+    let alt = fallback();
     for mark in laid(face, text, scale).marks {
         match mark {
-            Mark::Glyph { id, x, y, size } => {
+            Mark::Glyph { id, x, y, size, alt: from_alt } => {
                 let glyph = id.with_scale_and_position(PxScale::from(size), point(x, baseline + y));
-                if let Some(outline) = face.outline_glyph(glyph) {
+                let outline = match (from_alt, alt.as_deref()) {
+                    (true, Some(a)) => a.outline_glyph(glyph),
+                    _ => face.outline_glyph(glyph),
+                };
+                if let Some(outline) = outline {
                     let b = outline.px_bounds();
                     let (u0, v0) = (b.min.x as i64, b.min.y as i64);
                     outline.draw(|gx, gy, c| plot(u0 + i64::from(gx), v0 + i64::from(gy), c));

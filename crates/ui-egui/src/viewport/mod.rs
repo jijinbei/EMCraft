@@ -327,7 +327,8 @@ fn draw_chart<V: ChartView>(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui,
     let drawn = V::Key::slot(&mut st.views).get_or_draw(pk, || {
         V::chart(app, &key).map(|c| {
             let curves: Vec<(String, String)> = c.curves().into_iter().map(|(k, l)| (k.to_owned(), chart_style::plain(l))).collect();
-            let c = emcraft_engine::views::style_chart(&app.session, V::CHART, c);
+            let mut c = emcraft_engine::views::style_chart(&app.session, V::CHART, c);
+            crate::chart_words::translate_chart(&mut c);
             drawn_now = Some((emcraft_render::chart::layout_of(&c, width, height), curves));
             emcraft_render::chart::draw(&c, width, height, &crate::theme::palette())
         })

@@ -118,13 +118,15 @@ pub struct PictureKey<V> {
     /// The height it was drawn at, where the view decides it (0: from the width).
     pub height: usize,
     pub theme: crate::theme::ThemeKey,
+    /// The language its words are in.
+    pub language: &'static str,
     pub view: V,
 }
 
 impl<V> PictureKey<V> {
     /// The key at the session's `revision`, `width` pixels wide, in the current theme.
     pub fn new(revision: u64, width: usize, view: V) -> Self {
-        PictureKey { revision, width, height: 0, theme: crate::theme::key(), view }
+        PictureKey { revision, width, height: 0, theme: crate::theme::key(), language: crate::lang::current(), view }
     }
 
     /// The key drawn `height` pixels high.
@@ -221,7 +223,7 @@ mod tests {
     fn a_cached_picture_is_drawn_again_only_for_another_key() {
         let canvas = emcraft_render::Canvas { w: 2, h: 2, rgba: vec![0; 16] };
         let mut c: Cached<PictureKey<u8>> = Cached::default();
-        let key = |view| PictureKey { revision: 1, width: 400, height: 0, theme: crate::theme::key(), view };
+        let key = |view| PictureKey { revision: 1, width: 400, height: 0, theme: crate::theme::key(), language: "en", view };
         let mut draws = 0;
         for k in [1, 1, 2, 2, 1] {
             let _ = c.get_or_draw(key(k), || {

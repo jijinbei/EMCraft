@@ -217,13 +217,7 @@ fn language(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     choices(ui, out, "language", app.prefs.language(), &list, |id| Action::Pref(Pref::Language(id.to_owned())));
     font(app, ui, out);
     gap(ui);
-    heading(
-        ui,
-        t!("What stays in English"),
-        t!(
-            "The engine's messages and errors, the text drawn in pictures (charts, field plots), the command and parameter ids, and the command line."
-        ),
-    );
+    heading(ui, t!("What stays in English"), t!("The engine's messages and errors, the field plots' words, the command ids, and the command line."));
 }
 
 /// A path as a label (its full text on hover), or that there is none.
