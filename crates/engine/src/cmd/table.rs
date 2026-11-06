@@ -811,6 +811,21 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::symmetry::revolution_radiation,
     },
     CommandSpec {
+        id: "solve.revolution.time_domain",
+        label: "Body of revolution ring-down",
+        doc: "The closed model as a body of revolution about z rung in the time domain in one azimuthal order `m` on the meridian half-plane's (r, z) Yee grid of square-ish cells about `cell` (the model's filling at each cell's middle, conductors staircased; Chen–Mittra–Harms): a Gaussian-modulated pulse over the band from `start` to `stop` (default the model's), the ringing for `periods` periods of the band's middle Fourier-transformed, its resonances the spectrum's peaks. A cross-check of solve.revolution's eigenmodes by another method. The model is left as it is.",
+        params: &[
+            opt("start", K::Number, "the band's start (default the model's)").of(F),
+            opt("stop", K::Number, "the band's stop (default the model's)").of(F),
+            opt("m", K::Integer, "the azimuthal order, 0 to 64 (default 0)"),
+            opt("cell", K::Number, "the cells' side (default a thirtieth of the wavelength at `stop` in the densest material)").of(L),
+            opt("periods", K::Number, "how long it rings, in periods of the band's middle, 10 to 20000 (default 300): the resolution is about 1/(that time)"),
+        ],
+        effect: Effect::None,
+        invalidates: None,
+        run: crate::symmetry::revolution_time_domain,
+    },
+    CommandSpec {
         id: "solve.cyclic",
         label: "Cyclic modes",
         doc: "The cavity modes of a rotationally symmetric model (model.rotation) from its meshed sector, per harmonic m: the `count` lowest eigenfrequencies of each above the null space, by shift-invert subspace iteration on the phase-tied (Hermitian) eigenproblem. Without `m`, the harmonics 0 to n/2 (m and n − m have the same frequencies: the fields turning either way). Put `frequency` a little above the highest mode wanted. The model is left as it is.",

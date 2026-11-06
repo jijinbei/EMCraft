@@ -67,6 +67,7 @@ use crate::guide::{Grid, run};
 pub use crate::solid::{MAX_EXCITED, s_parameters_solid};
 use crate::yee::Settling;
 
+pub mod bor;
 pub mod device;
 mod dispersion;
 mod guide;

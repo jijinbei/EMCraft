@@ -807,3 +807,25 @@ fn a_puck_across_the_cut_faces_gives_the_body_of_revolution_s_modes() {
 fn a_puck_across_the_cut_faces_converges_to_the_body_of_revolution_s_modes() {
     puck_on_a_quarter(2.5, 2, 1e-3, 0.25);
 }
+
+/// **Setup**: [`pucked`] (the puck's faces on grid lines) rung in the time domain on its
+/// meridian half-plane, 0.5 mm cells for 200 periods, orders 0 and 1.
+/// **Cross-check** (no closed form): the frequency domain's body of revolution (`solve.revolution`,
+/// 0.25 mm), two methods apart: the lowest two modes of each order within 3e-3 (the grid's
+/// dispersion, second order: m = 1's second 2.2e-3 here, 0.25 mm cells bring all within 1e-3).
+#[test]
+fn a_puck_rings_in_the_time_domain_where_its_eigenmodes_lie() {
+    let mut s = pucked();
+    for (m, band) in [(0u32, (9.0, 16.0)), (1, (10.0, 17.5))] {
+        let fem = revolution_modes(&mut s, m, band.0 + 1.0, 2, 0.25);
+        let r = s.execute("solve.revolution.time_domain", &json!({"m": m, "start": band.0, "stop": band.1, "cell": 0.5, "periods": 200})).unwrap();
+        let rung: Vec<f64> = r["modes"].as_array().unwrap().iter().map(|x| x["frequency"].as_f64().unwrap()).collect();
+        for f in &fem {
+            let best = rung.iter().map(|g| (g / f - 1.0).abs()).fold(f64::INFINITY, f64::min);
+            assert!(best < 3e-3, "m {m}: eigenmode {f} GHz, the ring-down's nearest {best:.2e} off ({rung:?})");
+        }
+    }
+    // Without a band, or with a port, it is refused.
+    let mut q = pillbox();
+    assert!(q.execute("solve.revolution.time_domain", &json!({})).is_err());
+}

@@ -213,6 +213,36 @@ pub fn revolution_radiation(s: &mut Session, p: &Params) -> Result<Value> {
     )
 }
 
+/// `solve.revolution.time_domain`: the closed model as a body of revolution rung in one order on
+/// the meridian half-plane's (r, z) grid, its resonances in the band.
+pub fn revolution_time_domain(s: &mut Session, p: &Params) -> Result<Value> {
+    if s.model.open.is_some() || !s.model.ports.is_empty() || !s.model.sources.is_empty() || !s.model.lumped.is_empty() {
+        return Err(EngineError::failed(
+            "not supported yet: ports, sources or an open boundary in a body of revolution's time domain (a closed cavity rings)",
+        ));
+    }
+    let hint = "give `start` and `stop`, or confirm the run's settings: project.setup";
+    let start = p.frequency("start").or_maybe(s.model.job.range().map(|b| b.start.get())).required_or(hint)?;
+    let stop = p.frequency("stop").or_maybe(s.model.job.range().map(|b| b.stop.get())).required_or(hint)?;
+    let m = p.integer("m", 0..=64).or(0)? as u32;
+    let periods = p.number("periods").or(300.0)?;
+    let first = s.model.meridian_profile(1e-3)?;
+    let [r1, z0, z1] = first.points.iter().fold([0.0f64, f64::INFINITY, f64::NEG_INFINITY], |b, q| [b[0].max(q[0]), b[1].min(q[1]), b[2].max(q[1])]);
+    let wavelength = emcraft_model::units::C0 / (stop * first.densest.sqrt());
+    let cell = p.positive_length("cell").optional()?.unwrap_or_else(|| (wavelength / 30.0).min(r1.max(z1 - z0) / 20.0));
+    let count = |span: f64| ((span / cell).ceil() as usize).max(2);
+    let (nr, nz) = (count(r1), count(z1 - z0));
+    if nr.saturating_mul(nz) > emcraft_fdtd::MAX_CELLS {
+        return Err(p.error("cell", format!("{nr} × {nz} cells are more than {}", emcraft_fdtd::MAX_CELLS)));
+    }
+    let (dr, dz) = (r1 / nr as f64, (z1 - z0) / nz as f64);
+    let cells = (0..nr * nz).map(|k| s.model.revolution_fill([(k % nr) as f64 * dr + 0.5 * dr, z0 + (k / nr) as f64 * dz + 0.5 * dz])).collect();
+    let grid = emcraft_fdtd::bor::BorGrid { nr, nz, dr, dz, z0, cells };
+    let r = emcraft_fdtd::bor::ring(&grid, m, (start, stop), periods)?;
+    let modes: Vec<Value> = r.frequencies.iter().map(|&f| json!({"frequency": s.show_frequency(f), "m": m})).collect();
+    Ok(json!({"modes": modes, "cells": [nr, nz], "cell": s.show_length(dr.max(dz)), "steps": r.steps, "dt": r.dt}))
+}
+
 /// `theta` (degrees, 0 to 180; default 0 to 180 by 15).
 fn polar_angles(p: &Params) -> Result<Vec<f64>> {
     Ok(match p.list("theta", 721).optional()? {

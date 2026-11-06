@@ -585,6 +585,18 @@ The open model as a body of revolution about z at one frequency: its cylinder (l
 | `theta` | array |  | no | polar angles, degrees (default 0 to 180 by 15) |
 | `size` | number | length | no | the triangles' size |
 
+## `solve.revolution.time_domain` — Body of revolution ring-down
+
+The closed model as a body of revolution about z rung in the time domain in one azimuthal order `m` on the meridian half-plane's (r, z) Yee grid of square-ish cells about `cell` (the model's filling at each cell's middle, conductors staircased; Chen–Mittra–Harms): a Gaussian-modulated pulse over the band from `start` to `stop` (default the model's), the ringing for `periods` periods of the band's middle Fourier-transformed, its resonances the spectrum's peaks. A cross-check of solve.revolution's eigenmodes by another method. The model is left as it is.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `start` | number | frequency | no | the band's start (default the model's) |
+| `stop` | number | frequency | no | the band's stop (default the model's) |
+| `m` | integer |  | no | the azimuthal order, 0 to 64 (default 0) |
+| `cell` | number | length | no | the cells' side (default a thirtieth of the wavelength at `stop` in the densest material) |
+| `periods` | number |  | no | how long it rings, in periods of the band's middle, 10 to 20000 (default 300): the resolution is about 1/(that time) |
+
 ## `solve.cyclic` — Cyclic modes
 
 The cavity modes of a rotationally symmetric model (model.rotation) from its meshed sector, per harmonic m: the `count` lowest eigenfrequencies of each above the null space, by shift-invert subspace iteration on the phase-tied (Hermitian) eigenproblem. Without `m`, the harmonics 0 to n/2 (m and n − m have the same frequencies: the fields turning either way). Put `frequency` a little above the highest mode wanted. The model is left as it is.

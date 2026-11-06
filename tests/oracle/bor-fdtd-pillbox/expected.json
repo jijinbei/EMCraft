@@ -1,0 +1,11 @@
+{
+ "title": "Pillbox cavity, radius 10 mm, 15 mm long, rung in the time domain as a body of revolution: TM010 and TM011 (m = 0), TE111 and TM110 (m = 1)",
+ "kind": "theory",
+ "source": "Cylindrical cavity resonances f = c/(2π) √((x/a)² + (pπ/d)²) with x₀₁ = 2.404825557695773 (TM01p), x'₁₁ = 1.841183781340659 (TE11p) and x₁₁ = 3.831705970207512 (TM11p), the zeros tabulated in M. Abramowitz, I. A. Stegun, Handbook of Mathematical Functions, 1964, Table 9.5 (D. M. Pozar, Microwave Engineering, 4th ed., §6.4)",
+ "quantities": [
+  {"id": "tm010", "quantity": "TM010 resonance (GHz)", "measure": {"step": "m0", "pointer": "/modes/0/frequency"}, "value": 11.474252783521006, "tolerance": {"relative": 1e-3}, "reason": "the Yee grid's dispersion on 0.25 mm cells (second order) and the peak's place on a spectrum of 400 periods: −1.4e-4 here"},
+  {"id": "tm011", "quantity": "TM011 resonance (GHz)", "measure": {"step": "m0", "pointer": "/modes/1/frequency"}, "value": 15.215786652896151, "tolerance": {"relative": 1e-3}, "reason": "as TM010: −8.5e-5"},
+  {"id": "te111", "quantity": "TE111 resonance (GHz)", "measure": {"step": "m1", "pointer": "/modes/0/frequency"}, "value": 13.305508795463298, "tolerance": {"relative": 1e-3}, "reason": "as TM010, the axis' fields of order 1 from their mirror images: −3.9e-5"},
+  {"id": "tm110", "quantity": "TM110 resonance (GHz)", "measure": {"step": "m1", "pointer": "/modes/1/frequency"}, "value": 18.282391732568904, "tolerance": {"relative": 1e-3}, "reason": "as TE111: −1.7e-4"}
+ ]
+}

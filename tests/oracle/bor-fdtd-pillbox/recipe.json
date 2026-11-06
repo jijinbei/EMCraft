@@ -1,0 +1,5 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 10, "length": 15}},
+ {"command": "solve.revolution.time_domain", "params": {"m": 0, "start": 10, "stop": 16, "cell": 0.25, "periods": 400}, "id": "m0"},
+ {"command": "solve.revolution.time_domain", "params": {"m": 1, "start": 12, "stop": 19, "cell": 0.25, "periods": 400}, "id": "m1"}
+]

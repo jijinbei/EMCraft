@@ -286,6 +286,12 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   *Advanced Engineering Electromagnetics*, §6.8) on the contour turned about the axis, sampled
   evenly in φ (`emcraft-solver::bor::open`). Checked against the dipole's closed form and the
   Mie series (Bohren, Huffman 1983, §4.4).
+- Bodies of revolution in the time domain: Y. Chen, R. Mittra, P. Harms, *Finite-difference
+  time-domain algorithm for solving Maxwell's equations in rotationally symmetric geometries*,
+  IEEE Trans. Microwave Theory Tech. 44(6):832–839, 1996, and A. Taflove, S. C. Hagness,
+  *Computational Electrodynamics*, 3rd ed., Artech House 2005, ch. 12 — one order's six real
+  components on the (r, z) Yee grid, the axis by Ampère's law round a disc (m = 0) or the
+  fields' mirror images (m = 1), the step bounded by Δ/(m + 1) (`emcraft-fdtd::bor`).
 - The pillbox's and the coaxial cavity's closed forms that check it: D. M. Pozar, *Microwave
   Engineering*, 4th ed., Wiley 2012, §6.3; the Bessel zeros from M. Abramowitz, I. A. Stegun,
   *Handbook of Mathematical Functions*, 1964, Table 9.5.
