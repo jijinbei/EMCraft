@@ -611,7 +611,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "geometry.body",
         label: "Body",
-        doc: "A body in the region, by what it is made of: `metal` (a perfect conductor: the region loses its volume and its surface becomes wall; it may reach the region's boundary), the region's own material (giving back what metal took: the inside of a metal shell, an opening), or another material (a dielectric body inside the region, apart from other dielectric ones). Later bodies win where they overlap. The same shapes as geometry.solid, its origin at `at` and its z axis turned onto `axis` (dielectric bodies along z).",
+        doc: "A body in the region, by what it is made of: `interior` (the region itself — a housing's inside drawn as its air: inside it is solved, outside it is metal; the bodies placed stay, the region pinned and closed; a box anywhere, a prism or revolved profile anywhere, a cylinder or sphere on the origin), `metal` (a perfect conductor: the region loses its volume and its surface becomes wall; it may reach the region's boundary), the region's own material (giving back what metal took: the inside of a metal shell, an opening), or another material (a dielectric body inside the region, apart from other dielectric ones). Later bodies win where they overlap. The same shapes as geometry.solid, its origin at `at` and its z axis turned onto `axis` (dielectric bodies along z).",
         params: &[
             BODY_MATERIAL,
             SHAPE,

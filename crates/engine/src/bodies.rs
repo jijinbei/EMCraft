@@ -12,6 +12,9 @@ use crate::{EngineError, Params, Result, Session};
 /// The material name for a perfect conductor.
 pub const METAL: &str = "metal";
 
+/// The material name for an interior: the inside of a housing drawn as its air, the region.
+pub const INTERIOR: &str = "interior";
+
 /// Where a body lives in the model.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BodyRef {
@@ -63,11 +66,46 @@ pub enum Placed {
     Region,
     /// Another material, meshed apart.
     Dielectric,
+    /// The region itself: inside it is solved, outside it is metal.
+    Interior,
+}
+
+/// The region an interior body makes: a box anywhere (turned with its axis), a prism or a
+/// revolved profile moved to `at` and turned, a cylinder or a sphere standing on the origin.
+fn interior_shape(shape: Shape, at: Point3, axis: Axis) -> Result<Shape> {
+    let reach = Feature { combine: Combine::Add, shape: shape.clone(), at, axis }.bounds();
+    match shape {
+        Shape::Box { .. } => Ok(Shape::block(reach.min, reach.max)?),
+        Shape::Surface { name, positions, triangles, tags, surfaces } => {
+            let place = |p: Point3| at + axis.turn(p.to_vec());
+            let surfaces = surfaces.into_iter().map(|f| f.filter(|_| axis == Axis::Z).map(|f| f.moved(at.to_vec()))).collect();
+            Ok(Shape::Surface { name, positions: positions.into_iter().map(place).collect(), triangles, tags, surfaces })
+        }
+        other if at == Point3::ORIGIN && axis == Axis::Z => Ok(other),
+        _ => Err(EngineError::failed("an interior cylinder or sphere stands on the origin along z: elsewhere, draw it as a revolved profile")),
+    }
 }
 
 /// Places a body of `material` in the model: metal as a subtracted feature, the region's
 /// material as an added one, another material as an inclusion.
 pub(crate) fn place(m: &mut Model, shape: Shape, at: Point3, axis: Axis, material: &str) -> Result<Placed> {
+    // An interior is the region: inside solved, outside metal; the bodies placed stay.
+    if material == INTERIOR {
+        let shape = interior_shape(shape, at, axis)?;
+        shape.check()?;
+        let filling = m
+            .solid
+            .as_ref()
+            .map(|s| s.material.clone())
+            .or_else(|| m.background.clone())
+            .unwrap_or_else(|| emcraft_model::region::BACKGROUND.to_owned());
+        m.solid = Some(emcraft_model::Solid { shape, material: filling });
+        m.region = emcraft_model::Region::Pinned;
+        m.open = None;
+        m.waveguide = None;
+        m.mesh = None;
+        return Ok(Placed::Interior);
+    }
     // The first body with no region: the region is automatic round the bodies (ADR 0005); an
     // automatic region grows to hold the body before it is placed.
     if m.solid.is_none() {

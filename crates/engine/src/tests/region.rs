@@ -93,3 +93,32 @@ fn a_dipole_placed_with_no_region_gets_one_round_it() {
     // An end port has no place in an automatic region.
     assert!(s.execute("model.region", &json!({"mode": "sideways"})).is_err());
 }
+
+/// **Setup**: a WR-90 guide 30 mm long drawn as an interior body centred on the z axis (a box
+/// from (−11.43, −5.08, 0) mm), its ends ports, at 10 GHz; a metal post placed before it stays.
+/// **Closed form**: the matched straight guide's TE10: S11 = 0, S21 = e^{−jβL},
+/// β = √(k₀² − (π/a)²) (Pozar §3.3).
+#[test]
+fn an_interior_body_is_the_region_and_keeps_the_bodies() {
+    let mut s = Session::new();
+    s.execute("geometry.body", &json!({"shape": "box", "size": [22.86, 10.16, 30], "at": [-11.43, -5.08, 0], "material": "interior"})).unwrap();
+    assert_eq!(s.model.region, emcraft_model::Region::Pinned);
+    assert!(s.model.open.is_none());
+    s.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end"})).unwrap();
+    s.execute("mesh.generate", &json!({"size": 3})).unwrap();
+    let r = s.execute("solve.frequency", &json!({"frequencies": [10]})).unwrap();
+    let k = 2.0 * std::f64::consts::PI * 10e9 / emcraft_model::units::C0;
+    let beta = (k * k - (std::f64::consts::PI / 0.02286f64).powi(2)).sqrt();
+    let want = emcraft_solver::Complex64::from_polar(1.0, -beta * 0.03);
+    let (s11, s21) = (super::s(&r, 0, "s11"), super::s(&r, 0, "s21"));
+    assert!(s11.norm() < 0.01 && (s21 - want).norm() < 0.01, "S11 {s11}, S21 {s21} against {want}");
+    // A metal post placed first stays when the interior is drawn round it.
+    let mut t = Session::new();
+    t.execute("geometry.body", &json!({"shape": "cylinder", "radius": 1, "length": 10.16, "at": [0, 0, 15], "axis": "y", "material": "metal"}))
+        .unwrap();
+    t.execute("geometry.body", &json!({"shape": "box", "size": [22.86, 10.16, 30], "at": [-11.43, -5.08, 0], "material": "interior"})).unwrap();
+    assert_eq!(t.model.features.len(), 1);
+    // An interior cylinder off the origin is refused.
+    assert!(t.execute("geometry.body", &json!({"shape": "cylinder", "radius": 5, "length": 10, "at": [1, 0, 0], "material": "interior"})).is_err());
+}
