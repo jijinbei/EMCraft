@@ -54,6 +54,11 @@ fn scenario_section_view() {
 }
 
 #[test]
+fn scenario_setup_proposal() {
+    scenario("setup_proposal");
+}
+
+#[test]
 fn scenario_setup_restore() {
     scenario("setup_restore");
 }

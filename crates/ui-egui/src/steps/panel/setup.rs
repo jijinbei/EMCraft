@@ -10,10 +10,21 @@ pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, out: &m
     // Home is the sole authority for the analysis, including its inferred (auto) choice.
     let solver = app.session.model().analysis();
     f.fill_defaults();
+    // No band yet: the ports' guide's (a standard guide's band, else 1.25 to 1.9 times its TE10
+    // cut-off), to confirm or change.
+    if f.start.trim().is_empty()
+        && f.stop.trim().is_empty()
+        && app.session.model().job.range().is_none()
+        && let Some((start, stop)) = proposed_band(app)
+    {
+        let unit = app.session.display().frequency;
+        f.start = format!("{}", unit.from_si(start));
+        f.stop = format!("{}", unit.from_si(stop));
+    }
     ui_kit::section(ui, t!("Settings"));
     let solves = solve_frequencies(app, f, solver);
     f.diagram = band_diagram(app, f, ui, &solves);
-    let e = |f: &Fields, k: &str| f.error(k).map(str::to_owned);
+    let e = |f: &Fields, k: &str| f.shown_error(k).map(str::to_owned);
     let lu = app.session.display().length.symbol();
     match solver {
         Solver::Frequency | Solver::TimeDomain => {
@@ -50,7 +61,10 @@ pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, out: &m
             );
         }
     }
-    if let Some(e) = run_estimate(app) {
+    // Before the mesh there is nothing to estimate from: say when there will be.
+    if app.session.model().mesh.is_none() {
+        ui_kit::small(ui, t!("The run's time is estimated once the model is meshed (step 6)."), Tokens::get().text_dim);
+    } else if let Some(e) = run_estimate(app) {
         super::super::estimate_line(ui, e, Fixed::SetupEstimate);
     }
     // The fields' errors as typed.
@@ -180,7 +194,7 @@ fn band_diagram(app: &EmcraftApp, f: &Fields, ui: &mut egui::Ui, solves: &[f64])
     let span = (z - a).max(z.abs() * 1e-3).max(1e-12);
     let cuts: Vec<(f64, String, bool)> = emcraft_engine::workflow::cutoffs(&app.session)
         .into_iter()
-        .map(|c| (unit.from_si(c.frequency), c.label, c.first))
+        .map(|c| (unit.from_si(c.frequency), crate::chart_words::translate(&c.label), c.first))
         .filter(|(f, _, _)| *f >= a - 0.35 * span && *f <= z + 0.35 * span)
         .collect();
     let lo = cuts.iter().map(|c| c.0).fold(a, f64::min);
@@ -247,4 +261,16 @@ fn band_diagram(app: &EmcraftApp, f: &Fields, ui: &mut egui::Ui, solves: &[f64])
 fn form_band(f: &Fields) -> Option<(f64, f64)> {
     let (a, z) = (positive(&f.start).ok()?, positive(&f.stop).ok()?);
     (a <= z).then_some((a, z))
+}
+
+/// The band the model's first port with a rectangular guide asks for: a standard guide's
+/// (`emcraft_engine::guides::standard`, air), else its TE10 band in its filling (Hz).
+fn proposed_band(app: &EmcraftApp) -> Option<(f64, f64)> {
+    let m = app.session.model();
+    m.ports.iter().find_map(|p| {
+        let (a, _) = m.port_shape_of(p).ok()?.sides()?;
+        let n = m.port_material(p.end).map_or(1.0, |x| (x.eps_r.get() * x.mu_r.get()).sqrt());
+        let band = if (n - 1.0).abs() < 1e-9 { emcraft_engine::guides::standard(a) } else { None };
+        band.or_else(|| emcraft_engine::guides::te10_band(a, n)).map(|b| (b.start, b.stop))
+    })
 }

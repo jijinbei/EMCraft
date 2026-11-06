@@ -127,6 +127,8 @@ pub struct Fields {
     pub touchstone: String,
     pub format: String,
     pub errors: Vec<(&'static str, String)>,
+    /// Confirm was pressed: an empty field's error shows too (before, only a field typed in).
+    pub tried: bool,
     /// What the Setup panel's band diagram last drew: the cut-offs' labels and the solve's
     /// frequencies.
     pub diagram: Option<Value>,
@@ -144,6 +146,21 @@ impl Fields {
 
     pub(crate) fn error(&self, name: &str) -> Option<&str> {
         self.errors.iter().find(|(n, _)| *n == name).map(|(_, e)| e.as_str())
+    }
+
+    /// [`Fields::error`] as the form shows it: an empty field's only once Confirm was pressed.
+    pub(crate) fn shown_error(&self, name: &str) -> Option<&str> {
+        let text = match name {
+            "start" => &self.start,
+            "stop" => &self.stop,
+            "points" => &self.points,
+            "order" => &self.order,
+            "count" => &self.count,
+            "frequency" => &self.frequency,
+            "cell" => &self.cell,
+            _ => return self.error(name),
+        };
+        self.error(name).filter(|_| self.tried || !text.trim().is_empty())
     }
 
     fn set_error(&mut self, name: &'static str, e: Option<String>) {

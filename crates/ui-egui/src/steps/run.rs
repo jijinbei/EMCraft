@@ -67,6 +67,7 @@ pub fn setup_params(s: &emcraft_engine::Session, f: &mut Fields) -> Result<Value
 
 /// The Setup step's button: the form's settings confirmed (`project.setup`).
 pub fn confirm_setup(app: &mut EmcraftApp) -> Result<Value, UiError> {
+    app.workflow.fields.tried = true;
     let params = setup_params(&app.session, &mut app.workflow.fields).map_err(UiError::Input)?;
     app.run("project.setup", params)
 }

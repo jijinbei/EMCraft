@@ -1029,7 +1029,11 @@
     "{along} (degrees)": "{along} (度)",
     "{label} (dB)": "{label} (dB)",
     "{name} ({unit})": "{name} ({unit})",
-    "The engine's messages and errors, the field plots' words, the command ids, and the command line.": "エンジンのメッセージとエラー、電磁界図の文字、コマンド ID、コマンドライン。"
+    "The engine's messages and errors, the field plots' words, the command ids, and the command line.": "エンジンのメッセージとエラー、電磁界図の文字、コマンド ID、コマンドライン。",
+    "{mode} port {ports}": "{mode} ポート {ports}",
+    "{mode} section {n}": "{mode} 区間 {n}",
+    "{mode} sections {n}": "{mode} 区間 {n}",
+    "The run's time is estimated once the model is meshed (step 6).": "計算時間はメッシュ後に見積もります（ステップ 6）。"
   },
   "commands": {
     "project.setup": {
