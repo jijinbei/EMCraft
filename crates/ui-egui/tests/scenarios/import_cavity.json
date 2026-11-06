@@ -8,12 +8,19 @@
   {"until": {"busy": false}, "timeout": 60},
   {"click": "step:geometry"},
   {"frames": 3},
-  {"expect": {"dialog": null, "handles": ["row:Region: cavity (imported), vacuum"]}},
+  {"expect": {"dialog": null, "handles": ["row:Region: cavity (imported), vacuum", "row:Block: metal walls (imported)"]}},
   {"call": "engine.execute", "params": {"command": "model.port.create", "params": {"name": "1", "end": "start"}}},
   {"call": "engine.execute", "params": {"command": "model.port.create", "params": {"name": "2", "end": "end"}}},
   {"call": "engine.execute", "params": {"command": "mesh.generate", "params": {"size": 4}}},
   {"expect": {"inspect": {"model.mesh.tetrahedra": {"min": 100}}}},
   {"click": "step:geometry"},
   {"frames": 3},
-  {"shot": "import-cavity-geometry"}
+  {"shot": "import-cavity-geometry"},
+  {"note": "The walls given another material from their row: the part read again, the block itself the region (drawn as its air), the ports kept"},
+  {"click": "row:Block: metal walls (imported)", "double": true},
+  {"expect": {"dialog": "geometry.body.material", "inspect": {"dialog.fields.body": "Block", "dialog.fields.material": "metal"}}},
+  {"call": "ui.dialog", "params": {"set": {"material": "interior"}, "ok": true}},
+  {"until": {"busy": false}, "timeout": 60},
+  {"frames": 3},
+  {"expect": {"dialog": null, "handles": ["row:Region: Block (imported), vacuum", "row:Block: the region (imported)"], "inspect": {"model.ports.1.name": "2"}}}
 ]

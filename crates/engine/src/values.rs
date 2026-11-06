@@ -142,6 +142,16 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
             }
             v
         }
+        "geometry.body.material" => {
+            let wanted = p.string("body").required()?;
+            match m.imported.iter().find(|b| b.name == wanted) {
+                Some(b) => json!({"body": b.name, "material": b.material}),
+                None => {
+                    let b = crate::bodies::body_named(m, p)?;
+                    json!({"body": b.name, "material": b.material})
+                }
+            }
+        }
         _ if spec.effect == crate::Effect::Solve => match s.runs.iter().find(|r| r.command == spec.id) {
             Some(run) => crate::runs::shown(s, run)?,
             None => json!({}),

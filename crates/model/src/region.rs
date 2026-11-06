@@ -118,6 +118,7 @@ impl crate::Model {
             return Ok(false);
         }
         self.solid = Some(Solid { shape, material });
+        self.imported.clear();
         self.waveguide = None;
         self.mesh = None;
         self.open = Some(open);

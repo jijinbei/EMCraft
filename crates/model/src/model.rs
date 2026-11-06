@@ -84,6 +84,12 @@ pub struct Model {
     /// none); the region's material once it has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
+    /// The bodies of an imported part that are not placed in the region, by what they were read
+    /// as: its walls (`metal`: the region is the air they enclose) or the region itself
+    /// (`interior`). The others are bodies in the region ([`Model::features`],
+    /// [`Model::inclusions`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imported: Vec<PartBody>,
     /// The mesh of the waveguide (made by `emcraft-mesh`), shared: the copies of the model a
     /// session keeps to undo to share it rather than copy it.
     #[serde(skip)]
@@ -140,9 +146,18 @@ impl Default for Model {
             rotation: None,
             region: crate::region::Region::Pinned,
             background: None,
+            imported: Vec::new(),
             mesh: None,
         }
     }
+}
+
+/// An imported part's body read as the region's walls or as the region ([`Model::imported`]).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PartBody {
+    pub name: String,
+    /// `metal` (walls) or `interior` (the region).
+    pub material: String,
 }
 
 impl Model {
@@ -189,6 +204,7 @@ impl Model {
     /// boundary, sources, lumped ports and the mesh.
     fn drop_what_fits_the_old_geometry(&mut self) {
         self.pcb = None;
+        self.imported.clear();
         self.inclusions.clear();
         self.features.clear();
         self.open = None;

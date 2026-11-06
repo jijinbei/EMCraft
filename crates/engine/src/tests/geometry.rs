@@ -112,7 +112,15 @@ fn imported_surfaces_mesh_and_carry_ports() {
     let path = scratch("guide.stl");
     std::fs::write(&path, emcraft_io::stl::write_binary(&box_surface(22.5, 10.0, 30.0), 1.0)).unwrap();
     let mut s = Session::new();
+    // A body is metal by default (ADR 0005): a solid block encloses no air, so it lies in a box
+    // of air, the reply saying why there is no cavity.
     let r = s.execute("geometry.import", &json!({"path": path})).unwrap();
+    assert_eq!(r["region"], "box", "{r}");
+    assert!(r["cavity"].as_str().unwrap().contains("enclose no air"), "{r}");
+    // Drawn as its air: the body is the region.
+    let r = s.execute("geometry.import", &json!({"path": path, "materials": {"guide.stl": "interior"}})).unwrap();
+    assert_eq!(r["region"], "guide.stl", "{r}");
+    assert_eq!(s.model.imported, vec![emcraft_model::PartBody { name: "guide.stl".into(), material: "interior".into() }]);
     assert_eq!(r["faces"], 6);
     approx::assert_abs_diff_eq!(r["volume"].as_f64().unwrap(), 22.5e-3 * 10e-3 * 30e-3, epsilon = 1e-15);
     s.execute("mesh.generate", &json!({"size": 3})).unwrap();
@@ -125,7 +133,7 @@ fn imported_surfaces_mesh_and_carry_ports() {
     assert!((re - exact.re).hypot(im - exact.im) < 1e-3, "{re} {im} {exact}");
     // The same as ASCII, in centimetres.
     std::fs::write(&path, emcraft_io::stl::write_ascii(&box_surface(2.25, 1.0, 3.0), 1.0)).unwrap();
-    let r = s.execute("geometry.import", &json!({"path": path, "unit": 10})).unwrap();
+    let r = s.execute("geometry.import", &json!({"path": path, "unit": 10, "region": "guide.stl"})).unwrap();
     approx::assert_abs_diff_eq!(r["volume"].as_f64().unwrap(), 6.75e-6, epsilon = 1e-15);
     // An open surface, a missing file and an unknown format are refused.
     let mut open = box_surface(1.0, 1.0, 1.0);
@@ -571,6 +579,39 @@ fn measure_reads_and_answers_in_display_units_and_changes_nothing() {
     ] {
         assert!(s.execute("geometry.measure", &bad).is_err(), "{bad}");
     }
+}
+
+/// ADR 0005: an imported part's body is metal unless said otherwise, so a block with a channel
+/// through it reads as the channel's air with nothing chosen; its material changed later reads
+/// the part again (interior: the block itself is the region; metal: the channel again), the
+/// ports kept. Exact: the channel less the plates, 22.86 · 10.16 · 32 − 2 · 5.43 · 10.16 · 2 mm³.
+#[test]
+fn an_imported_part_is_metal_and_its_material_changes_the_region() {
+    let mut s = Session::new();
+    let r = s.execute("geometry.import", &json!({"path": block_3mf()})).unwrap();
+    assert_eq!((r["region"].as_str(), r["pieces"]["axis"].as_str()), (Some("cavity"), Some("z")), "{r}");
+    let channel = 22.86 * 10.16 * 32.0 - 2.0 * 5.43 * 10.16 * 2.0;
+    let volume = |s: &Session| s.model.solid.as_ref().unwrap().shape.volume() * 1e9;
+    assert!((volume(&s) - channel).abs() < 1e-6 * channel);
+    assert_eq!(s.model.imported, vec![emcraft_model::PartBody { name: "Block".into(), material: "metal".into() }]);
+    s.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
+    let v = s.execute("project.values", &json!({"command": "geometry.body.material", "body": "Block"})).unwrap();
+    assert_eq!(v, json!({"body": "Block", "material": "metal"}));
+    // The block drawn as the air: it is the region.
+    let r = s.execute("geometry.body.material", &json!({"body": "Block", "material": "interior"})).unwrap();
+    assert_eq!(r["region"], "Block", "{r}");
+    assert!(volume(&s) > 32.86 * 20.16 * 32.0 - channel - 1.0, "{}", volume(&s));
+    assert_eq!(s.model.imported[0].material, "interior");
+    // Back to metal: the channel again, the port still there; undo goes back a step.
+    s.execute("geometry.body.material", &json!({"body": "Block", "material": "metal"})).unwrap();
+    assert!((volume(&s) - channel).abs() < 1e-6 * channel);
+    assert_eq!(s.model.ports.len(), 1);
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(s.model.imported[0].material, "interior");
+    // Two regions, or a region with a material of its own, are refused.
+    let e = s.execute("geometry.body.material", &json!({"body": "Block", "material": "nothing"})).unwrap_err();
+    assert!(!matches!(e, EngineError::Panicked(_)), "{e}");
+    assert!(s.execute("geometry.import", &json!({"path": block_3mf(), "materials": {"Block": "interior"}, "region": "box"})).is_err());
 }
 
 /// Regression: a part drawn lying down — a 10 × 100 × 10 mm block, a 5 × 5 mm channel through it

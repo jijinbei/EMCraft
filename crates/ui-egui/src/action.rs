@@ -303,7 +303,8 @@ impl EmcraftApp {
                 self.browser.selected = None;
                 self.view3d.selected.clear();
                 let mut replies = Vec::with_capacity(items.len());
-                for item in items {
+                // An imported part's walls are not deleted: their material changes.
+                for item in items.into_iter().filter(|i| !i.delete.is_empty()) {
                     replies.push(self.run(item.delete, item.params())?);
                 }
                 return Ok(if replies.len() == 1 { replies.swap_remove(0) } else { Value::Array(replies) });

@@ -141,6 +141,9 @@ pub fn body(s: &mut Session, p: &Params) -> Result<Value> {
 pub fn body_material(s: &mut Session, p: &Params) -> Result<Value> {
     let wanted = p.string("body").required()?;
     let material = p.string("material").required()?;
+    if s.model.imported.iter().any(|b| b.name == wanted) {
+        return part_body_material(s, wanted, material);
+    }
     let list = bodies(&s.model);
     let b = list
         .iter()
@@ -159,6 +162,31 @@ pub fn body_material(s: &mut Session, p: &Params) -> Result<Value> {
     };
     let kind = place(&mut s.model, shape, at, axis, material)?;
     Ok(json!({"body": wanted, "as": kind}))
+}
+
+/// An imported part's wall or region body given another material: the part read again as
+/// geometry.import read it, the body's material changed and the region chosen anew (the body
+/// `interior` the region, else the air the metal encloses, else a box of air round them). The
+/// ports stay; bodies placed since are dropped with the old geometry.
+fn part_body_material(s: &mut Session, name: &str, material: &str) -> Result<Value> {
+    let step = s
+        .history
+        .iter()
+        .rev()
+        .find(|st| st.command == "geometry.import")
+        .ok_or_else(|| EngineError::failed(format!("`{name}` came from an import no longer in the history")))?;
+    let mut params = step.params.clone();
+    let Some(o) = params.as_object_mut() else { return Err(EngineError::failed("the import's parameters are not an object")) };
+    // The region follows the materials now.
+    o.remove("region");
+    o.remove("keep");
+    let materials = o.entry("materials").or_insert_with(|| json!({}));
+    let Some(m) = materials.as_object_mut() else { return Err(EngineError::failed("the import's `materials` are not an object")) };
+    m.insert(name.to_owned(), json!(material));
+    let vars = s.variables().clone();
+    let reader = Params::new(&params, s.display).with_variables(&vars);
+    let reply = crate::geometry::import(s, &reader)?;
+    Ok(json!({"body": name, "material": material, "region": reply["region"], "import": params}))
 }
 
 /// The body parameter `body` names.

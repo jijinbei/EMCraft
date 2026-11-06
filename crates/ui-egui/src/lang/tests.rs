@@ -696,6 +696,8 @@ const UNREACHED: &[(&str, &str)] = &[
     ("Port {name} (on a face): {n} mode{impedance}", "needs a port on an imported face (scenario import_cavity)"),
     ("Port {name} (on a face): {n} modes{impedance}", "needs a port on an imported face (scenario import_cavity)"),
     ("Region: {name} (imported), {material}", "needs an imported file (scenario import_bodies)"),
+    ("{name}: metal walls (imported)", "needs an imported file (scenario import_cavity)"),
+    ("{name}: the region (imported)", "needs an imported file (scenario import_cavity)"),
     ("NOT passive", "needs a sweep that is not passive"),
     ("Back to the port's face", "a hint on the selected port's reference plane (scenario view3d_port_tool)"),
     ("GPU {device}: {n} fronts", "needs a GPU device (the CUDA runtime and an NVIDIA GPU)"),

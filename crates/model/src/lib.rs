@@ -56,7 +56,7 @@ pub use geom::{Aabb, CVec3, Point3, Vec3};
 pub use job::{Job, MAX_MODES, Order, Setup};
 pub use material::{MAX_POLES, Material, Pole, SecondOrder};
 pub use mesh::{Boundary, BoundaryFace, Buckets, Grid, Mesh};
-pub use model::{Issue, MAX_WALL_THICKNESS, Model};
+pub use model::{Issue, MAX_WALL_THICKNESS, Model, PartBody};
 pub use num_complex::Complex64;
 pub use open::{LumpedPort, Open, OpenShape, Source, SphericalLayer};
 pub use periodic::{Periodic, Polarization};

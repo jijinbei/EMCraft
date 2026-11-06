@@ -100,12 +100,18 @@ pub fn kind_of(command: &str, p: &ParamSpec, session: &Session) -> Kind {
         (_, "strips") => return Kind::Table(STRIPS),
         (_, "vias") => return Kind::Table(VIAS),
         ("file.sample", "name") => return Kind::Choice(emcraft_engine::templates::TEMPLATES.iter().map(|s| s.name.to_owned()).collect()),
-        // A body may be metal besides the materials.
+        // A body may be metal or the region (interior) besides the materials.
         ("geometry.body" | "geometry.body.material" | "geometry.body.edit", "material") => {
-            let metal = std::iter::once(emcraft_engine::bodies::METAL.to_owned());
-            return Kind::Choice(metal.chain(session.model().materials.iter().map(|m| m.name.clone())).collect());
+            let own = [emcraft_engine::bodies::METAL, emcraft_engine::bodies::INTERIOR].map(str::to_owned);
+            return Kind::Choice(own.into_iter().chain(session.model().materials.iter().map(|m| m.name.clone())).collect());
         }
-        ("geometry.body.material" | "geometry.body.edit" | "geometry.body.delete", "body") => {
+        // An imported part's walls or region change material too.
+        ("geometry.body.material", "body") => {
+            let m = session.model();
+            let part = m.imported.iter().map(|b| b.name.clone());
+            return Kind::Choice(part.chain(emcraft_engine::bodies::bodies(m).into_iter().map(|b| b.name)).collect());
+        }
+        ("geometry.body.edit" | "geometry.body.delete", "body") => {
             return Kind::Choice(emcraft_engine::bodies::bodies(session.model()).into_iter().map(|b| b.name).collect());
         }
         (_, "material") | ("model.material.edit" | "model.material.delete", "name") => {

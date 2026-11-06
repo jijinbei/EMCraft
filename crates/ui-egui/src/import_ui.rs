@@ -103,7 +103,7 @@ pub(crate) fn body(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, asked: &
         None => {}
     }
     ui.add_space(t.space_6);
-    outcome(ui, d, reply);
+    outcome(ui, d);
     ui.add_space(t.space_6);
     // Options: the rest, folded.
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::hover());
@@ -248,16 +248,14 @@ fn parameters(ui: &mut egui::Ui, d: &mut Dialog, params: &[emcraft_engine::Desig
 }
 
 /// What importing makes of the file: one line and its pictogram, by the region chosen.
-fn outcome(ui: &mut egui::Ui, d: &mut Dialog, reply: Option<&emcraft_engine::ImportInspection>) {
-    let bodies = reply.map_or(0, |r| r.bodies.len());
+fn outcome(ui: &mut egui::Ui, d: &mut Dialog) {
     let region = text(d, "region");
     let open = d.fields.iter().any(|f| f.name == "open" && f.on);
     let (kind, line) = match region {
         "cavity" => (Pictogram::Cavity, "Metal bodies become walls; the air they enclose is the region"),
         "box" | "" if open => (Pictogram::Box, "Metal bodies in a box of air lined by a PML"),
         "box" => (Pictogram::Box, "Metal bodies in a box of air: the air is the region"),
-        "" if bodies == 1 => (Pictogram::One, "The body is the region; its z ends take ports"),
-        "" => (Pictogram::Box, "Metal bodies in a box of air: the air is the region"),
+        "" => (Pictogram::Cavity, "Bodies are metal: the air they enclose is the region, else a box of air round them"),
         _ => (Pictogram::One, "The named body is the region; the others metal in it"),
     };
     ui.horizontal(|ui| {

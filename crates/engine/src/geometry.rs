@@ -269,27 +269,63 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
             p.error("thickness", "or confirm the run's settings (project.setup): the layer and the air before it are a quarter wavelength each")
         })?),
     };
-    // The region the fields fill: one body alone (or the one named), else a box of air around
-    // them all (always for an open problem).
-    let region =
-        p.string("region").optional()?.map_or_else(|| if bodies.len() == 1 && !open { bodies[0].name.clone() } else { "box".into() }, str::to_owned);
+    // The region the fields fill (ADR 0005): the body given `interior` (or named), the air the
+    // metal bodies enclose, else a box of air around them all (always for an open problem).
+    let interiors: Vec<&str> = materials.iter().filter(|(_, m)| m == crate::bodies::INTERIOR).map(|(b, _)| b.as_str()).collect();
+    if interiors.len() > 1 {
+        return Err(p.error("materials", "one body at most is the region (`interior`)"));
+    }
+    let given = p.string("region").optional()?.map(str::to_owned);
+    if let (Some(b), Some(r)) = (interiors.first(), &given)
+        && r != b
+    {
+        return Err(p.error("materials", format!("`{b}` is the region (`interior`): `region` cannot be `{r}`")));
+    }
+    let keep: Option<Keep> = p.choice("keep").optional()?;
+    let mut cavity = None;
+    let mut fallback = None;
+    let region = match (given, interiors.first()) {
+        (Some(r), _) => r,
+        (None, Some(b)) => (*b).to_owned(),
+        (None, None) if open || p.has("margin") => "box".into(),
+        // Metal bodies enclosing air: it is the region. Bodies that enclose none (a part in
+        // air) lie in a box of air.
+        (None, None) => {
+            let mut moved = bodies.clone();
+            match enclosed_air(s, &mut moved, &materials, keep.unwrap_or_default(), &material) {
+                Ok(c) => {
+                    bodies = moved;
+                    cavity = Some(c);
+                    "cavity".into()
+                }
+                Err(e) => {
+                    fallback = Some(e.to_string());
+                    "box".into()
+                }
+            }
+        }
+    };
     if open && region != "box" {
         return Err(p.error("region", "an open problem lies in a box of air (`box`)"));
     }
-    let keep: Option<Keep> = p.choice("keep").optional()?;
     if region != "cavity" && keep.is_some() {
         return Err(p.error("keep", "chooses pieces of a cavity (`region`: `cavity`)"));
     }
-    let mut cavity = None;
     let mut placed = Vec::new();
+    let mut imported = Vec::new();
     if region == "cavity" {
         if p.has("margin") {
             return Err(p.error("margin", "a cavity is the air inside the bodies' own bounding box: it takes no margin"));
         }
-        cavity = Some(enclosed_air(s, &mut bodies, &materials, keep.unwrap_or_default(), &material)?);
+        if cavity.is_none() {
+            cavity = Some(enclosed_air(s, &mut bodies, &materials, keep.unwrap_or_default(), &material)?);
+        }
         // The metal bodies are the cavity's walls now; the others are placed in it.
         let metal = |b: &emcraft_io::Surface| material_of(&materials, &b.name) == crate::bodies::METAL;
         placed.extend(bodies.iter().filter(|b| metal(b)).map(|b| json!({"body": b.name, "material": crate::bodies::METAL, "as": "walls"})));
+        imported.extend(
+            bodies.iter().filter(|b| metal(b)).map(|b| emcraft_model::PartBody { name: b.name.clone(), material: crate::bodies::METAL.into() }),
+        );
         let keep: Vec<bool> = bodies.iter().map(|b| !metal(b)).collect();
         retain_kept(&mut bodies, &keep);
         retain_kept(&mut sources, &keep);
@@ -302,6 +338,11 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     } else {
         let k = bodies.iter().position(|b| b.name == region).ok_or_else(|| p.error("region", format!("names no body `{region}` (or `box`)")))?;
         let body = bodies.remove(k);
+        if !matches!(material_of(&materials, &body.name), crate::bodies::METAL | crate::bodies::INTERIOR) {
+            return Err(p.error("materials", format!("`{}` is the region: its filling is `material`", body.name)));
+        }
+        placed.push(json!({"body": body.name, "material": crate::bodies::INTERIOR, "as": "region"}));
+        imported.push(emcraft_model::PartBody { name: body.name.clone(), material: crate::bodies::INTERIOR.into() });
         let source = sources.remove(k);
         let known = exact.as_mut().map(|e| e.remove(k));
         s.model.set_solid(Solid { shape: surface(body, &source, fit, known.as_deref(), &mut fitted), material: material.clone() })?;
@@ -317,6 +358,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     if let Some(t) = thickness {
         s.model.set_open(Some(emcraft_model::Open { thickness: t, reflection: None, shape: emcraft_model::OpenShape::Box }))?;
     }
+    s.model.imported = imported;
     let bounds = s.model.bounds().unwrap_or_default();
     let unit = s.display.length.to_si(1.0);
     let pieces = cavity
@@ -328,6 +370,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         "curved": {"cylinder": fitted.cylinder, "sphere": fitted.sphere, "cone": fitted.cone, "torus": fitted.torus},
         "region": region,
         "pieces": pieces,
+        "cavity": fallback,
         "bodies": placed,
         "open": thickness.map(|t| s.show_length(t.get())),
         "volume": s.model.solid.as_ref().map(|x| x.shape.volume()),

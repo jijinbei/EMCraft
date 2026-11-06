@@ -1,5 +1,5 @@
 [
- {"command": "geometry.import", "params": {"path": "step.stl"}},
+ {"command": "geometry.import", "params": {"path": "step.stl", "materials": {"step.stl": "interior"}}},
  {"command": "mesh.generate", "params": {"size": 3}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},
