@@ -330,9 +330,14 @@ pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
             fresh.execute(&step.command, &step.params).map_err(|e| e.in_step(i + 1, &step.command))?;
         }
     }
-    // The kind of analysis the job was chosen for (the start page's purpose).
+    // The kind of analysis the job was chosen for (the start page's purpose), else the
+    // template's own when the model would not say it (a resonator has no ports).
+    let own =
+        emcraft_templates::find(name).and_then(|t| t.kinds.first()).filter(|k| fresh.model.job.chosen().is_none() && **k != fresh.model.analysis());
     if let Some(kind) = p.string("analysis").optional()? {
         fresh.execute("project.analysis", &json!({"kind": kind})).map_err(|e| p.error("analysis", e))?;
+    } else if let Some(kind) = own {
+        fresh.execute("project.analysis", &json!({"kind": kind.id()}))?;
     }
     fresh.mark_saved();
     fresh.sample = Some(name.to_owned());

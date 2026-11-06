@@ -24,22 +24,21 @@ emcraft_macros::named_enum! {
 emcraft_macros::named_serde!(Analysis);
 
 impl Analysis {
-    /// The kind a model calls for when none is chosen: a resonator's eigenmodes when nothing
-    /// drives it, radiation with sources, lumped ports or an open boundary, else a sweep.
+    /// The kind a model calls for when none is chosen: radiation with sources, lumped ports or
+    /// an open boundary, else a sweep — also before anything drives it (most jobs are; a
+    /// resonator is chosen, as its templates do).
     ///
     /// ```
     /// use emcraft_model::{Analysis, Model};
     /// let m = Model::default();
-    /// assert_eq!(Analysis::infer(&m), Analysis::Eigenmodes);
-    /// assert_eq!(m.analysis(), Analysis::Eigenmodes);
+    /// assert_eq!(Analysis::infer(&m), Analysis::Frequency);
+    /// assert_eq!(m.analysis(), Analysis::Frequency);
     /// assert_eq!(Analysis::parse("time_domain"), Some(Analysis::TimeDomain));
     /// assert_eq!(Analysis::parse("transient"), None);
     /// ```
     pub fn infer(m: &Model) -> Analysis {
         if m.pcb.is_some() {
             Analysis::Pcb
-        } else if m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty() {
-            Analysis::Eigenmodes
         } else if !m.sources.is_empty() || !m.lumped.is_empty() || m.open.is_some() {
             Analysis::Radiation
         } else {

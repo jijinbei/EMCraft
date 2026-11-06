@@ -242,7 +242,7 @@ pub const fn solve_command(a: Analysis) -> &'static str {
 /// use emcraft_model::{Analysis, Model};
 /// let mut m = Model::default();
 /// let inferred = emcraft_engine::workflow::analysis_reply(&m);
-/// assert_eq!((inferred["kind"].as_str(), inferred["chosen"].as_bool()), (Some("eigenmodes"), Some(false)));
+/// assert_eq!((inferred["kind"].as_str(), inferred["chosen"].as_bool()), (Some("frequency"), Some(false)));
 /// m.set_job(m.job.choose(Some(Analysis::Radiation)));
 /// let chosen = emcraft_engine::workflow::analysis_reply(&m);
 /// assert_eq!((chosen["solve"].as_str(), chosen["chosen"].as_bool()), (Some("solve.radiation"), Some(true)));
