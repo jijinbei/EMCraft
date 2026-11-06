@@ -437,7 +437,7 @@ mod tests {
     #[test]
     fn a_journal_left_behind_becomes_a_report_counted_once() {
         let dir = temp("journal");
-        let entry = Entry { action: Action::Undo, dialog: None, fields: None };
+        let entry = Entry { action: Action::Undo, dialog: None, fields: None, busy: false };
         let path = {
             let mut j = Journal::open(&dir, &json!([{"command": "file.new", "params": {}}])).unwrap_or_else(|e| panic!("{e}"));
             j.push(&entry);

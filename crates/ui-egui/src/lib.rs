@@ -283,7 +283,7 @@ impl EmcraftApp {
         let prefs = host.prefs.map(|path| (prefs::Prefs::load(&path), path));
         // The first messages are in the preferred language.
         lang::set(prefs.as_ref().map_or(lang::ENGLISH, |(p, _)| p.language()));
-        let mut app = EmcraftApp::with_sample(sample);
+        let mut app = EmcraftApp::new();
         if let Some((loaded, path)) = prefs {
             app.prefs = loaded;
             app.prefs_store = PrefsStore { path: Some(path), written: app.prefs.clone() };
@@ -305,13 +305,18 @@ impl EmcraftApp {
         } else {
             page::Tab::Project
         });
-        if let Some(path) = host.open
-            && let Err(e) = app.run("file.open", json!({"path": path}))
-        {
-            app.error(e);
-        }
+        // The crash journal first, so what the launch opens is in it (crate::crash).
         if let Some(dir) = host.crashes {
             app.keep_crash_reports(dir, true);
+        }
+        let opens = [
+            sample.map(|name| Action::run("file.sample", json!({"name": name, "solve": true}))),
+            host.open.map(|path| Action::run("file.open", json!({"path": path}))),
+        ];
+        for a in opens.into_iter().flatten() {
+            if let Err(e) = app.apply(a) {
+                app.error(e);
+            }
         }
         if let Some(path) = host.replay
             && let Err(e) = record::Recording::read(&path).map_err(UiError::Input).and_then(|r| app.play(r))
@@ -375,17 +380,6 @@ impl EmcraftApp {
         {
             self.error(format!("cannot keep the preferences in {}: {e}", path.display()));
         }
-    }
-
-    /// The app with a sample opened and solved (on the worker thread).
-    pub fn with_sample(name: Option<&str>) -> EmcraftApp {
-        let mut app = EmcraftApp::new();
-        if let Some(name) = name
-            && let Err(e) = app.run("file.sample", json!({"name": name, "solve": true}))
-        {
-            app.error(e);
-        }
-        app
     }
 
     /// One frame's work before drawing: the job, control requests, the animation clock.

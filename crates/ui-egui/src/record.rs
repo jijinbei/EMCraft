@@ -36,6 +36,10 @@ pub struct Entry {
     /// The step panel's fields, for what runs from them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fields: Option<Value>,
+    /// A job was running when it was asked for (played back, one asked for with none waits
+    /// for the job before it, as it did).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub busy: bool,
 }
 
 /// A session's actions from the project it began with.
@@ -120,7 +124,7 @@ impl EmcraftApp {
             .then(|| self.ui_state.dialog().and_then(|d| Some((d.command.id.to_owned(), d.quiet_params()?))))
             .flatten();
         let fields = matches!(action, Action::ConfirmSetup | Action::StartRun | Action::ExportTouchstone).then(|| self.workflow.fields.drafts());
-        let entry = Entry { action: action.clone(), dialog, fields };
+        let entry = Entry { action: action.clone(), dialog, fields, busy: self.busy() };
         // The crash journal keeps every one (crate::crash).
         if let Some(j) = self.crashes.journal.as_mut() {
             j.push(&entry);
@@ -149,7 +153,8 @@ impl EmcraftApp {
     /// One action of the recording played, unless it waits for the running job.
     pub(crate) fn play_next(&mut self) {
         let Some(queue) = self.recorder.playing.as_ref() else { return };
-        let Some(waits) = queue.front().map(|e| e.action.waits_for_job()) else {
+        // What waits for a job, or was asked for with none running, waits for the one now.
+        let Some(waits) = queue.front().map(|e| e.action.waits_for_job() || !e.busy) else {
             self.recorder.playing = None;
             self.info_with(t!("The recording is played."), &[]);
             return;
@@ -157,7 +162,7 @@ impl EmcraftApp {
         if waits && self.busy() {
             return;
         }
-        let Some(Entry { action, dialog, fields }) = self.recorder.playing.as_mut().and_then(VecDeque::pop_front) else { return };
+        let Some(Entry { action, dialog, fields, .. }) = self.recorder.playing.as_mut().and_then(VecDeque::pop_front) else { return };
         if let Some((id, values)) = dialog {
             self.restore_dialog(&id, values);
         }
@@ -250,7 +255,7 @@ mod tests {
             Action::Tool(Some(crate::tools3d::Tool::Measure)),
         ];
         let mut r = Recording::new(json!([]));
-        r.entries = actions.into_iter().map(|action| Entry { action, dialog: None, fields: None }).collect();
+        r.entries = actions.into_iter().map(|action| Entry { action, dialog: None, fields: None, busy: false }).collect();
         let text = serde_json::to_string(&r).unwrap_or_default();
         assert_eq!(Recording::parse(&text), Ok(r));
     }
