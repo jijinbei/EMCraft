@@ -80,14 +80,14 @@ impl FarField {
 /// nearer, so it stays as far from the sources' near fields as the box allows. Whatever
 /// radiates must keep clear of the layer by an element or so.
 fn huygens_box(model: &Model) -> Result<(Point3, Point3)> {
-    let (Some(o), Some(emcraft_model::Solid { shape: Shape::Box { size }, .. })) = (&model.open, &model.solid) else {
+    let (Some(o), Some(b)) = (&model.open, model.solid.as_ref().and_then(|s| s.shape.box_bounds())) else {
         return Err(SolveError::NotReady("no open boundary".into()));
     };
     if o.shape != emcraft_model::OpenShape::Box {
         return Err(invalid("open boundary", "a spherical layer on a box solid"));
     }
     let d = o.thickness.get();
-    let (inner_lo, inner_hi) = (Point3::new(d, d, d), size.to_point() - Vec3::new(d, d, d));
+    let (inner_lo, inner_hi) = (b.min + Vec3::new(d, d, d), b.max - Vec3::new(d, d, d));
     // Nothing placed (a plane wave on nothing): the middle of the box.
     let centre = inner_lo.midpoint(inner_hi);
     let emcraft_model::Aabb { min: clo, max: chi } =

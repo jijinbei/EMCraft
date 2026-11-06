@@ -19,7 +19,7 @@ use crate::open::{LumpedPort, Open, Source, inside_ball};
 use crate::periodic::Periodic;
 use crate::port::Port;
 use crate::quantity::{Conductivity, Metres};
-use crate::shape::{Combine, Feature, Inclusion, Solid};
+use crate::shape::{Combine, Feature, Inclusion, Shape, Solid};
 use crate::symmetry::Symmetry;
 use crate::waveguide::Waveguide;
 
@@ -296,6 +296,64 @@ impl Model {
             .chain(self.features.iter().flat_map(|f| f.bounds().corners()))
             .chain(self.sources.iter().filter_map(Source::position))
             .chain(self.lumped.iter().flat_map(|l| [l.from, l.to]))
+    }
+
+    /// The model moved by `v` (m): its region (a box primitive becomes the [`Shape::block`] it
+    /// spans moved), bodies, sources, lumped ports and port faces; its mesh dropped. Refused for
+    /// what is tied to the origin or the region's own frame — symmetry planes, a rotation,
+    /// periodic boundaries, a waveguide or a board — and for a cylinder or sphere region, which
+    /// stand on the origin.
+    ///
+    /// ```
+    /// use emcraft_model::{BoxSize, Model, Point3, Shape, Solid, Vec3};
+    ///
+    /// let mut m = Model::new();
+    /// m.set_solid(Solid { shape: Shape::Box { size: BoxSize::new(Vec3::new(0.02, 0.02, 0.02))? }, material: "vacuum".into() })?;
+    /// let t = m.translated(Vec3::new(-0.01, -0.01, 0.0))?;
+    /// let b = t.solid.as_ref().and_then(|s| s.shape.box_bounds()).unwrap();
+    /// assert_eq!((b.min.x, b.max.x), (-0.01, 0.01));
+    /// # Ok::<(), emcraft_model::ModelError>(())
+    /// ```
+    pub fn translated(&self, v: crate::geom::Vec3) -> Result<Model> {
+        if !self.symmetry.is_empty() || self.rotation.is_some() || self.periodic.is_some() || self.waveguide.is_some() || self.pcb.is_some() {
+            return Err(invalid("move", "not supported for symmetry planes, a rotation, periodic boundaries, a waveguide or a board"));
+        }
+        let mut m = self.clone();
+        m.mesh = None;
+        let shift = |p: Point3| p + v;
+        if let Some(solid) = m.solid.as_mut() {
+            solid.shape = match &solid.shape {
+                Shape::Box { size } => Shape::block(shift(Point3::ORIGIN), shift(size.to_point()))?,
+                Shape::Surface { name, positions, triangles, tags, surfaces } => Shape::Surface {
+                    name: name.clone(),
+                    positions: positions.iter().copied().map(shift).collect(),
+                    triangles: triangles.clone(),
+                    tags: tags.clone(),
+                    surfaces: surfaces.iter().map(|f| f.map(|f| f.moved(v))).collect(),
+                },
+                _ if v == crate::geom::Vec3::ZERO => solid.shape.clone(),
+                _ => return Err(invalid("move", "a cylinder or sphere region stands on the origin")),
+            };
+        }
+        m.features.iter_mut().for_each(|f| f.at = shift(f.at));
+        m.inclusions.iter_mut().for_each(|i| i.at = shift(i.at));
+        for src in &mut m.sources {
+            if let Source::Dipole { at, .. } = src {
+                *at = shift(*at);
+            }
+        }
+        for l in &mut m.lumped {
+            (l.from, l.to) = (shift(l.from), shift(l.to));
+        }
+        for p in &mut m.ports {
+            if let Some(f) = p.face.as_mut() {
+                let (u, w, _) = crate::port::Frame::new(f.axis).axes();
+                f.at += v[f.axis.index()];
+                f.u0 += v[u];
+                f.v0 += v[w];
+            }
+        }
+        Ok(m)
     }
 
     /// What fills a point of a solid model: `None` outside the body or inside a conductor, else

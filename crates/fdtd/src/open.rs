@@ -31,7 +31,7 @@ use std::f64::consts::PI;
 use std::ops::{ControlFlow, Range};
 
 use emcraft_model::units::{C0, EPS0, ETA0, MU0};
-use emcraft_model::{CVec3, Material, Model, Point3, Shape, Source, Vec3};
+use emcraft_model::{CVec3, Material, Model, Point3, Source, Vec3};
 use emcraft_theory::radiation::{Huygens, HuygensSample};
 use num_complex::Complex64 as C;
 
@@ -139,7 +139,7 @@ impl BoxGrid {
         let (Some(open), Some(solid)) = (&model.open, &model.solid) else {
             return Err(FdtdError::NotReady("no open boundary: a box solid lined by model.open".into()));
         };
-        let Shape::Box { size } = solid.shape else {
+        let Some(size) = solid.shape.box_bounds().filter(|b| b.min == Point3::ORIGIN).map(|b| b.max.to_vec()) else {
             return Err(FdtdError::NotReady("the time domain's open problems need a box solid".into()));
         };
         if model.wall_conductivity.is_some() {
@@ -160,7 +160,7 @@ impl BoxGrid {
         if (0..3).any(|d| 2 * npml + 4 > n[d]) {
             return Err(invalid("open boundary", "the layer leaves no room inside the box at this cell size"));
         }
-        Ok(BoxGrid { size: size.get(), n, hs, npml })
+        Ok(BoxGrid { size, n, hs, npml })
     }
 
     fn cells(&self) -> usize {
@@ -1000,6 +1000,19 @@ pub fn radiate(model: &Model, o: &OpenOptions, frequencies: &[f64]) -> Result<Op
 
 /// [`radiate`] with the leapfrog on `device` (the CPU's threads when `None`).
 pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device: Option<&dyn OpenStepper>) -> Result<OpenRun> {
+    // A box off the origin (a block region): solved moved onto it, the Huygens box moved back.
+    if let Some(b) = model.solid.as_ref().and_then(|s| s.shape.box_bounds())
+        && b.min != Point3::ORIGIN
+    {
+        let moved = model.translated(Point3::ORIGIN - b.min).map_err(|e| invalid("model", e.to_string()))?;
+        let mut run = radiate_with(&moved, o, frequencies, device)?;
+        let back = b.min - Point3::ORIGIN;
+        for h in &mut run.huygens {
+            h.centre += back;
+            h.samples.iter_mut().for_each(|x| x.point += back);
+        }
+        return Ok(run);
+    }
     o.validate()?;
     if !frequencies_ok(frequencies) || frequencies.len() > 64 {
         return Err(invalid("frequencies", "1 to 64 finite numbers > 0"));

@@ -168,7 +168,54 @@ impl Shape {
         shape.check()?;
         Ok(shape)
     }
+
+    /// An axis-aligned box from corner `lo` to corner `hi` (m), anywhere: the prism of its x–y
+    /// rectangle raised to `lo.z` (the [`Shape::Box`] primitive starts at the origin). Face tags as
+    /// a prism's: 0 the bottom (z = lo.z), 1 the top, 2–5 the sides.
+    ///
+    /// ```
+    /// use emcraft_model::{Point3, Shape};
+    ///
+    /// let b = Shape::block(Point3::new(-0.01, -0.02, 0.005), Point3::new(0.01, 0.02, 0.025))?;
+    /// let bounds = b.box_bounds().unwrap();
+    /// assert_eq!((bounds.min.y, bounds.max.z), (-0.02, 0.025));
+    /// assert!(b.contains(Point3::new(0.0, 0.0, 0.01)) && !b.contains(Point3::new(0.0, 0.0, 0.0)));
+    /// assert!(Shape::block(Point3::new(0.0, 0.0, 0.0), Point3::new(0.01, 0.0, 0.01)).is_err());
+    /// # Ok::<(), emcraft_model::ModelError>(())
+    /// ```
+    pub fn block(lo: Point3, hi: Point3) -> Result<Shape> {
+        let rect = [[lo.x, lo.y], [hi.x, lo.y], [hi.x, hi.y], [lo.x, hi.y]];
+        let Shape::Surface { mut positions, triangles, tags, surfaces, .. } =
+            Shape::prism(&rect, <Metres as crate::quantity::Quantity>::named("block height", hi.z - lo.z)?)?
+        else {
+            return Err(crate::error::invalid("block", "is not a surface"));
+        };
+        positions.iter_mut().for_each(|p| p.z += lo.z);
+        let surfaces = surfaces
+            .into_iter()
+            .map(|f| match f {
+                Some(FaceSurface::Plane { normal, point }) => {
+                    Some(FaceSurface::Plane { normal, point: Point3::new(point.x, point.y, point.z + lo.z) })
+                }
+                other => other,
+            })
+            .collect();
+        Ok(Shape::Surface { name: BLOCK.into(), positions, triangles, tags, surfaces })
+    }
+
+    /// The axis-aligned box a box shape spans: a [`Shape::Box`]'s [0, size], a [`Shape::block`]'s
+    /// corners; none for any other shape.
+    pub fn box_bounds(&self) -> Option<crate::geom::Aabb> {
+        match self {
+            Shape::Box { size } => Some(crate::geom::Aabb::new(Point3::ORIGIN, size.to_point())),
+            Shape::Surface { name, positions, .. } if name == BLOCK && positions.len() == 8 => crate::geom::Aabb::around(positions.iter().copied()),
+            _ => None,
+        }
+    }
 }
+
+/// The name a [`Shape::block`] surface carries.
+pub const BLOCK: &str = "block";
 
 #[cfg(test)]
 mod tests {

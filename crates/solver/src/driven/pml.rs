@@ -43,13 +43,15 @@ impl Layer {
     pub(super) fn of(model: &Model, mesh: &Mesh) -> Result<Option<Layer>> {
         let Some(o) = &model.open else { return Ok(None) };
         let reflection = o.reflection.unwrap_or(PML_REFLECTION);
+        let block = model.solid.as_ref().and_then(|s| s.shape.box_bounds());
         let kind = match (&model.solid, o.shape) {
-            (Some(Solid { shape: Shape::Box { size }, .. }), OpenShape::Box) => {
+            (Some(_), OpenShape::Box) if let Some(b) = block => {
                 let d = o.thickness;
+                let size = b.max - b.min;
                 let mut list = Vec::new();
                 for t in 0..mesh.tets.len() {
                     let centroid = mesh.centroid(t).ok_or_else(|| invalid("mesh", format!("no tetrahedron {t}")))?;
-                    let depth = centroid.to_vec().zip_map(size.get(), |c, l| ((d - c).max(c - (l - d)).max(0.0) / d).min(1.0));
+                    let depth = (centroid - b.min).zip_map(size, |c, l| ((d - c).max(c - (l - d)).max(0.0) / d).min(1.0));
                     if depth.iter().any(|x| x > 0.0) {
                         list.push((t, depth));
                     }

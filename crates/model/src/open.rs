@@ -173,8 +173,10 @@ impl Model {
     pub fn set_open(&mut self, open: Option<Open>) -> Result<()> {
         if let Some(o) = open {
             o.check()?;
+            let block = self.solid.as_ref().and_then(|s| s.shape.box_bounds());
             match (o.shape, &self.solid) {
-                (OpenShape::Box, Some(Solid { shape: Shape::Box { size }, .. })) => {
+                (OpenShape::Box, Some(_)) if let Some(b) = block => {
+                    let size = b.max - b.min;
                     if size.iter().any(|s| 2.0 * o.thickness.get() >= s) {
                         return Err(invalid("layer thickness", "must leave room inside the box (under half its smallest side)"));
                     }
