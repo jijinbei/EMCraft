@@ -783,7 +783,7 @@ fn tools(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, rect: Rect, edit: &Ges
 /// Escape drops a box being dragged, clears what a tool picked, then turns it off; with no tool
 /// on it clears the selection (while no dialog, menu or field takes the key).
 fn escape(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, out: &mut Actions) {
-    let idle = app.dialog.is_none() && app.page.settings().is_none() && app.ask.is_none() && !ui.ctx().text_edit_focused();
+    let idle = app.dialog.is_none() && app.page.settings_shown().is_none() && app.ask.is_none() && !ui.ctx().text_edit_focused();
     if !idle || !ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         return;
     }

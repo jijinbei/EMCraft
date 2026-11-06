@@ -13,7 +13,7 @@
   {"frames": 2},
   {"shot": "language-ja-settings-appearance"},
   {"note": "The start page"},
-  {"click": "bar:start"},
+  {"click": "tab:start"},
   {"frames": 3},
   {"expect": {"inspect": {"home": true}, "handles": ["home:new", "home:open", "sample:highpass"]}},
   {"shot": "language-ja-start"},

@@ -283,7 +283,7 @@ fn tour() -> Record {
     h.app.info_with(t!("Open a sample or a project (File) or build a model from the ribbon."), &[]);
     // The start page, empty and with a project missing from the recent list, the settings
     // (Files with no recent project too), the prompts.
-    h.app.page = crate::home::Page::Home;
+    h.app.page = crate::page::Pages::at(crate::page::Tab::Start);
     call(&mut h, "ui.set", json!({"settings": "files"}));
     h.frames(2);
     call(&mut h, "ui.set", json!({"settings": "none"}));
@@ -317,7 +317,7 @@ fn tour() -> Record {
         .collect();
     h.frames(2);
     h.app.autosave.found.clear();
-    h.app.page = crate::home::Page::Workspace;
+    h.app.page = crate::page::Pages::at(crate::page::Tab::Project);
     // Each model: its views, its steps (each solver in Setup), the menus, the search.
     for (i, &(script, then, steps)) in MODELS.iter().enumerate() {
         if script.len() > 2 {

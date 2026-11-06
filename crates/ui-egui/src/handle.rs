@@ -22,8 +22,8 @@ emcraft_macros::named_enum! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub enum Fixed {
         // The application bar and its menus.
-        BarStart = "bar:start",
-        BarTitle = "bar:title",
+        /// The settings' tab's close mark (the tabs are `Handle::Tab`).
+        TabSettingsClose = "tab:settings:close",
         BarSettings = "bar:settings",
         /// The language's font file and its search again (Settings ▸ Language).
         FontFile = "settings:font_file",
@@ -271,6 +271,8 @@ pub enum Handle<'a> {
     Setting(&'static str, &'a str),
     /// A section of the settings page: `settings:section:units`.
     SettingsSection(crate::settings::Section),
+    /// A page's tab in the app bar.
+    Tab(crate::page::Tab),
     /// A dialog's field: `dialog:field:width`.
     DialogField(&'a str),
     /// A part of a vector field: `dialog:field:at:1`.
@@ -395,6 +397,7 @@ impl fmt::Display for Handle<'_> {
             Handle::RecoverDismiss(i) => write!(f, "home:recover:dismiss:{i}"),
             Handle::Setting(group, name) => write!(f, "settings:{group}:{name}"),
             Handle::SettingsSection(s) => write!(f, "settings:section:{}", s.id()),
+            Handle::Tab(tab) => write!(f, "tab:{}", tab.id()),
             Handle::DialogField(name) => write!(f, "dialog:field:{name}"),
             Handle::DialogPart(name, k) => write!(f, "dialog:field:{name}:{k}"),
             Handle::DialogCell(name, row, column) => write!(f, "dialog:cell:{name}:{row}:{column}"),

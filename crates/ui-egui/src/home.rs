@@ -1,7 +1,7 @@
 //! The start page, after SolidCraft's (`crates/ui-egui/src/home.rs`: New and Open, the recent
 //! designs and the samples, each a card with a picture), written anew for EMCraft: New
 //! project and Open, the recent projects, the samples drawn by the 3D view, and the units new
-//! projects start with (the rest on the settings page). Shown on launch without a sample and from the app bar's house;
+//! projects start with (the rest on the settings page). Shown on launch without a sample and from the app bar's Start tab (`crate::page`);
 //! anything opened leaves it.
 
 use std::collections::HashMap;
@@ -26,61 +26,6 @@ const KIND_MIN: f32 = 150.0;
 
 /// A card's picture, in points.
 const THUMB: [f32; 2] = [240.0, 150.0];
-
-/// What fills the window under the app bar: the start page, the settings (over the start page
-/// or the workspace, where closing them goes back to) or the workspace.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Page {
-    #[default]
-    Workspace,
-    Home,
-    Settings {
-        section: crate::settings::Section,
-        over_home: bool,
-    },
-}
-
-impl Page {
-    /// Whether the start page shows, or the settings over it.
-    pub const fn home(self) -> bool {
-        matches!(self, Page::Home | Page::Settings { over_home: true, .. })
-    }
-
-    /// The settings' section, while they show.
-    pub const fn settings(self) -> Option<crate::settings::Section> {
-        match self {
-            Page::Settings { section, .. } => Some(section),
-            _ => None,
-        }
-    }
-
-    /// The settings at `section` (`None`: closed, back to what they were over).
-    ///
-    /// ```
-    /// use emcraft_ui_egui::home::Page;
-    /// use emcraft_ui_egui::settings::Section;
-    ///
-    /// let over = Page::Home.with_settings(Some(Section::default()));
-    /// assert!(over.home() && over.settings().is_some());
-    /// assert_eq!(over.with_settings(None), Page::Home);
-    /// assert_eq!(over.leave_home().with_settings(None), Page::Workspace);
-    /// ```
-    pub const fn with_settings(self, section: Option<crate::settings::Section>) -> Page {
-        match section {
-            Some(section) => Page::Settings { section, over_home: self.home() },
-            None if self.home() => Page::Home,
-            None => Page::Workspace,
-        }
-    }
-
-    /// The start page left for the workspace (settings over it stay, over the workspace).
-    pub const fn leave_home(self) -> Page {
-        match self {
-            Page::Settings { section, .. } => Page::Settings { section, over_home: false },
-            _ => Page::Workspace,
-        }
-    }
-}
 
 #[derive(Default)]
 pub struct Home {
@@ -414,6 +359,6 @@ fn settings(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     ui.text(Style::SmallDim, t!("Units apply to new projects; an open one changes its own with Units in step 1."));
     ui.add_space(t.space_12);
     let all = crate::ui_kit::styled(t!("All settings…"), false);
-    ui.act(true, all, Fixed::HomeSettings.into(), || Action::Settings(Some(Section::Appearance)), out)
+    ui.act(true, all, Fixed::HomeSettings.into(), || Action::OpenSettings(Some(Section::Appearance)), out)
         .hint(t!("The theme, the 3D view, dialogs and files"));
 }

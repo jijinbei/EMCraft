@@ -195,7 +195,7 @@ fn go(app: &mut EmcraftApp, then: Then) {
         }
         Then::Import => {
             new_project(app);
-            app.page = app.page.leave_home();
+            app.page.leave_start();
             if app.session.model().analysis() == crate::steps::Solver::Pcb {
                 apply(app, FileAction::PickPart);
             } else if let Err(e) = crate::steps::fix(app, "geometry.import") {
@@ -225,7 +225,7 @@ fn new_project(app: &mut EmcraftApp) {
         let _ = app.run("units.set", units);
     }
     // Begun from the start page for a purpose: the project is for it.
-    let purpose = app.home.purpose.filter(|_| app.page.home());
+    let purpose = app.home.purpose.filter(|_| app.page.start());
     let _ = app.run("file.new", json!({}));
     if let Some(kind) = purpose {
         let _ = app.run("project.analysis", json!({"kind": kind.id()}));
@@ -275,7 +275,7 @@ fn pick(app: &mut EmcraftApp, purpose: Purpose) {
 
 /// `path` for import: into the open import dialog, else the dialog opened on it in step 1.
 pub(crate) fn import_part(app: &mut EmcraftApp, path: &str) {
-    app.page = crate::home::Page::Workspace;
+    app.page.show(crate::page::Tab::Project);
     if std::path::Path::new(path).extension().and_then(|s| s.to_str()).is_some_and(|s| s.eq_ignore_ascii_case("kicad_pcb")) {
         app.place = app.place.show(crate::View::Pcb);
         if let Err(e) = app.open_dialog_with("pcb.import", json!({"path":path})) {
@@ -506,7 +506,7 @@ pub fn opened(app: &mut EmcraftApp, path: &str) {
     if !crate::autosave::inside(app.autosave.dir.as_deref(), path) {
         app.prefs.add_recent(path);
     }
-    app.page = crate::home::Page::Workspace;
+    app.page.show(crate::page::Tab::Project);
 }
 
 /// The window's title: the project's name, with a dot while it has unsaved changes.
@@ -550,7 +550,7 @@ pub fn menu(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     item(ui, out, t!("Save as…"), "Ctrl+Shift+S", Fixed::FileSaveAs, !busy, file(FileAction::SaveAs));
     ui.separator();
     item(ui, out, t!("Export history as script…"), "", Fixed::FileExport, !app.session.history().is_empty(), Action::AskExport);
-    item(ui, out, t!("Start page"), "", Fixed::FileStart, true, Action::SetHome(true));
+    item(ui, out, t!("Start page"), "", Fixed::FileStart, true, Action::Show(crate::page::Tab::Start));
 }
 
 /// Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S.

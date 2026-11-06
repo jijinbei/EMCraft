@@ -93,6 +93,62 @@ const SEARCH_WIDTH: f32 = 300.0;
 /// The width of the button that opens what has no room.
 const MORE_WIDTH: f32 = 28.0;
 
+/// The app bar's tabs, one per page (`crate::page::Pages::tabs`), centred in `r` right of
+/// `left`: each its page's name (the project's its own), the one shown lit and underlined, the
+/// settings' with a close mark; where the last one ends.
+fn tabs(app: &EmcraftApp, ui: &mut egui::Ui, r: Rect, left: f32, out: &mut Actions) -> f32 {
+    use crate::page::Tab;
+    let t = &Tokens::get();
+    let font = FontId::proportional(t.font_body);
+    let list: Vec<(Tab, String)> = app
+        .page
+        .tabs()
+        .into_iter()
+        .map(|tab| {
+            let text = if tab == Tab::Project { crate::files::title(app) } else { crate::lang::shown(tab).to_owned() };
+            (tab, text)
+        })
+        .collect();
+    let closer = 18.0;
+    let pad = 14.0;
+    let galleys: Vec<_> = list.iter().map(|(_, text)| ui.painter().layout_no_wrap(text.clone(), font.clone(), t.app_bar_text)).collect();
+    let width = |tab: Tab, g: &std::sync::Arc<egui::Galley>| g.size().x + 2.0 * pad + if tab == Tab::Settings { closer } else { 0.0 };
+    let total: f32 = list.iter().zip(&galleys).map(|((tab, _), g)| width(*tab, g) + 4.0).sum();
+    let mut x = (r.center().x - total / 2.0).max(left + 16.0);
+    for ((tab, text), g) in list.iter().zip(galleys) {
+        let rect = Rect::from_min_size(pos2(x, r.top() + 4.0), vec2(width(*tab, &g), r.height() - 4.0));
+        let on = app.page.shown() == *tab;
+        let resp = ui.hit(rect, Handle::Tab(*tab), Sense::click());
+        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, text));
+        let corners = egui::CornerRadius { nw: t.radius_sm, ne: t.radius_sm, sw: 0, se: 0 };
+        if on || resp.hovered() {
+            ui.painter().rect_filled(rect, corners, if on { t.app_bar_active } else { t.app_bar_hover });
+        }
+        if on {
+            ui.painter().hline(rect.x_range(), rect.bottom() - 1.0, Stroke::new(2.0, t.accent));
+        }
+        ui.painter().galley(pos2(rect.left() + pad, rect.center().y - g.size().y / 2.0), g, t.app_bar_text);
+        let mut closed = false;
+        if *tab == Tab::Settings {
+            let mark = Rect::from_center_size(pos2(rect.right() - pad - closer / 2.0 + 4.0, rect.center().y), vec2(closer, closer));
+            let close = ui.hit(mark, Fixed::TabSettingsClose.into(), Sense::click());
+            if close.hovered() {
+                ui.painter().rect_filled(mark, t.radius_sm, t.app_bar_hover);
+            }
+            ui.painter().text(mark.center(), Align2::CENTER_CENTER, "×", FontId::proportional(t.font_body), t.app_bar_text);
+            if close.hint(t!("Close the settings")).clicked() {
+                out.push(Action::CloseSettings);
+                closed = true;
+            }
+        }
+        if !closed && resp.clicked() && !on {
+            out.push(Action::Show(*tab));
+        }
+        x = rect.right() + 4.0;
+    }
+    x
+}
+
 /// The dark application bar: the name, the samples menu, the theme switch.
 pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
@@ -100,21 +156,10 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         ui,
         |ui| {
             let r = ui.max_rect();
-            // The start page's house, then the wordmark.
-            let house = Rect::from_center_size(pos2(r.left() + 20.0, r.center().y), vec2(26.0, 26.0));
-            let home = ui.hit(house, Fixed::BarStart.into(), Sense::click());
+            // The wordmark.
             let p = ui.painter();
-            let at_home = app.page == crate::home::Page::Home;
-            if home.hovered() || at_home {
-                p.rect_filled(house, t.radius_sm, if at_home { t.app_bar_active } else { t.app_bar_hover });
-            }
-            glyphs::paint(p, house.shrink(4.0), Glyph::Start, t.app_bar_text, t.accent);
-            if home.hint(t!("Start page")).clicked() {
-                out.push(Action::SetHome(!at_home));
-            }
-            let p = ui.painter();
-            p.text(pos2(r.left() + 40.0, r.center().y), Align2::LEFT_CENTER, "EMCraft", FontId::proportional(15.0), t.app_bar_text);
-            let mut x = r.left() + 120.0;
+            p.text(pos2(r.left() + 14.0, r.center().y), Align2::LEFT_CENTER, "EMCraft", FontId::proportional(15.0), t.app_bar_text);
+            let mut x = r.left() + 100.0;
             let bar_button = |ui: &mut egui::Ui, x: &mut f32, text: crate::lang::Text, handle: Fixed| {
                 let text = tr(text);
                 let g = ui.painter().layout_no_wrap(text.to_owned(), FontId::proportional(t.font_button), t.app_bar_text);
@@ -140,23 +185,19 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 let redo = egui::Button::new(trf(t!("Redo  ({n})"), args!(n = r))).shortcut_text("Ctrl+Y");
                 ui.act(r > 0 && !busy, redo, Fixed::EditRedo.into(), || Action::Redo, out);
             });
-            // The project's name in the middle, a dot while it has unsaved changes.
-            let mut title_right = x;
-            if !app.page.home() {
-                let title = crate::files::title(app);
-                let shape = ui.painter().text(r.center(), Align2::CENTER_CENTER, &title, FontId::proportional(t.font_body), t.app_bar_text);
-                title_right = title_right.max(shape.right());
-                scenario::publish_rect(Fixed::BarTitle, Rect::from_center_size(r.center(), vec2(200.0, r.height())));
-            }
+            // The pages as tabs in the middle (crate::page): the start page, the project (its name,
+            // a dot while unsaved), the settings while open (×: closed); the one shown lit.
+            let title_right = tabs(app, ui, r, x, out);
             // At the right: the settings.
             let gear = Rect::from_center_size(pos2(r.right() - 22.0, r.center().y), vec2(26.0, 26.0));
+            // The gear opens the settings' tab (or goes to it).
             let resp = ui.hit(gear, Fixed::BarSettings.into(), Sense::click());
-            if resp.hovered() || app.page.settings().is_some() {
-                ui.painter().rect_filled(gear, t.radius_sm, if app.page.settings().is_some() { t.app_bar_active } else { t.app_bar_hover });
+            if resp.hovered() {
+                ui.painter().rect_filled(gear, t.radius_sm, t.app_bar_hover);
             }
             glyphs::paint(ui.painter(), gear.shrink(4.0), Glyph::Settings, t.app_bar_text, t.app_bar_text);
             if resp.hint(t!("Settings")).clicked() {
-                out.push(Action::Settings(if app.page.settings().is_some() { None } else { Some(crate::settings::Section::default()) }));
+                out.push(Action::OpenSettings(None));
             }
             // The running job, left of the gear, cut short with an ellipsis where the title
             // leaves no room.

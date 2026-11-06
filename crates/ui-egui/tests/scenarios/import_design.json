@@ -68,7 +68,7 @@
   {"frames": 2},
   {"expect": {"dialog": null}},
   {"note": "The start page's Import begins a new project with the import dialog open"},
-  {"click": "bar:start"},
+  {"click": "tab:start"},
   {"frames": 2},
   {"shot": "import-start-page"},
   {"click": "home:import"},

@@ -1,6 +1,6 @@
 [
   {"note": "The start page: New project and Open, the samples with their pictures, the units new projects start with and the way to every setting"},
-  {"click": "bar:start"},
+  {"click": "tab:start"},
   {"frames": 2},
   {"expect": {"inspect": {"home": true}, "handles": ["home:new", "home:open", "sample:highpass", "sample:iris-bandpass", "sample:coupled-filter", "sample:coupler", "settings:length:mm", "home:settings"]}},
   {"shot": "start-page"},
@@ -13,7 +13,7 @@
   {"note": "A change, then a sample from the start page: the changes are asked about first"},
   {"call": "engine.execute", "params": {"command": "model.material.create", "params": {"name": "ptfe", "eps_r": 2.1}}},
   {"expect": {"inspect": {"project.dirty": true, "project.title": "Untitled •"}}},
-  {"click": "bar:start"},
+  {"click": "tab:start"},
   {"click": "sample:highpass"},
   {"click": "template:open"},
   {"frames": 2},

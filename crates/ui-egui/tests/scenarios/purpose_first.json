@@ -1,6 +1,6 @@
 [
   {"note": "The start page asks what the job is for first; the templates shown are those made for it, and the project opened is set to it; the ribbon then holds only that kind's commands"},
-  {"click": "bar:start"},
+  {"click": "tab:start"},
   {"expect": {"inspect": {"home": true, "purpose": null}, "handles": ["home:purpose:frequency", "home:purpose:eigenmodes", "home:purpose:radiation", "home:purpose:time_domain", "sample:highpass", "sample:cavity"], "hidden": ["home:blank"]}},
   {"click": "home:purpose:eigenmodes"},
   {"frames": 2},
@@ -14,7 +14,7 @@
   {"expect": {"hidden": ["toolbar:solve.frequency", "toolbar:solve.radiation", "toolbar:solve.time_domain", "tab:PORTS & SOURCES"]}},
   {"shot": "purpose-eigenmodes-ribbon"},
   {"note": "Radiation: an empty project for it, its ribbon with the open boundary and sources"},
-  {"click": "bar:start"},
+  {"click": "tab:start"},
   {"click": "home:purpose:radiation"},
   {"frames": 2},
   {"expect": {"handles": ["sample:dipole", "sample:open-waveguide"], "hidden": ["sample:cavity"]}},
@@ -27,7 +27,7 @@
   {"frames": 2},
   {"expect": {"hidden": ["toolbar:solve.eigenmodes", "toolbar:solve.frequency"]}},
   {"note": "A second click lets the purpose go: every template again"},
-  {"click": "bar:start"},
+  {"click": "tab:start"},
   {"click": "home:purpose:radiation"},
   {"frames": 2},
   {"expect": {"inspect": {"purpose": null}, "handles": ["sample:highpass", "sample:cavity", "sample:dipole"]}}

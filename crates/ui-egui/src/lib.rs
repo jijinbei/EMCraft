@@ -69,6 +69,7 @@ pub mod math;
 mod messages;
 pub mod navigation;
 pub mod pack;
+pub mod page;
 mod param_labels;
 pub mod picture;
 pub mod prefs;
@@ -166,7 +167,7 @@ pub struct EmcraftApp {
     /// The template being set up before it is opened (start page, File ▸ Samples).
     pub template: Option<template_dialog::TemplateDialog>,
     /// What fills the window: the start page, the settings or the workspace.
-    pub page: home::Page,
+    pub page: page::Pages,
     /// The command that failed and why, until a command succeeds: the panel that asked for it
     /// shows it there (the message log keeps every one).
     pub failure: Option<Failure>,
@@ -260,7 +261,7 @@ impl EmcraftApp {
             files: files::Files::default(),
             home: home::Home::default(),
             template: None,
-            page: home::Page::Workspace,
+            page: page::Pages::default(),
             failure: None,
             focus_last: None,
             language: lang::ENGLISH,
@@ -292,7 +293,11 @@ impl EmcraftApp {
             app.autosave.dir = Some(dir);
         }
         // The start page shows on launch, and whenever there is work to recover.
-        app.page = if (sample.is_none() && host.open.is_none()) || !app.autosave.found.is_empty() { home::Page::Home } else { home::Page::Workspace };
+        app.page = page::Pages::at(if (sample.is_none() && host.open.is_none()) || !app.autosave.found.is_empty() {
+            page::Tab::Start
+        } else {
+            page::Tab::Project
+        });
         if let Some(path) = host.open
             && let Err(e) = app.run("file.open", json!({"path": path}))
         {
@@ -448,9 +453,9 @@ impl EmcraftApp {
         self.prepare();
         let mut out = Actions::default();
         ribbon::app_bar(self, ui, &mut out);
-        if let Some(section) = self.page.settings() {
+        if let Some(section) = self.page.settings_shown() {
             settings::show(self, section, ui, &mut out);
-        } else if self.page == home::Page::Home {
+        } else if self.page.start() {
             self.lend(|a| &mut a.home.thumbs, |app, thumbs| home::show(app, thumbs, ui, &mut out));
         } else {
             self.workspace(ui, &ctx, &mut out);
@@ -527,8 +532,8 @@ fn shortcuts(app: &EmcraftApp, ctx: &egui::Context, out: &mut Actions) {
         return;
     }
     // Escape leaves the settings page.
-    if app.page.settings().is_some() && app.ask.is_none() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        out.push(Action::Settings(None));
+    if app.page.settings_shown().is_some() && app.ask.is_none() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        out.push(Action::CloseSettings);
     }
     if app.busy() {
         return;

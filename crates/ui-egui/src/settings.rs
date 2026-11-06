@@ -44,7 +44,7 @@ pub fn show(app: &EmcraftApp, section: Section, ui: &mut egui::Ui, out: &mut Act
             ui.text(Style::Title, t!("Settings"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let done = crate::ui_kit::styled(t!("Done"), true);
-                ui.act(true, done, Fixed::SettingsClose.into(), || Action::Settings(None), out).hint(t!("Back (Escape)"));
+                ui.act(true, done, Fixed::SettingsClose.into(), || Action::CloseSettings, out).hint(t!("Back (Escape)"));
             });
         });
         ui.add_space(t.space_16);
@@ -54,7 +54,7 @@ pub fn show(app: &EmcraftApp, section: Section, ui: &mut egui::Ui, out: &mut Act
                 for s in Section::ALL {
                     let button = egui::Button::selectable(s == section, egui::RichText::new(shown(s)).size(t.font_button))
                         .min_size(vec2(NAV, t.control_height));
-                    ui.act(true, button, Handle::SettingsSection(s), || Action::Settings(Some(s)), out);
+                    ui.act(true, button, Handle::SettingsSection(s), || Action::OpenSettings(Some(s)), out);
                 }
             });
             ui.add_space(32.0);

@@ -156,9 +156,9 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "language": app.prefs.language(),
         "font": app.fonts.in_use(app.language),
         "languages": crate::lang::ids(),
-        "home": app.page.home(),
+        "home": app.page.start(),
         "template": app.template.as_ref().map(super::template_dialog::TemplateDialog::inspect),
-        "settings": app.page.settings().map(super::settings::Section::id),
+        "settings": app.page.settings_shown().map(super::settings::Section::id),
         "project": {"name": app.session.name(), "path": app.session.path(), "dirty": app.session.is_dirty(), "title": crate::files::title(app)},
         "files": {"prompt": match &app.ask { Some(crate::files::Ask::Path(p)) => Some(p.text.clone()), _ => None }, "confirm": matches!(app.ask, Some(crate::files::Ask::Save(_))), "then": match &app.ask { Some(crate::files::Ask::Save(t)) => Some(format!("{t:?}")), _ => None }},
         "quitting": app.quit_requested,
@@ -210,6 +210,8 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         v["study"]["predicted"] = json!(study.rows.iter().filter(|r| r.is_predicted()).count());
     }
     v["purpose"] = json!(app.home.purpose.map(emcraft_model::Analysis::id));
+    v["page"] = json!(app.page.shown().id());
+    v["tabs"] = json!(app.page.tabs().iter().map(|t| t.id()).collect::<Vec<_>>());
     v["kept"] = json!(emcraft_engine::archive::rows(&app.session));
     v["compare"] = json!(app.views.compare);
     v["chart_style"] = chart_style(app);
@@ -410,7 +412,7 @@ fn autosave(app: &mut EmcraftApp, a: Args) -> Handled {
             app.autosave.found = crate::autosave::scan(&dir);
             app.autosave.dir = Some(dir);
             if !app.autosave.found.is_empty() {
-                app.apply(Action::SetHome(true)).map_err(|e| e.to_string())?;
+                app.apply(Action::Show(crate::page::Tab::Start)).map_err(|e| e.to_string())?;
             }
         }
         Some(_) => return Err("`dir` must be a folder's path (at most 4096 bytes) or null".into()),
@@ -485,7 +487,9 @@ fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
         asked.push(Action::SetDock(d));
     }
     // The settings page at a section; `none` closes it.
-    asked.extend(a.named_or_none("settings", "settings section")?.map(Action::Settings));
+    asked.extend(a.named_or_none("settings", "settings section")?.map(|s| s.map_or(Action::CloseSettings, |s| Action::OpenSettings(Some(s)))));
+    // A page of the window by its tab (`start`, `project`, `settings`).
+    asked.extend(a.named_or_none::<crate::page::Tab>("page", "page")?.flatten().map(Action::Show));
     if let Some(on) = a.bool("animate") {
         asked.push(Action::SetPlaying(on));
     }

@@ -1,6 +1,6 @@
 [
   {"call": "ui.set", "params": {"language": "ja", "theme": "midnight"}},
-  {"click": "bar:start"},
+  {"click": "tab:start"},
   {"click": "home:purpose:pcb"},
   {"frames": 2},
   {"expect": {"handles": ["sample:pcb-microstrip", "sample:pcb-split-ground", "sample:pcb-parallel", "home:blank"], "hidden": ["sample:highpass"]}},
@@ -38,7 +38,7 @@
   {"expect": {"handles": ["intent:kind:pcb", "intent:kind:frequency"], "hidden": ["setup:points", "step:mesh"]}},
   {"shot": "pcb-kind-switch"},
   {"key": "Escape"},
-  {"click": "bar:start"},
+  {"click": "tab:start"},
   {"frames": 2},
   {"frames": 2},
   {"frames": 2},

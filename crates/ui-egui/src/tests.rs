@@ -54,6 +54,11 @@ fn scenario_section_view() {
 }
 
 #[test]
+fn scenario_app_tabs() {
+    scenario("app_tabs");
+}
+
+#[test]
 fn scenario_port_far_end() {
     scenario("port_far_end");
 }

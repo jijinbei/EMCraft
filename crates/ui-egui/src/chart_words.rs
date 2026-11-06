@@ -10,6 +10,7 @@ use emcraft_render::chart::Chart;
 /// words.
 pub const TEMPLATES: &[&str] = &[
     t!("S-parameters").en(),
+    t!("Dispersion along {axis}").en(),
     t!("frequency ({unit})").en(),
     t!("$|S|$ (linear, 0 to 1)").en(),
     t!("phase (°)").en(),

@@ -1041,7 +1041,9 @@
     "plane across {axis}": "{axis} の対称面",
     "rotation about z ({group})": "z 軸まわりの回転（{group}）",
     "Symmetry planes across {axes}: an eigenmode search solves each combination of their walls on {share} of the model and merges the modes.": "{axes} の対称面を設定しました：固有モード解析は、壁の組み合わせごとにモデルの {share} を解き、モードをまとめます。",
-    "Found but not set: {list}.": "見つかったが設定しなかったもの：{list}。"
+    "Found but not set: {list}.": "見つかったが設定しなかったもの：{list}。",
+    "Dispersion along {axis}": "{axis} 方向の分散",
+    "Close the settings": "設定を閉じる"
   },
   "commands": {
     "project.setup": {

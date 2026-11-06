@@ -61,16 +61,18 @@ pub enum Action {
     Redo,
     /// Cancels the running job.
     CancelJob,
-    /// Shows (`true`) or leaves the start page; either leaves the settings page.
-    SetHome(bool),
+    /// Shows a page of the window (its tab).
+    Show(crate::page::Tab),
     /// Opens a template's card (its parameters and preview), or closes it (`None`).
     Template(Option<String>),
     /// The start page's purpose: the templates shown, what a project begun there is for.
     Purpose(Option<crate::steps::Solver>),
     /// Builds the project from a template with these values changed (`file.sample`).
     OpenTemplate(String, Value),
-    /// Opens the settings page at a section (`None` closes it).
-    Settings(Option<crate::settings::Section>),
+    /// Opens the settings at a section (`None`: their last, else their first) and shows them.
+    OpenSettings(Option<crate::settings::Section>),
+    /// Closes the settings, back to the page they were opened from.
+    CloseSettings,
     Pref(Pref),
     File(FileAction),
     /// Opens an item's edit dialog on its current values (`project.values`).
@@ -294,11 +296,12 @@ impl EmcraftApp {
             Action::Undo => return self.run("edit.undo", json!({})),
             Action::Redo => return self.run("edit.redo", json!({})),
             Action::CancelJob => return Ok(json!({"cancelled": self.cancel_job()})),
-            Action::SetHome(open) => self.page = if open { crate::home::Page::Home } else { crate::home::Page::Workspace },
+            Action::Show(tab) => self.page.show(tab),
             Action::Purpose(kind) => self.home.purpose = kind,
             Action::Template(name) => self.template = name.and_then(|n| crate::template_dialog::TemplateDialog::new(self, &n)),
             Action::OpenTemplate(name, values) => crate::template_dialog::open(self, name, values),
-            Action::Settings(section) => self.page = self.page.with_settings(section),
+            Action::OpenSettings(section) => self.page.open_settings(section),
+            Action::CloseSettings => self.page.close_settings(),
             Action::Pref(p) => self.set_pref(p),
             Action::File(f) => crate::files::apply(self, f),
             Action::EditItem(item) => self.open_item_dialog(&item)?,
@@ -342,7 +345,7 @@ impl EmcraftApp {
                 self.view3d.tools.set(tool);
                 if tool.is_some() {
                     self.place = self.place.show(View::Model);
-                    self.page = crate::home::Page::Workspace;
+                    self.page.show(crate::page::Tab::Project);
                 }
                 if tool.is_some_and(crate::tools3d::Tool::ports) && self.place.step() != Some(crate::steps::Step::Excitation) {
                     crate::steps::open_step(self, Some(crate::steps::Step::Excitation));

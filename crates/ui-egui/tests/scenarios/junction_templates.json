@@ -1,6 +1,6 @@
 [
   {"note": "The radius bends, the E-plane and magic tees and the cross-guide coupler are S-parameter templates: each opens its card from the start page, its model drawn and its parameters built without an error"},
-  {"click": "bar:start"},
+  {"click": "tab:start"},
   {"click": "home:purpose:frequency"},
   {"frames": 2},
   {"expect": {"inspect": {"purpose": "frequency"}, "handles": ["sample:h-bend-radius", "sample:e-bend-radius", "sample:e-tee", "sample:magic-tee", "sample:cross-guide-coupler"], "hidden": ["sample:cavity"]}},
