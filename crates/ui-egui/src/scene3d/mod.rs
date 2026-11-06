@@ -329,6 +329,7 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
             }
         }
     }
+    geometry::part_walls(m, &mut out);
     present_materials(session, selected, &mut out);
     filter_geometry(session, &mut out);
     extras::extras(m, session.driven_port(), overlay, &mut out);

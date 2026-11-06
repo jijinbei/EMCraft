@@ -165,11 +165,6 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
             };
             out.scene.tagged(Pick::Inclusion(i).tag(), |scene| shape(scene, &inc.shape, &turned(Axis::Z, inc.at), color, 255));
         }
-        // An imported part's metal round the air it encloses: see-through, so the region
-        // inside shows and takes the clicks.
-        for wall in m.imported.iter().filter_map(|b| b.shape.as_ref()) {
-            shape(&mut out.scene, wall, &|q| q, sc().metal_dark, 40);
-        }
     }
     if let Some(t) = m.wall_thickness
         && m.open.is_none()
@@ -212,4 +207,12 @@ fn inside(m: &Model) -> Option<Inside> {
         out.wall_or_inner(t.p, Side::open_if(on_port(c)), &interior);
     }
     Some(out)
+}
+
+/// An imported part's metal round the air it encloses, before and after meshing: see-through,
+/// so the region inside shows and takes the clicks.
+pub(super) fn part_walls(m: &Model, out: &mut Built) {
+    for wall in m.imported.iter().filter_map(|b| b.shape.as_ref()) {
+        shape(&mut out.scene, wall, &|q| q, sc().metal_dark, 40);
+    }
 }

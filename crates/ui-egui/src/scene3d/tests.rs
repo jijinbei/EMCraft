@@ -426,3 +426,23 @@ fn a_sector_is_drawn_with_its_turns() {
     let faint = mesh.scene.tris.iter().filter(|t| t.wire.is_none()).count();
     assert!(faint * 4 >= mesh.scene.tris.len() * 3 - 4, "{faint} of {}", mesh.scene.tris.len());
 }
+
+/// Regression: an imported cavity's metal (a block with a channel through it) showed round its
+/// air before meshing and vanished once meshed: the walls are drawn in both.
+#[test]
+fn an_imported_cavitys_walls_show_before_and_after_meshing() {
+    let path = format!("{}/../../tests/oracle/imported-iris-cavity/block.3mf", env!("CARGO_MANIFEST_DIR"));
+    let mut s = Session::new();
+    s.execute("geometry.import", &serde_json::json!({"path": path})).unwrap();
+    // The walls' triangles as drawn alone, then found in the whole scene.
+    let mut alone = Built::default();
+    super::geometry::part_walls(s.model(), &mut alone);
+    assert!(!alone.scene.tris.is_empty());
+    let shown = |s: &Session| {
+        let scene = build(s, Overlay::Plain).scene;
+        alone.scene.tris.iter().all(|w| scene.tris.iter().any(|t| t.p == w.p && t.alpha == w.alpha))
+    };
+    assert!(shown(&s));
+    s.execute("mesh.generate", &serde_json::json!({"size": 6})).unwrap();
+    assert!(shown(&s));
+}
