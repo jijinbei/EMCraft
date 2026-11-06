@@ -381,7 +381,7 @@ pub fn devices(_: &mut Session, _: &Params) -> Result<Value> {
 pub fn eigenmodes(s: &mut Session, p: &Params) -> Result<Value> {
     let near = p.frequency("near").required()?;
     let count = p.integer("count", 1..=EIGEN_MAX).or(5)?;
-    let e = emcraft_solver::eigen::eigenmodes(&s.model, p.order()?, count, near)?;
+    let e = emcraft_solver::eigen::eigenmodes_every_wall(&s.model, p.order()?, count, near)?;
     s.results.eigen = Some(Arc::new(e));
     crate::results::eigenmode_table(s)
 }

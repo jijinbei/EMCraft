@@ -70,6 +70,11 @@ pub struct Model {
     /// on the side below them only.
     #[serde(default)]
     pub symmetry: Vec<Symmetry>,
+    /// The symmetry planes were found for an eigenmode search with no port to decide their
+    /// walls: every combination of walls is solved and the modes merged
+    /// ([`Model::with_walls`]); their kinds as set are the first combination's.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub every_wall: bool,
     /// Periodic boundaries: the model is the unit cell of an infinite array.
     #[serde(default)]
     pub periodic: Option<Periodic>,
@@ -142,6 +147,7 @@ impl Default for Model {
             elements: Vec::new(),
             job: crate::job::Job::Open,
             symmetry: Vec::new(),
+            every_wall: false,
             periodic: None,
             rotation: None,
             region: crate::region::Region::Pinned,

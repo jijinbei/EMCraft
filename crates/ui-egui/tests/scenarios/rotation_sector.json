@@ -6,6 +6,7 @@
   {"click": "toolbar:model.symmetry.auto"},
   {"frames": 2},
   {"expect": {"status": "rotation about z (C∞)", "inspect": {"dialog": null}}},
+  {"call": "engine.execute", "params": {"command": "model.symmetry", "params": {"clear": true}}},
   {"call": "engine.execute", "params": {"command": "model.rotation.find"}},
   {"frames": 2},
   {"click": "toolbar:model.rotation"},

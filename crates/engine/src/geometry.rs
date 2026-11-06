@@ -702,10 +702,11 @@ pub fn symmetry(s: &mut Session, p: &Params) -> Result<Value> {
 
 /// `model.symmetry.find`.
 /// `model.symmetry.auto`: every symmetry the model has, searched in one go and set where doing
-/// so changes no answer — the mirror planes whose walls the ports decide (two at most). What is
-/// found but would choose among the answers is said with why, not set: a plane no port decides
-/// (either wall keeps one family of modes), the rotation about z (a sector keeps one harmonic of
-/// the whole). The former planes and rotation are cleared first; finding nothing is no error.
+/// so changes no answer — the mirror planes whose walls the ports decide (two at most); with no
+/// port, the planes found with every combination of walls to solve (an eigenmode search merges
+/// them: [`emcraft_model::Model::every_wall`]). What is found but would choose among the answers
+/// is said with why, not set: the rotation about z (a sector keeps one harmonic of the whole).
+/// The former planes and rotation are cleared first; finding nothing is no error.
 pub fn auto_symmetry(s: &mut Session, _: &Params) -> Result<Value> {
     s.model.set_symmetry(Vec::new())?;
     s.model.set_rotation(None)?;
@@ -723,11 +724,25 @@ pub fn auto_symmetry(s: &mut Session, _: &Params) -> Result<Value> {
     if let Some(r) = s.model.find_rotation() {
         skipped.push(json!({"symmetry": format!("rotation about z ({})", r.group()), "why": "a sector keeps one harmonic of the whole (model.rotation sets it)"}));
     }
-    if !planes.is_empty() {
+    // No port to decide them: an eigenmode search solves every combination of walls and merges
+    // its modes (nothing is lost); with ports, the planes they decide only.
+    let mut every_wall = false;
+    if planes.is_empty() && s.model.ports.is_empty() && !found.is_empty() {
+        let mut all: Vec<Symmetry> = found.iter().map(|f| Symmetry { axis: f.axis, at: f.at, kind: SymmetryKind::Magnetic }).collect();
+        all.truncate(2);
+        all.sort_by_key(|q| q.axis.index());
+        // The planes set are no longer left out; the others are, two being the most.
+        skipped.retain(|x| !x["symmetry"].as_str().is_some_and(|w| w.starts_with("plane across ")));
+        for f in found.iter().filter(|f| !all.iter().any(|q| q.axis == f.axis)) {
+            skipped.push(json!({"symmetry": format!("plane across {}", f.axis.id()), "why": "two planes at most"}));
+        }
+        s.model.set_symmetry_every_wall(all)?;
+        every_wall = true;
+    } else if !planes.is_empty() {
         s.model.set_symmetry(planes)?;
     }
     let shown: Vec<Value> = s.model.symmetry.iter().map(|q| json!({"axis": q.axis.id(), "at": s.show_length(q.at), "kind": q.kind})).collect();
-    Ok(json!({"planes": shown, "fraction": s.model.symmetry_fraction(), "skipped": skipped}))
+    Ok(json!({"planes": shown, "fraction": s.model.symmetry_fraction(), "every_wall": every_wall, "skipped": skipped}))
 }
 
 pub fn find_symmetry(s: &mut Session, p: &Params) -> Result<Value> {

@@ -661,12 +661,55 @@ fn one_search_sets_the_symmetries_that_change_no_answer() {
     assert_eq!(r["fraction"], 0.25, "{r}");
     assert_eq!((r["planes"][0]["axis"].as_str(), r["planes"][0]["kind"].as_str()), (Some("x"), Some("magnetic")));
     assert_eq!((r["planes"][1]["axis"].as_str(), r["planes"][1]["kind"].as_str()), (Some("z"), Some("electric")));
+    // A round cavity with no port: two of its three planes, every wall to be tried; its third
+    // plane and its rotation left out with why; its former plane cleared.
     let mut s = Session::new();
     s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 15})).unwrap();
     s.execute("model.symmetry", &json!({"axis": "x", "kind": "electric"})).unwrap();
     let r = s.execute("model.symmetry.auto", &json!({})).unwrap();
-    assert_eq!(r["fraction"], 1.0, "{r}");
-    assert!(s.model.symmetry.is_empty() && s.model.rotation.is_none());
+    assert_eq!((r["fraction"].as_f64(), r["every_wall"].as_bool()), (Some(0.25), Some(true)), "{r}");
+    assert!(s.model.every_wall && s.model.rotation.is_none());
     let left: Vec<&str> = r["skipped"].as_array().unwrap().iter().filter_map(|q| q["symmetry"].as_str()).collect();
-    assert!(left.contains(&"plane across x") && left.iter().any(|q| q.starts_with("rotation about z")), "{left:?}");
+    assert!(left.contains(&"plane across z") && left.iter().any(|q| q.starts_with("rotation about z")), "{left:?}");
+    // A port added: the planes no longer stand for it, until searched again.
+    s.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
+    assert!(s.model.symmetry_issue().is_some_and(|why| why.contains("search again")));
+}
+
+/// An eigenmode search on planes found for every wall: each combination solved on one mesh
+/// (a quarter each), the modes merged — those of the whole box, found apart. Exact: the empty
+/// 22.86 × 10.16 × 30 mm cavity's TE101 at c/2 · √(1/a² + 1/l²) = 8.2440 GHz; the whole and the
+/// merged quarters agree to 1e-3 on the first five (each mesh its own). Saved and opened, the
+/// modes and their fields come back in their own systems.
+#[test]
+fn every_wall_eigenmodes_are_the_wholes() {
+    let freqs = |r: &serde_json::Value| r["modes"].as_array().unwrap().iter().map(|m| m["frequency"].as_f64().unwrap()).collect::<Vec<_>>();
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "box", "size": [22.86, 10.16, 30]})).unwrap();
+    s.execute("mesh.generate", &json!({"size": 4})).unwrap();
+    let whole = freqs(&s.execute("solve.eigenmodes", &json!({"near": 9, "count": 5, "order": 2})).unwrap());
+    s.execute("model.symmetry.auto", &json!({})).unwrap();
+    s.execute("mesh.generate", &json!({"size": 4})).unwrap();
+    let r = s.execute("solve.eigenmodes", &json!({"near": 9, "count": 5, "order": 2})).unwrap();
+    let merged = freqs(&r);
+    for (a, b) in whole.iter().zip(&merged) {
+        assert!((a - b).abs() < 1e-3 * a, "{whole:?} {merged:?}");
+    }
+    let te101 = 299_792_458.0 / 2.0 * (1.0 / 0.02286f64.powi(2) + 1.0 / 0.03f64.powi(2)).sqrt() / 1e9;
+    assert!((merged[0] - te101).abs() < 0.01 * te101, "{merged:?} {te101}");
+    let e = s.results.eigen.clone().unwrap();
+    assert!(e.modes.iter().any(|m| m.family > 0) && e.families.len() == 3);
+    // A mode of another family than the first reads its field in its own system.
+    let k = e.modes.iter().position(|m| m.family > 0).unwrap();
+    s.execute("view.field", &json!({"mode": k + 1, "path": scratch("every-wall-mode.png")})).unwrap();
+    let path = scratch("every-wall.emcraft");
+    s.execute("file.save", &json!({"path": path})).unwrap();
+    let mut t = Session::new();
+    t.execute("file.open", &json!({"path": path})).unwrap();
+    let back = t.results.eigen.clone().unwrap();
+    assert_eq!(
+        back.modes.iter().map(|m| (m.family, m.frequency)).collect::<Vec<_>>(),
+        e.modes.iter().map(|m| (m.family, m.frequency)).collect::<Vec<_>>()
+    );
+    assert_eq!(back.modes[k].vector.len(), back.driven_of(&back.modes[k]).dofs.unknowns);
 }

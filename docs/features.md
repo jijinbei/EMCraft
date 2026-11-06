@@ -641,7 +641,7 @@ A rotationally symmetric model (model.rotation) with ports on its axis, solved o
 
 ## `model.symmetry.auto` — Find symmetries
 
-Searches every symmetry of the model in one go and sets those that change no answer: the mirror planes about each axis' middle whose walls the ports decide (their TE10: magnetic across a broad side, electric across a narrow one; two at most). The former planes and rotation are cleared first. The reply says what was set (`planes`), the share of the model solved (`fraction`) and what was found but left out, with why (`skipped`): a plane no port decides the wall of and the rotation about z would each keep one family of modes (model.symmetry, model.rotation set them). Finding nothing is not an error. Translation (an infinite array's cell) is not a symmetry of a finite model: model.periodic sets it.
+Searches every symmetry of the model in one go and sets those that change no answer: the mirror planes about each axis' middle whose walls the ports decide (their TE10: magnetic across a broad side, electric across a narrow one; two at most); with no port (an eigenmode search), the planes found with every combination of walls to solve (`every_wall`: solve.eigenmodes solves each on the same mesh and merges their modes, so none is lost). The former planes and rotation are cleared first. The reply says what was set (`planes`, `every_wall`), the share of the model each solve takes (`fraction`) and what was found but left out, with why (`skipped`): the rotation about z would keep one harmonic of the whole (model.rotation sets it). Finding nothing is not an error. Translation (an infinite array's cell) is not a symmetry of a finite model: model.periodic sets it.
 
 No parameters.
 
@@ -809,7 +809,7 @@ No parameters.
 
 ## `solve.eigenmodes` — Eigenmodes
 
-The resonances of the guide closed at both ends by conducting walls (a cavity; ports are left out): the `count` modes nearest `near`, with Q factors from the walls' conductivity and the dielectrics' loss tangents by perturbation. Put `near` a little above the modes wanted: modes up to about √2 times it are found before the curl's null space.
+With symmetry planes found for every wall (model.symmetry.auto with no port), each combination of their walls is solved on the same mesh and the `count` modes nearest `near` of them all kept, each read in its own system. The resonances of the guide closed at both ends by conducting walls (a cavity; ports are left out): the `count` modes nearest `near`, with Q factors from the walls' conductivity and the dielectrics' loss tangents by perturbation. Put `near` a little above the modes wanted: modes up to about √2 times it are found before the curl's null space.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|

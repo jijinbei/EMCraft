@@ -1037,10 +1037,11 @@
     "Region: the air the part encloses (imported), {material}": "領域：部品が囲む空気（読み込み）、{material}",
     "No symmetry set: the whole model is solved.": "対称性は設定していません：モデル全体を解きます。",
     "Symmetry planes across {axes}: {share} of the model is solved.": "{axes} の対称面を設定しました：モデルの {share} を解きます。",
-    "Found but left to choose (they keep one family of modes): {list}.": "見つかったが選択に残したもの（モードの系列をひとつに絞るため）：{list}。",
     "Find symmetries": "対称性を探す",
     "plane across {axis}": "{axis} の対称面",
-    "rotation about z ({group})": "z 軸まわりの回転（{group}）"
+    "rotation about z ({group})": "z 軸まわりの回転（{group}）",
+    "Symmetry planes across {axes}: an eigenmode search solves each combination of their walls on {share} of the model and merges the modes.": "{axes} の対称面を設定しました：固有モード解析は、壁の組み合わせごとにモデルの {share} を解き、モードをまとめます。",
+    "Found but not set: {list}.": "見つかったが設定しなかったもの：{list}。"
   },
   "commands": {
     "project.setup": {
@@ -1493,7 +1494,7 @@
     },
     "solve.eigenmodes": {
       "label": "固有モード",
-      "doc": "両端を導体壁で閉じた導波管（空洞。ポートは除外）の共振：`near` に最も近い `count` 個のモードと、壁の導電率と誘電体の損失正接から摂動法で求めた Q 値。`near` は求めたいモードより少し上に置く：回転の零空間より前に、その約 √2 倍までのモードが求まる。",
+      "doc": "model.symmetry.auto がポートなしで見つけた対称面（すべての壁）があるときは、壁の組み合わせごとに同じメッシュで解き、全体から `near` に近い `count` 個のモードを、それぞれの系で残す。両端を導体壁で閉じた導波管（空洞。ポートは除外）の共振：`near` に最も近い `count` 個のモードと、壁の導電率と誘電体の損失正接から摂動法で求めた Q 値。`near` は求めたいモードより少し上に置く：回転の零空間より前に、その約 √2 倍までのモードが求まる。",
       "params": {
         "near": "モードを探す中心周波数",
         "count": "モード数、1〜50（既定 5）",
@@ -2290,7 +2291,7 @@
     },
     "model.symmetry.auto": {
       "label": "対称性を探す",
-      "doc": "モデルのすべての対称性を一度に探し、答えを変えないものを設定する：ポートが壁を決める各軸の中央の鏡映面（TE10 の向きから、広い辺を横切る面は磁気壁、狭い辺を横切る面は電気壁。2 面まで）。前の対称面と回転は先に消す。返答は設定したもの（`planes`）、解くモデルの割合（`fraction`）、見つかったが残したものとその理由（`skipped`：壁をポートが決めない面と z 軸まわりの回転は、それぞれモードの系列をひとつに絞る。model.symmetry、model.rotation で設定する）。何も見つからなくてもエラーにしない。並進（無限配列の単位セル）は有限のモデルの対称性ではない：model.periodic で設定する。",
+      "doc": "モデルのすべての対称性を一度に探し、答えを変えないものを設定する：ポートが壁を決める各軸の中央の鏡映面（TE10 の向きから、広い辺を横切る面は磁気壁、狭い辺を横切る面は電気壁。2 面まで）。ポートがないとき（固有モード解析）は、見つかった面を壁のすべての組み合わせで解くよう設定する（`every_wall`：solve.eigenmodes が同じメッシュで組み合わせごとに解いてモードをまとめるので、モードは漏れない）。前の対称面と回転は先に消す。返答は設定したもの（`planes`、`every_wall`）、1 回の解析が扱うモデルの割合（`fraction`）、見つかったが残したものとその理由（`skipped`：z 軸まわりの回転は全体の高調波をひとつに絞る。model.rotation で設定する）。何も見つからなくてもエラーにしない。並進（無限配列の単位セル）は有限のモデルの対称性ではない：model.periodic で設定する。",
       "params": {}
     }
   },

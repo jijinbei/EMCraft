@@ -62,6 +62,9 @@ pub struct Mode {
     pub q_walls: Option<f64>,
     pub q_dielectric: Option<f64>,
     pub q_magnetic: Option<f64>,
+    /// Which system it was solved in: 0 the eigenmodes' [`Eigen::driven`], k its
+    /// `families[k − 1]` (the symmetry planes' other walls, [`eigenmodes_every_wall`]).
+    pub family: usize,
 }
 
 impl Mode {
@@ -78,6 +81,15 @@ pub struct Eigen {
     pub driven: Driven,
     pub modes: Vec<Mode>,
     pub iterations: usize,
+    /// The systems of the symmetry planes' other walls, when each combination was solved.
+    pub families: Vec<Driven>,
+}
+
+impl Eigen {
+    /// The system mode `m` was solved in (its fields are read in it).
+    pub fn driven_of(&self, m: &Mode) -> &Driven {
+        m.family.checked_sub(1).and_then(|k| self.families.get(k)).unwrap_or(&self.driven)
+    }
 }
 
 /// The cavity's matrices on their pattern: K (real) and M (complex permittivity).
@@ -395,7 +407,7 @@ fn iterate<A: Arithmetic>(model: &Model, driven: &Driven, count: usize, sigma: f
             None => None,
         };
         let (q_dielectric, q_magnetic) = A::q_materials(driven, &vector, lambda, frequency, omega * u)?;
-        modes.push(Mode { frequency, vector, q_walls, q_dielectric, q_magnetic });
+        modes.push(Mode { frequency, vector, q_walls, q_dielectric, q_magnetic, family: 0 });
     }
     modes.sort_by(|a, b| a.frequency.total_cmp(&b.frequency));
     Ok((modes, iterations))
@@ -434,5 +446,34 @@ pub fn eigenmodes(model: &Model, order: Order, count: usize, near: f64) -> Resul
     let sigma = k_near * k_near;
     let lossy = mass.iter().any(|m| m.im != 0.0) || stiffness.iter().any(|k| k.im != 0.0);
     let (modes, iterations) = if lossy { iterate::<Complex>(model, &driven, count, sigma)? } else { iterate::<Real>(model, &driven, count, sigma)? };
-    Ok(Eigen { driven, modes, iterations })
+    Ok(Eigen { driven, modes, iterations, families: Vec::new() })
+}
+
+/// The eigenmodes nearest `near` of a model whose symmetry planes' walls no port decides
+/// ([`Model::every_wall`]): each combination of walls solved on the same mesh
+/// ([`Model::with_walls`]; with two planes, four quarters), the `count` modes nearest `near`
+/// of them all kept in ascending frequency, each with its system. A whole cavity's modes are
+/// each even or odd about each plane, so every one is found, in a fraction of the whole's
+/// unknowns. Without that flag, [`eigenmodes`].
+pub fn eigenmodes_every_wall(model: &Model, order: Order, count: usize, near: f64) -> Result<Eigen> {
+    let combinations = model.wall_combinations();
+    if !model.every_wall || combinations.len() < 2 {
+        return eigenmodes(model, order, count, near);
+    }
+    let mut systems: Vec<Driven> = Vec::with_capacity(combinations.len());
+    let mut all: Vec<Mode> = Vec::new();
+    let mut iterations = 0;
+    for (k, kinds) in combinations.iter().enumerate() {
+        let e = eigenmodes(&model.with_walls(kinds), order, count, near)?;
+        iterations += e.iterations;
+        all.extend(e.modes.into_iter().map(|m| Mode { family: k, ..m }));
+        systems.push(e.driven);
+    }
+    // The `count` nearest `near`, then by frequency.
+    all.sort_by(|a, b| (a.frequency - near).abs().total_cmp(&(b.frequency - near).abs()));
+    all.truncate(count);
+    all.sort_by(|a, b| a.frequency.total_cmp(&b.frequency));
+    let mut systems = systems.into_iter();
+    let driven = systems.next().ok_or_else(|| SolveError::NotReady("no wall combination".into()))?;
+    Ok(Eigen { driven, modes: all, iterations, families: systems.collect() })
 }

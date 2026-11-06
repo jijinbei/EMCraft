@@ -291,13 +291,77 @@ impl Model {
             return Err(invalid("symmetry", why));
         }
         self.symmetry = planes;
+        self.every_wall = false;
         self.mesh = None;
         Ok(())
+    }
+
+    /// Sets planes no port decides the walls of, for an eigenmode search to solve every
+    /// combination of their walls ([`Model::wall_combinations`]).
+    pub fn set_symmetry_every_wall(&mut self, planes: Vec<Symmetry>) -> Result<()> {
+        self.set_symmetry(planes)?;
+        self.every_wall = !self.symmetry.is_empty();
+        Ok(())
+    }
+
+    /// The walls of every combination an eigenmode search solves: each plane electric or
+    /// magnetic when [`Model::every_wall`], else the planes' own (one combination).
+    pub fn wall_combinations(&self) -> Vec<Vec<SymmetryKind>> {
+        let own: Vec<SymmetryKind> = self.symmetry.iter().map(|q| q.kind).collect();
+        if !self.every_wall {
+            return vec![own];
+        }
+        let n = self.symmetry.len().min(2);
+        (0..1usize << n)
+            .map(|bits| (0..n).map(|k| if bits >> k & 1 == 0 { SymmetryKind::Magnetic } else { SymmetryKind::Electric }).collect())
+            .collect()
+    }
+
+    /// The model with its symmetry planes' walls `kinds` (in their order), its mesh's faces on
+    /// each plane tagged so: the same mesh, solved with other walls.
+    ///
+    /// ```
+    /// use emcraft_model::{Model, Solid, Shape, Symmetry, SymmetryKind, Axis, BoxSize, Vec3};
+    /// let mut m = Model::new();
+    /// m.set_solid(Solid { shape: Shape::Box { size: BoxSize::new(Vec3::new(0.02, 0.01, 0.03))? }, material: "vacuum".into() })?;
+    /// m.set_symmetry_every_wall(vec![Symmetry { axis: Axis::X, at: 0.01, kind: SymmetryKind::Magnetic }])?;
+    /// assert_eq!(m.wall_combinations().len(), 2);
+    /// let e = m.with_walls(&[SymmetryKind::Electric]);
+    /// assert_eq!(e.symmetry[0].kind, SymmetryKind::Electric);
+    /// # Ok::<(), emcraft_model::ModelError>(())
+    /// ```
+    pub fn with_walls(&self, kinds: &[SymmetryKind]) -> Model {
+        let mut m = self.clone();
+        for (q, k) in m.symmetry.iter_mut().zip(kinds) {
+            q.kind = *k;
+        }
+        m.every_wall = false;
+        if let Some(mesh) = &self.mesh {
+            let mut mesh = (**mesh).clone();
+            let tol = 1e-9 * self.bounds().map_or(1.0, |b| (b.max - b.min).norm());
+            for f in &mut mesh.boundary {
+                if !matches!(f.tag, crate::mesh::Boundary::Symmetry(_)) {
+                    continue;
+                }
+                let on = |q: &Symmetry| f.nodes.iter().all(|n| mesh.nodes.get(*n as usize).is_some_and(|p| (p[q.axis.index()] - q.at).abs() <= tol));
+                if let Some(q) = m.symmetry.iter().find(|q| on(q)) {
+                    f.tag = crate::mesh::Boundary::Symmetry(q.kind);
+                }
+            }
+            m.mesh = Some(std::sync::Arc::new(mesh));
+        }
+        m
     }
 
     /// Why the model is not symmetric about its symmetry planes, if it is not (the geometry may
     /// have changed since they were set).
     pub fn symmetry_issue(&self) -> Option<String> {
+        if self.every_wall && !self.ports.is_empty() {
+            return Some(
+                "its planes were set to try every wall in an eigenmode search; with ports, search again (model.symmetry.auto) for the walls they ask"
+                    .into(),
+            );
+        }
         self.symmetry_issue_of(&self.symmetry)
     }
 

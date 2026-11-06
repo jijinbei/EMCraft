@@ -327,6 +327,12 @@ struct StoredEigen {
     numbers: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     vectors: Option<String>,
+    /// Each mode's system, when every wall combination was solved: its index into `walls`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    family: Vec<usize>,
+    /// The symmetry planes' walls of each system, the first [`Eigen::driven`]'s.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    walls: Vec<Vec<emcraft_model::SymmetryKind>>,
 }
 
 impl StoredEigen {
@@ -344,7 +350,11 @@ impl StoredEigen {
             }
             false => None,
         };
+        let several = !e.families.is_empty();
+        let walls = |d: &emcraft_solver::Driven| d.symmetry.iter().map(|q| q.kind).collect::<Vec<_>>();
         Ok(StoredEigen {
+            family: if several { e.modes.iter().map(|m| m.family).collect() } else { Vec::new() },
+            walls: if several { std::iter::once(&e.driven).chain(&e.families).map(walls).collect() } else { Vec::new() },
             order: e.driven.order.as_u8(),
             iterations: e.iterations,
             modes: e.modes.iter().map(|m| [m.q_walls.is_some(), m.q_dielectric.is_some(), m.q_magnetic.is_some()]).collect(),
@@ -357,13 +367,28 @@ impl StoredEigen {
         if self.modes.len() > crate::EIGEN_MAX {
             return Err(format!("more than {} eigenmodes", crate::EIGEN_MAX));
         }
-        let driven = emcraft_solver::Driven::cavity(model, order(self.order)?).map_err(|e| e.to_string())?;
-        let unknowns = driven.dofs.unknowns;
+        // Each wall combination's system, when they were solved apart (the first is `driven`).
+        let order = order(self.order)?;
+        let mut systems = Vec::with_capacity(self.walls.len().max(1));
+        if self.walls.is_empty() {
+            systems.push(emcraft_solver::Driven::cavity(model, order).map_err(|e| e.to_string())?);
+        } else {
+            if self.walls.len() > 4 || self.family.len() != self.modes.len() || self.family.iter().any(|k| *k >= self.walls.len()) {
+                return Err("the eigenmodes' wall combinations do not match their modes".into());
+            }
+            for kinds in &self.walls {
+                systems.push(emcraft_solver::Driven::cavity(&model.with_walls(kinds), order).map_err(|e| e.to_string())?);
+            }
+        }
+        let unknowns_of = |k: usize| systems.get(k).map_or(0, |d| d.dofs.unknowns);
+        let family = |k: usize| self.family.get(k).copied().unwrap_or(0);
+        let total: usize = (0..self.modes.len()).map(|k| unknowns_of(family(k))).sum();
         let mut nums = In::read(r, &self.numbers, "the eigenmodes")?;
         let vectors = match &self.vectors {
-            Some(name) => get_complex(r, name, self.modes.len().saturating_mul(unknowns))?,
+            Some(name) => get_complex(r, name, total)?,
             None => Vec::new(),
         };
+        let mut at = 0usize;
         let mut modes = Vec::with_capacity(self.modes.len());
         for (k, known) in self.modes.iter().enumerate() {
             let frequency = frequency(nums.f()?)?;
@@ -373,11 +398,15 @@ impl StoredEigen {
                     *slot = Some(nums.f()?);
                 }
             }
-            let vector = vectors.get(k * unknowns..(k + 1) * unknowns).map(<[C]>::to_vec).unwrap_or_default();
-            modes.push(emcraft_solver::eigen::Mode { frequency, vector, q_walls: q[0], q_dielectric: q[1], q_magnetic: q[2] });
+            let n = unknowns_of(family(k));
+            let vector = vectors.get(at..at + n).map(<[C]>::to_vec).unwrap_or_default();
+            at += n;
+            modes.push(emcraft_solver::eigen::Mode { frequency, vector, q_walls: q[0], q_dielectric: q[1], q_magnetic: q[2], family: family(k) });
         }
         nums.done()?;
-        Ok(emcraft_solver::eigen::Eigen { driven, modes, iterations: self.iterations })
+        let mut systems = systems.into_iter();
+        let driven = systems.next().ok_or("no system for the eigenmodes")?;
+        Ok(emcraft_solver::eigen::Eigen { driven, modes, iterations: self.iterations, families: systems.collect() })
     }
 }
 
