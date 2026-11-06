@@ -356,6 +356,7 @@
     "Ports": "ポート",
     "Ports and sources": "ポートと波源",
     "Ports lie on flat faces across x, y or z": "ポートは x、y、z に垂直な平らな面に置く",
+    "Ports go on the channel's openings, not on its walls": "ポートは溝の開口に置く（壁には置けない）",
     "Pour": "ベタ",
     "Power in reported S entries. The balance includes loss, radiation, higher modes and numerical error.": "表示した S の要素の電力。残りには損失、放射、高次モード、数値誤差が含まれる",
     "Preferences file": "設定ファイル",

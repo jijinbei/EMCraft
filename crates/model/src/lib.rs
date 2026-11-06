@@ -60,7 +60,7 @@ pub use model::{Issue, MAX_WALL_THICKNESS, Model, PartBody};
 pub use num_complex::Complex64;
 pub use open::{LumpedPort, Open, OpenShape, Source, SphericalLayer};
 pub use periodic::{Periodic, Polarization};
-pub use port::{DEFAULT_TERMINAL_IMPEDANCE, End, Frame, MAX_PORT_MODES, MAX_TERMINALS, ModeSolver, Port, PortFace, PortShape, Terminals};
+pub use port::{CAVITY, DEFAULT_TERMINAL_IMPEDANCE, End, Frame, MAX_PORT_MODES, MAX_TERMINALS, ModeSolver, Port, PortFace, PortShape, Terminals};
 pub use prism::MAX_PRISM_POINTS;
 pub use quantity::{Conductivity, Hertz, LossTangent, MAX_CONDUCTIVITY, MAX_LOSS_TANGENT, Metres, Ohms, Positive, Quantity};
 pub use region::Region;

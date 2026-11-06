@@ -7,8 +7,11 @@ use crate::geom::{CVec3, Point3, Vec3};
 use crate::material::Material;
 use crate::model::Model;
 use crate::quantity::{Metres, Ohms, Quantity};
-use crate::shape::Axis;
+use crate::shape::{Axis, Shape, Solid};
 use crate::waveguide::Span;
+
+/// The name of the region an imported part's enclosed air makes (geometry.import, `cavity`).
+pub const CAVITY: &str = "cavity";
 
 /// The cross-section of a port: the mode functions it carries.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -403,6 +406,47 @@ impl Model {
         p.check_settings()?;
         self.ports.push(p);
         Ok(())
+    }
+
+    /// An imported cavity's openings: where the air it encloses reaches its bounding box (the
+    /// box's faces, tagged 0..6: x low, x high, y low, y high, z low, z high), one rectangle per
+    /// face reached, the side the guide lies on (`start` on a low face, `end` on a high one).
+    /// None for any other region. The rectangle is the opening's extent: a channel's whole end.
+    ///
+    /// ```
+    /// use emcraft_model::{Model, Shape, Solid, Point3, End, Axis};
+    ///
+    /// // A channel 5 × 10 × 5 mm along y: its ends (tags 2, 3) are its openings, its sides walls.
+    /// let positions = (0..8).map(|i| Point3::new([0.0, 0.005][i & 1], [0.0, 0.01][(i >> 1) & 1], [0.0, 0.005][(i >> 2) & 1])).collect();
+    /// let quads = [[0, 4, 6, 2], [1, 3, 7, 5], [0, 1, 5, 4], [2, 6, 7, 3], [0, 2, 3, 1], [4, 5, 7, 6]];
+    /// let triangles = quads.iter().flat_map(|q| [[q[0], q[1], q[2]], [q[0], q[2], q[3]]]).collect();
+    /// let tags = vec![6, 6, 7, 7, 2, 2, 3, 3, 8, 8, 9, 9];
+    /// let mut m = Model::new();
+    /// let shape = Shape::Surface { name: "cavity".into(), positions, triangles, tags, surfaces: Vec::new() };
+    /// m.set_solid(Solid { shape, material: "vacuum".into() })?;
+    /// let o = m.openings();
+    /// assert_eq!(o.len(), 2);
+    /// assert!(o.iter().any(|(e, f)| *e == End::End && f.axis == Axis::Y && (f.at - 0.01).abs() < 1e-12));
+    /// # Ok::<(), emcraft_model::ModelError>(())
+    /// ```
+    pub fn openings(&self) -> Vec<(End, PortFace)> {
+        let Some(Solid { shape: Shape::Surface { name, positions, triangles, tags, .. }, .. }) = &self.solid else { return Vec::new() };
+        if name != CAVITY {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        for tag in 0..6u32 {
+            let axis = [Axis::X, Axis::Y, Axis::Z][(tag / 2) as usize];
+            let (u, v, _) = Frame::new(axis).axes();
+            let corners =
+                triangles.iter().zip(tags).filter(|(_, t)| **t == tag).flat_map(|(t, _)| t.iter().filter_map(|i| positions.get(*i as usize)));
+            let Some(b) = crate::geom::Aabb::around(corners.copied()) else { continue };
+            let (Ok(a), Ok(h)) = (Metres::new(b.max[u] - b.min[u]), Metres::new(b.max[v] - b.min[v])) else { continue };
+            let at = if tag % 2 == 0 { b.min[axis.index()] } else { b.max[axis.index()] };
+            let end = if tag % 2 == 0 { End::Start } else { End::End };
+            out.push((end, PortFace { axis, at, u0: b.min[u], v0: b.min[v], a, b: h }));
+        }
+        out
     }
 
     /// The port named `name` and its index.

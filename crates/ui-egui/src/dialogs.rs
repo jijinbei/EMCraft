@@ -514,7 +514,12 @@ pub fn initial(command: &str, s: &Session) -> Value {
         "model.symmetry" => json!({"axis": "x", "kind": "magnetic"}),
         "model.rotation" => json!({"n": 4}),
         "model.periodic" => periodic(s),
-        "model.port.create" => json!({"name": format!("{}", ports + 1), "end": if ports == 0 { "start" } else { "end" }, "modes": 4}),
+        // The end no port is on yet: start first.
+        "model.port.create" => {
+            let taken = |e: emcraft_model::End| s.model().ports.iter().any(|p| p.end == e);
+            let end = if taken(emcraft_model::End::Start) && !taken(emcraft_model::End::End) { "end" } else { "start" };
+            json!({"name": format!("{}", ports + 1), "end": end, "modes": 4})
+        }
         "model.port.lumped" => json!({"name": format!("L{}", s.model().lumped.len() + 1), "from": [0, 0, -0.5], "to": [0, 0, 0.5], "impedance": 50}),
         "source.dipole" => json!({"at": [0, 0, 0], "direction": [0, 0, 1], "length": 1, "current": 1}),
         "source.plane_wave" => json!({"direction": [0, 0, 1], "polarization": [1, 0, 0]}),

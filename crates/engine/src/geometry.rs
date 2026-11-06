@@ -2,7 +2,7 @@
 //! inclusions and features, walls and ports.
 
 use emcraft_model::{
-    Axis, BoxSize, Conductivity, FaceSurface, Feature, Inclusion, Layer, MAX_POLES, Material, Metres, Point3, Pole, Port, PortFace, Positive,
+    Axis, BoxSize, Conductivity, End, FaceSurface, Feature, Inclusion, Layer, MAX_POLES, Material, Metres, Point3, Pole, Port, PortFace, Positive,
     Section, Shape, Solid, Strip, Symmetry, SymmetryKind, Via, Waveguide,
 };
 use serde_json::{Value, json};
@@ -488,7 +488,7 @@ fn enclosed_air(
     };
     let c = emcraft_mesh::cavity::cavity(&walls, keep)?;
     let shape = Shape::Surface {
-        name: "cavity".into(),
+        name: emcraft_model::CAVITY.into(),
         positions: c.surface.positions.clone(),
         triangles: c.surface.triangles.clone(),
         tags: c.surface.tags.clone(),
@@ -727,9 +727,15 @@ pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
     if face.is_none() && axis.is_some_and(|a| a != Axis::Z) {
         return Err(p.error("axis", "x or y needs `face` (a port's end lies across z)"));
     }
+    let end: End = p.choice("end").required()?;
+    // An imported cavity's channel along x or y: its end is its opening there.
+    let face = match face {
+        Some(f) => Some(f),
+        None => opening(&s.model, end).map_err(|why| p.error("end", why))?,
+    };
     let port = Port {
         name: name.to_owned(),
-        end: p.choice("end").required()?,
+        end,
         modes: p.integer("modes", 1..=emcraft_model::MAX_PORT_MODES as usize).or(4)? as u32,
         face,
         mode_solver: p.choice("mode_solver").or_default()?,
@@ -739,6 +745,26 @@ pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
     };
     s.model.add_port(port)?;
     Ok(json!({"name": name}))
+}
+
+/// The opening of an imported cavity a port at `end` goes on when its channel runs along x or
+/// y (none along z, or for any other region: the end face across z is the port's); refused
+/// when the cavity opens on that side across several axes.
+fn opening(m: &emcraft_model::Model, end: End) -> std::result::Result<Option<PortFace>, String> {
+    let openings = m.openings();
+    if openings.is_empty() || openings.iter().any(|(_, f)| f.axis == Axis::Z) {
+        return Ok(None);
+    }
+    let here: Vec<PortFace> = openings.iter().filter(|(e, _)| *e == end).map(|(_, f)| *f).collect();
+    match here[..] {
+        [f] => Ok(Some(f)),
+        [] => Err(format!("the cavity has no opening at its {} (its openings: {}); give `face` and `axis`", end.id(), shown_openings(&openings))),
+        _ => Err(format!("the cavity opens at its {} across several axes ({}); give `face` and `axis`", end.id(), shown_openings(&openings))),
+    }
+}
+
+fn shown_openings(o: &[(End, PortFace)]) -> String {
+    o.iter().map(|(e, f)| format!("{} {}", f.axis.id(), e.id())).collect::<Vec<_>>().join(", ")
 }
 
 /// `geometry.measure`: the distance between two picked points, with the gap and angle their

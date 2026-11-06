@@ -634,7 +634,12 @@ fn a_cavity_along_y_takes_ports_at_its_drawn_numbers() {
     assert_eq!(r["pieces"]["axis"], "y", "{r}");
     // Moved to the origin: the channel x 2.5..7.5, y 0..100, z 2.5..7.5.
     s.execute("model.port.create", &json!({"name": "1", "end": "start", "axis": "y", "face": [0, 2.5, 2.5, 5, 5]})).unwrap();
-    s.execute("model.port.create", &json!({"name": "2", "end": "end", "axis": "y", "face": [100, 2.5, 2.5, 5, 5]})).unwrap();
+    // The other end with nothing but its side: the cavity's opening there (not the wall at
+    // the highest z).
+    s.execute("model.port.create", &json!({"name": "2", "end": "end"})).unwrap();
+    let f = s.model.ports[1].face.unwrap();
+    assert_eq!(f.axis, emcraft_model::Axis::Y);
+    assert!((f.at - 0.1).abs() < 1e-9 && (f.a.get() - 0.005).abs() < 1e-8 && (f.b.get() - 0.005).abs() < 1e-8, "{f:?}");
     s.execute("mesh.generate", &json!({"size": 1.5})).unwrap();
     let r = s.execute("solve.frequency", &json!({"frequencies": [40], "order": 2})).unwrap();
     let s21 = r["points"][0]["s21"]["mag"].as_f64().unwrap();
