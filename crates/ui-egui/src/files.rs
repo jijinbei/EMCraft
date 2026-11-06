@@ -121,19 +121,6 @@ pub enum FileAction {
     Dropped(String),
 }
 
-impl FileAction {
-    /// Whether it waits while a job runs ([`crate::Action::waits_for_job`]): what opens,
-    /// begins or saves a project. Closing asks about the job instead, an answer or a path
-    /// chosen goes on (the commands it runs refuse themselves).
-    pub fn waits_for_job(&self) -> bool {
-        match self {
-            FileAction::Request(then) => *then != Then::Quit,
-            FileAction::Save | FileAction::SaveAs | FileAction::PickPart | FileAction::Dropped(_) => true,
-            FileAction::Chosen(..) | FileAction::Confirm(_) => false,
-        }
-    }
-}
-
 /// An answer to "save the changes?".
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Answer {

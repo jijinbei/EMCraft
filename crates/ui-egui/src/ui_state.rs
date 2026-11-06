@@ -5,8 +5,9 @@
 //! [`Action`]; [`UiState::update`] makes it, and nothing else does: the fields are private, the
 //! drafts in them (a path being typed, a dialog's fields) the only thing the drawing edits.
 //!
-//! Escape closes the top layer ([`UiState::escape`]); a layer's way out is written once
-//! ([`UiState::close`]). No egui here (a test keeps it so): the transitions are plain data,
+//! Escape closes the top layer ([`UiState::escape_target`]); a layer's way out is written once
+//! ([`UiState::close`]). While a job runs, what waits for it is one rule
+//! ([`Action::waits_for_job`]). No egui here (a test keeps it so): the transitions are plain data,
 //! checked by table in the tests below.
 
 use crate::dialogs::Dialog;
@@ -358,6 +359,82 @@ impl UiState {
     }
 }
 
+/// While a job runs: what changes the project or runs a command waits for it (one at a
+/// time); what only looks, moves the view, selects, or opens and closes goes on. `apply`
+/// refuses what waits, and `ui.act` draws its button greyed out, both by this one rule.
+impl Action {
+    /// Whether it waits while a job runs: what changes the project or runs a command (one at a
+    /// time), not what only looks, moves the view, selects, or opens and closes. Every kind is
+    /// named, so a new one is decided here when it is added.
+    pub fn waits_for_job(&self) -> bool {
+        match self {
+            Action::RunAll(_)
+            | Action::Run { .. }
+            | Action::DialogOk
+            | Action::Undo
+            | Action::Redo
+            | Action::OpenTemplate(..)
+            | Action::EditItem(_)
+            | Action::DeleteItems(_)
+            | Action::ExportHistory(..)
+            | Action::ConfirmSetup
+            | Action::StartRun
+            | Action::PreviewPortModes
+            | Action::CheckResults
+            | Action::ExportTouchstone
+            | Action::SetDevice { .. }
+            | Action::Measure(_)
+            | Action::EditSelected => true,
+            Action::File(f) => f.waits_for_job(),
+            Action::OpenDialog { .. }
+            | Action::DialogCancel
+            | Action::SetDock(_)
+            | Action::SetView(_)
+            | Action::ShowView(_)
+            | Action::SetTab(_)
+            | Action::OpenStep(_)
+            | Action::Fix(_)
+            | Action::Select { .. }
+            | Action::Click(_)
+            | Action::SelectBox { .. }
+            | Action::Fit
+            | Action::Fold(_)
+            | Action::Hover(_)
+            | Action::FocusMode(_)
+            | Action::CancelJob
+            | Action::Close(_)
+            | Action::OpenSearch
+            | Action::Show(_)
+            | Action::Template(_)
+            | Action::Purpose(_)
+            | Action::OpenSettings(_)
+            | Action::CloseSettings
+            | Action::Pref(_)
+            | Action::DismissRecovery(_)
+            | Action::AskExport
+            | Action::ProposeSetup(_)
+            | Action::StandardView(_)
+            | Action::SetPlaying(_)
+            | Action::Tool(_)
+            | Action::Pen(_)
+            | Action::Message { .. } => false,
+        }
+    }
+}
+
+impl FileAction {
+    /// Whether it waits while a job runs ([`Action::waits_for_job`]): what opens,
+    /// begins or saves a project. Closing asks about the job instead, an answer or a path
+    /// chosen goes on (the commands it runs refuse themselves).
+    pub fn waits_for_job(&self) -> bool {
+        match self {
+            FileAction::Request(then) => *then != crate::files::Then::Quit,
+            FileAction::Save | FileAction::SaveAs | FileAction::PickPart | FileAction::Dropped(_) => true,
+            FileAction::Chosen(..) | FileAction::Confirm(_) => false,
+        }
+    }
+}
+
 impl EmcraftApp {
     /// Draws what is open over the window: `draw` edits its drafts (a path typed, a card's
     /// fields) with the rest of the app to read; what is open stays as it was (closing it is an
@@ -461,6 +538,38 @@ mod tests {
         assert!(s.open_search());
         assert_eq!(s.update(&Action::Template(None)), Some(vec![]));
         assert!(s.searching());
+    }
+
+    /// The rule while a job runs: what changes the project (or runs a command, one at a time)
+    /// waits; looking, moving about, closing and cancelling do not. Closing the window asks
+    /// about the job instead of waiting for it, and an answer to that question goes through.
+    #[test]
+    fn a_running_job_holds_back_what_changes_the_project() {
+        use crate::Actions;
+        use crate::files::Then;
+        use serde_json::json;
+        let busy = Actions::during(true);
+        for waits in [
+            Action::Undo,
+            Action::run("mesh.generate", json!({})),
+            Action::DialogOk,
+            Action::File(FileAction::Save),
+            Action::File(FileAction::Request(Then::New)),
+            Action::DeleteItems(vec![]),
+        ] {
+            assert!(waits.waits_for_job() && !busy.allows(&waits), "{waits:?} goes through a job");
+            assert!(Actions::during(false).allows(&waits), "{waits:?} held back with no job");
+        }
+        for free in [
+            Action::CancelJob,
+            Action::Close(crate::ui_state::Layer::Dialog),
+            Action::Show(crate::page::Tab::Start),
+            Action::Tool(None),
+            Action::File(FileAction::Request(Then::Quit)),
+            Action::File(FileAction::Confirm(Answer::StopJob)),
+        ] {
+            assert!(busy.allows(&free), "{free:?} waits for a job");
+        }
     }
 
     /// No egui in the window's state: its transitions are plain data.
