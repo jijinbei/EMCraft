@@ -49,6 +49,9 @@ pub struct Prefs {
     pub dark: bool,
     /// The window's language (`en` when empty or unknown).
     pub language: String,
+    /// A font file to show the language with, before the system's fonts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_file: Option<String>,
     /// Dialogs dock at the right, beside what they edit (new preferences; a file keeps its own).
     pub dock_dialogs: bool,
     /// The 3D view's mouse mapping, by id (`crate::navigation::NAV_PRESETS`; the default
@@ -74,6 +77,7 @@ impl Default for Prefs {
             theme: String::new(),
             dark: false,
             language: String::new(),
+            font_file: None,
             dock_dialogs: true,
             navigation: crate::navigation::FUSION.into(),
             orbit_around: String::new(),

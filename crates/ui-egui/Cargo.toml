@@ -23,6 +23,7 @@ serde = { workspace = true }
 # Reading installed fonts' names and character maps (fonts::system; already in the build
 # through egui's ab_glyph; docs/adr/0001-libraries.md).
 ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
+fontdb = "0.24"
 
 [dev-dependencies]
 approx = { workspace = true }

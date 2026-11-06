@@ -25,6 +25,9 @@ emcraft_macros::named_enum! {
         BarStart = "bar:start",
         BarTitle = "bar:title",
         BarSettings = "bar:settings",
+        /// The language's font file and its search again (Settings ▸ Language).
+        FontFile = "settings:font_file",
+        FontSearch = "settings:font_search",
         /// The running job's line, left of the settings.
         BarJob = "bar:job",
         // The settings page.

@@ -177,7 +177,8 @@ pub fn render_app(app: &mut crate::EmcraftApp, size: egui::Vec2, ppp: f32) -> em
         ctx.set_pixels_per_point(ppp);
         app.use_theme();
         crate::theme::apply(&ctx);
-        crate::fonts::install(&ctx);
+        let language = app.language;
+        app.fonts.install(&ctx, language);
         let mut out = ctx.run_ui(raw, |ui| app.ui(ui));
         textures.update(&out.textures_delta);
         out.textures_delta.clear();

@@ -115,7 +115,10 @@ pub struct EmcraftApp {
     /// Bumped whenever the session changes, so cached pictures and tables are redrawn.
     pub revision: u64,
     /// The Japanese font: the embedded one, and an installed one the window finds.
-    pub fonts: fonts::Japanese,
+    pub fonts: fonts::Fonts,
+    /// The language the window is drawn in: the preferred one once a font shows it, else
+    /// English ([`fonts::State::Missing`]).
+    pub language: &'static str,
     pub job: Option<worker::Job>,
     pub tab: ribbon::RibbonTab,
     pub dialog: Option<dialogs::Dialog>,
@@ -259,6 +262,7 @@ impl EmcraftApp {
             page: home::Page::Workspace,
             failure: None,
             focus_last: None,
+            language: lang::ENGLISH,
         };
         app.info_with(t!("Open a sample or a project (File) or build a model from the ribbon."), &[]);
         app
@@ -314,7 +318,25 @@ impl EmcraftApp {
     /// Makes the app's theme and language the thread's current ones.
     pub fn use_theme(&self) {
         theme::set(self.themes.get(&self.theme));
-        lang::set(self.prefs.language());
+        lang::set(self.language);
+    }
+
+    /// Draws the window in the preferred language when a font shows it, else in English with
+    /// one message saying what is missing; gives `ctx` the fonts.
+    fn use_language(&mut self, ctx: &egui::Context) {
+        let wanted = lang::find(self.prefs.language()).map_or(lang::ENGLISH, |l| l.id);
+        self.fonts.set_file(self.prefs.font_file.as_ref().map(std::path::PathBuf::from));
+        let shown = if self.fonts.shows(wanted) { wanted } else { lang::ENGLISH };
+        if shown != wanted && self.fonts.report(wanted) {
+            let name = lang::find(wanted).map_or(wanted, |l| l.name.as_str()).to_owned();
+            let missing = match self.fonts.state(wanted) {
+                Some(fonts::State::Missing(n)) => *n,
+                _ => 0,
+            };
+            self.error_with(t!("No font shows {language} ({n} characters missing): the window stays in English. Install one (Linux: fonts-noto-cjk) or choose a font file in Settings ▸ Language."), args!(language = name, n = missing));
+        }
+        self.language = shown;
+        self.fonts.install(ctx, shown);
     }
 
     /// Keeps the preferences in step with the window and writes them when they change.
@@ -351,9 +373,9 @@ impl EmcraftApp {
         if self.ctx.as_ref() != Some(ctx) {
             self.ctx = Some(ctx.clone());
         }
+        self.use_language(ctx);
         self.use_theme();
         theme::apply(ctx);
-        self.fonts.install(ctx);
         self.poll_job();
         files::poll(self);
         control::serve(self, ctx);
@@ -585,7 +607,6 @@ pub fn run_with(sample: Option<String>, host: Host, control: impl FnOnce(&egui::
     let create = |cc: &eframe::CreationContext<'_>| -> Result<Box<dyn eframe::App>, Box<dyn std::error::Error + Send + Sync>> {
         let (sample, host, control) = start.borrow_mut().take().ok_or("the window was already made")?;
         let mut app = EmcraftApp::for_host(sample.as_deref(), host);
-        app.fonts.look_for_installed(&cc.egui_ctx);
         app.control.rx = control(&cc.egui_ctx);
         if let Some(rs) = &cc.wgpu_render_state
             && let Err(e) = gpu3d::install(rs, &cc.egui_ctx)

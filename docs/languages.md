@@ -37,23 +37,24 @@ changes at once and the choice is kept with the preferences (`language` in `pref
   mode`, `settings:language:ja`) are made from the English and the ids whatever is shown, so
   scenarios and agents work in any language. A browser row keeps its English (`Row::text`, its
   handle and key) beside what is shown (`Row::shown`).
-- **The font**: egui's own fonts have no Japanese, so a Japanese font is installed after them
-  as a fallback (both families, both languages, so Japanese file and project names show too).
-  The window looks on a thread at start for one installed on the system
-  (`crates/ui-egui/src/fonts/system.rs`): by family — Windows "Yu Gothic UI", "Yu Gothic",
+- **The font**: egui's own fonts have no Japanese, so the window shows Japanese with a font of
+  the system's (`crates/ui-egui/src/fonts/system.rs`, `fontdb`: the system's font folders, on
+  Linux those fontconfig names) or a font file chosen in Settings ▸ Language (kept with the
+  preferences): the chosen file first, then by family — Windows "Yu Gothic UI", "Yu Gothic",
   "Meiryo UI", "Meiryo", "MS UI Gothic", "MS Gothic"; macOS "Hiragino Sans", "Hiragino Kaku
   Gothic ProN"; Linux "Noto Sans CJK JP", "Noto Sans JP", "IPAexGothic", "IPAGothic",
-  "TakaoGothic", "VL Gothic" — regular weight first, else any face that shows "設定日本語";
-  collections (`.ttc`) by face. The search reads only each file's table directory, names and
-  `OS/2`, within caps on folders, files and bytes (about 25 ms for 400 font files). Until it
-  ends, and where it finds nothing, the window uses the embedded subset of Noto Sans JP Regular
-  (`crates/ui-egui/fonts/`, SIL Open Font License 1.1, under 1 MB): ASCII, Latin-1, general
-  punctuation, kana and half-width forms, CJK symbols and full-width forms, JIS X 0208's
-  symbols and first-level kanji, and every character of `ja.json` (a test fails otherwise;
-  `cargo xtask font-subset` remakes it from the full font in `fonts/full/`). The headless
-  harness and `ui.render` use the embedded subset alone, so their pictures are the same on
-  every machine; `ui.inspect`'s `font.japanese` names the font in use (an installed family, or
-  `embedded subset`).
+  "TakaoGothic", "VL Gothic" — regular weight upright first, else any face; a face is taken
+  when it shows every kana, kanji and full-width character of the translation
+  (`lang::script_chars`), 400 faces looked at most (about 0.15 s for 470 faces), and only when
+  the window is in a language that needs it. **Nothing is embedded**: where no font shows the
+  language, the window stays in English and says once what is missing, what to install
+  (Linux: `fonts-noto-cjk`) and that a font file can be chosen; Settings ▸ Language shows the
+  font in use or the same error, the file field and Look again. `ui.inspect`'s `font` names
+  the family in use. The tests draw with a subset of Noto Sans JP Regular
+  (`crates/ui-egui/fonts/`, SIL Open Font License 1.1; `cargo xtask font-subset` remakes it from
+  `fonts/full/`, a test checks it holds every character of `ja.json`) and never the machine's
+  fonts, so the headless scenarios and `ui.render` draw the same on every machine; it is not in
+  the app.
 - **The current language belongs to the thread** drawing the frame (`lang::set`, as the theme
   does), so tests drawing apps on threads of their own keep their own.
 

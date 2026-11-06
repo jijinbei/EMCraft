@@ -175,10 +175,47 @@ fn appearance(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     }
 }
 
+/// The font the language is shown with, or why it is not shown; a font file to choose.
+fn font(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
+    let t = &Tokens::get();
+    let wanted = app.prefs.language();
+    ui.add_space(t.space_6);
+    match app.fonts.state(wanted) {
+        Some(crate::fonts::State::Found(family)) => {
+            ui.text(Style::SmallDim, trf(t!("Font: {family}"), args!(family = family)));
+        }
+        Some(crate::fonts::State::Missing(n)) => {
+            let name = crate::lang::find(wanted).map_or(wanted, |l| l.name.as_str());
+            crate::ui_kit::small(
+                ui,
+                trf(
+                    t!(
+                        "No font shows {language} ({n} characters missing): the window stays in English. Install one (Linux: fonts-noto-cjk) or choose a font file."
+                    ),
+                    args!(language = name, n = n),
+                ),
+                t.form_error,
+            );
+        }
+        Some(crate::fonts::State::NotNeeded) | None => {}
+    }
+    ui.horizontal(|ui| {
+        let mut path = app.prefs.font_file.clone().unwrap_or_default();
+        ui.text(Style::SmallDim, t!("Font file"));
+        let r = ui.named(egui::TextEdit::singleline(&mut path).desired_width(260.0).hint_text(tr(t!("the system's fonts"))), Fixed::FontFile.into());
+        if r.lost_focus() && Some(path.trim()) != app.prefs.font_file.as_deref() {
+            let file = Some(path.trim().to_owned()).filter(|p| !p.is_empty());
+            out.push(Action::Pref(Pref::FontFile(file)));
+        }
+        ui.act(true, egui::Button::new(tr(t!("Look again"))), Fixed::FontSearch.into(), || Action::Pref(Pref::SearchFonts), out);
+    });
+}
+
 fn language(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     heading(ui, t!("Language"), t!("The language of the window. It changes at once."));
     let list: Vec<(&str, &str, &str)> = crate::lang::languages().iter().map(|l| (l.id, l.name.as_str(), l.id)).collect();
     choices(ui, out, "language", app.prefs.language(), &list, |id| Action::Pref(Pref::Language(id.to_owned())));
+    font(app, ui, out);
     gap(ui);
     heading(
         ui,

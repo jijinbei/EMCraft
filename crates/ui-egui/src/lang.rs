@@ -231,6 +231,20 @@ pub(crate) fn lookup(english: &str) -> &str {
     found.map_or(english, String::as_str)
 }
 
+/// The characters of language `id`'s translation that egui's own fonts lack — kana, kanji,
+/// hangul, full-width forms — which its font must show; sorted, each once; none for English.
+pub fn script_chars(id: &str) -> Vec<char> {
+    let Some(l) = find(id).filter(|l| l.id != ENGLISH) else { return Vec::new() };
+    let cjk = |c: &char| matches!(*c as u32, 0x3000..=0x9FFF | 0xAC00..=0xD7AF | 0xF900..=0xFAFF | 0xFF00..=0xFFEF);
+    let texts = l
+        .strings
+        .values()
+        .chain(l.samples.values())
+        .chain(l.commands.values().flat_map(|c| std::iter::once(&c.label).chain(std::iter::once(&c.doc)).chain(c.params.values())));
+    let set: BTreeSet<char> = texts.flat_map(|t| t.chars()).filter(cjk).collect();
+    set.into_iter().collect()
+}
+
 /// A `named_enum!`'s label in the current language.
 pub fn shown<T: emcraft_macros::Named>(x: T) -> &'static str {
     lookup(x.label())

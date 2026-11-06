@@ -154,7 +154,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "themes": app.themes.names(),
         "theme_problems": app.themes.problems,
         "language": app.prefs.language(),
-        "font": {"japanese": app.fonts.in_use()},
+        "font": app.fonts.in_use(app.language),
         "languages": crate::lang::ids(),
         "home": app.page.home(),
         "template": app.template.as_ref().map(super::template_dialog::TemplateDialog::inspect),

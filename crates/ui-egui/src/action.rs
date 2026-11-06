@@ -125,6 +125,10 @@ pub enum Pref {
     Theme(String),
     /// The window's language, by id (`en`, `ja`).
     Language(String),
+    /// A font file to show the language with (none: the system's fonts only).
+    FontFile(Option<String>),
+    /// Looks for the system's fonts again.
+    SearchFonts,
     /// Reads the themes again (the user's from their folder).
     ReloadThemes,
     /// The 3D view's mouse mapping, by id.
@@ -370,10 +374,19 @@ impl EmcraftApp {
             Pref::Language(id) => match crate::lang::find(&id) {
                 Some(l) => {
                     l.id.clone_into(&mut self.prefs.language);
+                    self.language = if self.fonts.shows(l.id) { l.id } else { crate::lang::ENGLISH };
                     self.use_theme();
                 }
                 None => self.error(format!("no language `{}` (there are {})", crate::lang::clip_id(&id), crate::lang::ids().join(", "))),
             },
+            Pref::FontFile(file) => {
+                self.prefs.font_file = file.map(|f| f.chars().take(4096).collect());
+                self.fonts.set_file(self.prefs.font_file.as_ref().map(std::path::PathBuf::from));
+                if self.fonts.file_loaded() == Some(false) {
+                    self.error_with(t!("No font in {path}"), args!(path = self.prefs.font_file.clone().unwrap_or_default()));
+                }
+            }
+            Pref::SearchFonts => self.fonts.search_again(),
             Pref::ReloadThemes => self.load_themes(self.themes.dir.clone()),
             Pref::Navigation(id) => match crate::navigation::NAV_PRESETS.iter().find(|p| p.id == id) {
                 Some(p) => self.prefs.navigation = p.id.into(),

@@ -770,8 +770,14 @@ fn in_source() -> BTreeSet<String> {
             } else if p.extension().is_some_and(|x| x == "rs") {
                 let text = std::fs::read_to_string(&p).unwrap_or_default();
                 let mut rest = text.as_str();
-                while let Some(i) = rest.find("t!(\"").or_else(|| rest.find("text!(\"").map(|i| i + 3)) {
-                    rest = &rest[i + 4..];
+                // `t!(` or `text!(`, then the literal (rustfmt may put it on the next line).
+                while let Some(i) = rest.find("t!(") {
+                    let after = rest[i + 3..].trim_start();
+                    let Some(body) = after.strip_prefix('"') else {
+                        rest = &rest[i + 3..];
+                        continue;
+                    };
+                    rest = body;
                     let mut lit = String::new();
                     let mut chars = rest.char_indices();
                     let mut end = rest.len();

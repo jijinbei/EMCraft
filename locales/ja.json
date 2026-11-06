@@ -991,7 +991,14 @@
     "needs a mesh (step 6)": "メッシュが必要です（ステップ 6）",
     "largest σ(S)": "σ(S) の最大値",
     "max |S − S^T|": "|S − S^T| の最大値",
-    "cross z": "z 断面"
+    "cross z": "z 断面",
+    "No font shows {language} ({n} characters missing): the window stays in English. Install one (Linux: fonts-noto-cjk) or choose a font file in Settings ▸ Language.": "{language} を表示できるフォントがありません（{n} 字が不足）。ウィンドウは英語のままです。フォントを入れるか（Linux: fonts-noto-cjk）、設定 ▸ 言語でフォントファイルを選んでください。",
+    "No font shows {language} ({n} characters missing): the window stays in English. Install one (Linux: fonts-noto-cjk) or choose a font file.": "{language} を表示できるフォントがありません（{n} 字が不足）。ウィンドウは英語のままです。フォントを入れるか（Linux: fonts-noto-cjk）、フォントファイルを選んでください。",
+    "No font in {path}": "{path} にフォントがありません",
+    "Font: {family}": "フォント：{family}",
+    "Font file": "フォントファイル",
+    "the system's fonts": "システムのフォント",
+    "Look again": "もう一度探す"
   },
   "commands": {
     "project.setup": {
