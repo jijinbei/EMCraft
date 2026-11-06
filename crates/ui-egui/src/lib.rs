@@ -98,6 +98,7 @@ pub mod view;
 pub mod view3d;
 pub mod view_cube;
 pub mod viewport;
+pub mod window_system;
 pub mod worker;
 
 use std::collections::VecDeque;
@@ -621,6 +622,8 @@ pub fn run_with(sample: Option<String>, host: Host, control: impl FnOnce(&egui::
         // The window's pass: one sample, no depth (the 3D view draws offscreen, gpu3d).
         multisampling: 0,
         depth_buffer: 0,
+        // X11 where a Wayland desktop has XWayland: files dropped on the window arrive.
+        event_loop_builder: window_system::hook(),
         ..Default::default()
     };
     let create = |cc: &eframe::CreationContext<'_>| -> Result<Box<dyn eframe::App>, Box<dyn std::error::Error + Send + Sync>> {

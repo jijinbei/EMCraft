@@ -25,6 +25,12 @@ serde = { workspace = true }
 ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
 fontdb = "0.24"
 
+# The window on Linux: X11 (XWayland under a Wayland desktop) by default, where files dropped
+# on the window arrive; winit's Wayland backend has no drag and drop (already in the build
+# through eframe, the same version).
+[target.'cfg(target_os = "linux")'.dependencies]
+winit = { version = "0.30", default-features = false, features = ["x11", "wayland"] }
+
 [dev-dependencies]
 approx = { workspace = true }
 rstest = { workspace = true }

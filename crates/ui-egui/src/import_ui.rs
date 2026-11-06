@@ -92,7 +92,9 @@ pub(crate) fn body(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, asked: &
     let empty = text(d, "path").is_empty();
     let pick = ui.named_enabled(!app.busy(), ui_kit::glyph_button(Glyph::OpenFile, t!("Choose file…"), empty), Fixed::DialogPick.into());
     asked.ask(crate::dialog_ui::Asked::Pick, pick.hint(t!("A SolidCraft design (.solidcraft), 3MF or STL")).clicked());
-    ui.vertical_centered(|ui| ui_kit::small(ui, t!("or drop it on the window"), t.text_dim));
+    if crate::window_system::drops_files() {
+        ui.vertical_centered(|ui| ui_kit::small(ui, t!("or drop it on the window"), t.text_dim));
+    }
     ui.add_space(t.space_4);
     let mut drawn = crate::dialog_ui::fields(ui, d, session, &|n| n == "path", &|n| Raw(crate::lang::lookup(short(n))));
     match probe.map(|p| &p.reply) {
