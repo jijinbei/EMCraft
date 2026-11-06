@@ -283,8 +283,7 @@ impl EmcraftApp {
             Action::OpenStep(step) => crate::steps::open_step(self, step),
             Action::Fix(command) => crate::steps::fix(self, &command)?,
             Action::Select { row, picks } => {
-                self.browser.selected = row;
-                self.view3d.selected = picks;
+                self.view3d.selected = crate::selection::Selection::of(picks, row);
             }
             Action::Fold(section) => {
                 if self.browser.folded.contains(&section) {
@@ -314,7 +313,6 @@ impl EmcraftApp {
             Action::EditItem(item) => self.open_item_dialog(&item)?,
             Action::DeleteItems(items) => {
                 // What was selected is going.
-                self.browser.selected = None;
                 self.view3d.selected.clear();
                 let mut replies = Vec::with_capacity(items.len());
                 // An imported part's walls are not deleted: their material changes.

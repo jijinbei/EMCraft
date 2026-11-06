@@ -418,11 +418,11 @@ fn tour() -> Record {
         // Several parts selected: the card says how many.
         let picks: Vec<_> = crate::browser::tree(&h.app).into_iter().flat_map(|(_, rows)| rows).filter_map(|r| r.pick).take(2).collect();
         if picks.len() == 2 {
-            h.app.view3d.selected = picks;
+            h.app.view3d.selected = crate::selection::Selection::of(picks, None);
             h.frames(2);
         }
         if let Some((row, pick)) = picked {
-            (h.app.browser.selected, h.app.view3d.selected) = (Some(row), pick.into_iter().collect());
+            h.app.view3d.selected = crate::selection::Selection::of(pick.into_iter().collect(), Some(row));
         }
         // A row's right-click menu: Edit, Delete, Show in 3D.
         let menu = crate::browser::tree(&h.app)

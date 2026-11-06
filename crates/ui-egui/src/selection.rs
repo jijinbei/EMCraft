@@ -107,21 +107,118 @@ pub fn boxed(scene: &Scene, camera: &Camera, w: f64, h: f64, bx: BoxSel) -> Vec<
         .collect()
 }
 
-/// `picks` added to `selection` (in their order, each once).
-pub fn add(selection: &mut Vec<Pick>, picks: &[Pick]) {
-    for p in picks {
-        if !selection.contains(p) {
-            selection.push(*p);
+/// What is selected — the one selection of the window: parts of the model (in the 3D view and
+/// as their browser rows), or a browser row that has no part (a boundary, the mesh). Written
+/// only through its methods, so the two never disagree.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Selection {
+    parts: Vec<Pick>,
+    row: Option<String>,
+}
+
+impl std::ops::Deref for Selection {
+    type Target = [Pick];
+    fn deref(&self) -> &[Pick] {
+        &self.parts
+    }
+}
+
+impl Selection {
+    /// `parts`, the browser row of the last one `row` (its key), or a row with no part.
+    pub fn of(parts: Vec<Pick>, row: Option<String>) -> Selection {
+        Selection { parts, row }
+    }
+
+    /// The browser row selected (`section/text`): the last part's, or a row with no part.
+    pub fn row(&self) -> Option<&str> {
+        self.row.as_deref()
+    }
+
+    /// Whether nothing at all is selected.
+    pub fn is_clear(&self) -> bool {
+        self.parts.is_empty() && self.row.is_none()
+    }
+
+    pub fn clear(&mut self) {
+        self.parts.clear();
+        self.row = None;
+    }
+
+    /// `picks` added (in their order, each once).
+    pub fn add(&mut self, picks: &[Pick]) {
+        for p in picks {
+            if !self.parts.contains(p) {
+                self.parts.push(*p);
+            }
+        }
+    }
+
+    /// `pick` taken out when it is in, else added at the end.
+    pub fn toggle(&mut self, pick: Pick) {
+        if self.parts.contains(&pick) {
+            self.parts.retain(|p| *p != pick);
+        } else {
+            self.parts.push(pick);
         }
     }
 }
 
-/// `pick` taken out of `selection` when it is in, else added at the end.
-pub fn toggle(selection: &mut Vec<Pick>, pick: Pick) {
-    if selection.contains(&pick) {
-        selection.retain(|p| *p != pick);
-    } else {
-        selection.push(pick);
+/// A click in the 3D view while no tool is on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Click {
+    /// One click on `pick` (`None`: empty space); `add`: Shift or Ctrl held.
+    Single { pick: Option<Pick>, add: bool },
+    /// A double click.
+    Double { pick: Option<Pick> },
+}
+
+/// What a click asks of the view besides the selection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Then {
+    Nothing,
+    /// Fit the model to the view.
+    Fit,
+    /// Edit the part picked (its row's edit).
+    Edit,
+}
+
+/// The selection's rules, one table: a click picks what is under it (Shift or Ctrl adds or
+/// takes it away), on empty space clears; a double click on a part picks it alone to edit it,
+/// on empty space clears and fits the view.
+///
+/// ```
+/// use emcraft_ui_egui::selection::{Click, Selection, Then, step};
+/// use emcraft_ui_egui::scene3d::Pick;
+///
+/// let mut s = Selection::default();
+/// assert_eq!(step(&mut s, Click::Single { pick: Some(Pick::Guide), add: false }), Then::Nothing);
+/// assert_eq!(&s[..], [Pick::Guide]);
+/// step(&mut s, Click::Single { pick: Some(Pick::Port(0)), add: true });
+/// assert_eq!(&s[..], [Pick::Guide, Pick::Port(0)]);
+/// step(&mut s, Click::Single { pick: None, add: false });
+/// assert!(s.is_clear());
+/// assert_eq!(step(&mut s, Click::Double { pick: None }), Then::Fit);
+/// ```
+pub fn step(selection: &mut Selection, click: Click) -> Then {
+    match click {
+        Click::Double { pick: Some(p) } => {
+            *selection = Selection::of(vec![p], None);
+            Then::Edit
+        }
+        Click::Double { pick: None } => {
+            selection.clear();
+            Then::Fit
+        }
+        Click::Single { pick: Some(p), add: true } => {
+            selection.row = None;
+            selection.toggle(p);
+            Then::Nothing
+        }
+        Click::Single { pick: None, add: true } => Then::Nothing,
+        Click::Single { pick, add: false } => {
+            *selection = Selection::of(pick.into_iter().collect(), None);
+            Then::Nothing
+        }
     }
 }
 
@@ -201,12 +298,12 @@ mod tests {
 
     #[test]
     fn adding_and_toggling_keep_the_order() {
-        let mut sel = vec![Pick::Port(1)];
-        add(&mut sel, &[Pick::Port(0), Pick::Port(1), Pick::Solid]);
-        assert_eq!(sel, vec![Pick::Port(1), Pick::Port(0), Pick::Solid]);
-        toggle(&mut sel, Pick::Port(0));
-        assert_eq!(sel, vec![Pick::Port(1), Pick::Solid]);
-        toggle(&mut sel, Pick::Port(0));
-        assert_eq!(sel, vec![Pick::Port(1), Pick::Solid, Pick::Port(0)]);
+        let mut sel = Selection::of(vec![Pick::Port(1)], None);
+        sel.add(&[Pick::Port(0), Pick::Port(1), Pick::Solid]);
+        assert_eq!(&sel[..], [Pick::Port(1), Pick::Port(0), Pick::Solid]);
+        sel.toggle(Pick::Port(0));
+        assert_eq!(&sel[..], [Pick::Port(1), Pick::Solid]);
+        sel.toggle(Pick::Port(0));
+        assert_eq!(&sel[..], [Pick::Port(1), Pick::Solid, Pick::Port(0)]);
     }
 }

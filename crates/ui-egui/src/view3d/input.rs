@@ -356,20 +356,19 @@ impl Nav<'_> {
         }
         let Some(pos) = resp.interact_pointer_pos() else { return false };
         let pick = v.pick_at(ui.ctx(), self.rect, pos);
-        match (resp.double_clicked(), self.mods.shift || self.ctrl, pick) {
-            (true, _, Some(p)) => {
-                v.selected = vec![p];
-                return true;
-            }
-            (true, _, None) => {
-                v.selected.clear();
+        let click = if resp.double_clicked() {
+            selection::Click::Double { pick }
+        } else {
+            selection::Click::Single { pick, add: self.mods.shift || self.ctrl }
+        };
+        match selection::step(&mut v.selected, click) {
+            selection::Then::Edit => true,
+            selection::Then::Fit => {
                 v.goal = Some(Goal::Fit);
+                false
             }
-            (false, true, Some(p)) => selection::toggle(&mut v.selected, p),
-            (false, true, None) => {}
-            (false, false, p) => v.selected = p.into_iter().collect(),
+            selection::Then::Nothing => false,
         }
-        false
     }
 }
 
@@ -382,7 +381,7 @@ pub(super) fn box_select(v: &mut View3d, rect: Rect, b: BoxSel, add: bool) {
     if !add {
         v.selected.clear();
     }
-    selection::add(&mut v.selected, &picks);
+    v.selected.add(&picks);
 }
 
 /// The selection box: by window a solid outline, by crossing a dashed one in another colour, as

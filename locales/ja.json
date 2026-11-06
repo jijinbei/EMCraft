@@ -1043,7 +1043,8 @@
     "Symmetry planes across {axes}: an eigenmode search solves each combination of their walls on {share} of the model and merges the modes.": "{axes} の対称面を設定しました：固有モード解析は、壁の組み合わせごとにモデルの {share} を解き、モードをまとめます。",
     "Found but not set: {list}.": "見つかったが設定しなかったもの：{list}。",
     "Dispersion along {axis}": "{axis} 方向の分散",
-    "Close the settings": "設定を閉じる"
+    "Close the settings": "設定を閉じる",
+    "Escape or a click on empty space ends it": "Esc か何もない所のクリックで終了"
   },
   "commands": {
     "project.setup": {

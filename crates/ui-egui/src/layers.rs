@@ -46,7 +46,7 @@ pub fn stack(app: &EmcraftApp) -> Vec<Layer> {
         Layer::Pen => app.views.pcb.drawing.is_some(),
         Layer::Box => app.view3d.boxsel.is_some(),
         Layer::Tool => app.view3d.tools.tool.is_some() || app.view3d.tools.measured.is_some(),
-        Layer::Selection => !app.view3d.selected.is_empty() || app.browser.selected.is_some(),
+        Layer::Selection => !app.view3d.selected.is_clear(),
     };
     Layer::ALL.into_iter().filter(|l| open(*l)).collect()
 }
@@ -108,7 +108,6 @@ pub(crate) fn close(app: &mut EmcraftApp, layer: Layer) -> Option<Action> {
         Layer::Tool => app.view3d.tools.escape(),
         Layer::Selection => {
             app.view3d.selected.clear();
-            app.browser.selected = None;
         }
     }
     None

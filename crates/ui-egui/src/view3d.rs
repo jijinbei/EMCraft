@@ -129,7 +129,7 @@ pub struct View3d {
     pub fit_next: bool,
     /// What is selected (by a click or a box in the view, or on its browser rows), in the order
     /// it was, highlighted; the last is the one a click took last.
-    pub selected: Vec<scene3d::Pick>,
+    pub selected: crate::selection::Selection,
     /// The box being dragged (a plain left drag), in screen points.
     pub boxsel: Option<BoxSel>,
     /// What a row elsewhere (the port-mode table) points at while hovered: highlighted for one
@@ -191,7 +191,7 @@ impl Default for View3d {
             last_size: [0, 0],
             dragging: false,
             fit_next: false,
-            selected: Vec::new(),
+            selected: crate::selection::Selection::default(),
             boxsel: None,
             hover: None,
             drawn_on_gpu: false,
@@ -509,7 +509,7 @@ pub fn show(app: &EmcraftApp, st: &mut crate::viewport::Parts, ui: &mut egui::Ui
     }
     let picked = picked_rows(app, v);
     if edit.select {
-        out.push(Action::Select { row: picked.last().map(|(k, _)| k.clone()), picks: v.selected.clone() });
+        out.push(Action::Select { row: picked.last().map(|(k, _)| k.clone()), picks: v.selected.to_vec() });
     }
     let single = picked.first().filter(|_| v.single().is_some());
     if edit.double
@@ -566,6 +566,8 @@ pub fn show(app: &EmcraftApp, st: &mut crate::viewport::Parts, ui: &mut egui::Ui
     }
     let bar = NavBar { facing, standalone: app.place.view() != crate::View::Field, playing: field.player.playing, ports: overlay == Overlay::Ports };
     bar.show(v, ui, rect, bounds, out);
+    // A tool on: the band saying so, over the picture.
+    crate::tools3d::banner(v, ui, rect);
     if v.section.is_some() && app.place.view() != crate::View::Field {
         section_bar(v, ui, rect, bounds, app.session.display().length);
     }
@@ -735,7 +737,7 @@ fn picked_rows(app: &EmcraftApp, v: &mut View3d) -> Vec<(String, crate::browser:
     if v.selected.is_empty() {
         return Vec::new();
     }
-    let key = (app.revision, v.selected.clone());
+    let key = (app.revision, v.selected.to_vec());
     if v.picked.as_ref().is_none_or(|(k, _)| *k != key) {
         let rows = crate::browser::rows_of(app, &key.1);
         v.picked = Some((key, rows));
@@ -781,7 +783,13 @@ fn tools(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, rect: Rect, edit: &Ges
     }
     crate::tools3d::hover(app, v, rect, ui.input(|i| i.pointer.hover_pos()));
     if edit.tool_click && !app.busy() {
-        crate::tools3d::click(app, v, out);
+        // On empty space — nothing under the pointer for the tool, not even a snap — a click
+        // ends the tool, as Escape does; else it is the tool's.
+        if v.tools.hover.is_none() {
+            out.push(Action::Tool(None));
+        } else {
+            crate::tools3d::click(app, v, out);
+        }
     }
 }
 

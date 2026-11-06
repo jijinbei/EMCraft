@@ -22,11 +22,10 @@ use crate::scene3d::Pick;
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, Style, UiExt, View, scenario};
 
-/// Folded sections and the selected row.
+/// Folded sections (what is selected is the window's one selection: `View3d::selected`).
 #[derive(Clone, Debug, Default)]
 pub struct Browser {
     pub folded: Vec<String>,
-    pub selected: Option<String>,
 }
 
 /// What a row does.
@@ -252,7 +251,7 @@ pub fn selected_items(app: &EmcraftApp) -> Vec<Item> {
 fn row_selected(app: &EmcraftApp, key: &str, r: &Row) -> bool {
     match r.pick {
         Some(p) => app.view3d.selected.contains(&p),
-        None => app.browser.selected.as_deref() == Some(key),
+        None => app.view3d.selected.row() == Some(key),
     }
 }
 
@@ -733,9 +732,9 @@ fn browser_row(app: &EmcraftApp, ui: &mut egui::Ui, section: &str, r: &Row, out_
         && let Some(p) = r.pick
     {
         let mut picks = app.view3d.selected.clone();
-        crate::selection::toggle(&mut picks, p);
+        picks.toggle(p);
         let row = rows_of(app, &picks).pop().map(|(k, _)| k);
-        out.push(Action::Select { row, picks });
+        out.push(Action::Select { row, picks: picks.to_vec() });
     } else if resp.clicked() {
         out.push(Action::Select { row: Some(key.clone()), picks: r.pick.into_iter().collect() });
         match &r.act {
@@ -837,7 +836,7 @@ fn row_menu(app: &EmcraftApp, r: &Row, key: &str, ui: &mut egui::Ui, out: &mut A
 /// Delete deletes the items of the parts selected in 3D, else the selected row's (when no field
 /// takes the key and nothing asks).
 fn delete_key(app: &EmcraftApp, ui: &egui::Ui, tree: &[(&'static str, Vec<Row>)], out: &mut Actions) {
-    if app.browser.selected.is_none() && app.view3d.selected.is_empty() {
+    if app.view3d.selected.is_clear() {
         return;
     }
     if app.busy() || app.dialog.is_some() || app.ask.is_some() || ui.ctx().text_edit_focused() {
@@ -851,7 +850,7 @@ fn delete_key(app: &EmcraftApp, ui: &egui::Ui, tree: &[(&'static str, Vec<Row>)]
         out.push(Action::DeleteItems(picked));
         return;
     }
-    let Some(selected) = &app.browser.selected else { return };
+    let Some(selected) = app.view3d.selected.row() else { return };
     let item = tree.iter().flat_map(|(s, rows)| rows.iter().map(move |r| (s, r))).find(|(s, r)| format!("{s}/{}", r.text) == *selected);
     if let Some(item) = item.and_then(|(_, r)| r.item.clone()) {
         out.push(Action::DeleteItems(vec![item]));

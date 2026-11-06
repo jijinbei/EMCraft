@@ -24,6 +24,8 @@ emcraft_macros::named_enum! {
         // The application bar and its menus.
         /// The settings' tab's close mark (the tabs are `Handle::Tab`).
         TabSettingsClose = "tab:settings:close",
+        /// The band over the 3D view while a tool is on.
+        View3dToolBanner = "view3d:tool_banner",
         BarSettings = "bar:settings",
         /// The language's font file and its search again (Settings ▸ Language).
         FontFile = "settings:font_file",

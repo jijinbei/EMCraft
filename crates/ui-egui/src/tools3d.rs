@@ -479,6 +479,19 @@ fn shown(l: emcraft_model::units::Length, p: [f64; 3]) -> Value {
     json!(p.map(|c| neat(l, c)))
 }
 
+/// While a tool is on, a band over the 3D view says so: what it does and how to leave it.
+pub fn banner(v: &View3d, ui: &egui::Ui, rect: Rect) {
+    let Some(tool) = v.tools.tool else { return };
+    let t = &crate::theme::Tokens::get();
+    let text = format!("{}  ·  {}", tr(tool.hint()), tr(t!("Escape or a click on empty space ends it")));
+    let p = ui.painter_at(rect);
+    let g = p.layout_no_wrap(text, FontId::proportional(t.font_small), t.on_accent);
+    let r = Rect::from_center_size(pos2(rect.center().x, rect.bottom() - 62.0), g.size() + vec2(20.0, 10.0));
+    p.rect_filled(r, 10.0, t.accent.gamma_multiply(0.92));
+    p.galley(r.min + vec2(10.0, 5.0), g, t.on_accent);
+    crate::scenario::publish_target(crate::handle::Fixed::View3dToolBanner, r);
+}
+
 /// A click with a tool on: what it asks for.
 pub fn click(app: &EmcraftApp, v: &mut View3d, out: &mut Actions) {
     let (Some(tool), Some(hover)) = (v.tools.tool, v.tools.hover.clone()) else { return };

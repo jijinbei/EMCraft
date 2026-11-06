@@ -54,6 +54,11 @@ fn scenario_section_view() {
 }
 
 #[test]
+fn scenario_tool_mode() {
+    scenario("tool_mode");
+}
+
+#[test]
 fn scenario_escape_layers() {
     scenario("escape_layers");
 }
