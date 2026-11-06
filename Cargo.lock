@@ -2375,6 +2375,7 @@ dependencies = [
  "emcraft-render",
  "fontdb",
  "naga",
+ "rstest",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
