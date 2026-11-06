@@ -1,6 +1,6 @@
 # ADR 0005: Geometry as bodies in an automatic region
 
-Status: proposed (2026-11-06).
+Status: accepted (2026-11-06).
 
 ## Context
 
@@ -67,9 +67,14 @@ where nothing is. Dimensions are typed as numbers only.
   checked on `ui.inspect`), the step bar its new order; the Japanese texts follow.
 - Templates keep working: each sets its region today, which reads as pinned.
 
-## Open questions
+## Settled
 
-- A closed device whose housing is not drawn (a filter given as its air volume, as the
-  waveguide templates are): the region is that volume — kept as it is today, pinned.
-- Whether a dielectric body may cross the region's boundary (a substrate to the box's walls):
-  today inclusions must lie inside; the region would then clip it.
+- **A closed device given as its air volume** (the waveguide templates, a filter drawn as its
+  cavity): an *interior* body — inside it is solved, everything outside it is metal. It is the
+  closed rule's special case (the inside drawn instead of the metal round it), lets the user draw
+  the cavity's dimensions without a housing's thickness, and is what `geometry.solid` means:
+  today's templates read as one interior body.
+- **A dielectric reaching the region's boundary** (a substrate to the box's walls, or into the
+  layer as an unbounded one): allowed, clipped by the region. First it is clipped with a warning
+  in the reply; the mesher's support for an interface meeting the wall (and a dielectric inside
+  the layer, whose tensor takes the material) comes after the automatic region and the handles.
