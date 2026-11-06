@@ -713,3 +713,17 @@ fn every_wall_eigenmodes_are_the_wholes() {
     );
     assert_eq!(back.modes[k].vector.len(), back.driven_of(&back.modes[k]).dofs.unknowns);
 }
+
+/// Regression: a periodic cell set up for its eigenmodes (the dispersion templates) failed to
+/// run: solve.run called solve.eigenmodes, which a cell's phase-dependent modes refuse. It runs
+/// its dispersion diagram, the bands up to the same shift.
+#[test]
+fn a_periodic_cells_eigenmodes_run_as_its_dispersion() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "dispersion-corrugated"})).unwrap();
+    s.execute("project.setup", &json!({"kind": "eigenmodes", "frequency": 10, "count": 3, "order": 1})).unwrap();
+    s.execute("mesh.generate", &json!({"size": 4})).unwrap();
+    let r = s.execute("solve.run", &json!({})).unwrap();
+    assert_eq!(r["run"]["command"], "solve.dispersion", "{r}");
+    assert_eq!(r["run"]["params"]["bands"], 3);
+}

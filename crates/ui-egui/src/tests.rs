@@ -54,6 +54,11 @@ fn scenario_section_view() {
 }
 
 #[test]
+fn scenario_port_far_end() {
+    scenario("port_far_end");
+}
+
+#[test]
 fn scenario_setup_proposal() {
     scenario("setup_proposal");
 }

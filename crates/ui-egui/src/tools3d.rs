@@ -432,9 +432,17 @@ fn over(app: &EmcraftApp, v: &View3d, tool: Tool, rect: Rect, at: Option<Pos2>, 
     let hit = match hits {
         None => None,
         Some((near, solid)) if tool == Tool::Port => {
-            let air = m.open.is_some() && Pick::from_tag(near.tag) == Some(Pick::Solid);
-            let usable = !air && face_of(&near).is_some_and(|f| !matches!(port_target(m, &f), PortTarget::No(_)));
-            Some(if usable { near } else { solid.unwrap_or(near) })
+            let air = |h: &view3d::Hit| m.open.is_some() && Pick::from_tag(h.tag) == Some(Pick::Solid);
+            let mut usable = |h: &view3d::Hit| !air(h) && face_of(h).is_some_and(|f| !matches!(port_target(m, &f), PortTarget::No(_)));
+            if usable(&near) {
+                Some(near)
+            } else {
+                // Behind see-through faces (a guide's sides in front of its far end): the first
+                // face along the ray a port may go on, else what shows through.
+                let ray = v.camera.ray(f64::from(p.x - rect.left()), f64::from(p.y - rect.top()), w, h);
+                let behind = ray.map(|r| emcraft_render::view3d::hits_in_order(&scene.scene, r, 32)).unwrap_or_default();
+                Some(behind.into_iter().find(|h| usable(h)).unwrap_or_else(|| solid.unwrap_or(near)))
+            }
         }
         Some((near, solid)) => Some(solid.unwrap_or(near)),
     };

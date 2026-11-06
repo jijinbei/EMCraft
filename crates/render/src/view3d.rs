@@ -305,6 +305,20 @@ pub fn hits_along(scene: &Scene, (origin, dir): ([f64; 3], [f64; 3])) -> Option<
     any.map(|a| (at(a), solid.map(at)))
 }
 
+/// Every tagged triangle along the ray `(origin, dir)`, nearest first, `most` at most (a scan
+/// of every triangle): what lies behind see-through faces, for a tool that looks for the first
+/// face it may use.
+pub fn hits_in_order(scene: &Scene, (origin, dir): ([f64; 3], [f64; 3]), most: usize) -> Vec<Hit> {
+    let mut found: Vec<(f64, usize)> =
+        scene.tris.iter().enumerate().filter(|(_, t)| t.tag != 0).filter_map(|(i, t)| hit(origin, dir, t).map(|d| (d, i))).collect();
+    found.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    found.truncate(most);
+    found
+        .into_iter()
+        .map(|(d, i)| Hit { index: i, at: [origin[0] + dir[0] * d, origin[1] + dir[1] * d, origin[2] + dir[2] * d], tag: scene.tris[i].tag })
+        .collect()
+}
+
 /// The nearest triangle along the ray `(origin, dir)` whose tag `keep` takes (a scan of every
 /// triangle): what lies behind see-through parts a picker passes over.
 pub fn nearest_where(scene: &Scene, (origin, dir): ([f64; 3], [f64; 3]), keep: impl Fn(u32) -> bool) -> Option<Hit> {
