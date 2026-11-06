@@ -323,9 +323,17 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         // The metal bodies are the cavity's walls now; the others are placed in it.
         let metal = |b: &emcraft_io::Surface| material_of(&materials, &b.name) == crate::bodies::METAL;
         placed.extend(bodies.iter().filter(|b| metal(b)).map(|b| json!({"body": b.name, "material": crate::bodies::METAL, "as": "walls"})));
-        imported.extend(
-            bodies.iter().filter(|b| metal(b)).map(|b| emcraft_model::PartBody { name: b.name.clone(), material: crate::bodies::METAL.into() }),
-        );
+        imported.extend(bodies.iter().filter(|b| metal(b)).map(|b| emcraft_model::PartBody {
+            name: b.name.clone(),
+            material: crate::bodies::METAL.into(),
+            shape: Some(Shape::Surface {
+                name: b.name.clone(),
+                positions: b.positions.clone(),
+                triangles: b.triangles.clone(),
+                tags: b.tags.clone(),
+                surfaces: Vec::new(),
+            }),
+        }));
         let keep: Vec<bool> = bodies.iter().map(|b| !metal(b)).collect();
         retain_kept(&mut bodies, &keep);
         retain_kept(&mut sources, &keep);
@@ -342,7 +350,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
             return Err(p.error("materials", format!("`{}` is the region: its filling is `material`", body.name)));
         }
         placed.push(json!({"body": body.name, "material": crate::bodies::INTERIOR, "as": "region"}));
-        imported.push(emcraft_model::PartBody { name: body.name.clone(), material: crate::bodies::INTERIOR.into() });
+        imported.push(emcraft_model::PartBody { name: body.name.clone(), material: crate::bodies::INTERIOR.into(), shape: None });
         let source = sources.remove(k);
         let known = exact.as_mut().map(|e| e.remove(k));
         s.model.set_solid(Solid { shape: surface(body, &source, fit, known.as_deref(), &mut fitted), material: material.clone() })?;

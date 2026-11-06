@@ -153,11 +153,15 @@ impl Default for Model {
 }
 
 /// An imported part's body read as the region's walls or as the region ([`Model::imported`]).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PartBody {
     pub name: String,
     /// `metal` (walls) or `interior` (the region).
     pub material: String,
+    /// A wall's surface where the region lies, for the window to draw the part round its air;
+    /// not solved, not saved (the import is in the history).
+    #[serde(skip)]
+    pub shape: Option<crate::shape::Shape>,
 }
 
 impl Model {

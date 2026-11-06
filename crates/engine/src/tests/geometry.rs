@@ -120,7 +120,7 @@ fn imported_surfaces_mesh_and_carry_ports() {
     // Drawn as its air: the body is the region.
     let r = s.execute("geometry.import", &json!({"path": path, "materials": {"guide.stl": "interior"}})).unwrap();
     assert_eq!(r["region"], "guide.stl", "{r}");
-    assert_eq!(s.model.imported, vec![emcraft_model::PartBody { name: "guide.stl".into(), material: "interior".into() }]);
+    assert_eq!(s.model.imported, vec![emcraft_model::PartBody { name: "guide.stl".into(), material: "interior".into(), shape: None }]);
     assert_eq!(r["faces"], 6);
     approx::assert_abs_diff_eq!(r["volume"].as_f64().unwrap(), 22.5e-3 * 10e-3 * 30e-3, epsilon = 1e-15);
     s.execute("mesh.generate", &json!({"size": 3})).unwrap();
@@ -593,7 +593,9 @@ fn an_imported_part_is_metal_and_its_material_changes_the_region() {
     let channel = 22.86 * 10.16 * 32.0 - 2.0 * 5.43 * 10.16 * 2.0;
     let volume = |s: &Session| s.model.solid.as_ref().unwrap().shape.volume() * 1e9;
     assert!((volume(&s) - channel).abs() < 1e-6 * channel);
-    assert_eq!(s.model.imported, vec![emcraft_model::PartBody { name: "Block".into(), material: "metal".into() }]);
+    assert_eq!((s.model.imported.len(), s.model.imported[0].name.as_str(), s.model.imported[0].material.as_str()), (1, "Block", "metal"));
+    // The block is kept to be drawn round its channel.
+    assert!(matches!(s.model.imported[0].shape, Some(emcraft_model::Shape::Surface { .. })));
     s.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
     let v = s.execute("project.values", &json!({"command": "geometry.body.material", "body": "Block"})).unwrap();
     assert_eq!(v, json!({"body": "Block", "material": "metal"}));
