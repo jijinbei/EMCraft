@@ -355,6 +355,24 @@ A rectangular waveguide along z (`width` × `height`, perfectly conducting walls
 | `feed` | number | length | yes | the guide's length before the first iris and after the last |
 | `material` | string |  | no | what fills it (default `vacuum`) |
 
+## `model.region` — Region
+
+How the region the model is solved in is set: `auto` — the box round its bodies, sources, lumped ports and port faces, grown by `margin` of background and lined by a perfectly matched layer `thickness` thick (each a quarter of the wavelength at the band's top unless given), following the model as it changes (the first body placed with no region starts one); or `pinned` — kept as it is (as geometry.solid and imports set it). An automatic region's waveguide ports lie on faces inside it.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `mode` | string |  | yes | `auto` or `pinned` |
+| `margin` | number | length | no | the background round the bodies (auto) |
+| `thickness` | number | length | no | the layer's thickness (auto) |
+
+## `model.background` — Background
+
+What fills the model where no body is: a material by name (vacuum by default), the region's material. A body of it put inside metal gives the metal's inside back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `material` | string |  | yes | the material's name |
+
 ## `geometry.solid` — Primitive body
 
 A body of one material with conducting walls, meshed with unstructured tetrahedra: a box [0, x] × [0, y] × [0, z] (`size`), a cylinder about z from z = 0 (`radius`, `length`), a sphere about the origin (`radius`), a prism, the simple polygon `points` of the plane z = 0 extruded to z = `length` (the outline of a bend, a mitred corner or a junction of guides), or a revolved body, the profile `points` [r, z] turned about z in `sides` facets (a horn, a taper, a lens; a body of revolution's own). Its end faces (z = 0, z = length) can carry ports, and so can its other flat faces across x, y or z (model.port.create with `face` and `axis`); a closed body is a cavity for `solve.eigenmodes`. Replaces any geometry, mesh and results.

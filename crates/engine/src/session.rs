@@ -561,8 +561,15 @@ impl Session {
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| emcraft_solver::accel::with(accelerator, || (spec.run)(self, &reader))));
         let error = match outcome {
             Ok(Ok(reply)) => {
-                self.commit(spec, params, before, Ran { seconds: started.elapsed().as_secs_f64(), reply: &reply });
-                return Ok(reply);
+                // An automatic region follows every change to what it holds (ADR 0005).
+                let refreshed = if matches!(spec.effect, Effect::Record | Effect::Adjust) { self.model.refresh_region().map(|_| ()) } else { Ok(()) };
+                match refreshed {
+                    Ok(()) => {
+                        self.commit(spec, params, before, Ran { seconds: started.elapsed().as_secs_f64(), reply: &reply });
+                        return Ok(reply);
+                    }
+                    Err(e) => e.into(),
+                }
             }
             Ok(Err(e)) => e,
             Err(_) => EngineError::Panicked(spec.id.to_owned()),

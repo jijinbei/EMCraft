@@ -76,6 +76,14 @@ pub struct Model {
     /// Rotational symmetry: the model is meshed and solved on one sector of it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rotation: Option<crate::symmetry::rotation::Rotation>,
+    /// How the region is set: pinned as the solid was, or automatic round what the model holds
+    /// ([`crate::region`]).
+    #[serde(default, skip_serializing_if = "is_pinned")]
+    pub region: crate::region::Region,
+    /// The background an automatic region is filled with before it has a solid (vacuum when
+    /// none); the region's material once it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<String>,
     /// The mesh of the waveguide (made by `emcraft-mesh`), shared: the copies of the model a
     /// session keeps to undo to share it rather than copy it.
     #[serde(skip)]
@@ -130,6 +138,8 @@ impl Default for Model {
             symmetry: Vec::new(),
             periodic: None,
             rotation: None,
+            region: crate::region::Region::Pinned,
+            background: None,
             mesh: None,
         }
     }
@@ -169,6 +179,8 @@ impl Model {
         self.material(&s.material)?;
         self.solid = Some(s);
         self.waveguide = None;
+        // A region set is pinned (ADR 0005).
+        self.region = crate::region::Region::Pinned;
         self.drop_what_fits_the_old_geometry();
         Ok(())
     }
@@ -403,6 +415,11 @@ impl Model {
         }
         issues
     }
+}
+
+/// Whether a region is pinned (left out of a saved model, as models before regions were).
+fn is_pinned(r: &crate::region::Region) -> bool {
+    *r == crate::region::Region::Pinned
 }
 
 #[cfg(test)]

@@ -573,6 +573,45 @@ pub fn feature(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"features": s.model.features.len()}))
 }
 
+/// `model.region`: the region automatic round what the model holds (`auto`, its `margin` and
+/// layer `thickness` a quarter wavelength at the band's top unless given) or pinned as it is.
+pub fn region(s: &mut Session, p: &Params) -> Result<Value> {
+    let mode = p.string("mode").required()?;
+    match mode {
+        "auto" => {
+            s.model.region = emcraft_model::Region::Auto { margin: p.metres("margin").optional()?, thickness: p.metres("thickness").optional()? };
+            s.model.refresh_region()?;
+        }
+        "pinned" => {
+            if p.has("margin") || p.has("thickness") {
+                return Err(p.error("margin", "and `thickness` are an automatic region's"));
+            }
+            s.model.region = emcraft_model::Region::Pinned;
+        }
+        other => return Err(p.error("mode", format!("must be `auto` or `pinned`, got `{}`", crate::text::clip(other, 40)))),
+    }
+    let b = s.model.solid.as_ref().and_then(|x| x.shape.box_bounds());
+    let l = |v: f64| s.display.length.from_si(v);
+    Ok(json!({
+        "mode": mode,
+        "box": b.map(|b| json!([[l(b.min.x), l(b.min.y), l(b.min.z)], [l(b.max.x), l(b.max.y), l(b.max.z)]])),
+        "layer": s.model.open.map(|o| l(o.thickness.get())),
+    }))
+}
+
+/// `model.background`: what fills the model where no body is (vacuum by default) — the
+/// region's material.
+pub fn background(s: &mut Session, p: &Params) -> Result<Value> {
+    let name = p.string("material").required()?;
+    s.model.material(name)?;
+    s.model.background = Some(name.to_owned());
+    if let Some(solid) = s.model.solid.as_mut() {
+        name.clone_into(&mut solid.material);
+        s.model.mesh = None;
+    }
+    Ok(json!({"background": name}))
+}
+
 pub fn solid(s: &mut Session, p: &Params) -> Result<Value> {
     s.model.set_solid(Solid { shape: shape(p)?, material: p.string("material").or("vacuum")?.to_owned() })?;
     Ok(json!({"volume": s.model.solid.as_ref().map(|x| x.shape.volume())}))

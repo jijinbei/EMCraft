@@ -68,11 +68,14 @@ pub enum Placed {
 /// Places a body of `material` in the model: metal as a subtracted feature, the region's
 /// material as an added one, another material as an inclusion.
 pub(crate) fn place(m: &mut Model, shape: Shape, at: Point3, axis: Axis, material: &str) -> Result<Placed> {
-    let region = m
-        .solid
-        .as_ref()
-        .map(|s| s.material.clone())
-        .ok_or_else(|| EngineError::failed("a body needs a region to lie in: geometry.solid or geometry.import"))?;
+    // The first body with no region: the region is automatic round the bodies (ADR 0005); an
+    // automatic region grows to hold the body before it is placed.
+    if m.solid.is_none() {
+        m.region = emcraft_model::Region::Auto { margin: None, thickness: None };
+    }
+    let reach = Feature { combine: Combine::Add, shape: shape.clone(), at, axis }.bounds();
+    m.refresh_region_with(Some(reach))?;
+    let region = m.solid.as_ref().map(|s| s.material.clone()).ok_or_else(|| EngineError::failed("a body needs a region to lie in"))?;
     if material == METAL {
         m.add_feature(Feature { combine: Combine::Subtract, shape, at, axis })?;
         Ok(Placed::Metal)

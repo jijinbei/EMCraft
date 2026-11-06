@@ -57,6 +57,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("model.material.delete", None, Some(Glyph::Material), false),
     ui("geometry.waveguide", Some("Waveguide"), Some(Glyph::Waveguide), false),
     ui("geometry.iris_filter", Some("Iris filter"), Some(Glyph::Waveguide), false),
+    ui("model.region", None, Some(Glyph::Box), true),
+    ui("model.background", None, Some(Glyph::Box), true),
     ui("geometry.solid", Some("Region"), Some(Glyph::Box), false),
     ui("geometry.import", Some("Import"), Some(Glyph::Import), true),
     ui("geometry.import.inspect", None, Some(Glyph::Import), false),

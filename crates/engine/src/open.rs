@@ -44,6 +44,13 @@ pub fn source_dipole(s: &mut Session, p: &Params) -> Result<Value> {
         length: p.metres("length").required()?,
         current: p.number("current").or(1.0)?,
     };
+    // With no region yet, an automatic one round it (ADR 0005).
+    if s.model.solid.is_none() {
+        s.model.region = emcraft_model::Region::Auto { margin: None, thickness: None };
+    }
+    if let Some(at) = dipole.position() {
+        s.model.refresh_region_with(Some(emcraft_model::Aabb::point(at)))?;
+    }
     s.model.add_source(dipole)?;
     Ok(json!({"sources": s.model.sources.len()}))
 }
