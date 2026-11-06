@@ -182,7 +182,10 @@ pub(super) fn tangential_trace(values: &[Vec3], frame: Frame) -> Vec<bool> {
 }
 
 /// A port's boundary faces: those tagged for its end, or those on its face's rectangle (all
-/// three corners on the plane and inside the rectangle, to a millionth of its size).
+/// three corners on the plane and inside the rectangle, to a millionth of its size or of the
+/// mesh's, whichever is larger: an imported cavity's walls lie up to a ten-millionth of the
+/// part's size off their drawn place, `emcraft_mesh::cavity`, and a port on a small channel of
+/// a long part is given at the drawn numbers).
 pub(super) fn faces_of_port(mesh: &Mesh, p: &Port) -> Result<Vec<usize>> {
     let out: Vec<usize> = match &p.face {
         None => {
@@ -193,7 +196,8 @@ pub(super) fn faces_of_port(mesh: &Mesh, p: &Port) -> Result<Vec<usize>> {
             (0..mesh.boundary.len()).filter(|&i| mesh.boundary[i].tag == tag).collect()
         }
         Some(f) => {
-            let tol = 1e-6 * f.a.max(f.b.get());
+            let extent = emcraft_model::geom::Aabb::around(mesh.nodes.iter().copied()).map_or(0.0, |b| (b.max - b.min).norm());
+            let tol = 1e-6 * f.a.max(f.b.get()).max(extent);
             (0..mesh.boundary.len())
                 .filter(|&i| mesh.boundary[i].nodes.iter().all(|n| mesh.nodes.get(*n as usize).is_some_and(|q| f.holds(*q, tol))))
                 .collect()

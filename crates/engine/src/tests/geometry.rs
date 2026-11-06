@@ -572,3 +572,30 @@ fn measure_reads_and_answers_in_display_units_and_changes_nothing() {
         assert!(s.execute("geometry.measure", &bad).is_err(), "{bad}");
     }
 }
+
+/// Regression: a part drawn lying down — a 10 × 100 × 10 mm block, a 5 × 5 mm channel through it
+/// along y — read as a cavity (its channel's axis found, y), the ports given on its ends at the
+/// drawn numbers. The cavity's walls lie a few nanometres off them (its general-position moves),
+/// beyond a millionth of the 5 mm port: the port lost its edge triangles and S21 fell to −19 dB.
+/// An empty straight guide passes everything: |S21| = 1 (TE10 above its 30 GHz cut-off).
+#[test]
+fn a_cavity_along_y_takes_ports_at_its_drawn_numbers() {
+    let path = scratch("channel-y.3mf");
+    let walls = [
+        named_box("Left", [-0.005, -0.05, 0.0], [-0.0025, 0.05, 0.01]),
+        named_box("Right", [0.0025, -0.05, 0.0], [0.005, 0.05, 0.01]),
+        named_box("Floor", [-0.0025, -0.05, 0.0], [0.0025, 0.05, 0.0025]),
+        named_box("Roof", [-0.0025, -0.05, 0.0075], [0.0025, 0.05, 0.01]),
+    ];
+    std::fs::write(&path, emcraft_io::threemf::write(&walls).unwrap()).unwrap();
+    let mut s = Session::new();
+    let r = s.execute("geometry.import", &json!({"path": path, "region": "cavity"})).unwrap();
+    assert_eq!(r["pieces"]["axis"], "y", "{r}");
+    // Moved to the origin: the channel x 2.5..7.5, y 0..100, z 2.5..7.5.
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "axis": "y", "face": [0, 2.5, 2.5, 5, 5]})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "axis": "y", "face": [100, 2.5, 2.5, 5, 5]})).unwrap();
+    s.execute("mesh.generate", &json!({"size": 1.5})).unwrap();
+    let r = s.execute("solve.frequency", &json!({"frequencies": [40], "order": 2})).unwrap();
+    let s21 = r["points"][0]["s21"]["mag"].as_f64().unwrap();
+    assert!((s21 - 1.0).abs() < 0.01, "{r}");
+}

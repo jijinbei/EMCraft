@@ -320,7 +320,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     let bounds = s.model.bounds().unwrap_or_default();
     let unit = s.display.length.to_si(1.0);
     let pieces = cavity
-        .map(|c: emcraft_mesh::cavity::Cavity| json!({"kept": c.kept.iter().map(|v| v / unit.powi(3)).collect::<Vec<_>>(), "dropped": c.dropped}));
+        .map(|c: emcraft_mesh::cavity::Cavity| json!({"kept": c.kept.iter().map(|v| v / unit.powi(3)).collect::<Vec<_>>(), "dropped": c.dropped, "axis": (["x", "y", "z"].get(c.axis).copied().unwrap_or("z"))}));
     Ok(json!({
         "triangles": triangles,
         "faces": faces,
@@ -413,7 +413,7 @@ emcraft_macros::named_enum! {
 emcraft_macros::named_serde!(Keep);
 
 /// `region: cavity`: the metal bodies' bounding box less them, the pieces of air they enclose
-/// across x and y kept (`emcraft_mesh::cavity`), made the region; the bodies (all of them, the
+/// across the two axes other than the channel's kept (`emcraft_mesh::cavity`), made the region; the bodies (all of them, the
 /// other materials' too) moved with the box to the origin. Records the metal bodies in `placed`.
 fn enclosed_air(
     s: &mut Session,

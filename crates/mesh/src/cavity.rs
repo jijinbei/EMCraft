@@ -3,11 +3,12 @@
 //! air inside it.
 //!
 //! The rule: the region is the bodies' bounding box less the bodies, split into its connected
-//! pieces, and a piece is kept when the metal encloses it across x and y — it reaches none of the
-//! box's four side faces (x or y lowest or highest). A piece may reach the box's lowest and
-//! highest z faces: a channel open at both ends, where the ports go. A piece that reaches a side
-//! face is air around the part, there only because the part is not a box (a flange's corners, a
-//! step in its outline), and is dropped. Every kept piece stays ([`Keep::Enclosed`]), or the
+//! pieces, and a piece is kept when the metal encloses it across two axes — it reaches the box's
+//! faces across the third, the channel's axis, only. There it may reach the lowest and highest
+//! face: a channel open at both ends, where the ports go. The channel's axis is the one whose
+//! pieces so open hold the most air (z on a tie, then y, then x); a piece reaching any other face
+//! is air around the part, there only because the part is not a box (a flange's corners, a step
+//! in its outline), and is dropped. Every kept piece stays ([`Keep::Enclosed`]), or the
 //! largest alone ([`Keep::Largest`]: a part with blind screw holes beside its channel, say). A
 //! metal body floating in a kept piece (a post standing free) is a hole in it.
 //!
@@ -27,7 +28,7 @@ use crate::{MeshError, Result};
 /// Which of the enclosed pieces of air are kept.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Keep {
-    /// Every piece of air the metal encloses across x and y.
+    /// Every piece of air the metal encloses across the two axes other than the channel's.
     #[default]
     Enclosed,
     /// The largest of them.
@@ -36,19 +37,21 @@ pub enum Keep {
 
 /// The enclosed air: its closed surface (outward from the air; the box's faces tagged 0..6 —
 /// x low, x high, y low, y high, z low, z high — the bodies' after them, each body's tags
-/// following the last's), the volume of each piece kept and how many pieces were dropped.
+/// following the last's), the volume of each piece kept, how many pieces were dropped and the
+/// channel's axis (0 x, 1 y, 2 z: the box's faces the air reaches lie across it).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Cavity {
     pub surface: Surface,
     pub kept: Vec<f64>,
     pub dropped: usize,
+    pub axis: usize,
 }
 
 fn fail(why: impl Into<String>) -> MeshError {
     MeshError::invalid("cavity", why)
 }
 
-const NO_AIR: &str = "the bodies enclose no air: every piece of air between them reaches a side (x or y) of their bounding box — is the part closed around its channel?";
+const NO_AIR: &str = "the bodies enclose no air: every piece of air between them reaches the sides of their bounding box across two axes — is the part closed around its channel?";
 
 /// The most bodies a cavity is cut from.
 pub const MAX_BODIES: usize = 1000;
@@ -101,12 +104,12 @@ pub fn cavity(bodies: &[(String, Surface)], keep: Keep) -> Result<Cavity> {
     pieces(&air, keep)
 }
 
-/// A connected part of a surface: its triangles, signed volume and whether it reaches a side
-/// face of the box.
+/// A connected part of a surface: its triangles, signed volume and the box's faces it reaches
+/// (bit k for tag k).
 struct Shell {
     triangles: Vec<usize>,
     volume: f64,
-    side: bool,
+    faces: u8,
 }
 
 /// The surface's shells (triangles joined by edges), in the order of their first triangle.
@@ -128,13 +131,15 @@ fn shells(s: &Surface) -> Vec<Shell> {
     for (i, t) in s.triangles.iter().enumerate() {
         let r = sets.find(i);
         let k = *index.entry(r).or_insert_with(|| {
-            out.push(Shell { triangles: Vec::new(), volume: 0.0, side: false });
+            out.push(Shell { triangles: Vec::new(), volume: 0.0, faces: 0 });
             out.len() - 1
         });
         let p = |v: u32| s.positions.get(v as usize).copied().unwrap_or(Point3::ORIGIN).to_vec();
         out[k].triangles.push(i);
         out[k].volume += emcraft_model::geom::triple(p(t[0]), p(t[1]), p(t[2])) / 6.0;
-        out[k].side |= s.tags.get(i).is_some_and(|tag| *tag < 4);
+        if let Some(tag) = s.tags.get(i).filter(|tag| **tag < 6) {
+            out[k].faces |= 1 << tag;
+        }
     }
     out
 }
@@ -165,8 +170,12 @@ fn pieces(air: &Surface, keep: Keep) -> Result<Cavity> {
             .filter(|&q| shell_winding(air, &shells[q], p) > 0.5)
             .min_by(|&a, &b| shells[a].volume.total_cmp(&shells[b].volume).then(a.cmp(&b)));
     }
-    let enclosed: Vec<usize> = pieces.iter().copied().filter(|&q| !shells[q].side).collect();
     let volume = |q: usize| -> f64 { shells.iter().zip(&owner).filter(|(_, o)| **o == Some(q)).map(|(s, _)| s.volume).sum() };
+    // The channel's axis: the one whose open pieces (reaching its faces only) hold the most air.
+    let across = |q: usize, d: usize| shells[q].faces & !(0b11 << (2 * d)) == 0;
+    let open = |d: usize| -> f64 { pieces.iter().filter(|&&q| shells[q].faces != 0 && across(q, d)).map(|&q| volume(q)).sum() };
+    let axis = [2, 1, 0].into_iter().max_by(|&a, &b| open(a).total_cmp(&open(b)).then(a.cmp(&b))).unwrap_or(2);
+    let enclosed: Vec<usize> = pieces.iter().copied().filter(|&q| across(q, axis)).collect();
     let kept: Vec<usize> = match keep {
         Keep::Enclosed => enclosed,
         Keep::Largest => enclosed.iter().copied().max_by(|&a, &b| volume(a).total_cmp(&volume(b)).then(b.cmp(&a))).into_iter().collect(),
@@ -200,7 +209,7 @@ fn pieces(air: &Surface, keep: Keep) -> Result<Cavity> {
         surface.triangles.push(ids);
         surface.tags.push(air.tags.get(t).copied().unwrap_or(0));
     }
-    Ok(Cavity { surface, kept: kept.iter().map(|&q| volume(q)).collect(), dropped: pieces.len() - kept.len() })
+    Ok(Cavity { surface, kept: kept.iter().map(|&q| volume(q)).collect(), dropped: pieces.len() - kept.len(), axis })
 }
 
 #[cfg(test)]
@@ -239,6 +248,7 @@ mod tests {
     #[test]
     fn a_channel_through_a_block_is_the_region() {
         let c = cavity(&block(), Keep::Enclosed).unwrap();
+        assert_eq!(c.axis, 2);
         let (a, b, l) = (22.86, 10.16, 32.0);
         let exact = a * b * l - 2.0 * 5.43 * b * 2.0;
         assert!((volume(&c.surface) - exact).abs() < 1e-6 * exact, "{}", volume(&c.surface));
@@ -260,6 +270,35 @@ mod tests {
         // No side face of the box is left; the surface is the air's own, and few triangles.
         assert!(c.surface.tags.iter().all(|t| *t >= 4));
         assert!(c.surface.triangles.len() < 100, "{}", c.surface.triangles.len());
+    }
+
+    /// A 10 × 100 × 10 block with a 5 × 5 channel milled through it along y (a SolidCraft part
+    /// drawn lying down): the channel is the region, its ends on the box's y faces. Exact: the
+    /// channel's volume 5 · 5 · 100 = 2500, its two openings 25 each.
+    #[test]
+    fn a_channel_along_y_is_the_region() {
+        let bodies: Vec<(String, Surface)> = vec![
+            ("Left".into(), cube([-5.0, -50.0, 0.0], [-2.5, 50.0, 10.0])),
+            ("Right".into(), cube([2.5, -50.0, 0.0], [5.0, 50.0, 10.0])),
+            ("Floor".into(), cube([-2.5, -50.0, 0.0], [2.5, 50.0, 2.5])),
+            ("Roof".into(), cube([-2.5, -50.0, 7.5], [2.5, 50.0, 10.0])),
+        ];
+        let c = cavity(&bodies, Keep::Enclosed).unwrap();
+        assert_eq!((c.axis, c.kept.len(), c.dropped), (1, 1, 0));
+        assert!((volume(&c.surface) - 2500.0).abs() < 1e-6 * 2500.0, "{}", volume(&c.surface));
+        let ends: f64 = c
+            .surface
+            .triangles
+            .iter()
+            .zip(&c.surface.tags)
+            .filter(|(_, t)| **t == 2 || **t == 3)
+            .map(|(t, _)| {
+                let [p, q, r] = t.map(|v| c.surface.positions[v as usize]);
+                0.5 * (q - p).cross(r - p).norm()
+            })
+            .sum();
+        assert!((ends - 50.0).abs() < 1e-6 * 50.0, "{ends}");
+        assert!(c.surface.tags.iter().all(|t| !matches!(t, 0 | 1 | 4 | 5)));
     }
 
     #[test]
