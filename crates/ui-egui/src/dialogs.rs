@@ -505,7 +505,7 @@ pub fn initial(command: &str, s: &Session) -> Value {
         "model.material.create" => json!({"name": format!("material{}", s.model().materials.len()), "eps_r": 2.2}),
         "geometry.solid" => json!({"shape": "box", "size": [22.86, 10.16, 30]}),
         "model.region" => json!({"mode": "auto"}),
-        "model.background" => json!({"material": s.model().solid.as_ref().map_or("vacuum", |x| x.material.as_str())}),
+        "model.background" => json!({"material": s.model().domain.solid.as_ref().map_or("vacuum", |x| x.material.as_str())}),
         "geometry.inclusion" => json!({"shape": "sphere", "radius": 2, "at": [11.43, 5.08, 15]}),
         "geometry.feature" => json!({"combine": "subtract", "shape": "cylinder", "radius": 1.5, "length": 10.16, "at": [11.43, 0, 15], "axis": "y"}),
         "geometry.import" => json!({"angle": 30, "open": false}),
@@ -612,7 +612,7 @@ fn waveguide(s: &Session) -> Value {
 /// The model's periodic boundaries as `model.periodic`'s parameters, or a cell tied across x
 /// and y at normal incidence.
 fn periodic(s: &Session) -> Value {
-    match &s.model().periodic {
+    match &s.model().domain.periodic {
         Some(p) => json!({"x": p.x, "y": p.y, "z": p.z, "theta": p.theta.to_degrees(), "phi": p.phi.to_degrees(),
                           "polarization": if p.polarization == emcraft_model::Polarization::Te { "te" } else { "tm" }}),
         None => json!({"x": true, "y": true, "z": false, "theta": 0, "phi": 0, "polarization": "te"}),
@@ -625,7 +625,7 @@ fn periodic(s: &Session) -> Value {
 fn study(command: &str, s: &Session, band: Option<(f64, f64)>) -> Value {
     let (name, v) = s.variables().iter().next().map_or((None, 1.0), |(n, v)| (Some(n.clone()), *v));
     let spread = |k: f64| if v == 0.0 { k } else { v * (1.0 + k) };
-    let (solve, goal) = if s.model().open.is_some() {
+    let (solve, goal) = if s.model().domain.open.is_some() {
         (json!({"command": "solve.radiation", "params": initial("solve.radiation", s)}), json!({"type": "maximize", "quantity": "radiated_power"}))
     } else if s.model().ports.is_empty() {
         let near = band.map_or(10.0, |(a, z)| 0.5 * (a + z));

@@ -101,7 +101,7 @@ pub fn solve_of(s: &Session, setup: &Setup) -> (&'static str, Value) {
         Setup::TimeDomain { band, points, cell, excite } => ("solve.time_domain", time_domain(s, *band, *points, *cell, excite)),
         // A periodic cell's modes depend on the phase across it: its dispersion diagram, the
         // bands up to the same shift.
-        Setup::Eigenmodes { near, count, order } if s.model.periodic.is_some() => {
+        Setup::Eigenmodes { near, count, order } if s.model.domain.periodic.is_some() => {
             ("solve.dispersion", json!({"near": f(*near), "bands": count.get().min(20), "order": u8::from(*order)}))
         }
         Setup::Eigenmodes { near, count, order } => ("solve.eigenmodes", json!({"near": f(*near), "count": count.get(), "order": u8::from(*order)})),

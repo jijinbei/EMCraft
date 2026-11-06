@@ -36,7 +36,7 @@ impl ExactLine {
 
 /// The exact TE₁₀ line of a waveguide of uniform cross-section.
 pub fn te10_line(session: &Session) -> Result<ExactLine> {
-    if session.model.periodic.is_some() {
+    if session.model.domain.periodic.is_some() {
         return Err(EngineError::failed("not supported yet: exact fields of a periodic cell"));
     }
     let w = session.model.waveguide.as_ref().ok_or_else(|| EngineError::failed("no waveguide"))?;
@@ -132,11 +132,11 @@ impl Reference {
 
 /// The reference the model's S-parameters are compared with, or why it has none.
 pub fn reference(session: &Session) -> Result<Reference> {
-    if session.model.periodic.is_some() {
+    if session.model.domain.periodic.is_some() {
         return crate::periodic::stack_reference(session).map(Reference::Stack);
     }
     if session.model.waveguide.is_none()
-        && let Some(solid) = session.model.solid.as_ref()
+        && let Some(solid) = session.model.domain.solid.as_ref()
     {
         return body_reference(session, solid);
     }
@@ -211,7 +211,7 @@ pub fn section_cutoffs(session: &Session) -> Vec<(f64, String)> {
     let mut out: Vec<(f64, String)> = Vec::new();
     let Some(w) = session.model.waveguide.as_ref() else { return out };
     // A periodic cell's walls are not walls: no guide cut-offs.
-    if session.model.periodic.is_some() {
+    if session.model.domain.periodic.is_some() {
         return out;
     }
     let lu = session.display.length;

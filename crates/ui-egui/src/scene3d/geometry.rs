@@ -137,9 +137,9 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
                 .tagged(Pick::Via(i).tag(), |scene| cuboid(scene, [v.x0, v.y0, v.z0], [v.x0 + v.wx, v.y1, v.z0 + v.wz], sc().metal_dark, 255, true));
         }
     }
-    if let Some(solid) = &m.solid {
+    if let Some(solid) = &m.domain.solid {
         let hollow = !m.inclusions.is_empty() || m.features.iter().any(|f| f.combine != Combine::Add);
-        let alpha = if m.open.is_some() {
+        let alpha = if m.domain.open.is_some() {
             // The air around an open problem.
             20
         } else if see_through || hollow {
@@ -166,8 +166,8 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
             out.scene.tagged(Pick::Inclusion(i).tag(), |scene| shape(scene, &inc.shape, &turned(Axis::Z, inc.at), color, 255));
         }
     }
-    if let Some(t) = m.wall_thickness
-        && m.open.is_none()
+    if let Some(t) = m.domain.wall_thickness
+        && m.domain.open.is_none()
         && let Some(inside) = inside(m)
     {
         super::shell::draw(m, overlay, &inside, t.get(), out);
@@ -193,7 +193,7 @@ fn inside(m: &Model) -> Option<Inside> {
         let b = m.bounds()?;
         return w.plain().then(|| super::shell::guide_box(m, b.min.to_array(), b.max.to_array()));
     }
-    let solid = m.solid.as_ref()?;
+    let solid = m.domain.solid.as_ref()?;
     if !m.features.is_empty() {
         return None;
     }

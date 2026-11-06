@@ -136,13 +136,13 @@ impl BoxGrid {
     /// The grid of the model's box solid at cell size `h`, refusing what the time domain's open
     /// problems do not support.
     fn new(model: &Model, h: f64) -> Result<BoxGrid> {
-        let (Some(open), Some(solid)) = (&model.open, &model.solid) else {
+        let (Some(open), Some(solid)) = (&model.domain.open, &model.domain.solid) else {
             return Err(FdtdError::NotReady("no open boundary: a box solid lined by model.open".into()));
         };
         let Some(size) = solid.shape.box_bounds().filter(|b| b.min == Point3::ORIGIN).map(|b| b.max.to_vec()) else {
             return Err(FdtdError::NotReady("the time domain's open problems need a box solid".into()));
         };
-        if model.wall_conductivity.is_some() {
+        if model.domain.wall_conductivity.is_some() {
             return Err(FdtdError::Unsupported(
                 "walls of finite conductivity in the time domain's open problems (its conductors are perfect; clear model.walls)".into(),
             ));
@@ -1001,7 +1001,7 @@ pub fn radiate(model: &Model, o: &OpenOptions, frequencies: &[f64]) -> Result<Op
 /// [`radiate`] with the leapfrog on `device` (the CPU's threads when `None`).
 pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device: Option<&dyn OpenStepper>) -> Result<OpenRun> {
     // A box off the origin (a block region): solved moved onto it, the Huygens box moved back.
-    if let Some(b) = model.solid.as_ref().and_then(|s| s.shape.box_bounds())
+    if let Some(b) = model.domain.solid.as_ref().and_then(|s| s.shape.box_bounds())
         && b.min != Point3::ORIGIN
     {
         let moved = model.translated(Point3::ORIGIN - b.min).map_err(|e| invalid("model", e.to_string()))?;

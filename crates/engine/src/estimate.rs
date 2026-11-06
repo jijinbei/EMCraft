@@ -217,7 +217,7 @@ fn time_domain(s: &Session, p: &Params) -> Result<Cost> {
     let cell = p.positive_length("cell").or(1e-3)?;
     let b = s.model.bounds().ok_or_else(|| EngineError::failed("no geometry"))?;
     let size = (b.max - b.min).to_array();
-    let open = s.model.open.is_some();
+    let open = s.model.domain.open.is_some();
     // Ten cells of layer on each open side; a guide's feeds along z.
     let pad = if open { [20.0; 3] } else { [0.0, 0.0, 40.0] };
     let cells: f64 = (0..3).map(|k| (size[k] / cell).ceil().max(1.0) + pad[k]).product();

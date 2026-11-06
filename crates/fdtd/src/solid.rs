@@ -134,10 +134,10 @@ pub fn s_parameters_solid(model: &Model, o: &Options, frequencies: &[f64], input
 /// planes' walls keep (they only spare the frequency domain half its unknowns).
 fn refuse_unsupported(model: &Model) -> Result<Aabb> {
     let unsupported = |what: &str| Err(FdtdError::Unsupported(format!("{what} in the time domain's closed solids")));
-    if model.solid.is_none() {
+    if model.domain.solid.is_none() {
         return Err(FdtdError::NotReady("no solid".into()));
     }
-    if model.wall_conductivity.is_some() {
+    if model.domain.wall_conductivity.is_some() {
         return unsupported("walls of finite conductivity (its walls are perfect conductors; leave out model.walls' conductivity)");
     }
     if !model.elements.is_empty() {

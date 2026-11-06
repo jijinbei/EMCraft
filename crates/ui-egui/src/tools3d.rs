@@ -369,7 +369,7 @@ fn port_target(m: &emcraft_model::Model, face: &Face) -> PortTarget {
     }
     let z = face.centre[2];
     let tol = 1e-6 * (b.max.z - b.min.z).abs().max(1e-9);
-    if m.open.is_none() && axis == emcraft_model::Axis::Z {
+    if m.domain.open.is_none() && axis == emcraft_model::Axis::Z {
         let end = if (z - b.min.z.min(0.0)).abs() <= tol {
             Some(End::Start)
         } else if (z - b.max.z).abs() <= tol {
@@ -384,7 +384,7 @@ fn port_target(m: &emcraft_model::Model, face: &Face) -> PortTarget {
             };
         }
     }
-    if m.solid.is_none() {
+    if m.domain.solid.is_none() {
         return PortTarget::No(t!("A port inside the model needs a solid"));
     }
     // A port's own face, where the body's face is found in front of the port's.
@@ -433,7 +433,7 @@ fn over(app: &EmcraftApp, v: &View3d, tool: Tool, rect: Rect, at: Option<Pos2>, 
     let hit = match hits {
         None => None,
         Some((near, solid)) if tool == Tool::Port => {
-            let air = |h: &view3d::Hit| m.open.is_some() && Pick::from_tag(h.tag) == Some(Pick::Solid);
+            let air = |h: &view3d::Hit| m.domain.open.is_some() && Pick::from_tag(h.tag) == Some(Pick::Solid);
             let mut usable = |h: &view3d::Hit| !air(h) && face_of(h).is_some_and(|f| !matches!(port_target(m, &f), PortTarget::No(_)));
             if usable(&near) {
                 Some(near)

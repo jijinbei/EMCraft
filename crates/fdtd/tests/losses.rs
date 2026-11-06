@@ -174,11 +174,11 @@ fn hostile_losses_are_refused_or_stay_stable() {
     let air = || guide(Vec::new(), vec![Section::new(metres(0.02), "vacuum")]);
     // Not a good conductor at the band's top.
     let mut m = air();
-    m.wall_conductivity = Some(emcraft_model::Conductivity::new(1.0).unwrap());
+    m.domain.wall_conductivity = Some(emcraft_model::Conductivity::new(1.0).unwrap());
     assert!(s_parameters(&m, &Options::new(0.003), &[10e9]).is_err());
     // The largest conductivity: the walls all but perfect.
     let mut m = air();
-    m.wall_conductivity = Some(emcraft_model::Conductivity::new(emcraft_model::MAX_CONDUCTIVITY).unwrap());
+    m.domain.wall_conductivity = Some(emcraft_model::Conductivity::new(emcraft_model::MAX_CONDUCTIVITY).unwrap());
     let r = s_parameters(&m, &Options::new(0.003), &[9e9, 11e9]).unwrap();
     assert!((r.s21()[0].norm() - 1.0).abs() < 1e-3, "{:?}", r.s21());
     // The largest loss tangent the model takes: a slab all but metal, stable at the usual step

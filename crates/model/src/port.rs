@@ -388,11 +388,11 @@ impl Model {
         if self.spherical_layer().is_some() {
             return Err(invalid("port", "not supported yet: waveguide ports with a spherical layer (use lumped ports or sources)"));
         }
-        if self.open.is_some() && p.face.is_none() {
+        if self.domain.open.is_some() && p.face.is_none() {
             return Err(invalid("port", "with an open boundary a port goes on a face inside the box (`face`), the box's ends being under the layer"));
         }
         if let Some(f) = &p.face {
-            if self.solid.is_none() {
+            if self.domain.solid.is_none() {
                 return Err(invalid("port", "a port on a face needs a solid (geometry.solid)"));
             }
             f.check()?;
@@ -430,7 +430,7 @@ impl Model {
     /// # Ok::<(), emcraft_model::ModelError>(())
     /// ```
     pub fn openings(&self) -> Vec<(End, PortFace)> {
-        let Some(Solid { shape: Shape::Surface { name, positions, triangles, tags, .. }, .. }) = &self.solid else { return Vec::new() };
+        let Some(Solid { shape: Shape::Surface { name, positions, triangles, tags, .. }, .. }) = &self.domain.solid else { return Vec::new() };
         if name != CAVITY {
             return Vec::new();
         }
@@ -470,7 +470,7 @@ impl Model {
             let Span { start: y0, width: b } = w.aperture_y(i).ok_or_else(no_sections)?;
             return Ok(PortShape::Rect { x0, y0, a, b });
         }
-        let s = self.solid.as_ref().ok_or_else(|| invalid("model", "has no geometry"))?;
+        let s = self.domain.solid.as_ref().ok_or_else(|| invalid("model", "has no geometry"))?;
         // A port needs the end face whole: no feature may reach it.
         let hi = s.shape.bounds().max;
         let plane = match end {
@@ -495,7 +495,7 @@ impl Model {
     /// The material filling the waveguide at a port's end.
     pub fn port_material(&self, end: End) -> Result<&Material> {
         if self.waveguide.is_none()
-            && let Some(s) = &self.solid
+            && let Some(s) = &self.domain.solid
         {
             return Ok(self.material(&s.material)?.1);
         }

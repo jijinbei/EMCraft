@@ -81,7 +81,7 @@ fn a_face_port_given_narrow_side_first_is_read_by_its_broad_side() {
 /// across its arms.
 #[test]
 fn symmetry_planes_are_found_with_the_walls_the_ports_ask_for() {
-    let planes = |s: &crate::Session| s.model().symmetry.iter().map(|q| (q.axis.id(), q.kind.id())).collect::<Vec<_>>();
+    let planes = |s: &crate::Session| s.model().domain.symmetry.iter().map(|q| (q.axis.id(), q.kind.id())).collect::<Vec<_>>();
     let mut s = crate::Session::new();
     s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
     s.execute("model.symmetry.find", &json!({})).unwrap();
@@ -100,7 +100,7 @@ fn symmetry_planes_are_found_with_the_walls_the_ports_ask_for() {
     s.execute("model.symmetry", &json!({"clear": true})).unwrap();
     let e = s.execute("model.symmetry.find", &json!({})).unwrap_err();
     assert!(e.to_string().contains("kind"), "{e}");
-    assert!(s.model().symmetry.is_empty());
+    assert!(s.model().domain.symmetry.is_empty());
     s.execute("model.symmetry.find", &json!({"kind": "magnetic"})).unwrap();
     assert_eq!(planes(&s), [("x", "magnetic"), ("y", "magnetic")]);
 }

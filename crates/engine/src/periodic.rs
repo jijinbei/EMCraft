@@ -28,9 +28,9 @@ fn shown(p: Option<&Periodic>) -> Value {
 pub fn periodic(s: &mut Session, p: &Params) -> Result<Value> {
     if p.flag("clear").or(false)? {
         s.model.set_periodic(None)?;
-        return Ok(shown(s.model.periodic.as_ref()));
+        return Ok(shown(s.model.domain.periodic.as_ref()));
     }
-    let old = s.model.periodic;
+    let old = s.model.domain.periodic;
     let angle = |name: &str, old: f64| -> Result<f64> { Ok(p.number(name).optional()?.map_or(old, f64::to_radians)) };
     let next = Periodic {
         x: p.flag("x").or(old.is_none_or(|o| o.x))?,
@@ -41,11 +41,11 @@ pub fn periodic(s: &mut Session, p: &Params) -> Result<Value> {
         polarization: p.choice("polarization").or(old.map_or(Polarization::Te, |o| o.polarization))?,
     };
     s.model.set_periodic(Some(next))?;
-    Ok(shown(s.model.periodic.as_ref()))
+    Ok(shown(s.model.domain.periodic.as_ref()))
 }
 
 pub fn dispersion(s: &mut Session, p: &Params) -> Result<Value> {
-    let periodic = s.model.periodic.ok_or_else(|| EngineError::failed("no periodic boundaries: set them with model.periodic"))?;
+    let periodic = s.model.domain.periodic.ok_or_else(|| EngineError::failed("no periodic boundaries: set them with model.periodic"))?;
     // Without `axis`: z when the cell is periodic along it, else x, else y.
     let axis = match p.choice::<Axis>("axis").optional()? {
         Some(a) => a.index(),
@@ -89,12 +89,12 @@ pub(crate) fn solved(s: &Session) -> Result<&Dispersion> {
 /// they are.
 pub(crate) fn exact_bands(s: &Session, d: &Dispersion, psi: f64, count: usize, f_max: f64) -> Option<(Vec<f64>, &'static str)> {
     let m = &s.model;
-    let p = m.periodic?;
+    let p = m.domain.periodic?;
     if d.axis != 2 || p.x || p.y {
         return None;
     }
     let w = m.waveguide.as_ref()?;
-    if !(w.uniform() && w.plain() && m.symmetry.is_empty()) {
+    if !(w.uniform() && w.plain() && m.domain.symmetry.is_empty()) {
         return None;
     }
     let mats: Vec<(f64, f64, f64)> = w
@@ -153,7 +153,7 @@ pub(crate) fn dispersion_table(s: &Session) -> Result<Value> {
 /// the transfer-matrix S of the incidence and polarization set.
 pub fn stack_reference(s: &Session) -> Result<emcraft_theory::floquet::Stack> {
     let m = &s.model;
-    let p = m.periodic.ok_or_else(|| EngineError::failed("the model is not periodic"))?;
+    let p = m.domain.periodic.ok_or_else(|| EngineError::failed("the model is not periodic"))?;
     let w = m.waveguide.as_ref().ok_or_else(|| EngineError::failed("no waveguide"))?;
     if !(p.x && p.y && !p.z && w.uniform() && w.plain()) {
         return Err(EngineError::failed("not supported yet: a reference for this periodic cell (one of plane layers periodic in x and y has one)"));
@@ -220,7 +220,7 @@ mod tests {
         s.execute("view.sparameters", &json!({"path": path, "width": 600, "height": 400})).unwrap();
         assert!(std::fs::read(&path).unwrap().len() > 1000);
         s.execute("model.periodic", &json!({"clear": true})).unwrap();
-        assert!(s.model.periodic.is_none() && s.results.sweep.is_none());
+        assert!(s.model.domain.periodic.is_none() && s.results.sweep.is_none());
     }
 
     #[test]

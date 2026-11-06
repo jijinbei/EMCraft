@@ -60,8 +60,8 @@ pub(super) fn from_mesh(session: &emcraft_engine::Session, overlay: Overlay, out
         };
         faces.push((f.nodes, key, air));
     }
-    if let Some(t) = m.wall_thickness
-        && m.open.is_none()
+    if let Some(t) = m.domain.wall_thickness
+        && m.domain.open.is_none()
     {
         let inside = match &m.waveguide {
             Some(_) => {

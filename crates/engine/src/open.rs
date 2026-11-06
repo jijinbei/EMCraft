@@ -45,8 +45,8 @@ pub fn source_dipole(s: &mut Session, p: &Params) -> Result<Value> {
         current: p.number("current").or(1.0)?,
     };
     // With no region yet, an automatic one round it (ADR 0005).
-    if s.model.solid.is_none() {
-        s.model.region = emcraft_model::Region::Auto { margin: None, thickness: None };
+    if s.model.domain.solid.is_none() {
+        s.model.domain.region = emcraft_model::Region::Auto { margin: None, thickness: None };
     }
     if let Some(at) = dipole.position() {
         s.model.refresh_region_with(Some(emcraft_model::Aabb::point(at)))?;
@@ -78,7 +78,7 @@ pub fn port_lumped(s: &mut Session, p: &Params) -> Result<Value> {
 
 /// Whether the region the fields fill is vacuum, as the closed forms take it.
 fn in_vacuum(s: &Session) -> bool {
-    s.model.solid.as_ref().is_some_and(|x| s.model.material(&x.material).is_ok_and(|(_, m)| m.eps_r.get() == 1.0 && m.mu_r.get() == 1.0))
+    s.model.domain.solid.as_ref().is_some_and(|x| s.model.material(&x.material).is_ok_and(|(_, m)| m.eps_r.get() == 1.0 && m.mu_r.get() == 1.0))
 }
 
 /// A centre-fed wire dipole the induced-EMF closed form applies to: two coaxial conducting

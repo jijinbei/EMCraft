@@ -39,7 +39,7 @@ fn exact_resonances(s: &Session) -> Vec<(f64, String)> {
     let m = &s.model;
     // Cut by a symmetry plane, the cavity holds only the modes of one parity: the whole list
     // would mislead.
-    if !m.symmetry.is_empty() {
+    if !m.domain.symmetry.is_empty() {
         return Vec::new();
     }
     if let Some(w) = m.waveguide.as_ref()
@@ -49,7 +49,7 @@ fn exact_resonances(s: &Session) -> Vec<(f64, String)> {
     {
         return emcraft_theory::cavity_resonances(w.width.get(), w.height.get(), w.length(), mat.eps_r.get() * mat.mu_r.get(), 12);
     }
-    if let Some(solid) = m.solid.as_ref()
+    if let Some(solid) = m.domain.solid.as_ref()
         && m.inclusions.is_empty()
         && m.features.is_empty()
         && let Ok((_, mat)) = m.material(&solid.material)

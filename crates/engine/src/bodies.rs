@@ -35,7 +35,7 @@ pub struct Body {
 
 /// The model's bodies, features then inclusions, in the order they were placed.
 pub fn bodies(m: &Model) -> Vec<Body> {
-    let region = m.solid.as_ref().map_or("vacuum", |s| s.material.as_str());
+    let region = m.domain.solid.as_ref().map_or("vacuum", |s| s.material.as_str());
     let name = |shape: &Shape, n: usize| match shape {
         Shape::Surface { name, .. } if !name.is_empty() => name.clone(),
         _ => format!("body {n}"),
@@ -94,26 +94,27 @@ pub(crate) fn place(m: &mut Model, shape: Shape, at: Point3, axis: Axis, materia
         let shape = interior_shape(shape, at, axis)?;
         shape.check()?;
         let filling = m
+            .domain
             .solid
             .as_ref()
             .map(|s| s.material.clone())
-            .or_else(|| m.background.clone())
+            .or_else(|| m.domain.background.clone())
             .unwrap_or_else(|| emcraft_model::region::BACKGROUND.to_owned());
-        m.solid = Some(emcraft_model::Solid { shape, material: filling });
-        m.region = emcraft_model::Region::Pinned;
-        m.open = None;
+        m.domain.solid = Some(emcraft_model::Solid { shape, material: filling });
+        m.domain.region = emcraft_model::Region::Pinned;
+        m.domain.open = None;
         m.waveguide = None;
         m.mesh = None;
         return Ok(Placed::Interior);
     }
     // The first body with no region: the region is automatic round the bodies (ADR 0005); an
     // automatic region grows to hold the body before it is placed.
-    if m.solid.is_none() {
-        m.region = emcraft_model::Region::Auto { margin: None, thickness: None };
+    if m.domain.solid.is_none() {
+        m.domain.region = emcraft_model::Region::Auto { margin: None, thickness: None };
     }
     let reach = Feature { combine: Combine::Add, shape: shape.clone(), at, axis }.bounds();
     m.refresh_region_with(Some(reach))?;
-    let region = m.solid.as_ref().map(|s| s.material.clone()).ok_or_else(|| EngineError::failed("a body needs a region to lie in"))?;
+    let region = m.domain.solid.as_ref().map(|s| s.material.clone()).ok_or_else(|| EngineError::failed("a body needs a region to lie in"))?;
     if material == METAL {
         m.add_feature(Feature { combine: Combine::Subtract, shape, at, axis })?;
         Ok(Placed::Metal)
@@ -247,7 +248,7 @@ pub fn body_edit(s: &mut Session, p: &Params) -> Result<Value> {
     let shape = edited_shape(p, &old_shape)?;
     let at = p.edit_point("at", old_at)?;
     let axis: Axis = p.choice("axis").or(old_axis)?;
-    let region = s.model.solid.as_ref().map(|x| x.material.clone()).unwrap_or_default();
+    let region = s.model.domain.solid.as_ref().map(|x| x.material.clone()).unwrap_or_default();
     let material = p.string("material").optional()?.unwrap_or(&b.material).to_owned();
     // What the body is with its material: a subtracted or an added feature, else an inclusion.
     let combine = |m: &str| {

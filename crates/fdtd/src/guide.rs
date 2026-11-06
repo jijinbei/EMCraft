@@ -113,7 +113,7 @@ impl Grid {
         let w = model.waveguide.as_ref().ok_or_else(|| FdtdError::NotReady("no waveguide".into()))?;
         let band = Band::of(freqs);
         let losses = Losses::new(band.fc);
-        let wall = match model.wall_conductivity {
+        let wall = match model.domain.wall_conductivity {
             None => None,
             Some(sigma) => Some((crate::Losses::wall(sigma, band.f1)?, crate::surface::inverse_sqrt(angular(band.f0), angular(band.f1)))),
         };

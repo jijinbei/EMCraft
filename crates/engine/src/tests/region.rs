@@ -73,7 +73,7 @@ fn a_box_region_off_the_origin_rings_as_at_it() {
 fn a_dipole_placed_with_no_region_gets_one_round_it() {
     let mut s = Session::new();
     s.execute("source.dipole", &json!({"at": [5, -3, 2], "length": 1})).unwrap();
-    assert!(matches!(s.model.region, emcraft_model::Region::Auto { .. }));
+    assert!(matches!(s.model.domain.region, emcraft_model::Region::Auto { .. }));
     s.execute("project.setup", &json!({"kind": "radiation", "frequency": 10})).unwrap();
     let r = s.execute("model.region", &json!({"mode": "auto"})).unwrap();
     // λ/4 at 10 GHz, 7.4948 mm, rounded up to two digits.
@@ -87,11 +87,11 @@ fn a_dipole_placed_with_no_region_gets_one_round_it() {
     assert!((got / exact - 1.0).abs() < 0.05, "{got} against {exact}");
     // A body placed far off grows it; pinning keeps it as it is.
     s.execute("geometry.body", &json!({"shape": "sphere", "radius": 2, "at": [40, 0, 0], "material": "metal"})).unwrap();
-    let hi = s.model.solid.as_ref().and_then(|x| x.shape.box_bounds()).unwrap().max.x * 1e3;
+    let hi = s.model.domain.solid.as_ref().and_then(|x| x.shape.box_bounds()).unwrap().max.x * 1e3;
     assert!((hi - (42.0 + 2.0 * quarter)).abs() < 1e-6, "{hi}");
     s.execute("model.region", &json!({"mode": "pinned"})).unwrap();
     s.execute("geometry.body", &json!({"shape": "sphere", "radius": 1, "at": [-5, 0, 0], "material": "metal"})).unwrap();
-    assert_eq!(s.model.solid.as_ref().and_then(|x| x.shape.box_bounds()).unwrap().max.x * 1e3, hi);
+    assert_eq!(s.model.domain.solid.as_ref().and_then(|x| x.shape.box_bounds()).unwrap().max.x * 1e3, hi);
     // An end port has no place in an automatic region.
     assert!(s.execute("model.region", &json!({"mode": "sideways"})).is_err());
 }
@@ -104,8 +104,8 @@ fn a_dipole_placed_with_no_region_gets_one_round_it() {
 fn an_interior_body_is_the_region_and_keeps_the_bodies() {
     let mut s = Session::new();
     s.execute("geometry.body", &json!({"shape": "box", "size": [22.86, 10.16, 30], "at": [-11.43, -5.08, 0], "material": "interior"})).unwrap();
-    assert_eq!(s.model.region, emcraft_model::Region::Pinned);
-    assert!(s.model.open.is_none());
+    assert_eq!(s.model.domain.region, emcraft_model::Region::Pinned);
+    assert!(s.model.domain.open.is_none());
     s.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
     s.execute("model.port.create", &json!({"name": "2", "end": "end"})).unwrap();
     s.execute("mesh.generate", &json!({"size": 3})).unwrap();

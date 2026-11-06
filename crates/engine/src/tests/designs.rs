@@ -52,7 +52,7 @@ fn the_horn_template_builds_its_walls_and_air() {
         "{:?}",
         bodies.iter().map(|b| &b.name).collect::<Vec<_>>()
     );
-    assert!(s.model.open.is_some());
+    assert!(s.model.domain.open.is_some());
 }
 
 #[test]
@@ -97,5 +97,5 @@ fn a_part_is_inspected_without_importing_it() {
     for bad in [json!({}), json!({"path": "/no/such/part.3mf"}), json!({"path": "part.obj"}), json!({"path": fixture, "unit": -1})] {
         assert!(s.execute("geometry.import.inspect", &bad).is_err(), "{bad}");
     }
-    assert!(s.model.solid.is_none());
+    assert!(s.model.domain.solid.is_none());
 }

@@ -273,7 +273,7 @@ pub fn cutoffs(s: &Session) -> Vec<Cutoff> {
     let m = &s.model;
     let mut out: Vec<Cutoff> = Vec::new();
     // A periodic cell's ports are Floquet ports: no guide cut-offs.
-    if m.periodic.is_some() {
+    if m.domain.periodic.is_some() {
         return out;
     }
     let add = |frequency: f64, mode: &str, owner: &str, first: bool, out: &mut Vec<Cutoff>| {
@@ -377,7 +377,7 @@ fn solved(s: &Session) -> bool {
 }
 
 fn has_geometry(s: &Session) -> bool {
-    s.model.waveguide.is_some() || s.model.solid.is_some()
+    s.model.waveguide.is_some() || s.model.domain.solid.is_some()
 }
 
 fn intent(_: &Session) -> StepState {
@@ -433,7 +433,7 @@ fn excitation(s: &Session) -> StepState {
     let m = &s.model;
     let mut st = StepState::new(Step::Excitation);
     // A cell periodic along z is solved for its dispersion, with nothing driving it.
-    let bloch = m.periodic.is_some_and(|p| p.z);
+    let bloch = m.domain.periodic.is_some_and(|p| p.z);
     let chosen = m.job.chosen();
     // A resonator's eigenmodes need nothing to drive them.
     let resonator = s.results.eigen.is_some() || chosen == Some(Analysis::Eigenmodes);
@@ -457,13 +457,13 @@ fn excitation(s: &Session) -> StepState {
     if chosen == Some(Analysis::Eigenmodes) && driven {
         st.note(Status::Warning, emcraft_i18n::text!("eigenmodes leave the ports and sources out (closed by walls)"), Some("project.analysis"));
     }
-    if chosen != Some(Analysis::Eigenmodes) && m.open.is_none() && m.ports.len() == 1 && m.sources.is_empty() && m.lumped.is_empty() {
+    if chosen != Some(Analysis::Eigenmodes) && m.domain.open.is_none() && m.ports.len() == 1 && m.sources.is_empty() && m.lumped.is_empty() {
         st.note(Status::Warning, emcraft_i18n::text!("one port: S11 only (a closed guide usually has two)"), Some("model.port.create"));
     }
     // A closed-form port's first mode against the band's start: below its cut-off the wave
     // decays (an experiment may want just that), a note that leaves the step's standing.
     let Some(start) = m.job.range().map(|b| b.start.get()) else { return st };
-    for p in m.ports.iter().filter(|_| m.periodic.is_none()) {
+    for p in m.ports.iter().filter(|_| m.domain.periodic.is_none()) {
         let (Some((a, _)), Ok(mat)) = (m.port_shape_of(p).ok().and_then(|s| s.sides()), m.port_material(p.end)) else { continue };
         let cutoff = C0 / (2.0 * a * (mat.eps_r.get() * mat.mu_r.get()).sqrt());
         if start <= cutoff {
@@ -484,7 +484,7 @@ fn excitation(s: &Session) -> StepState {
 
 fn boundaries(s: &Session) -> StepState {
     let m = &s.model;
-    let open = m.open.is_some();
+    let open = m.domain.open.is_some();
     let mut st = StepState::new(Step::Boundaries);
     if !has_geometry(s) {
         st.note(Status::Waiting, emcraft_i18n::text!("waits for the geometry: its walls are the boundaries"), Some("geometry.waveguide"));

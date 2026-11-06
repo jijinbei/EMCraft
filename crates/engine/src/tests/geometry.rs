@@ -145,7 +145,7 @@ fn imported_surfaces_mesh_and_carry_ports() {
     assert!(s.execute("geometry.import", &json!({"path": scratch("nothing-here.stl")})).is_err());
     assert!(s.execute("geometry.import", &json!({"path": scratch("guide.obj")})).is_err());
     // The model was left as it was by the refusals.
-    assert!(matches!(s.model.solid.as_ref().unwrap().shape, emcraft_model::Shape::Surface { .. }));
+    assert!(matches!(s.model.domain.solid.as_ref().unwrap().shape, emcraft_model::Shape::Surface { .. }));
 }
 
 /// A closed cylinder along z, radius r, length l (millimetres), `n` facets round; one tag.
@@ -310,7 +310,9 @@ fn a_part_of_several_bodies_lies_in_air_each_metal_unless_named() {
         json!([{"body": "Post", "material": "metal", "as": "metal"}, {"body": "Puck", "material": "ceramic", "as": "dielectric"}])
     );
     // The box: the parts' extent and 5 mm around.
-    let Some(emcraft_model::Solid { shape: emcraft_model::Shape::Box { size }, .. }) = &s.model.solid else { panic!("{:?}", s.model.solid) };
+    let Some(emcraft_model::Solid { shape: emcraft_model::Shape::Box { size }, .. }) = &s.model.domain.solid else {
+        panic!("{:?}", s.model.domain.solid)
+    };
     assert!((size.x - 0.02).abs() < 1e-12 && (size.z - 0.02).abs() < 1e-12, "{size:?}");
     // It meshes: the post a hole, the puck its own region.
     let m = s.execute("mesh.generate", &json!({"size": 4})).unwrap();
@@ -335,7 +337,7 @@ fn an_imported_body_touching_three_walls_is_subtracted() {
     let s11 = |first: serde_json::Value| {
         let mut s = Session::new();
         s.execute(first["command"].as_str().unwrap(), &first["params"]).unwrap();
-        if s.model.solid.as_ref().is_some_and(|x| matches!(x.shape, emcraft_model::Shape::Box { .. })) {
+        if s.model.domain.solid.as_ref().is_some_and(|x| matches!(x.shape, emcraft_model::Shape::Box { .. })) {
             let feature = json!({"combine": "subtract", "shape": "box", "size": [5.43, 10.16, 2], "at": [0, 0, 15]});
             s.execute("geometry.feature", &feature).unwrap();
         }
@@ -510,9 +512,9 @@ fn an_open_part_gets_air_and_a_layer_a_quarter_wavelength_each() {
     // λ at 5 GHz is 59.96 mm: 15 mm of air, 15 mm of layer, each side.
     let t = r["open"].as_f64().unwrap();
     assert!((t - 14.99).abs() < 0.01, "{r}");
-    let Some(emcraft_model::Solid { shape: emcraft_model::Shape::Box { size }, .. }) = &s.model.solid else { panic!() };
+    let Some(emcraft_model::Solid { shape: emcraft_model::Shape::Box { size }, .. }) = &s.model.domain.solid else { panic!() };
     assert!((size.x - (0.01 + 4.0 * 0.01499)).abs() < 1e-5, "{size:?}");
-    assert_eq!(s.model.open.map(|o| o.shape), Some(emcraft_model::OpenShape::Box));
+    assert_eq!(s.model.domain.open.map(|o| o.shape), Some(emcraft_model::OpenShape::Box));
     // Given sizes; air must lie before the layer; a body as the region is no open problem.
     let r = s.execute("geometry.import", &json!({"path": path, "open": true, "margin": 20, "thickness": 8})).unwrap();
     assert_eq!(r["open"], json!(8.0));
@@ -591,7 +593,7 @@ fn an_imported_part_is_metal_and_its_material_changes_the_region() {
     let r = s.execute("geometry.import", &json!({"path": block_3mf()})).unwrap();
     assert_eq!((r["region"].as_str(), r["pieces"]["axis"].as_str()), (Some("cavity"), Some("z")), "{r}");
     let channel = 22.86 * 10.16 * 32.0 - 2.0 * 5.43 * 10.16 * 2.0;
-    let volume = |s: &Session| s.model.solid.as_ref().unwrap().shape.volume() * 1e9;
+    let volume = |s: &Session| s.model.domain.solid.as_ref().unwrap().shape.volume() * 1e9;
     assert!((volume(&s) - channel).abs() < 1e-6 * channel);
     assert_eq!((s.model.imported.len(), s.model.imported[0].name.as_str(), s.model.imported[0].material.as_str()), (1, "Block", "metal"));
     // The block is kept to be drawn round its channel.
@@ -668,7 +670,7 @@ fn one_search_sets_the_symmetries_that_change_no_answer() {
     s.execute("model.symmetry", &json!({"axis": "x", "kind": "electric"})).unwrap();
     let r = s.execute("model.symmetry.auto", &json!({})).unwrap();
     assert_eq!((r["fraction"].as_f64(), r["every_wall"].as_bool()), (Some(0.25), Some(true)), "{r}");
-    assert!(s.model.every_wall && s.model.rotation.is_none());
+    assert!(s.model.domain.every_wall && s.model.domain.rotation.is_none());
     let left: Vec<&str> = r["skipped"].as_array().unwrap().iter().filter_map(|q| q["symmetry"].as_str()).collect();
     assert!(left.contains(&"plane across z") && left.iter().any(|q| q.starts_with("rotation about z")), "{left:?}");
     // A port added: the planes no longer stand for it, until searched again.

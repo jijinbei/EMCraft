@@ -220,7 +220,7 @@ pub(super) fn prepare(model: &Model, p: &Port, space: &Space, faces: &[usize]) -
             (PortModes::Numeric(Box::new(n)), t)
         }
     };
-    let planes = p.frame().local_planes(&model.symmetry);
+    let planes = p.frame().local_planes(&model.domain.symmetry);
     Ok(PortData { name: p.name.clone(), end: p.end, modes, reference: p.reference.map(f64::from), deembed: p.deembed, terminals, planes })
 }
 
@@ -249,7 +249,7 @@ fn terminal_count(model: &Model, p: &Port, section: &CrossSection, lossy: bool) 
             "not supported yet: a terminal port (several strips) in a lossy medium (its lossy modes are not power-orthogonal); set the port's `terminals` modal",
         ));
     }
-    if model.open.is_some() {
+    if model.domain.open.is_some() {
         return Err(invalid(what(p), "not supported yet: a terminal port (several strips) in an open problem; set the port's `terminals` modal"));
     }
     Ok(n)
@@ -313,12 +313,12 @@ fn analytic_port(model: &Model, p: &Port, shape: PortShape, space: &Space, faces
 fn port_mode_list(model: &Model, p: &Port, shape: PortShape) -> Result<Vec<Mode>> {
     let count = p.modes as usize;
     // Each plane keeps about half the modes: enough candidates for the count wanted.
-    let candidates = if model.symmetry.is_empty() { count } else { 4 * count + 8 };
+    let candidates = if model.domain.symmetry.is_empty() { count } else { 4 * count + 8 };
     let all: Vec<Mode> = match shape {
         PortShape::Rect { x0, y0, a, b } => modes::lowest(a, b, candidates).into_iter().map(|md| md.at(x0, y0)).collect(),
         PortShape::Circle { cx, cy, r } => modes::lowest_circular(r, candidates).into_iter().map(|md| md.at(cx, cy)).collect(),
     };
-    let planes = p.frame().local_planes(&model.symmetry);
+    let planes = p.frame().local_planes(&model.domain.symmetry);
     let list: Vec<Mode> = all.into_iter().filter(|md| kept_by(md, &planes)).take(count).collect();
     if list.is_empty() {
         return Err(invalid(what(p), "no mode of its aperture has the symmetry the model's planes ask for"));
@@ -471,7 +471,7 @@ pub fn port_modes(model: &Model, order: Order, frequency: f64) -> Result<Vec<(St
         .iter()
         .map(|p| {
             // A sector's ports take the rotating modes of its harmonic.
-            if let (Some(rot), Ok(emcraft_model::PortShape::Circle { r, .. })) = (&model.rotation, model.port_shape_of(p)) {
+            if let (Some(rot), Ok(emcraft_model::PortShape::Circle { r, .. })) = (&model.domain.rotation, model.port_shape_of(p)) {
                 let m = model.port_material(p.end)?;
                 let k = k0 * (m.eps_r.get() * m.mu_r.get()).sqrt();
                 let list = super::cyclic::rotating_modes(r, rot.centre, rot.n, rot.m, p.modes as usize)
@@ -521,7 +521,7 @@ pub fn port_modes(model: &Model, order: Order, frequency: f64) -> Result<Vec<(St
                             .into_iter()
                             .enumerate()
                             .map(|(i, m)| {
-                                let impedance = section.impedance_whole(&m, k0, &p.frame().local_planes(&model.symmetry))?;
+                                let impedance = section.impedance_whole(&m, k0, &p.frame().local_planes(&model.domain.symmetry))?;
                                 Ok(ModeInfo { name: format!("mode {}", i + 1), beta2: m.beta2, closed_form: false, impedance, gamma: None })
                             })
                             .collect::<Result<Vec<_>>>()?,

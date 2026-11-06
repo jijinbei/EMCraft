@@ -39,7 +39,7 @@ impl Analysis {
     pub fn infer(m: &Model) -> Analysis {
         if m.pcb.is_some() {
             Analysis::Pcb
-        } else if !m.sources.is_empty() || !m.lumped.is_empty() || m.open.is_some() {
+        } else if !m.sources.is_empty() || !m.lumped.is_empty() || m.domain.open.is_some() {
             Analysis::Radiation
         } else {
             Analysis::Frequency

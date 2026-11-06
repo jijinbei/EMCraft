@@ -28,15 +28,15 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
         "solve.device" => json!({"device": s.compute.device().id(), "precision": s.compute.precision.id()}),
         "model.walls" => {
             let mut v = json!({});
-            if let Some(c) = m.wall_conductivity {
+            if let Some(c) = m.domain.wall_conductivity {
                 v["conductivity"] = json!(c);
             }
-            if let Some(t) = m.wall_thickness {
+            if let Some(t) = m.domain.wall_thickness {
                 v["thickness"] = json!(l(t.get()));
             }
             v
         }
-        "model.open" => match m.open {
+        "model.open" => match m.domain.open {
             None => json!({}),
             Some(o) => {
                 let mut v = json!({"thickness": l(o.thickness.get()), "shape": o.shape.id()});
@@ -48,18 +48,18 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
         },
         "model.symmetry" => {
             let axis = p.string("axis").optional()?;
-            match m.symmetry.iter().find(|q| axis.is_none_or(|a| q.axis.id() == a)) {
+            match m.domain.symmetry.iter().find(|q| axis.is_none_or(|a| q.axis.id() == a)) {
                 // Not its position: the only one allowed is the model's middle across the axis,
                 // which the command takes when `at` is left out (another axis' would be refused).
                 Some(q) => json!({"axis": q.axis.id(), "kind": q.kind}),
                 None => json!({}),
             }
         }
-        "model.rotation" => match m.rotation {
+        "model.rotation" => match m.domain.rotation {
             None => json!({}),
             Some(r) => json!({"n": r.n, "m": r.m, "centre": [s.show_length(r.centre[0]), s.show_length(r.centre[1])]}),
         },
-        "model.periodic" => match m.periodic {
+        "model.periodic" => match m.domain.periodic {
             None => json!({}),
             Some(q) => json!({
                 "x": q.x, "y": q.y, "z": q.z, "theta": q.theta.to_degrees(), "phi": q.phi.to_degrees(),
@@ -67,7 +67,7 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
             }),
         },
         "geometry.waveguide" => waveguide(m, s.display),
-        "geometry.solid" => match &m.solid {
+        "geometry.solid" => match &m.domain.solid {
             Some(solid) if !matches!(solid.shape, Shape::Surface { .. }) => {
                 let mut v = shape(&solid.shape, s.display);
                 v["material"] = json!(solid.material);

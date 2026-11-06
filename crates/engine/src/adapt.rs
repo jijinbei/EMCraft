@@ -251,7 +251,7 @@ struct Options {
 
 /// `mesh.adapt`'s options and how its passes refine, checked against the model.
 fn options(s: &Session, p: &Params) -> Result<(Options, Refine)> {
-    let open = s.model.open.is_some();
+    let open = s.model.domain.open.is_some();
     if open {
         if s.model.sources.is_empty() && s.model.lumped.is_empty() && s.model.ports.is_empty() {
             return Err(EngineError::failed(
@@ -261,7 +261,7 @@ fn options(s: &Session, p: &Params) -> Result<(Options, Refine)> {
     } else if s.model.ports.is_empty() {
         return Err(EngineError::failed("adaptive refinement compares S-parameters between passes: the model needs ports (model.port.create)"));
     }
-    let solid = s.model.waveguide.is_none() && s.model.solid.is_some();
+    let solid = s.model.waveguide.is_none() && s.model.domain.solid.is_some();
     if !solid && s.model.waveguide.is_none() {
         return Err(EngineError::failed("nothing to mesh: create a waveguide or a solid first"));
     }

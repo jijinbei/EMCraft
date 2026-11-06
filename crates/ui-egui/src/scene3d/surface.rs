@@ -26,7 +26,7 @@ pub(super) struct Surface {
 
 impl Surface {
     pub(super) fn of(m: &Model, mesh: &emcraft_model::Mesh) -> Surface {
-        let open = m.open.is_some();
+        let open = m.domain.open.is_some();
         let n = mesh.boundary.len();
         // A waveguide's faces are all walls.
         if m.waveguide.is_some() || n == 0 {
@@ -107,13 +107,13 @@ pub(super) struct PeriodicPlanes([Option<(f64, f64)>; 3], Option<(emcraft_model:
 
 impl PeriodicPlanes {
     pub(super) fn of(m: &Model, mesh: &emcraft_model::Mesh) -> PeriodicPlanes {
-        let cut = m.rotation.map(|r| {
+        let cut = m.domain.rotation.map(|r| {
             let (lo, hi) = mesh.nodes.iter().fold(([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]), |(lo, hi), q| {
                 (std::array::from_fn(|k| lo[k].min(q[k])), std::array::from_fn(|k| hi[k].max(q[k])))
             });
             (r, 1e-6 * (0..3).map(|k| hi[k] - lo[k]).fold(0.0f64, f64::max))
         });
-        let Some(p) = &m.periodic else { return PeriodicPlanes([None; 3], cut) };
+        let Some(p) = &m.domain.periodic else { return PeriodicPlanes([None; 3], cut) };
         let tied = [p.x, p.y, p.z];
         let mut out = [None; 3];
         for d in 0..3 {

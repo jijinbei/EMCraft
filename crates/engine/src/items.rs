@@ -139,7 +139,7 @@ pub(crate) fn lumped_named<'m>(m: &'m Model, p: &Params, param: &str) -> Result<
 
 /// A port change drops the open problem's results too when the port feeds one.
 fn drop_open_results(s: &mut Session) {
-    if s.model.open.is_some() {
+    if s.model.domain.open.is_some() {
         s.results.invalidate(Change::Open);
     }
 }

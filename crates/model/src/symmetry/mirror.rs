@@ -207,7 +207,7 @@ impl Symmetry {
         if let Some(k) = unmirrored(m.inclusions.iter().map(|inc| (inc.bounds(), inc.material.is_none())).collect()) {
             return Err(format!("inclusion {} has no mirror image about the plane: the solid is not symmetric about it", k + 1));
         }
-        if m.open.is_some() || !m.lumped.is_empty() || !m.sources.is_empty() {
+        if m.domain.open.is_some() || !m.lumped.is_empty() || !m.sources.is_empty() {
             return Err("not supported yet: a symmetry plane in an open problem, or with lumped ports or sources".into());
         }
         for p in &m.ports {
@@ -290,8 +290,8 @@ impl Model {
         if let Some(why) = self.symmetry_issue_of(&planes) {
             return Err(invalid("symmetry", why));
         }
-        self.symmetry = planes;
-        self.every_wall = false;
+        self.domain.symmetry = planes;
+        self.domain.every_wall = false;
         self.mesh = None;
         Ok(())
     }
@@ -300,18 +300,18 @@ impl Model {
     /// combination of their walls ([`Model::wall_combinations`]).
     pub fn set_symmetry_every_wall(&mut self, planes: Vec<Symmetry>) -> Result<()> {
         self.set_symmetry(planes)?;
-        self.every_wall = !self.symmetry.is_empty();
+        self.domain.every_wall = !self.domain.symmetry.is_empty();
         Ok(())
     }
 
     /// The walls of every combination an eigenmode search solves: each plane electric or
-    /// magnetic when [`Model::every_wall`], else the planes' own (one combination).
+    /// magnetic when [`crate::domain::Domain::every_wall`], else the planes' own (one combination).
     pub fn wall_combinations(&self) -> Vec<Vec<SymmetryKind>> {
-        let own: Vec<SymmetryKind> = self.symmetry.iter().map(|q| q.kind).collect();
-        if !self.every_wall {
+        let own: Vec<SymmetryKind> = self.domain.symmetry.iter().map(|q| q.kind).collect();
+        if !self.domain.every_wall {
             return vec![own];
         }
-        let n = self.symmetry.len().min(2);
+        let n = self.domain.symmetry.len().min(2);
         (0..1usize << n)
             .map(|bits| (0..n).map(|k| if bits >> k & 1 == 0 { SymmetryKind::Magnetic } else { SymmetryKind::Electric }).collect())
             .collect()
@@ -327,15 +327,15 @@ impl Model {
     /// m.set_symmetry_every_wall(vec![Symmetry { axis: Axis::X, at: 0.01, kind: SymmetryKind::Magnetic }])?;
     /// assert_eq!(m.wall_combinations().len(), 2);
     /// let e = m.with_walls(&[SymmetryKind::Electric]);
-    /// assert_eq!(e.symmetry[0].kind, SymmetryKind::Electric);
+    /// assert_eq!(e.domain.symmetry[0].kind, SymmetryKind::Electric);
     /// # Ok::<(), emcraft_model::ModelError>(())
     /// ```
     pub fn with_walls(&self, kinds: &[SymmetryKind]) -> Model {
         let mut m = self.clone();
-        for (q, k) in m.symmetry.iter_mut().zip(kinds) {
+        for (q, k) in m.domain.symmetry.iter_mut().zip(kinds) {
             q.kind = *k;
         }
-        m.every_wall = false;
+        m.domain.every_wall = false;
         if let Some(mesh) = &self.mesh {
             let mut mesh = (**mesh).clone();
             let tol = 1e-9 * self.bounds().map_or(1.0, |b| (b.max - b.min).norm());
@@ -344,7 +344,7 @@ impl Model {
                     continue;
                 }
                 let on = |q: &Symmetry| f.nodes.iter().all(|n| mesh.nodes.get(*n as usize).is_some_and(|p| (p[q.axis.index()] - q.at).abs() <= tol));
-                if let Some(q) = m.symmetry.iter().find(|q| on(q)) {
+                if let Some(q) = m.domain.symmetry.iter().find(|q| on(q)) {
                     f.tag = crate::mesh::Boundary::Symmetry(q.kind);
                 }
             }
@@ -356,18 +356,18 @@ impl Model {
     /// Why the model is not symmetric about its symmetry planes, if it is not (the geometry may
     /// have changed since they were set).
     pub fn symmetry_issue(&self) -> Option<String> {
-        if self.every_wall && !self.ports.is_empty() {
+        if self.domain.every_wall && !self.ports.is_empty() {
             return Some(
                 "its planes were set to try every wall in an eigenmode search; with ports, search again (model.symmetry.auto) for the walls they ask"
                     .into(),
             );
         }
-        self.symmetry_issue_of(&self.symmetry)
+        self.symmetry_issue_of(&self.domain.symmetry)
     }
 
     /// The fraction of the model the symmetry planes keep: ½ per plane.
     pub fn symmetry_fraction(&self) -> f64 {
-        0.5f64.powi(self.symmetry.len().min(2) as i32)
+        0.5f64.powi(self.domain.symmetry.len().min(2) as i32)
     }
 
     /// The planes the model is symmetric about (each axis' middle that [`Model::set_symmetry`]
@@ -441,7 +441,7 @@ impl Model {
         }
         let symmetric = || {
             Symmetry::check_planes(planes)?;
-            match (&self.waveguide, &self.solid) {
+            match (&self.waveguide, &self.domain.solid) {
                 (Some(w), _) => planes.iter().try_for_each(|p| p.check_guide(w)),
                 (None, Some(solid)) => {
                     let tol = 1e-9 * self.bounds().map_or(1.0, |b| (b.max - b.min).norm());
@@ -506,7 +506,7 @@ mod tests {
         ] {
             assert!(m.set_symmetry(bad).is_err());
         }
-        assert_eq!(m.symmetry.len(), 2, "a refused change keeps the planes");
+        assert_eq!(m.domain.symmetry.len(), 2, "a refused change keeps the planes");
         // An off-centre aperture breaks the symmetry; the check says so.
         m.set_waveguide(guide(vec![sec(None, None), sec(Some(0.01), Some(0.0))])).unwrap();
         assert!(m.check().iter().any(|i| matches!(i, crate::Issue::Symmetry(_))));

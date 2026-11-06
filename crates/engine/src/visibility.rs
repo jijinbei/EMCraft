@@ -53,7 +53,7 @@ impl GeometryObject {
     pub fn exists(self, m: &Model) -> bool {
         match self {
             Self::Guide => m.waveguide.is_some(),
-            Self::Solid => m.solid.is_some(),
+            Self::Solid => m.domain.solid.is_some(),
             Self::Section(i) => m.waveguide.as_ref().is_some_and(|w| i < w.sections.len()),
             Self::Layer(i) => m.waveguide.as_ref().is_some_and(|w| i < w.layers.len()),
             Self::Strip(i) => m.waveguide.as_ref().is_some_and(|w| i < w.strips.len()),
@@ -68,7 +68,7 @@ impl GeometryObject {
     pub fn contains(self, m: &Model, p: Point3) -> bool {
         match self {
             Self::Guide => m.waveguide.is_some(),
-            Self::Solid => m.solid.is_some(),
+            Self::Solid => m.domain.solid.is_some(),
             Self::Section(i) => m
                 .waveguide
                 .as_ref()

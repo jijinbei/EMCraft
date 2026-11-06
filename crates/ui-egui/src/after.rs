@@ -135,7 +135,7 @@ impl EmcraftApp {
         }
         // An open problem's fields read best as |E| (a source's own component may vanish on
         // the planes through it); a guide's as Ey, its TE10 field.
-        self.field.view.component = if self.session.model().open.is_some() { Component::E } else { Component::Ey };
+        self.field.view.component = if self.session.model().domain.open.is_some() { Component::E } else { Component::Ey };
         self.replies.port_modes = None;
         self.replies.compare = None;
         // The chosen kind's own result first, else the first the session holds.

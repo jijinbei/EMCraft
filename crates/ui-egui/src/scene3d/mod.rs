@@ -245,7 +245,7 @@ pub fn build(session: &Session, overlay: Overlay) -> Built {
 /// apart: the images faint and without the mesh's edges.
 fn mirrored_halves(m: &emcraft_model::Model, overlay: Overlay, scene: &mut emcraft_render::view3d::Scene) {
     let faint = overlay == Overlay::Mesh;
-    for s in &m.symmetry {
+    for s in &m.domain.symmetry {
         let k = s.axis.index();
         let mirror = |p: [f64; 3]| {
             let mut q = p;
@@ -277,7 +277,7 @@ fn mirrored_halves(m: &emcraft_model::Model, overlay: Overlay, scene: &mut emcra
 /// A sector of a rotationally symmetric model drawn whole: what is meshed and its n − 1 turns
 /// about the axis. The Mesh step tells them apart as it does mirror images: faint, no edges.
 fn turned_sectors(m: &emcraft_model::Model, overlay: Overlay, scene: &mut emcraft_render::view3d::Scene) {
-    let Some(r) = m.rotation else { return };
+    let Some(r) = m.domain.rotation else { return };
     let faint = overlay == Overlay::Mesh;
     let (tris, lines) = (scene.tris.clone(), scene.lines.clone());
     for k in 1..r.n {
@@ -382,7 +382,7 @@ fn present_materials(session: &Session, selected: &[Pick], out: &mut Built) {
                 m.waveguide.as_ref().and_then(|w| w.sections.get(i)).and_then(|s| m.material(&s.material).ok()).map(|(i, _)| i)
             }
             Some(Pick::Layer(i)) => m.waveguide.as_ref().and_then(|w| w.layers.get(i)).and_then(|s| m.material(&s.material).ok()).map(|(i, _)| i),
-            Some(Pick::Solid) if m.mesh.is_none() => m.solid.as_ref().and_then(|s| m.material(&s.material).ok()).map(|(i, _)| i),
+            Some(Pick::Solid) if m.mesh.is_none() => m.domain.solid.as_ref().and_then(|s| m.material(&s.material).ok()).map(|(i, _)| i),
             Some(Pick::Inclusion(i)) => m.inclusions.get(i).and_then(|s| s.material.as_ref()).and_then(|s| m.material(s).ok()).map(|(i, _)| i),
             _ => None,
         };
@@ -415,7 +415,7 @@ fn present_materials(session: &Session, selected: &[Pick], out: &mut Built) {
                 t.alpha = 45;
             } else {
                 t.color = style::sc().metal;
-                t.alpha = if m.open.is_some() { 12 } else { 45 };
+                t.alpha = if m.domain.open.is_some() { 12 } else { 45 };
             }
         }
         true

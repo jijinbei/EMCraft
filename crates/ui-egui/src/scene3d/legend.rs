@@ -41,7 +41,7 @@ pub(super) fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
             }
         }
         Overlay::Boundaries => {
-            for s in &m.symmetry {
+            for s in &m.domain.symmetry {
                 let wall = tr(match s.kind {
                     emcraft_model::SymmetryKind::Electric => t!("electric wall"),
                     emcraft_model::SymmetryKind::Magnetic => t!("magnetic wall"),
@@ -50,21 +50,21 @@ pub(super) fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
                 let at = format!("{axis} = {} {}", l.from_si(s.at), l.symbol());
                 out.legend.push((trf(t!("symmetry: {wall}, {at}"), args!(wall = wall, at = at)), symmetry_rgb(s.kind)));
             }
-            if let Some(p) = &m.periodic {
+            if let Some(p) = &m.domain.periodic {
                 let axes: Vec<&str> = p.axes().into_iter().map(|d| ["x", "y", "z"][d.min(2)]).collect();
                 let angles = if p.x || p.y { format!(", θ {:.1}°, φ {:.1}°", p.theta.to_degrees(), p.phi.to_degrees()) } else { String::new() };
                 out.legend.push((trf(t!("periodic boundaries: {cell}"), args!(cell = format!("{}{angles}", axes.join(", ")))), sc().periodic));
             }
-            if let Some(r) = &m.rotation {
+            if let Some(r) = &m.domain.rotation {
                 let group = format!("C{}", r.n);
                 out.legend.push((trf(t!("rotation: {group}, harmonic {m}"), args!(group = group, m = r.m)), sc().periodic));
             }
-            let walls = match m.wall_conductivity {
+            let walls = match m.domain.wall_conductivity {
                 Some(s) => trf(t!("walls σ = {sigma} S/m"), args!(sigma = format!("{s:.3e}"))),
                 None => tr(t!("walls: perfect conductor")).into(),
             };
             out.legend.push((walls, sc().metal));
-            if let Some(o) = &m.open {
+            if let Some(o) = &m.domain.open {
                 let thickness = format!("{} {}", l.from_si(o.thickness.get()), l.symbol());
                 out.legend.push((trf(t!("open boundary: PML {thickness}"), args!(thickness = thickness)), sc().pml));
             }

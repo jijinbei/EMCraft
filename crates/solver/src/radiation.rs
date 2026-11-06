@@ -80,7 +80,7 @@ impl FarField {
 /// nearer, so it stays as far from the sources' near fields as the box allows. Whatever
 /// radiates must keep clear of the layer by an element or so.
 fn huygens_box(model: &Model) -> Result<(Point3, Point3)> {
-    let (Some(o), Some(b)) = (&model.open, model.solid.as_ref().and_then(|s| s.shape.box_bounds())) else {
+    let (Some(o), Some(b)) = (&model.domain.open, model.domain.solid.as_ref().and_then(|s| s.shape.box_bounds())) else {
         return Err(SolveError::NotReady("no open boundary".into()));
     };
     if o.shape != emcraft_model::OpenShape::Box {
@@ -111,7 +111,7 @@ enum Surface {
 
 impl Surface {
     fn of(model: &Model) -> Result<Surface> {
-        match model.open.map(|o| o.shape) {
+        match model.domain.open.map(|o| o.shape) {
             Some(emcraft_model::OpenShape::Sphere) => huygens_sphere(model).map(Surface::Sphere),
             _ => huygens_box(model).map(|(lo, hi)| Surface::Box(lo, hi)),
         }
@@ -137,7 +137,7 @@ impl Surface {
 /// nearer — the box's rule ([`huygens_box`]) in the radius.
 fn huygens_sphere(model: &Model) -> Result<f64> {
     let inner = model.spherical_layer().map(|l| l.inner).ok_or_else(|| SolveError::NotReady("no spherical layer".into()))?;
-    let d = model.open.map_or(0.0, |o| o.thickness.get());
+    let d = model.domain.open.map_or(0.0, |o| o.thickness.get());
     let reach = model.radiators().map(|p| p.to_vec().norm()).fold(0.0f64, f64::max);
     if !(reach < inner - 0.1 * d) {
         return Err(invalid("open boundary", "the bodies and sources reach into or up to the spherical layer; enlarge the sphere"));
@@ -298,7 +298,7 @@ impl Driven {
     /// away). Returns the eliminated degrees of freedom's values g (global slot, value).
     fn lift_conductors(&self, model: &Model, k0: f64, direction: Vec3, polarization: Vec3, b: &mut [C]) -> Result<Vec<(usize, C)>> {
         let node = |n: u32| self.mesh.node(n).unwrap_or(Point3::new(f64::NAN, f64::NAN, f64::NAN));
-        let on_box = |nodes: &[u32; 3]| match model.solid.as_ref().map(|s| &s.shape) {
+        let on_box = |nodes: &[u32; 3]| match model.domain.solid.as_ref().map(|s| &s.shape) {
             Some(Shape::Box { size }) => {
                 let tol = 1e-9 * size.iter().fold(0.0f64, f64::max);
                 (0..3).any(|d| [0.0, size[d]].iter().any(|c| nodes.iter().all(|n| (node(*n)[d] - c).abs() <= tol)))

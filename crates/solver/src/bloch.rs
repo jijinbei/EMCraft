@@ -258,7 +258,7 @@ where
         return Err(invalid("phase", "must be finite, within ±360°").into());
     }
     check_frequency(sweep.near)?;
-    let periodic = model.periodic.ok_or_else(|| SolveError::NotReady("no periodic boundaries: set them with model.periodic".into()))?;
+    let periodic = model.domain.periodic.ok_or_else(|| SolveError::NotReady("no periodic boundaries: set them with model.periodic".into()))?;
     if !periodic.axes().contains(&sweep.axis) {
         return Err(invalid("axis", "the axis swept must be periodic").into());
     }
@@ -304,7 +304,7 @@ pub fn cyclic_modes(model: &Model, order: Order, count: usize, near: f64) -> Res
         return Err(invalid("modes", format!("must be 1 to {MAX_BANDS}")));
     }
     check_frequency(near)?;
-    let rot = model.rotation.ok_or_else(|| SolveError::NotReady("no rotational symmetry: set it with model.rotation".into()))?;
+    let rot = model.domain.rotation.ok_or_else(|| SolveError::NotReady("no rotational symmetry: set it with model.rotation".into()))?;
     let d = Driven::cavity(model, order)?;
     let (_, stiffness, mass) = d.matrices();
     if d.is_dispersive() || mass.iter().any(|m| m.im != 0.0) || stiffness.iter().any(|k| k.im != 0.0) {
@@ -378,7 +378,7 @@ mod cyclic_tests {
         let mut model = Model::new();
         let shape = Shape::Cylinder { radius: Metres::new(0.01).unwrap(), length: Metres::new(0.015).unwrap() };
         model.set_solid(Solid { shape, material: "vacuum".into() }).unwrap();
-        model.rotation = Some(Rotation::new(n, m, [0.0, 0.0]).unwrap());
+        model.domain.rotation = Some(Rotation::new(n, m, [0.0, 0.0]).unwrap());
         model.mesh = Some(std::sync::Arc::new(emcraft_mesh::solid::solid(&model, Metres::new(size).unwrap()).unwrap()));
         cyclic_modes(&model, order, 2, near).unwrap()
     }

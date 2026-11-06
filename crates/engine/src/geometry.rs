@@ -381,7 +381,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         "cavity": fallback,
         "bodies": placed,
         "open": thickness.map(|t| s.show_length(t.get())),
-        "volume": s.model.solid.as_ref().map(|x| x.shape.volume()),
+        "volume": s.model.domain.solid.as_ref().map(|x| x.shape.volume()),
         "bounds": bounds.corners().map(|c| c.map(|v| s.show_length(v))),
     }))
 }
@@ -630,23 +630,24 @@ pub fn region(s: &mut Session, p: &Params) -> Result<Value> {
     let mode = p.string("mode").required()?;
     match mode {
         "auto" => {
-            s.model.region = emcraft_model::Region::Auto { margin: p.metres("margin").optional()?, thickness: p.metres("thickness").optional()? };
+            s.model.domain.region =
+                emcraft_model::Region::Auto { margin: p.metres("margin").optional()?, thickness: p.metres("thickness").optional()? };
             s.model.refresh_region()?;
         }
         "pinned" => {
             if p.has("margin") || p.has("thickness") {
                 return Err(p.error("margin", "and `thickness` are an automatic region's"));
             }
-            s.model.region = emcraft_model::Region::Pinned;
+            s.model.domain.region = emcraft_model::Region::Pinned;
         }
         other => return Err(p.error("mode", format!("must be `auto` or `pinned`, got `{}`", crate::text::clip(other, 40)))),
     }
-    let b = s.model.solid.as_ref().and_then(|x| x.shape.box_bounds());
+    let b = s.model.domain.solid.as_ref().and_then(|x| x.shape.box_bounds());
     let l = |v: f64| s.display.length.from_si(v);
     Ok(json!({
         "mode": mode,
         "box": b.map(|b| json!([[l(b.min.x), l(b.min.y), l(b.min.z)], [l(b.max.x), l(b.max.y), l(b.max.z)]])),
-        "layer": s.model.open.map(|o| l(o.thickness.get())),
+        "layer": s.model.domain.open.map(|o| l(o.thickness.get())),
     }))
 }
 
@@ -655,8 +656,8 @@ pub fn region(s: &mut Session, p: &Params) -> Result<Value> {
 pub fn background(s: &mut Session, p: &Params) -> Result<Value> {
     let name = p.string("material").required()?;
     s.model.material(name)?;
-    s.model.background = Some(name.to_owned());
-    if let Some(solid) = s.model.solid.as_mut() {
+    s.model.domain.background = Some(name.to_owned());
+    if let Some(solid) = s.model.domain.solid.as_mut() {
         name.clone_into(&mut solid.material);
         s.model.mesh = None;
     }
@@ -665,7 +666,7 @@ pub fn background(s: &mut Session, p: &Params) -> Result<Value> {
 
 pub fn solid(s: &mut Session, p: &Params) -> Result<Value> {
     s.model.set_solid(Solid { shape: shape(p)?, material: p.string("material").or("vacuum")?.to_owned() })?;
-    Ok(json!({"volume": s.model.solid.as_ref().map(|x| x.shape.volume())}))
+    Ok(json!({"volume": s.model.domain.solid.as_ref().map(|x| x.shape.volume())}))
 }
 
 pub fn walls(s: &mut Session, p: &Params) -> Result<Value> {
@@ -679,7 +680,7 @@ pub fn walls(s: &mut Session, p: &Params) -> Result<Value> {
 pub fn symmetry(s: &mut Session, p: &Params) -> Result<Value> {
     let clear = p.flag("clear").or(false)?;
     let axis: Option<Axis> = p.choice("axis").optional()?;
-    let mut planes = s.model.symmetry.clone();
+    let mut planes = s.model.domain.symmetry.clone();
     if clear {
         if p.has("kind") || p.has("at") {
             return Err(p.error("clear", "takes only `axis` (the plane to remove; all of them without it)"));
@@ -696,7 +697,7 @@ pub fn symmetry(s: &mut Session, p: &Params) -> Result<Value> {
         planes.sort_by_key(|q| q.axis.index());
     }
     s.model.set_symmetry(planes)?;
-    let shown: Vec<Value> = s.model.symmetry.iter().map(|q| json!({"axis": q.axis.id(), "at": s.show_length(q.at), "kind": q.kind})).collect();
+    let shown: Vec<Value> = s.model.domain.symmetry.iter().map(|q| json!({"axis": q.axis.id(), "at": s.show_length(q.at), "kind": q.kind})).collect();
     Ok(json!({"planes": shown, "fraction": s.model.symmetry_fraction()}))
 }
 
@@ -741,7 +742,7 @@ pub fn auto_symmetry(s: &mut Session, _: &Params) -> Result<Value> {
     } else if !planes.is_empty() {
         s.model.set_symmetry(planes)?;
     }
-    let shown: Vec<Value> = s.model.symmetry.iter().map(|q| json!({"axis": q.axis.id(), "at": s.show_length(q.at), "kind": q.kind})).collect();
+    let shown: Vec<Value> = s.model.domain.symmetry.iter().map(|q| json!({"axis": q.axis.id(), "at": s.show_length(q.at), "kind": q.kind})).collect();
     Ok(json!({"planes": shown, "fraction": s.model.symmetry_fraction(), "every_wall": every_wall, "skipped": skipped}))
 }
 
@@ -761,7 +762,7 @@ pub fn find_symmetry(s: &mut Session, p: &Params) -> Result<Value> {
     }
     planes.sort_by_key(|q| q.axis.index());
     s.model.set_symmetry(planes)?;
-    let shown: Vec<Value> = s.model.symmetry.iter().map(|q| json!({"axis": q.axis.id(), "at": s.show_length(q.at), "kind": q.kind})).collect();
+    let shown: Vec<Value> = s.model.domain.symmetry.iter().map(|q| json!({"axis": q.axis.id(), "at": s.show_length(q.at), "kind": q.kind})).collect();
     let all: Vec<Value> = found.iter().map(|f| json!({"axis": f.axis.id(), "at": s.show_length(f.at), "kind": f.kind})).collect();
     Ok(json!({"planes": shown, "fraction": s.model.symmetry_fraction(), "found": all}))
 }
@@ -868,7 +869,7 @@ pub fn rotation(s: &mut Session, p: &Params) -> Result<Value> {
 
 /// The rotational symmetry as `model.rotation` replies it (in display units).
 pub(crate) fn rotation_shown(s: &Session) -> Value {
-    match s.model.rotation {
+    match s.model.domain.rotation {
         None => json!({"rotation": null}),
         Some(r) => json!({"n": r.n, "m": r.m, "centre": [s.show_length(r.centre[0]), s.show_length(r.centre[1])], "fraction": 1.0 / f64::from(r.n)}),
     }

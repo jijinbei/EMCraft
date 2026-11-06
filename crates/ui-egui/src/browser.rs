@@ -375,14 +375,14 @@ fn geometry(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
             rows.push(row(t!("Via {n}: {wx} × {wz} {unit}, y {y0} to {y1}"), args, Glyph::Box, edit()).sub().picks(Pick::Via(i)));
         }
     }
-    if let Some(solid) = &m.solid {
+    if let Some(solid) = &m.domain.solid {
         let edit = Act::Edit("geometry.solid");
         let block = solid.shape.box_bounds().filter(|_| !matches!(solid.shape, emcraft_model::Shape::Box { .. }));
         let r = match &solid.shape {
             // An automatic region, or a box off the origin: its sides (ADR 0005).
             _ if let Some(b) = block => {
                 let d = b.max - b.min;
-                let text = if matches!(m.region, emcraft_model::Region::Auto { .. }) {
+                let text = if matches!(m.domain.region, emcraft_model::Region::Auto { .. }) {
                     t!("Region (automatic): {x} × {y} × {z} {unit}, {material}")
                 } else {
                     t!("Region: box {x} × {y} × {z} {unit}, {material}")
@@ -505,12 +505,12 @@ fn sources(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
 }
 
 fn boundaries(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
-    let walls = match m.wall_conductivity {
+    let walls = match m.domain.wall_conductivity {
         Some(sigma) => row(t!("Walls: σ = {sigma} S/m"), args!(sigma = format!("{sigma:.3e}")), Glyph::Walls, Act::Edit("model.walls")),
         None => row(t!("Walls: perfect conductor"), &[], Glyph::Walls, Act::Edit("model.walls")),
     };
     let mut rows = vec![walls];
-    if let Some(t) = m.wall_thickness {
+    if let Some(t) = m.domain.wall_thickness {
         rows.push(row(
             t!("Wall thickness: {thickness} {unit}"),
             args!(thickness = f.len(t.get()), unit = f.unit()),
@@ -518,7 +518,7 @@ fn boundaries(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
             Act::Edit("model.walls"),
         ));
     }
-    if let Some(open) = &m.open {
+    if let Some(open) = &m.domain.open {
         let template = if open.shape == emcraft_model::OpenShape::Sphere {
             t!("Open: spherical PML {thickness} {unit}")
         } else {
@@ -526,7 +526,7 @@ fn boundaries(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         };
         rows.push(row(template, args!(thickness = f.len(open.thickness.get()), unit = f.unit()), Glyph::Open, Act::Edit("model.open")));
     }
-    for plane in &m.symmetry {
+    for plane in &m.domain.symmetry {
         let axis = plane.axis.id();
         let template = if plane.kind == emcraft_model::SymmetryKind::Electric {
             t!("Symmetry: {axis} = {at} {unit}, electric wall")
@@ -537,7 +537,7 @@ fn boundaries(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         let edit = Act::EditWith("model.symmetry", serde_json::json!({"axis": axis}));
         rows.push(row(template, args!(axis = axis, at = f.len(plane.at), unit = f.unit()), Glyph::Walls, edit));
     }
-    if let Some(p) = &m.periodic {
+    if let Some(p) = &m.domain.periodic {
         rows.push(row(t!("Periodic boundaries: {cell}"), args!(cell = periodic_text(p)), Glyph::Periodic, Act::Edit("model.periodic")));
     }
     rows

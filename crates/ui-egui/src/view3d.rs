@@ -564,7 +564,7 @@ pub fn show(app: &EmcraftApp, st: &mut crate::viewport::Parts, ui: &mut egui::Ui
 /// What a fit frames: an open problem's structure (its bodies, ports and sources) with room
 /// around it, not the air and the layer that fill most of its box; else the whole scene.
 fn focus(m: &emcraft_model::Model, (lo, hi): ([f64; 3], [f64; 3])) -> ([f64; 3], [f64; 3]) {
-    if m.open.is_none() {
+    if m.domain.open.is_none() {
         return (lo, hi);
     }
     let Some(emcraft_model::Aabb { min, max }) = emcraft_model::Aabb::around(m.radiators()) else { return (lo, hi) };

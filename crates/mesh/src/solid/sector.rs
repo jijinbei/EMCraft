@@ -919,7 +919,7 @@ mod tests {
         let count = |rot: Option<Rotation>| {
             let mut m = Model::new();
             m.set_solid(Solid { shape: shape.clone(), material: "vacuum".into() }).unwrap();
-            m.rotation = rot;
+            m.domain.rotation = rot;
             crate::solid::solid(&m, Metres::new(0.003).unwrap()).unwrap().tets.len()
         };
         // 4 109 whole, 1 427 on a quarter, 867 on an eighth.
@@ -937,17 +937,17 @@ mod tests {
         let shape = Shape::Cylinder { radius: Metres::new(0.01).unwrap(), length: Metres::new(0.03).unwrap() };
         let mut m = Model::new();
         m.set_solid(Solid { shape, material: "vacuum".into() }).unwrap();
-        m.rotation = Some(Rotation::new(4, 1, [0.0, 0.0]).unwrap());
+        m.domain.rotation = Some(Rotation::new(4, 1, [0.0, 0.0]).unwrap());
         let mesh = crate::solid::solid(&m, Metres::new(0.005).unwrap()).unwrap();
         let on_axis = mesh.nodes.iter().filter(|p| p[0].hypot(p[1]) < 1e-9).count();
         assert!(on_axis >= 6, "{on_axis} nodes on the 30 mm axis at 5 mm");
-        matched_mesh(&mesh, m.rotation.unwrap());
+        matched_mesh(&mesh, m.domain.rotation.unwrap());
     }
 
     fn matched(shape: Shape, rot: Rotation, whole: f64) {
         let mut m = Model::new();
         m.set_solid(Solid { shape, material: "vacuum".into() }).unwrap();
-        m.rotation = Some(rot);
+        m.domain.rotation = Some(rot);
         let mesh = crate::solid::solid(&m, Metres::new(0.003).unwrap()).unwrap();
         let v: f64 = crate::volumes(&mesh).iter().sum();
         let part = whole / f64::from(rot.n);

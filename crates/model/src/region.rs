@@ -61,7 +61,7 @@ impl crate::Model {
     /// use emcraft_model::{Feature, Model, Point3, Region, Shape, Metres, Combine, Axis};
     ///
     /// let mut m = Model::new();
-    /// m.region = Region::Auto { margin: Some(Metres::new(0.01)?), thickness: Some(Metres::new(0.005)?) };
+    /// m.domain.region = Region::Auto { margin: Some(Metres::new(0.01)?), thickness: Some(Metres::new(0.005)?) };
     /// m.features.push(Feature { combine: Combine::Subtract, shape: Shape::Sphere { radius: Metres::new(0.002)? }, at: Point3::ORIGIN, axis: Axis::Z });
     /// let (b, t) = m.automatic_region()?.unwrap();
     /// assert!((b.min.x + 0.017).abs() < 1e-12 && (b.max.z - 0.017).abs() < 1e-12 && t == 0.005);
@@ -73,7 +73,7 @@ impl crate::Model {
 
     /// [`Self::automatic_region`] holding `extra` too (a body about to be placed).
     pub fn automatic_region_with(&self, extra: Option<Aabb>) -> Result<Option<(Aabb, f64)>> {
-        let Region::Auto { margin, thickness } = self.region else { return Ok(None) };
+        let Region::Auto { margin, thickness } = self.domain.region else { return Ok(None) };
         let held = match (self.held(), extra) {
             (Some(a), Some(b)) => Some(a.union(b)),
             (a, b) => a.or(b),
@@ -110,18 +110,22 @@ impl crate::Model {
             ));
         }
         let shape = Shape::block(b.min, b.max)?;
-        let material = self.solid.as_ref().map_or_else(|| self.background.clone().unwrap_or_else(|| BACKGROUND.to_owned()), |s| s.material.clone());
+        let material = self
+            .domain
+            .solid
+            .as_ref()
+            .map_or_else(|| self.domain.background.clone().unwrap_or_else(|| BACKGROUND.to_owned()), |s| s.material.clone());
         self.material(&material)?;
-        let reflection = self.open.and_then(|o| o.reflection);
+        let reflection = self.domain.open.and_then(|o| o.reflection);
         let open = Open { thickness: Metres::new(t)?, reflection, shape: OpenShape::Box };
-        if self.solid.as_ref().is_some_and(|s| s.shape == shape && s.material == material) && self.open == Some(open) {
+        if self.domain.solid.as_ref().is_some_and(|s| s.shape == shape && s.material == material) && self.domain.open == Some(open) {
             return Ok(false);
         }
-        self.solid = Some(Solid { shape, material });
+        self.domain.solid = Some(Solid { shape, material });
         self.imported.clear();
         self.waveguide = None;
         self.mesh = None;
-        self.open = Some(open);
+        self.domain.open = Some(open);
         Ok(true)
     }
 }

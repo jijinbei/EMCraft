@@ -99,7 +99,7 @@ impl Model {
             uses.extend(w.sections.iter().enumerate().filter(|(_, s)| s.material == name).map(|(i, _)| MaterialUse::Section(i)));
             uses.extend(w.layers.iter().enumerate().filter(|(_, l)| l.material == name).map(|(i, _)| MaterialUse::Layer(i)));
         }
-        if self.solid.as_ref().is_some_and(|s| s.material == name) {
+        if self.domain.solid.as_ref().is_some_and(|s| s.material == name) {
             uses.push(MaterialUse::Region);
         }
         uses.extend(
@@ -157,7 +157,7 @@ impl Model {
             let slot = match u {
                 MaterialUse::Section(k) => self.waveguide.as_mut().and_then(|w| w.sections.get_mut(k)).map(|s| &mut s.material),
                 MaterialUse::Layer(k) => self.waveguide.as_mut().and_then(|w| w.layers.get_mut(k)).map(|l| &mut l.material),
-                MaterialUse::Region => self.solid.as_mut().map(|s| &mut s.material),
+                MaterialUse::Region => self.domain.solid.as_mut().map(|s| &mut s.material),
                 MaterialUse::Inclusion(k) => self.inclusions.get_mut(k).and_then(|inc| inc.material.as_mut()),
             };
             if let Some(slot) = slot {

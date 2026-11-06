@@ -293,8 +293,9 @@ fn inside(m: &Model, p: Point3) -> bool {
 pub(super) fn guide_box(m: &Model, lo: [f64; 3], hi: [f64; 3]) -> Inside {
     let mut out = Inside::default();
     let on_port = on_ports(m);
-    let symmetric =
-        |axis: emcraft_model::Axis, at: f64| m.symmetry.iter().any(|q| q.axis == axis && (q.at - at).abs() <= 1e-9 * (hi[0] - lo[0]).abs().max(1e-9));
+    let symmetric = |axis: emcraft_model::Axis, at: f64| {
+        m.domain.symmetry.iter().any(|q| q.axis == axis && (q.at - at).abs() <= 1e-9 * (hi[0] - lo[0]).abs().max(1e-9))
+    };
     let (x0, y0, z0, x1, y1, z1) = (lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]);
     let side = |open: bool| Side::open_if(open);
     // Outward: −y, +y, −x, +x.

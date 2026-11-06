@@ -188,7 +188,7 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
     }
     let features = Features::of(w);
     // Symmetry planes are grid planes; the lines beyond them are dropped (the half kept).
-    let cut = |d: usize| model.symmetry.iter().find(|p| p.axis.index() == d).map(|p| p.at);
+    let cut = |d: usize| model.domain.symmetry.iter().find(|p| p.axis.index() == d).map(|p| p.at);
     let x_planes: Vec<f64> = cut(0).into_iter().collect();
     let y_planes: Vec<f64> = features.layer_tops.iter().copied().chain(cut(1)).collect();
     let across_x = Axis { span: w.width.get(), step: o.size, planes: &x_planes, strip_edges: &features.strip_x, via_faces: &features.via_x };
@@ -205,7 +205,7 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
         .collect::<Result<Vec<_>>>()?;
     let posts: Vec<Aabb> = w.vias.iter().map(Via::bounds).collect();
     let mut mesh =
-        structured(grid, &Cells { layers: &along.layers, ylayers: &materials, posts: &posts, length: along.length, cuts: &model.symmetry });
+        structured(grid, &Cells { layers: &along.layers, ylayers: &materials, posts: &posts, length: along.length, cuts: &model.domain.symmetry });
     add_strips(&mut mesh, &w.strips, w.height.get());
     crate::check_tetrahedra(&mesh)?;
     Ok(mesh)

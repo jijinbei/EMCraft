@@ -54,17 +54,18 @@ pub(super) fn boundaries(app: &EmcraftApp, ui: &mut egui::Ui) {
     let lu = app.session.display().length.symbol();
     ui_kit::section(ui, t!("Boundaries"));
     let m = app.session.model();
-    kv(ui, t!("walls"), m.wall_conductivity.map_or_else(|| tr(t!("perfect conductor")).into(), |s| format!("σ = {s:.3e} S/m")));
+    kv(ui, t!("walls"), m.domain.wall_conductivity.map_or_else(|| tr(t!("perfect conductor")).into(), |s| format!("σ = {s:.3e} S/m")));
     let l = app.session.display().length;
-    if let Some(w) = m.wall_thickness {
+    if let Some(w) = m.domain.wall_thickness {
         kv(ui, t!("wall thickness"), format!("{} {lu}", fmt(l.from_si(w.get()))));
     }
     let kind = |o: &emcraft_model::Open| tr(if o.shape == emcraft_model::OpenShape::Sphere { t!("spherical PML") } else { t!("PML") });
     let thick = |o: &emcraft_model::Open| {
         trf(t!("{kind} {thickness} {unit} thick"), args!(kind = kind(o), thickness = fmt(l.from_si(o.thickness.get())), unit = lu))
     };
-    kv(ui, t!("open"), m.open.map_or_else(|| tr(t!("closed (no PML)")).into(), |o| thick(&o)));
+    kv(ui, t!("open"), m.domain.open.map_or_else(|| tr(t!("closed (no PML)")).into(), |o| thick(&o)));
     let planes: Vec<String> = m
+        .domain
         .symmetry
         .iter()
         .map(|s| {
@@ -80,7 +81,7 @@ pub(super) fn boundaries(app: &EmcraftApp, ui: &mut egui::Ui) {
         };
         let has = found.iter().map(|f| f.axis.id()).collect::<Vec<_>>();
         kv(ui, t!("model's symmetry"), format!("{} · {}", emcraft_model::symmetry::mirror_group(has.len()), axes(has.clone())));
-        let used = m.symmetry.iter().map(|s| s.axis.id()).collect::<Vec<_>>();
+        let used = m.domain.symmetry.iter().map(|s| s.axis.id()).collect::<Vec<_>>();
         let share = 1u32 << used.len().min(3);
         let solved = if used.is_empty() {
             trf(t!("the whole model ({group})"), args!(group = emcraft_model::symmetry::mirror_group(0)))
@@ -89,18 +90,18 @@ pub(super) fn boundaries(app: &EmcraftApp, ui: &mut egui::Ui) {
         };
         kv(ui, t!("solved"), solved);
         let unused: Vec<&str> = has.into_iter().filter(|a| !used.contains(a)).collect();
-        if !unused.is_empty() && used.len() < 2 && m.rotation.is_none() {
+        if !unused.is_empty() && used.len() < 2 && m.domain.rotation.is_none() {
             ui_kit::small(ui, trf(t!("Find symmetry can cut it across {axes} too"), args!(axes = unused.join(", "))), Tokens::get().text_dim);
         }
     }
     // A rotation set, or the one the model allows.
-    if let Some(r) = &m.rotation {
+    if let Some(r) = &m.domain.rotation {
         kv(ui, t!("rotation"), trf(t!("C{n} · 1/{n} of the model, harmonic {m}"), args!(n = r.n, m = r.m)));
     } else if let Some((_, Some(found))) = &app.workflow.rotation {
         kv(ui, t!("model's rotation"), found.group());
         ui_kit::small(ui, t!("Find rotation can solve it on a sector"), Tokens::get().text_dim);
     }
-    if let Some(p) = &m.periodic {
+    if let Some(p) = &m.domain.periodic {
         kv(ui, t!("periodic"), crate::browser::periodic_text(p));
     }
 }

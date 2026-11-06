@@ -89,7 +89,7 @@ pub fn generate(s: &mut Session, p: &Params) -> Result<Value> {
     if crate::pcb_fem::has_region(s) {
         return crate::pcb_fem::generate(s, p, &sizes);
     }
-    if s.model.waveguide.is_none() && s.model.solid.is_some() {
+    if s.model.waveguide.is_none() && s.model.domain.solid.is_some() {
         let curved = p.flag("curved").or(true)?;
         let solid_sizes = emcraft_mesh::solid::Sizes { default: sizes.default, per_material: sizes.per_material.clone() };
         let options = emcraft_mesh::solid::SolidOptions { sizes: solid_sizes, curved, refine: Vec::new() };

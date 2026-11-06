@@ -62,7 +62,7 @@ impl crate::Model {
     /// # Ok::<(), emcraft_model::ModelError>(())
     /// ```
     pub fn meridian_profile(&self, size: f64) -> Result<MeridianProfile> {
-        let solid = self.solid.as_ref().ok_or_else(|| invalid("body of revolution", "needs a solid (geometry.solid)"))?;
+        let solid = self.domain.solid.as_ref().ok_or_else(|| invalid("body of revolution", "needs a solid (geometry.solid)"))?;
         if self.waveguide.is_some() {
             return Err(invalid("body of revolution", "not supported yet: a waveguide"));
         }
@@ -132,7 +132,7 @@ impl crate::Model {
     /// The inner surface of the open boundary's layer on the half-plane (none when closed): a
     /// cylinder's three lines r = R − d, z = d and z = L − d, a sphere's inner semicircle.
     fn layer_lines(&self, size: f64) -> Vec<Segment> {
-        let (Some(o), Some(solid)) = (&self.open, &self.solid) else { return Vec::new() };
+        let (Some(o), Some(solid)) = (&self.domain.open, &self.domain.solid) else { return Vec::new() };
         let d = o.thickness.get();
         match solid.shape {
             crate::Shape::Cylinder { radius, length } => {

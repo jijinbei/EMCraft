@@ -41,10 +41,10 @@ impl Layer {
     /// The layer lining the model's open boundary (open problems only): its tetrahedra by their
     /// centroids' depth into a box's slabs, or those reaching out of a sphere's inner radius.
     pub(super) fn of(model: &Model, mesh: &Mesh) -> Result<Option<Layer>> {
-        let Some(o) = &model.open else { return Ok(None) };
+        let Some(o) = &model.domain.open else { return Ok(None) };
         let reflection = o.reflection.unwrap_or(PML_REFLECTION);
-        let block = model.solid.as_ref().and_then(|s| s.shape.box_bounds());
-        let kind = match (&model.solid, o.shape) {
+        let block = model.domain.solid.as_ref().and_then(|s| s.shape.box_bounds());
+        let kind = match (&model.domain.solid, o.shape) {
             (Some(_), OpenShape::Box) if let Some(b) = block => {
                 let d = o.thickness;
                 let size = b.max - b.min;

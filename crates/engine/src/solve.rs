@@ -282,7 +282,7 @@ pub fn device(s: &mut Session, p: &Params) -> Result<Value> {
 }
 
 pub fn time_domain(s: &mut Session, p: &Params) -> Result<Value> {
-    if s.model.periodic.is_some() {
+    if s.model.domain.periodic.is_some() {
         return Err(crate::EngineError::failed(
             "not supported yet: periodic boundaries in the time domain (clear them with model.periodic, clear true)",
         ));
@@ -296,7 +296,7 @@ pub fn time_domain(s: &mut Session, p: &Params) -> Result<Value> {
         return Err(p.error("precision", "the CPU's threads run in double precision (single needs a GPU device)"));
     }
     let gpu = backend.map(|backend| Gpu { backend, precision });
-    if s.model.open.is_some() {
+    if s.model.domain.open.is_some() {
         let mut reply = crate::open::solve_time_domain_open(s, &freqs, cell, gpu.as_ref().map(|g| g as &dyn emcraft_fdtd::OpenStepper))?;
         // A plane wave's split runs on the CPU's threads.
         let (device, gpu) = if crate::open::plane_wave(s).is_some() { (Device::Cpu, None) } else { (device, gpu) };
@@ -306,7 +306,7 @@ pub fn time_domain(s: &mut Session, p: &Params) -> Result<Value> {
     }
     let options = emcraft_fdtd::Options::new(cell);
     // A solid's ports on its faces (the guide's own sections otherwise): on the CPU's threads.
-    let solid = s.model.waveguide.is_none() && s.model.solid.is_some();
+    let solid = s.model.waveguide.is_none() && s.model.domain.solid.is_some();
     let r = if solid {
         let inputs = excited(s, p)?;
         emcraft_fdtd::s_parameters_solid(&s.model, &options, &freqs, &inputs)?

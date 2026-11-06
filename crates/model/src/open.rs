@@ -173,8 +173,8 @@ impl Model {
     pub fn set_open(&mut self, open: Option<Open>) -> Result<()> {
         if let Some(o) = open {
             o.check()?;
-            let block = self.solid.as_ref().and_then(|s| s.shape.box_bounds());
-            match (o.shape, &self.solid) {
+            let block = self.domain.solid.as_ref().and_then(|s| s.shape.box_bounds());
+            match (o.shape, &self.domain.solid) {
                 (OpenShape::Box, Some(_)) if let Some(b) = block => {
                     let size = b.max - b.min;
                     if size.iter().any(|s| 2.0 * o.thickness.get() >= s) {
@@ -224,13 +224,13 @@ impl Model {
                 }
             }
         }
-        self.open = open;
+        self.domain.open = open;
         Ok(())
     }
 
     /// The spherical layer, when the model is open with one.
     pub fn spherical_layer(&self) -> Option<SphericalLayer> {
-        match (&self.open, &self.solid) {
+        match (&self.domain.open, &self.domain.solid) {
             (Some(Open { shape: OpenShape::Sphere, thickness, .. }), Some(Solid { shape: Shape::Sphere { radius }, .. })) => {
                 Some(SphericalLayer { inner: radius.get() - thickness.get(), outer: radius.get() })
             }

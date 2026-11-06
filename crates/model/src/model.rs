@@ -15,12 +15,10 @@ use crate::error::{ModelError, Result, invalid};
 use crate::geom::{Aabb, Point3};
 use crate::material::Material;
 use crate::mesh::Mesh;
-use crate::open::{LumpedPort, Open, Source, inside_ball};
-use crate::periodic::Periodic;
+use crate::open::{LumpedPort, Source, inside_ball};
 use crate::port::Port;
 use crate::quantity::{Conductivity, Metres};
 use crate::shape::{Combine, Feature, Inclusion, Shape, Solid};
-use crate::symmetry::Symmetry;
 use crate::waveguide::Waveguide;
 
 /// The thickest wall a model may have (m).
@@ -33,9 +31,9 @@ pub struct Model {
     pub pcb: Option<crate::pcb::Board>,
     pub materials: Vec<Material>,
     pub waveguide: Option<Waveguide>,
-    /// A primitive body instead of a waveguide.
+    /// The region solved and what bounds it (crate::domain).
     #[serde(default)]
-    pub solid: Option<Solid>,
+    pub domain: crate::domain::Domain,
     /// Bodies inside the solid (other materials, conductors).
     #[serde(default)]
     pub inclusions: Vec<Inclusion>,
@@ -43,17 +41,6 @@ pub struct Model {
     #[serde(default)]
     pub features: Vec<Feature>,
     pub ports: Vec<Port>,
-    /// The conductivity (S/m) of the guide's walls (and its irises and steps); perfectly
-    /// conducting when `None`.
-    #[serde(default)]
-    pub wall_conductivity: Option<Conductivity>,
-    /// The walls' thickness (m): drawn round the guide, and with a conductivity the layer the
-    /// surface impedance sees through (never meshed); infinitely thick when `None`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wall_thickness: Option<Metres>,
-    /// An open boundary (radiation into free space through a PML).
-    #[serde(default)]
-    pub open: Option<Open>,
     /// What drives an open problem.
     #[serde(default)]
     pub sources: Vec<Source>,
@@ -66,29 +53,6 @@ pub struct Model {
     /// The job: the kind of analysis and the run's confirmed settings.
     #[serde(default)]
     pub job: crate::job::Job,
-    /// Symmetry planes (at most one across x and one across y): the model is meshed and solved
-    /// on the side below them only.
-    #[serde(default)]
-    pub symmetry: Vec<Symmetry>,
-    /// The symmetry planes were found for an eigenmode search with no port to decide their
-    /// walls: every combination of walls is solved and the modes merged
-    /// ([`Model::with_walls`]); their kinds as set are the first combination's.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub every_wall: bool,
-    /// Periodic boundaries: the model is the unit cell of an infinite array.
-    #[serde(default)]
-    pub periodic: Option<Periodic>,
-    /// Rotational symmetry: the model is meshed and solved on one sector of it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rotation: Option<crate::symmetry::rotation::Rotation>,
-    /// How the region is set: pinned as the solid was, or automatic round what the model holds
-    /// ([`crate::region`]).
-    #[serde(default, skip_serializing_if = "is_pinned")]
-    pub region: crate::region::Region,
-    /// The background an automatic region is filled with before it has a solid (vacuum when
-    /// none); the region's material once it has one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub background: Option<String>,
     /// The bodies of an imported part that are not placed in the region, by what they were read
     /// as: its walls (`metal`: the region is the air they enclose) or the region itself
     /// (`interior`). The others are bodies in the region ([`Model::features`],
@@ -135,23 +99,14 @@ impl Default for Model {
             pcb: None,
             materials: vec![Material::vacuum()],
             waveguide: None,
-            solid: None,
+            domain: crate::domain::Domain::default(),
             inclusions: Vec::new(),
             features: Vec::new(),
             ports: Vec::new(),
-            wall_conductivity: None,
-            wall_thickness: None,
-            open: None,
             sources: Vec::new(),
             lumped: Vec::new(),
             elements: Vec::new(),
             job: crate::job::Job::Open,
-            symmetry: Vec::new(),
-            every_wall: false,
-            periodic: None,
-            rotation: None,
-            region: crate::region::Region::Pinned,
-            background: None,
             imported: Vec::new(),
             mesh: None,
         }
@@ -193,7 +148,7 @@ impl Model {
     pub fn set_waveguide(&mut self, w: Waveguide) -> Result<()> {
         w.check(|name| self.material(name).map(|_| ()))?;
         self.waveguide = Some(w);
-        self.solid = None;
+        self.domain.solid = None;
         self.drop_what_fits_the_old_geometry();
         Ok(())
     }
@@ -202,10 +157,10 @@ impl Model {
     pub fn set_solid(&mut self, s: Solid) -> Result<()> {
         s.check_shape()?;
         self.material(&s.material)?;
-        self.solid = Some(s);
+        self.domain.solid = Some(s);
         self.waveguide = None;
         // A region set is pinned (ADR 0005).
-        self.region = crate::region::Region::Pinned;
+        self.domain.region = crate::region::Region::Pinned;
         self.drop_what_fits_the_old_geometry();
         Ok(())
     }
@@ -217,7 +172,7 @@ impl Model {
         self.imported.clear();
         self.inclusions.clear();
         self.features.clear();
-        self.open = None;
+        self.domain.open = None;
         self.sources.clear();
         self.lumped.clear();
         self.mesh = None;
@@ -226,7 +181,7 @@ impl Model {
     /// Adds a body inside the solid; it must lie within the solid's bounding box, apart from the
     /// other inclusions' (the mesher checks the surfaces do not meet).
     pub fn add_inclusion(&mut self, inc: Inclusion) -> Result<()> {
-        let solid = self.solid.as_ref().ok_or_else(|| invalid("inclusion", "needs a solid (geometry.solid) to lie in"))?;
+        let solid = self.domain.solid.as_ref().ok_or_else(|| invalid("inclusion", "needs a solid (geometry.solid) to lie in"))?;
         inc.shape.check()?;
         if !inc.at.is_finite() {
             return Err(invalid("inclusion", "its position must be finite"));
@@ -291,7 +246,7 @@ impl Model {
     }
 
     pub fn add_feature(&mut self, f: Feature) -> Result<()> {
-        let solid = self.solid.as_ref().ok_or_else(|| invalid("feature", "needs a solid (geometry.solid) to combine with"))?;
+        let solid = self.domain.solid.as_ref().ok_or_else(|| invalid("feature", "needs a solid (geometry.solid) to combine with"))?;
         f.shape.check()?;
         if !f.at.is_finite() {
             return Err(invalid("feature", "its position must be finite"));
@@ -310,7 +265,7 @@ impl Model {
     /// Sets the walls' conductivity (S/m, checked by its type), or perfect conductors with
     /// `None`.
     pub fn set_wall_conductivity(&mut self, sigma: Option<Conductivity>) {
-        self.wall_conductivity = sigma;
+        self.domain.wall_conductivity = sigma;
     }
 
     /// Sets the walls' thickness (m, at most [`MAX_WALL_THICKNESS`]), or infinitely thick walls
@@ -321,7 +276,7 @@ impl Model {
         {
             return Err(invalid("wall thickness", format!("must be at most {MAX_WALL_THICKNESS} m, got {t}")));
         }
-        self.wall_thickness = thickness;
+        self.domain.wall_thickness = thickness;
         Ok(())
     }
 
@@ -348,18 +303,23 @@ impl Model {
     /// let mut m = Model::new();
     /// m.set_solid(Solid { shape: Shape::Box { size: BoxSize::new(Vec3::new(0.02, 0.02, 0.02))? }, material: "vacuum".into() })?;
     /// let t = m.translated(Vec3::new(-0.01, -0.01, 0.0))?;
-    /// let b = t.solid.as_ref().and_then(|s| s.shape.box_bounds()).unwrap();
+    /// let b = t.domain.solid.as_ref().and_then(|s| s.shape.box_bounds()).unwrap();
     /// assert_eq!((b.min.x, b.max.x), (-0.01, 0.01));
     /// # Ok::<(), emcraft_model::ModelError>(())
     /// ```
     pub fn translated(&self, v: crate::geom::Vec3) -> Result<Model> {
-        if !self.symmetry.is_empty() || self.rotation.is_some() || self.periodic.is_some() || self.waveguide.is_some() || self.pcb.is_some() {
+        if !self.domain.symmetry.is_empty()
+            || self.domain.rotation.is_some()
+            || self.domain.periodic.is_some()
+            || self.waveguide.is_some()
+            || self.pcb.is_some()
+        {
             return Err(invalid("move", "not supported for symmetry planes, a rotation, periodic boundaries, a waveguide or a board"));
         }
         let mut m = self.clone();
         m.mesh = None;
         let shift = |p: Point3| p + v;
-        if let Some(solid) = m.solid.as_mut() {
+        if let Some(solid) = m.domain.solid.as_mut() {
             solid.shape = match &solid.shape {
                 Shape::Box { size } => Shape::block(shift(Point3::ORIGIN), shift(size.to_point()))?,
                 Shape::Surface { name, positions, triangles, tags, surfaces } => Shape::Surface {
@@ -397,7 +357,7 @@ impl Model {
     /// What fills a point of a solid model: `None` outside the body or inside a conductor, else
     /// the material's index (a dielectric inclusion's, or the solid's).
     pub fn material_at(&self, p: Point3) -> Option<usize> {
-        let s = self.solid.as_ref()?;
+        let s = self.domain.solid.as_ref()?;
         let inside = self.features.iter().fold(s.shape.contains(p), |inside, f| f.combine.apply(inside, f.contains(p)));
         if !inside {
             return None;
@@ -414,7 +374,7 @@ impl Model {
         if let Some(w) = &self.waveguide {
             return Some(Aabb::new(Point3::ORIGIN, Point3::new(w.width.get(), w.height.get(), w.length())));
         }
-        let s = self.solid.as_ref()?;
+        let s = self.domain.solid.as_ref()?;
         Some(self.features.iter().filter(|f| f.combine == Combine::Add).map(Feature::bounds).fold(s.shape.bounds(), Aabb::union))
     }
 
@@ -430,7 +390,7 @@ impl Model {
         if let Some(why) = self.rotation_issue() {
             issues.push(Issue::Rotation(why));
         }
-        if self.waveguide.is_none() && self.solid.is_none() {
+        if self.waveguide.is_none() && self.domain.solid.is_none() {
             issues.push(Issue::NoGeometry);
         }
         if self.ports.is_empty() && self.lumped.is_empty() {
@@ -444,7 +404,7 @@ impl Model {
 }
 
 /// Whether a region is pinned (left out of a saved model, as models before regions were).
-fn is_pinned(r: &crate::region::Region) -> bool {
+pub(crate) fn is_pinned(r: &crate::region::Region) -> bool {
     *r == crate::region::Region::Pinned
 }
 
@@ -538,7 +498,7 @@ mod tests {
         let mm = |t: f64| Some(Metres::new(t * 1e-3).unwrap());
         assert!(m.set_wall_thickness(mm(2000.0)).is_err(), "thicker than a metre");
         m.set_wall_thickness(mm(1.0)).unwrap();
-        assert_eq!(m.wall_thickness, mm(1.0));
+        assert_eq!(m.domain.wall_thickness, mm(1.0));
     }
 
     #[test]

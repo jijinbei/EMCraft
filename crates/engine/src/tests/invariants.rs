@@ -57,7 +57,7 @@ fn swept(name: &str) -> (Session, Value) {
 /// Whether anything in the model absorbs: a lossy or dispersive material, lossy walls.
 fn lossy(s: &Session) -> bool {
     let m = &s.model;
-    m.wall_conductivity.is_some()
+    m.domain.wall_conductivity.is_some()
         || m.materials.iter().any(|x| x.loss_tangent.get() != 0.0 || x.magnetic_loss_tangent.get() != 0.0 || !x.dispersion.is_empty())
 }
 
@@ -68,7 +68,7 @@ const LEAKY: &[(&str, &str)] = &[("circular-guide", "the unstructured mesh coupl
 /// The checks on the template `name`.
 fn invariants(name: &str) {
     let (mut s, _) = swept(name);
-    assert!(s.model.open.is_none(), "{name}: a sweep of S with an open boundary");
+    assert!(s.model.domain.open.is_none(), "{name}: a sweep of S with an open boundary");
     let c = s.execute("results.check", &json!({})).unwrap();
     let (gain, asym, unitary) =
         (c["largest_singular_value"].as_f64().unwrap(), c["reciprocity_error"].as_f64().unwrap(), c["unitarity_error"].as_f64().unwrap());

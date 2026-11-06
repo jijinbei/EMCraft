@@ -145,8 +145,8 @@ fn bor_ports(model: &emcraft_model::Model, pr: &emcraft_model::symmetry::meridia
 pub fn revolution_radiation(s: &mut Session, p: &Params) -> Result<Value> {
     use emcraft_solver::bor::open::{BorSource, Layer, LayerShape};
     let frequency = args::frequency_or_band_top(s, p, "frequency", args::SET_THE_BAND)?;
-    let open = s.model.open.as_ref().ok_or_else(|| EngineError::failed("no open boundary: line the model with model.open"))?;
-    let shape = match (s.model.solid.as_ref().map(|x| &x.shape), open.shape) {
+    let open = s.model.domain.open.as_ref().ok_or_else(|| EngineError::failed("no open boundary: line the model with model.open"))?;
+    let shape = match (s.model.domain.solid.as_ref().map(|x| &x.shape), open.shape) {
         (Some(emcraft_model::Shape::Cylinder { radius, length }), emcraft_model::OpenShape::Box) => {
             LayerShape::Cylinder { radius: radius.get(), z0: 0.0, z1: length.get() }
         }
@@ -216,7 +216,7 @@ pub fn revolution_radiation(s: &mut Session, p: &Params) -> Result<Value> {
 /// `solve.revolution.time_domain`: the closed model as a body of revolution rung in one order on
 /// the meridian half-plane's (r, z) grid, its resonances in the band.
 pub fn revolution_time_domain(s: &mut Session, p: &Params) -> Result<Value> {
-    if s.model.open.is_some() || !s.model.ports.is_empty() || !s.model.sources.is_empty() || !s.model.lumped.is_empty() {
+    if s.model.domain.open.is_some() || !s.model.ports.is_empty() || !s.model.sources.is_empty() || !s.model.lumped.is_empty() {
         return Err(EngineError::failed(
             "not supported yet: ports, sources or an open boundary in a body of revolution's time domain (a closed cavity rings)",
         ));
@@ -312,7 +312,7 @@ fn revolution_fed(s: &Session, p: &Params, layer: &emcraft_solver::bor::open::La
 
 /// `solve.cyclic`: a rotationally symmetric cavity's modes per harmonic, from its sector.
 pub fn cyclic(s: &mut Session, p: &Params) -> Result<Value> {
-    let rot = s.model.rotation.ok_or_else(|| EngineError::failed("no rotational symmetry: set it with model.rotation"))?;
+    let rot = s.model.domain.rotation.ok_or_else(|| EngineError::failed("no rotational symmetry: set it with model.rotation"))?;
     let near = crate::args::frequency_or_band_top(s, p, "frequency", crate::args::SET_THE_BAND)?;
     let count = p.integer("count", 1..=emcraft_solver::bloch::MAX_BANDS).or(4)?;
     let order = p.order()?;
@@ -325,7 +325,7 @@ pub fn cyclic(s: &mut Session, p: &Params) -> Result<Value> {
         crate::progress::report(k, harmonics.len(), "harmonic")?;
         // The sector's mesh is the same for every harmonic: only the cut faces' phase moves.
         let mut model = s.model.clone();
-        model.rotation = Some(emcraft_model::Rotation { m, ..rot });
+        model.domain.rotation = Some(emcraft_model::Rotation { m, ..rot });
         let modes = emcraft_solver::bloch::cyclic_modes(&model, order, count, near)?;
         let shown: Vec<f64> = modes.iter().map(|&f| s.show_frequency(f)).collect();
         rows.push(json!({"m": m, "modes": shown}));
@@ -337,7 +337,7 @@ pub fn cyclic(s: &mut Session, p: &Params) -> Result<Value> {
 /// in each harmonic, and its dominant mode's S over both rotations (m = 1 and n − 1) in the
 /// standing polarizations the whole model's ports carry.
 pub fn harmonics(s: &mut Session, p: &Params) -> Result<Value> {
-    let rot = s.model.rotation.ok_or_else(|| EngineError::failed("no rotational symmetry: set it with model.rotation"))?;
+    let rot = s.model.domain.rotation.ok_or_else(|| EngineError::failed("no rotational symmetry: set it with model.rotation"))?;
     if s.model.ports.is_empty() {
         return Err(EngineError::failed("no ports: create them on the solid's ends with model.port.create"));
     }
@@ -360,7 +360,7 @@ pub fn harmonics(s: &mut Session, p: &Params) -> Result<Value> {
     let total = wanted.len() * freqs.len();
     for (i, &m) in wanted.iter().enumerate() {
         let mut model = s.model.clone();
-        model.rotation = Some(emcraft_model::Rotation { m, ..rot });
+        model.domain.rotation = Some(emcraft_model::Rotation { m, ..rot });
         let d = emcraft_solver::Driven::new(&model, order)?;
         let names: Vec<String> = d
             .ports

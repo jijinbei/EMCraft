@@ -79,29 +79,29 @@ impl Model {
         if let Some(why) = periodic.and_then(|p| self.periodic_issue_of(&p)) {
             return Err(invalid("periodic boundaries", why));
         }
-        self.periodic = periodic;
+        self.domain.periodic = periodic;
         Ok(())
     }
 
     /// Why the model's periodic boundaries cannot hold, if they cannot.
     pub fn periodic_issue(&self) -> Option<String> {
-        self.periodic.as_ref().and_then(|p| self.periodic_issue_of(p))
+        self.domain.periodic.as_ref().and_then(|p| self.periodic_issue_of(p))
     }
 
     fn periodic_issue_of(&self, p: &Periodic) -> Option<String> {
         let issue = || -> std::result::Result<(), String> {
             p.check()?;
             if self.waveguide.is_none() {
-                return Err(if self.solid.is_some() {
+                return Err(if self.domain.solid.is_some() {
                     "not supported yet: periodic boundaries on a solid (the unstructured mesher does not make matching opposite faces; use geometry.waveguide, whose structured mesh does)".into()
                 } else {
                     "needs a waveguide (geometry.waveguide) as the unit cell".into()
                 });
             }
-            if !self.symmetry.is_empty() {
+            if !self.domain.symmetry.is_empty() {
                 return Err("not supported yet: symmetry planes with periodic boundaries".into());
             }
-            if self.open.is_some() {
+            if self.domain.open.is_some() {
                 return Err("not supported yet: an open boundary with periodic boundaries (the Floquet ports terminate the cell)".into());
             }
             if !self.lumped.is_empty() || !self.sources.is_empty() {
@@ -148,7 +148,7 @@ mod tests {
     fn periodic_boundaries_are_checked() {
         let mut m = cell();
         m.set_periodic(Some(tied(true, true, false))).unwrap();
-        assert_eq!(m.periodic.map(|p| p.axes()), Some(vec![0, 1]));
+        assert_eq!(m.domain.periodic.map(|p| p.axes()), Some(vec![0, 1]));
         for bad in [
             tied(false, false, false),
             Periodic { theta: f64::NAN, ..tied(true, true, false) },
@@ -157,7 +157,7 @@ mod tests {
         ] {
             assert!(m.set_periodic(Some(bad)).is_err(), "{bad:?}");
         }
-        assert_eq!(m.periodic, Some(tied(true, true, false)), "a refused change keeps the old");
+        assert_eq!(m.domain.periodic, Some(tied(true, true, false)), "a refused change keeps the old");
         m.add_port(Port::new("p1", End::Start)).unwrap();
         assert!(m.set_periodic(Some(tied(false, false, true))).unwrap_err().to_string().contains("no ports"));
         m.set_periodic(None).unwrap();

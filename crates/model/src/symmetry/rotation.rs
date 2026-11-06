@@ -17,7 +17,7 @@ pub const SECTOR_OFFSET: f64 = 0.0937;
 pub const MIN_SECTORS: u32 = 3;
 pub const MAX_SECTORS: u32 = 64;
 
-/// A model's rotational symmetry ([`crate::Model::rotation`]).
+/// A model's rotational symmetry ([`crate::domain::Domain::rotation`]).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Rotation {
     /// The turns that map the model onto itself: 2π/n.
@@ -185,7 +185,7 @@ impl crate::Model {
     /// box's middle, the centroid of an imported surface's vertices (a symmetric set's centroid
     /// lies on its axis), with the most sectors that turn it onto itself.
     pub fn find_rotation(&self) -> Option<FoundRotation> {
-        let solid = self.solid.as_ref()?;
+        let solid = self.domain.solid.as_ref()?;
         let fits = |n: u32, centre: [f64; 2]| self.rotation_issue_of(&Rotation { n, m: 0, centre }).is_none();
         match &solid.shape {
             // Round, and its features about the axis too: any number; else the most there are.
@@ -227,17 +227,17 @@ impl crate::Model {
         }
         // Another harmonic keeps the sector and its mesh: only the cut faces' phase moves.
         let same_sector = |a: &Rotation, b: &Rotation| a.n == b.n && a.centre == b.centre;
-        if !matches!((&self.rotation, &rotation), (Some(a), Some(b)) if same_sector(a, b)) {
+        if !matches!((&self.domain.rotation, &rotation), (Some(a), Some(b)) if same_sector(a, b)) {
             self.mesh = None;
         }
-        self.rotation = rotation;
+        self.domain.rotation = rotation;
         Ok(())
     }
 
     /// Why the model's rotational symmetry cannot hold, if it cannot (the geometry may have
     /// changed since it was set).
     pub fn rotation_issue(&self) -> Option<String> {
-        self.rotation.as_ref().and_then(|r| self.rotation_issue_of(r))
+        self.domain.rotation.as_ref().and_then(|r| self.rotation_issue_of(r))
     }
 
     /// Why no rotational symmetry is found: what [`Self::rotation_unsupported`] says, else what
@@ -246,7 +246,7 @@ impl crate::Model {
         if let Some(why) = self.rotation_unsupported() {
             return Some(why);
         }
-        let centre = match &self.solid.as_ref()?.shape {
+        let centre = match &self.domain.solid.as_ref()?.shape {
             crate::Shape::Cylinder { .. } | crate::Shape::Sphere { .. } => [0.0, 0.0],
             crate::Shape::Box { size } => [0.5 * size.x, 0.5 * size.y],
             crate::Shape::Surface { .. } => return None,
@@ -257,10 +257,10 @@ impl crate::Model {
     /// What keeps the model from any rotational symmetry whatever its shape: no solid, or
     /// what a sector cannot carry yet.
     pub fn rotation_unsupported(&self) -> Option<String> {
-        if self.solid.is_none() || self.waveguide.is_some() {
+        if self.domain.solid.is_none() || self.waveguide.is_some() {
             return Some("needs a solid (geometry.solid): a waveguide has no rotational symmetry to cut".into());
         }
-        if !self.symmetry.is_empty() || self.periodic.is_some() || self.open.is_some() {
+        if !self.domain.symmetry.is_empty() || self.domain.periodic.is_some() || self.domain.open.is_some() {
             return Some("not supported yet: with symmetry planes, periodic boundaries or an open boundary".into());
         }
         if !self.lumped.is_empty() || !self.sources.is_empty() {
@@ -340,7 +340,7 @@ impl crate::Model {
             if let Some(why) = self.rotation_unsupported() {
                 return Err(why);
             }
-            let solid = self.solid.as_ref().ok_or("needs a solid")?;
+            let solid = self.domain.solid.as_ref().ok_or("needs a solid")?;
             self.features_turn(r)?;
             self.inclusions_turn(r)?;
             let b = solid.shape.bounds();

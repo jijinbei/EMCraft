@@ -144,6 +144,6 @@ fn lumped_ports_in_lossy_materials_and_lossy_walls_are_refused() {
     assert!(matches!(radiate(&m, &OpenOptions::new(2e-3), &[10e9]), Err(emcraft_fdtd::FdtdError::Unsupported(_))));
     let (material, _, _) = lossy();
     let mut m = sphere_model(material);
-    m.wall_conductivity = Some(emcraft_model::Conductivity::new(5.8e7).unwrap());
+    m.domain.wall_conductivity = Some(emcraft_model::Conductivity::new(5.8e7).unwrap());
     assert!(matches!(radiate(&m, &OpenOptions::new(2e-3), &[10e9]), Err(emcraft_fdtd::FdtdError::Unsupported(_))));
 }

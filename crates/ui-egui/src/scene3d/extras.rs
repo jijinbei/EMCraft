@@ -121,7 +121,7 @@ pub(crate) fn quad_centre(q: &[[f64; 3]; 4]) -> [f64; 3] {
 /// framed, in its wall's colour (meshed, the half below it is what is drawn, its cut the plane).
 pub(super) fn symmetry_planes(m: &Model, out: &mut Built) {
     let Some((lo, hi)) = out.bounds else { return };
-    for s in &m.symmetry {
+    for s in &m.domain.symmetry {
         let k = s.axis.index();
         let (u, v) = ((k + 1) % 3, (k + 2) % 3);
         let at = |a: f64, b: f64| {
@@ -144,7 +144,7 @@ pub(super) fn symmetry_planes(m: &Model, out: &mut Built) {
 /// A rotational symmetry's sector, drawn faint as its two cut half-planes from the axis out to
 /// the model's extent: the faces tied by the harmonic's phase.
 pub(super) fn sector_cuts(m: &Model, out: &mut Built) {
-    let (Some(r), Some((lo, hi))) = (m.rotation, out.bounds) else { return };
+    let (Some(r), Some((lo, hi))) = (m.domain.rotation, out.bounds) else { return };
     let reach = [lo[0], hi[0]].iter().flat_map(|x| [lo[1], hi[1]].map(|y| (x - r.centre[0]).hypot(y - r.centre[1]))).fold(0.0, f64::max);
     let colour = sc().periodic;
     for phi in [r.start(), r.start() + r.angle()] {
@@ -283,7 +283,7 @@ fn sources(s: &Source, strong: bool, size: f64, out: &mut Built) {
 /// layer's thickness is shaded as a band round each outer face (a picture frame), so what lies
 /// inside stays clear, and its corners join the inner frame's.
 fn open_boundary(m: &Model, overlay: Overlay, out: &mut Built) {
-    let (Some(o), Some((lo, hi))) = (&m.open, out.bounds) else { return };
+    let (Some(o), Some((lo, hi))) = (&m.domain.open, out.bounds) else { return };
     let t = o.thickness;
     let (a, b) = ([lo[0] + t, lo[1] + t, lo[2] + t], [hi[0] - t, hi[1] - t, hi[2] - t]);
     if overlay == Overlay::Boundaries {

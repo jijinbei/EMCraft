@@ -36,7 +36,7 @@ fn quarter(size: f64, order: u8, m: Option<u32>) -> Value {
     }
     let r = s.execute("solve.cyclic", &p).unwrap();
     // The model keeps its own harmonic.
-    assert_eq!(s.model.rotation.map(|r| r.m), Some(0));
+    assert_eq!(s.model.domain.rotation.map(|r| r.m), Some(0));
     r
 }
 
@@ -68,7 +68,7 @@ fn a_pillbox_on_a_quarter_gives_its_modes() {
     assert_eq!(set["centre"], json!([0.0, 0.0]));
     assert_eq!(s.execute("project.values", &json!({"command": "model.rotation"})).unwrap()["n"], 4);
     s.execute("model.rotation", &json!({"clear": true})).unwrap();
-    assert!(s.model.rotation.is_none());
+    assert!(s.model.domain.rotation.is_none());
     close(&quarter(4.0, 1, Some(1)), &[1], 0.03);
 }
 
@@ -95,7 +95,7 @@ fn what_a_sector_cannot_carry_is_refused() {
         json!({"clear": true, "n": 4}),
     ] {
         assert!(s.execute("model.rotation", &bad).is_err(), "{bad}");
-        assert!(s.model.rotation.is_none(), "{bad}");
+        assert!(s.model.domain.rotation.is_none(), "{bad}");
     }
     assert!(s.execute("solve.cyclic", &json!({"frequency": 10})).is_err());
     // A box square across z turns onto itself by a quarter only.
@@ -133,7 +133,7 @@ fn the_rotation_a_model_has_is_found() {
     let r = s.execute("model.rotation.find", &json!({})).unwrap();
     assert_eq!((r["group"].as_str(), r["n"].as_u64()), (Some("C∞"), Some(4)));
     s.execute("model.rotation.find", &json!({"n": 7, "m": 2})).unwrap();
-    assert_eq!(s.model.rotation.map(|r| (r.n, r.m)), Some((7, 2)));
+    assert_eq!(s.model.domain.rotation.map(|r| (r.n, r.m)), Some((7, 2)));
     // A square box: quarters about its middle.
     let mut b = Session::new();
     b.execute("geometry.solid", &json!({"shape": "box", "size": [10, 10, 5]})).unwrap();
@@ -154,7 +154,7 @@ fn the_rotation_a_model_has_is_found() {
     assert!((c[0] - 3.0).abs() < 1e-9 && (c[1] + 2.0).abs() < 1e-9, "{c:?}");
     h.execute("model.rotation.find", &json!({"n": 3})).unwrap();
     assert!(h.execute("model.rotation.find", &json!({"n": 4})).is_err());
-    assert_eq!(h.model.rotation.map(|r| r.n), Some(3));
+    assert_eq!(h.model.domain.rotation.map(|r| r.n), Some(3));
     // A sphere on the axis lies across every sector's cut faces: the pillbox keeps its rotation.
     let mut f = pillbox();
     f.execute("geometry.inclusion", &json!({"shape": "sphere", "radius": 2, "at": [0, 0, 7]})).unwrap();

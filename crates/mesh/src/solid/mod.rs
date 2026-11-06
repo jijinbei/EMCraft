@@ -171,7 +171,7 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
     // those outside it are their images'.
     let kept;
     let mut across: Vec<usize> = Vec::new();
-    let model = match &model.rotation {
+    let model = match &model.domain.rotation {
         Some(rot) if !model.inclusions.is_empty() => {
             let mut m = model.clone();
             let sides: Vec<Option<bool>> = m.inclusions.iter().map(|inc| rot.sector_side(&inc.shape, inc.at)).collect();
@@ -186,7 +186,7 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
     let SolidOptions { sizes, curved, refine } = options;
     let curved = *curved;
     let mut locals = local_sizes(refine)?;
-    let s = model.solid.as_ref().ok_or_else(|| MeshError::Invalid { what: "model".into(), why: "has no solid".into() })?;
+    let s = model.domain.solid.as_ref().ok_or_else(|| MeshError::Invalid { what: "model".into(), why: "has no solid".into() })?;
     let (material, _) = model.material(&s.material)?;
     // The half a symmetry plane keeps: the shape itself shortened where it can be, else cut.
     let (shape, cuts) = halved(model, &s.shape)?;
@@ -200,7 +200,7 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
     // inclusion's) with the layer's shell, meshed as a region of its own between it and the
     // solid's sphere — so the shell's tetrahedra are a layer of their own.
     let layer = spherical_layer(model)?;
-    if model.rotation.is_some() && (!model.symmetry.is_empty() || layer.is_some()) {
+    if model.domain.rotation.is_some() && (!model.domain.symmetry.is_empty() || layer.is_some()) {
         return Err(MeshError::invalid("rotational symmetry", "not supported yet with symmetry planes or a spherical layer"));
     }
     let mut main = match layer {
@@ -221,7 +221,7 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
     // The sector a rotation keeps: cut by a wedge last, its two cut faces then matched.
     let mut frozen = Vec::new();
     let mut cuts: Vec<(usize, sector::Cut)> = Vec::new();
-    if let (Some(rot), Some(b)) = (&model.rotation, model.bounds()) {
+    if let (Some(rot), Some(b)) = (&model.domain.rotation, model.bounds()) {
         let bodies: Vec<Tessellation> = across
             .iter()
             .map(|&i| {
@@ -265,7 +265,7 @@ fn halved(model: &Model, shape: &Shape) -> Result<(Shape, Vec<Feature>)> {
     let tol = 1e-9 * (bounds.max - bounds.min).norm();
     let mut shape = shape.clone();
     let mut cuts = Vec::new();
-    for plane in &model.symmetry {
+    for plane in &model.domain.symmetry {
         let d = plane.axis.index();
         let crossed =
             model.features.iter().any(|f| f.combine == Combine::Add && f.bounds().min[d] < plane.at - tol && f.bounds().max[d] > plane.at + tol);
@@ -309,7 +309,7 @@ fn shortened(shape: &Shape, d: usize, at: f64, tol: f64) -> Option<Shape> {
 /// size) tagged as the plane's wall.
 fn tag_symmetry_planes(mesh: &mut Mesh, model: &Model, size: f64) {
     let tol = 1e-9 * size.max(model.bounds().map_or(0.0, |b| (b.max - b.min).norm()));
-    for plane in &model.symmetry {
+    for plane in &model.domain.symmetry {
         let d = plane.axis.index();
         let on = |n: &u32| mesh.nodes.get(*n as usize).is_some_and(|q| (q[d] - plane.at).abs() <= tol);
         let cut: Vec<usize> = mesh.boundary.iter().enumerate().filter(|(_, f)| f.nodes.iter().all(on)).map(|(i, _)| i).collect();
@@ -445,7 +445,7 @@ impl Body<'_> {
             let frozen: Vec<u32> = (frozen_from..next).chain(cut).collect();
             let outer_mesh = region(&outer, size, frozen, &self.locals)?;
             // A sector's cut faces with points the mesher added: matched again and meshed again.
-            if let (Some(rot), Some(&base)) = (&model.rotation, self.frozen.first()) {
+            if let (Some(rot), Some(&base)) = (&model.domain.rotation, self.frozen.first()) {
                 let scale = model.bounds().map_or(size, |bx| (bx.max - bx.min).norm());
                 unmatched = false;
                 let bodies: Vec<Tessellation> = self.cuts.iter().filter_map(|(k, _)| interfaces.get(*k).cloned()).collect();
@@ -1226,7 +1226,7 @@ mod tests {
     #[test]
     fn nearly_touching_boundaries_stop_quickly() {
         let (m, size) = (stepped_coax(0.001), 0.0015);
-        let s = m.solid.as_ref().unwrap();
+        let s = m.domain.solid.as_ref().unwrap();
         let main = combine_all(tessellate(&s.shape, size), &m.features, &s.shape, size).unwrap();
         let start = std::time::Instant::now();
         let e = region(&main, size, Vec::new(), &[]).err().expect("nearly touching boundaries are refused");

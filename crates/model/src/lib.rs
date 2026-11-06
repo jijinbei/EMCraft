@@ -27,6 +27,7 @@
 
 pub mod analysis;
 pub mod band;
+pub mod domain;
 pub mod edit;
 pub mod element;
 pub mod error;

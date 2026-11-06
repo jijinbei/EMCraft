@@ -400,10 +400,11 @@ fn iterate<A: Arithmetic>(model: &Model, driven: &Driven, count: usize, sigma: f
         let frequency = A::frequency(lambda);
         let omega = angular(frequency);
         let u = driven.stored_energy(&vector, frequency)?;
-        let q_walls = match model.wall_conductivity {
-            Some(s) => {
-                Some(omega * u / driven.wall_loss_perturbation(&vector, frequency, s.get(), model.wall_thickness.map(emcraft_model::Metres::get))?)
-            }
+        let q_walls = match model.domain.wall_conductivity {
+            Some(s) => Some(
+                omega * u
+                    / driven.wall_loss_perturbation(&vector, frequency, s.get(), model.domain.wall_thickness.map(emcraft_model::Metres::get))?,
+            ),
             None => None,
         };
         let (q_dielectric, q_magnetic) = A::q_materials(driven, &vector, lambda, frequency, omega * u)?;
@@ -420,10 +421,10 @@ pub fn eigenmodes(model: &Model, order: Order, count: usize, near: f64) -> Resul
         return Err(invalid("mode count", format!("must be 1 to {MAX_MODES}")));
     }
     check_frequency(near)?;
-    if model.rotation.is_some() {
+    if model.domain.rotation.is_some() {
         return Err(invalid("eigenmodes", "a sector's modes depend on the harmonic: use solve.cyclic"));
     }
-    if model.periodic.is_some() {
+    if model.domain.periodic.is_some() {
         return Err(invalid("eigenmodes", "a periodic cell's eigenmodes depend on the phase across it: use solve.dispersion"));
     }
     if !model.elements.is_empty() {
@@ -457,7 +458,7 @@ pub fn eigenmodes(model: &Model, order: Order, count: usize, near: f64) -> Resul
 /// unknowns. Without that flag, [`eigenmodes`].
 pub fn eigenmodes_every_wall(model: &Model, order: Order, count: usize, near: f64) -> Result<Eigen> {
     let combinations = model.wall_combinations();
-    if !model.every_wall || combinations.len() < 2 {
+    if !model.domain.every_wall || combinations.len() < 2 {
         return eigenmodes(model, order, count, near);
     }
     let mut systems: Vec<Driven> = Vec::with_capacity(combinations.len());

@@ -375,7 +375,7 @@ fn a_board_shows_its_copper_by_role_with_its_heights_stretched() {
 fn a_halved_model_is_drawn_whole_and_its_image_faint_in_the_mesh_step() {
     let mut s = Session::new();
     s.execute("file.sample", &json!({"name": "td-e-bend"})).unwrap();
-    let half = s.model().symmetry[0].at;
+    let half = s.model().domain.symmetry[0].at;
     let built = build(&s, Overlay::Plain);
     let (_, hi) = built.bounds.unwrap();
     assert!((hi[2] - 2.0 * half).abs() < 1e-12, "{hi:?}");

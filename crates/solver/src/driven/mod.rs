@@ -310,8 +310,8 @@ impl BoundaryFaces {
         // opposite face.
         let tied = |i: usize| {
             let nodes = &mesh.boundary[i].nodes;
-            model.periodic.as_ref().is_some_and(|p| periodic::on_tied_face(mesh, p, nodes))
-                || model.rotation.as_ref().is_some_and(|r| periodic::on_cut_face(mesh, r, nodes))
+            model.domain.periodic.as_ref().is_some_and(|p| periodic::on_tied_face(mesh, p, nodes))
+                || model.domain.rotation.as_ref().is_some_and(|r| periodic::on_cut_face(mesh, r, nodes))
         };
         let ports: Vec<Vec<usize>> = match ends {
             Ends::Ports => model.ports.iter().map(|p| ports::faces_of_port(mesh, p)).collect::<Result<_>>()?,
@@ -353,7 +353,7 @@ impl Driven {
     /// ([`emcraft_model::Open`]), driven by sources, lumped ports or its waveguide ports on faces
     /// inside it ([`crate::radiation`]).
     pub fn open(model: &Model, order: Order) -> Result<Driven> {
-        if model.open.is_none() {
+        if model.domain.open.is_none() {
             return Err(SolveError::NotReady("no open boundary: line the box with model.open".into()));
         }
         let ends = if model.ports.is_empty() { Ends::Closed } else { Ends::Ports };
@@ -361,7 +361,7 @@ impl Driven {
     }
 
     fn build(model: &Model, order: Order, ends: Ends, walls: Walls) -> Result<Driven> {
-        if model.rotation.is_some() && model.open.is_some() {
+        if model.domain.rotation.is_some() && model.domain.open.is_some() {
             return Err(invalid("rotational symmetry", "not supported yet: an open boundary on a sector"));
         }
         let issues: Vec<String> =
@@ -373,7 +373,7 @@ impl Driven {
         let topo = Topology::new(&mesh);
         // The conductivity and thickness are checked by their types.
         let sigma = match walls {
-            Walls::Modelled => model.wall_conductivity.map(emcraft_model::Conductivity::get),
+            Walls::Modelled => model.domain.wall_conductivity.map(emcraft_model::Conductivity::get),
             Walls::Perfect => None,
         };
         let faces = BoundaryFaces::classify(model, &mesh, ends, sigma.is_none())?;
@@ -391,7 +391,7 @@ impl Driven {
             .map(|(p, f)| {
                 let complex =
                     |modes| PortData { name: p.name.clone(), end: p.end, modes, reference: None, deembed: 0.0, terminals: 0, planes: Vec::new() };
-                match (&model.periodic, &model.rotation) {
+                match (&model.domain.periodic, &model.domain.rotation) {
                     (Some(per), _) => Ok(complex(PortModes::Floquet(Box::new(floquet::prepare(model, per, p, f)?)))),
                     (None, Some(rot)) => Ok(complex(PortModes::Cyclic(Box::new(cyclic::prepare(model, rot, p, f)?)))),
                     (None, None) => ports::prepare(model, p, &space, f),
@@ -405,7 +405,7 @@ impl Driven {
         let pattern = space.pattern(gaps.map(|c| c.iter().map(|(u, _)| *u).collect()));
         let in_pml = pml.as_ref().map(Layer::tets).unwrap_or_default();
         let volume = space.volume_matrices(&pattern, &media, |t| !in_pml.contains(&t))?;
-        let tie = match (&model.periodic, &model.rotation) {
+        let tie = match (&model.domain.periodic, &model.domain.rotation) {
             (Some(_), Some(_)) => return Err(invalid("rotational symmetry", "not supported yet: with periodic boundaries")),
             (Some(per), None) => {
                 if !lumped.is_empty() || !elements.is_empty() || pml.is_some() {
@@ -424,7 +424,7 @@ impl Driven {
         let wall = match sigma {
             Some(sigma) => Some(WallLoss {
                 sigma,
-                thickness: model.wall_thickness.map(emcraft_model::Metres::get),
+                thickness: model.domain.wall_thickness.map(emcraft_model::Metres::get),
                 mass: space.wall_mass(&pattern, &faces.walls)?,
             }),
             None => None,
@@ -443,10 +443,10 @@ impl Driven {
             pml,
             lumped,
             elements,
-            symmetry: model.symmetry.clone(),
-            periodic: model.periodic,
+            symmetry: model.domain.symmetry.clone(),
+            periodic: model.domain.periodic,
             tie,
-            rotation: model.rotation,
+            rotation: model.domain.rotation,
             analysis: std::sync::OnceLock::new(),
             iterative: false,
             mesh,
@@ -598,7 +598,7 @@ impl Driven {
 
 /// Cavities are closed: an open model's resonances would be complex.
 fn refuse_open(model: &Model) -> Result<()> {
-    if model.open.is_some() {
+    if model.domain.open.is_some() {
         return Err(invalid(
             "eigenmodes",
             "not supported yet: an open model's resonances (complex frequencies); close the box (model.open without a thickness)",

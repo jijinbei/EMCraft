@@ -137,7 +137,7 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
     let w = [region.hi[0] - region.lo[0], region.hi[1] - region.lo[1]];
     // An open boundary's layer: its inner box a line of the mesh in the plane (and a level
     // across the air, below), so no prism straddles where the layer begins.
-    let layer = s.model.open.as_ref().map(|o| o.thickness.get());
+    let layer = s.model.domain.open.as_ref().map(|o| o.thickness.get());
     let lines: Vec<[[f64; 2]; 2]> = match layer {
         Some(d) if !(2.0 * d < w[0] && 2.0 * d < w[1] && d < region.above && d < region.below) => {
             return Err(failed("the open boundary's layer must be thinner than the air above and below the board and than half the region's sides"));
