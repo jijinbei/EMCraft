@@ -5,10 +5,12 @@ on:
     branches: [develop, main]
   pull_request:
 
-# A newer push to the same branch or pull request makes the running checks moot.
+# A newer push to a pull request makes its running checks moot; a push to a branch does not
+# cancel the run in progress (the heavy job takes over an hour, so a busy main never finished
+# one), only the run waiting behind it is replaced by the newest.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always

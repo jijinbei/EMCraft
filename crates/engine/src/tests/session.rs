@@ -158,11 +158,14 @@ fn a_template_opens_with_its_parameters_changed_and_refuses_unknown_ones() {
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn every_sample_opens() {
-    // Without their solve steps: the geometry, mesh, ports and sources of each.
+    // Without their solve steps: the geometry, mesh, ports and sources of each (a time-domain
+    // sample's grid is made by its solve, so it has no mesh).
     for smp in emcraft_templates::TEMPLATES {
         let mut s = Session::new();
         s.execute("file.sample", &json!({"name": smp.name})).unwrap_or_else(|e| panic!("{}: {e}", smp.name));
-        assert!(s.model.mesh.is_some() || s.model.pcb.is_some(), "{}", smp.name);
+        let meshed = smp.script.contains("\"mesh.generate\"") || smp.script.contains("\"mesh.adapt\"");
+        assert!(!meshed || s.model.mesh.is_some() || s.model.pcb.is_some(), "{}", smp.name);
+        assert!(s.model.solid.is_some() || s.model.waveguide.is_some() || s.model.pcb.is_some(), "{}: no geometry", smp.name);
     }
 }
 

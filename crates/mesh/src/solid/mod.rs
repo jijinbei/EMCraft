@@ -1189,7 +1189,9 @@ mod tests {
     fn stepped_coax_meshes(r2: f64, size: f64) {
         let start = std::time::Instant::now();
         let mesh = solid(&stepped_coax(r2), metres(size)).unwrap_or_else(|e| panic!("r2 {r2}: {e}"));
-        assert!(start.elapsed().as_secs() < 60, "r2 {r2}: {:?}", start.elapsed());
+        // A bound against a runaway, not a benchmark: CI's shared runners take about 60 s for the
+        // finer hole where a desktop takes a fraction of it.
+        assert!(start.elapsed().as_secs() < 240, "r2 {r2}: {:?}", start.elapsed());
         let v: f64 = crate::volumes(&mesh).iter().sum();
         let hole = |r: f64| PI * r * r * 0.01;
         let exact = PI * 0.0035f64.powi(2) * 0.02 - hole(0.001) - hole(r2);
