@@ -27,6 +27,7 @@
 
 pub mod analysis;
 pub mod band;
+pub mod body;
 pub mod domain;
 pub mod edit;
 pub mod element;
@@ -50,6 +51,7 @@ pub mod waveguide;
 
 pub use analysis::Analysis;
 pub use band::Band;
+pub use body::{Body, Fill, Kind};
 pub use edit::MaterialUse;
 pub use element::{Arrangement, LumpedElement, MAX_ELEMENTS};
 pub use error::{ModelError, Result, positive};
@@ -57,7 +59,7 @@ pub use geom::{Aabb, CVec3, Point3, Vec3};
 pub use job::{Job, MAX_MODES, Order, Setup};
 pub use material::{MAX_POLES, Material, Pole, SecondOrder};
 pub use mesh::{Boundary, BoundaryFace, Buckets, Grid, Mesh};
-pub use model::{Issue, MAX_WALL_THICKNESS, Model, PartBody};
+pub use model::{Issue, MAX_WALL_THICKNESS, Model};
 pub use num_complex::Complex64;
 pub use open::{LumpedPort, Open, OpenShape, Source, SphericalLayer};
 pub use periodic::{Periodic, Polarization};

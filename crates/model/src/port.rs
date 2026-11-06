@@ -478,7 +478,7 @@ impl Model {
             End::End => hi[2],
         };
         let tol = 1e-9 * hi[2].abs().max(1e-300);
-        if self.features.iter().map(super::shape::Feature::bounds).any(|b| b.min.z <= plane + tol && b.max.z >= plane - tol) {
+        if self.features().iter().map(super::shape::Feature::bounds).any(|b| b.min.z <= plane + tol && b.max.z >= plane - tol) {
             return Err(invalid("port", "a feature reaches the end face; a port needs the guide's whole cross-section there"));
         }
         s.shape.end_face(end)

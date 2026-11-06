@@ -46,7 +46,7 @@ impl crate::Model {
     /// bounding box; none when the model holds nothing yet.
     pub fn held(&self) -> Option<Aabb> {
         let corners = self
-            .features
+            .features()
             .iter()
             .flat_map(|f| f.bounds().corners())
             .chain(self.radiators())
@@ -62,7 +62,7 @@ impl crate::Model {
     ///
     /// let mut m = Model::new();
     /// m.domain.region = Region::Auto { margin: Some(Metres::new(0.01)?), thickness: Some(Metres::new(0.005)?) };
-    /// m.features.push(Feature { combine: Combine::Subtract, shape: Shape::Sphere { radius: Metres::new(0.002)? }, at: Point3::ORIGIN, axis: Axis::Z });
+    /// m.bodies_mut().push(emcraft_model::Body::from(Feature { combine: Combine::Subtract, shape: Shape::Sphere { radius: Metres::new(0.002)? }, at: Point3::ORIGIN, axis: Axis::Z }));
     /// let (b, t) = m.automatic_region()?.unwrap();
     /// assert!((b.min.x + 0.017).abs() < 1e-12 && (b.max.z - 0.017).abs() < 1e-12 && t == 0.005);
     /// # Ok::<(), emcraft_model::ModelError>(())
@@ -122,7 +122,7 @@ impl crate::Model {
             return Ok(false);
         }
         self.domain.solid = Some(Solid { shape, material });
-        self.imported.clear();
+        self.set_parts(Vec::new());
         self.waveguide = None;
         self.mesh = None;
         self.domain.open = Some(open);

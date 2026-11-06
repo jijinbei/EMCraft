@@ -50,8 +50,8 @@ fn exact_resonances(s: &Session) -> Vec<(f64, String)> {
         return emcraft_theory::cavity_resonances(w.width.get(), w.height.get(), w.length(), mat.eps_r.get() * mat.mu_r.get(), 12);
     }
     if let Some(solid) = m.domain.solid.as_ref()
-        && m.inclusions.is_empty()
-        && m.features.is_empty()
+        && m.inclusions().is_empty()
+        && m.features().is_empty()
         && let Ok((_, mat)) = m.material(&solid.material)
     {
         let er = mat.eps_r.get() * mat.mu_r.get();

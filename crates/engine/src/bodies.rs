@@ -40,8 +40,8 @@ pub fn bodies(m: &Model) -> Vec<Body> {
         Shape::Surface { name, .. } if !name.is_empty() => name.clone(),
         _ => format!("body {n}"),
     };
-    let mut out: Vec<Body> = Vec::with_capacity(m.features.len() + m.inclusions.len());
-    for (i, f) in m.features.iter().enumerate() {
+    let mut out: Vec<Body> = Vec::with_capacity(m.features().len() + m.inclusions().len());
+    for (i, f) in m.features().iter().enumerate() {
         let material = match f.combine {
             Combine::Subtract => METAL.to_owned(),
             Combine::Add => region.to_owned(),
@@ -49,11 +49,37 @@ pub fn bodies(m: &Model) -> Vec<Body> {
         };
         out.push(Body { name: name(&f.shape, out.len() + 1), material, shape: f.shape.kind(), at: BodyRef::Feature(i) });
     }
-    for (i, inc) in m.inclusions.iter().enumerate() {
+    for (i, inc) in m.inclusions().iter().enumerate() {
         let material = inc.material.clone().unwrap_or_else(|| METAL.to_owned());
         out.push(Body { name: name(&inc.shape, out.len() + 1), material, shape: inc.shape.kind(), at: BodyRef::Inclusion(i) });
     }
     out
+}
+
+/// An imported part's walls or region body as the user sees it: its name and `metal` (walls
+/// round the region) or `interior` (the region).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Part {
+    pub name: String,
+    pub material: &'static str,
+}
+
+/// The imported part's walls and region body, in their order.
+pub fn parts(m: &Model) -> Vec<Part> {
+    m.parts()
+        .map(|(_, b)| Part {
+            name: b.name.clone().unwrap_or_default(),
+            material: if b.kind == emcraft_model::Kind::Interior { INTERIOR } else { METAL },
+        })
+        .collect()
+}
+
+/// An imported part's body `name` (its walls, or the region): placed by the import, its
+/// surface kept to be drawn round the region.
+pub(crate) fn part(name: &str, shape: Shape, interior: bool) -> emcraft_model::Body {
+    use emcraft_model::{Fill, Kind};
+    let (fill, kind) = if interior { (Fill::Region, Kind::Interior) } else { (Fill::Metal, Kind::Walls) };
+    emcraft_model::Body { shape, at: Point3::ORIGIN, axis: Axis::Z, fill, kind, name: Some(name.to_owned()) }
 }
 
 /// What a body was placed as (`as` in replies).
@@ -142,7 +168,7 @@ pub fn body(s: &mut Session, p: &Params) -> Result<Value> {
 pub fn body_material(s: &mut Session, p: &Params) -> Result<Value> {
     let wanted = p.string("body").required()?;
     let material = p.string("material").required()?;
-    if s.model.imported.iter().any(|b| b.name == wanted) {
+    if parts(&s.model).iter().any(|b| b.name == wanted) {
         return part_body_material(s, wanted, material);
     }
     let list = bodies(&s.model);
@@ -208,8 +234,8 @@ pub(crate) fn body_named(m: &Model, p: &Params) -> Result<Body> {
 /// A body's shape, placement and axis.
 pub(crate) fn placement(m: &Model, at: BodyRef) -> Option<(Shape, Point3, Axis)> {
     match at {
-        BodyRef::Feature(i) => m.features.get(i).map(|f| (f.shape.clone(), f.at, f.axis)),
-        BodyRef::Inclusion(i) => m.inclusions.get(i).map(|inc| (inc.shape.clone(), inc.at, Axis::Z)),
+        BodyRef::Feature(i) => m.features().get(i).map(|f| (f.shape.clone(), f.at, f.axis)),
+        BodyRef::Inclusion(i) => m.inclusions().get(i).map(|inc| (inc.shape.clone(), inc.at, Axis::Z)),
     }
 }
 
@@ -262,7 +288,7 @@ pub fn body_edit(s: &mut Session, p: &Params) -> Result<Value> {
     };
     let placed = match b.at {
         BodyRef::Feature(i) => {
-            let now = s.model.features.get(i).map(|f| f.combine).ok_or_else(gone)?;
+            let now = s.model.features().get(i).map(|f| f.combine).ok_or_else(gone)?;
             if material == b.material || combine(&material) == Some(now) {
                 s.model.replace_feature(i, Feature { combine: now, shape, at, axis })?;
                 None

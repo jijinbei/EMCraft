@@ -138,15 +138,15 @@ fn lumped_ports_sources_and_bodies_are_edited_and_deleted() {
     // Bodies by name: the post's radius, then the sphere a dielectric of glass, in place.
     s.execute("geometry.body.edit", &json!({"body": "body 1", "radius": 1})).unwrap();
     assert!(
-        matches!(s.model.features[0].shape, emcraft_model::Shape::Cylinder { radius, length } if radius == metres(0.001) && length == metres(0.04))
+        matches!(s.model.features()[0].shape, emcraft_model::Shape::Cylinder { radius, length } if radius == metres(0.001) && length == metres(0.04))
     );
     s.execute("geometry.body.edit", &json!({"body": "body 2", "material": "glass", "at": [21, 20, 20]})).unwrap();
-    assert_eq!(s.model.inclusions[0].material.as_deref(), Some("glass"));
+    assert_eq!(s.model.inclusions()[0].material.as_deref(), Some("glass"));
     assert!(s.model.mesh.is_none());
     // Metal now: a subtracted feature, placed again last.
     let r = s.execute("geometry.body.edit", &json!({"body": "body 2", "material": "metal"})).unwrap();
     assert_eq!(r["placed_again"], true);
-    assert_eq!((s.model.features.len(), s.model.inclusions.len()), (2, 0));
+    assert_eq!((s.model.features().len(), s.model.inclusions().len()), (2, 0));
     assert!(refused(&mut s, "geometry.body.edit", json!({"body": "body 9"})).contains("bodies: body 1, body 2"));
     refused(&mut s, "geometry.body.edit", json!({"body": "body 1", "at": [500, 0, 0]}));
     refused(&mut s, "geometry.body.edit", json!({"body": "body 1", "shape": "box"}));

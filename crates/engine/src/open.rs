@@ -85,8 +85,8 @@ fn in_vacuum(s: &Session) -> bool {
 /// cylinders of one radius with the model's one lumped port across the gap between them, in
 /// vacuum: (total length, radius).
 fn wire_dipole(s: &Session) -> Option<(f64, f64)> {
-    let ([a, b], [port]) = (&s.model.inclusions[..], &s.model.lumped[..]) else { return None };
-    if !in_vacuum(s) || !s.model.sources.is_empty() || !s.model.features.is_empty() || a.material.is_some() || b.material.is_some() {
+    let ([a, b], [port]) = (s.model.inclusions(), &s.model.lumped[..]) else { return None };
+    if !in_vacuum(s) || !s.model.sources.is_empty() || !s.model.features().is_empty() || a.material.is_some() || b.material.is_some() {
         return None;
     }
     let (&Shape::Cylinder { radius: ra, length: la }, &Shape::Cylinder { radius: rb, length: lb }) = (&a.shape, &b.shape) else { return None };
@@ -117,7 +117,7 @@ pub(crate) fn plane_wave(s: &Session) -> Option<(Vec3, Vec3)> {
 fn lone_dipole(s: &Session) -> Option<(f64, Vec3)> {
     let vacuum = in_vacuum(s);
     match s.model.sources[..] {
-        [Source::Dipole { direction, length, current, .. }] if vacuum && s.model.inclusions.is_empty() && s.model.features.is_empty() => {
+        [Source::Dipole { direction, length, current, .. }] if vacuum && s.model.inclusions().is_empty() && s.model.features().is_empty() => {
             Some((current * length, direction))
         }
         _ => None,
@@ -128,8 +128,8 @@ fn lone_dipole(s: &Session) -> Option<(f64, Vec3)> {
 /// conductor.
 fn lone_sphere(s: &Session) -> Option<(f64, Option<f64>)> {
     plane_wave(s)?;
-    match &s.model.inclusions[..] {
-        [inc] if s.model.features.is_empty() && s.model.sources.len() == 1 => match (&inc.shape, &inc.material) {
+    match s.model.inclusions() {
+        [inc] if s.model.features().is_empty() && s.model.sources.len() == 1 => match (&inc.shape, &inc.material) {
             (Shape::Sphere { radius }, Some(name)) => {
                 let (_, m) = s.model.material(name).ok()?;
                 (m.mu_r.get() == 1.0 && m.loss_tangent.get() == 0.0 && !m.is_magnetically_lossy()).then_some((radius.get(), Some(m.eps_r.get())))

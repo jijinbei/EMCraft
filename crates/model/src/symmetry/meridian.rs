@@ -74,10 +74,10 @@ impl crate::Model {
         let mut lines: Vec<Line> = Vec::new();
         outline(&solid.shape, crate::Point3::ORIGIN, crate::Axis::Z, size, &mut lines)
             .map_err(|why| invalid("body of revolution", format!("the solid {why}")))?;
-        for (i, f) in self.features.iter().enumerate() {
+        for (i, f) in self.features().iter().enumerate() {
             outline(&f.shape, f.at, f.axis, size, &mut lines).map_err(|why| invalid("body of revolution", format!("feature {} {why}", i + 1)))?;
         }
-        for (i, inc) in self.inclusions.iter().enumerate() {
+        for (i, inc) in self.inclusions().iter().enumerate() {
             outline(&inc.shape, inc.at, crate::Axis::Z, size, &mut lines)
                 .map_err(|why| invalid("body of revolution", format!("inclusion {} {why}", i + 1)))?;
         }
@@ -381,7 +381,12 @@ mod tests {
     #[test]
     fn a_sphere_cut_out_of_a_cylinder_leaves_its_arc_in_the_outline() {
         let mut m = model(cylinder(0.01, 0.02));
-        m.features.push(Feature { combine: Combine::Subtract, shape: sphere(0.005), at: Point3::new(0.0, 0.0, 0.02), axis: crate::Axis::Z });
+        m.bodies_mut().push(crate::Body::from(Feature {
+            combine: Combine::Subtract,
+            shape: sphere(0.005),
+            at: Point3::new(0.0, 0.0, 0.02),
+            axis: crate::Axis::Z,
+        }));
         let p = m.meridian_profile(0.0005).unwrap();
         assert!(p.points.iter().all(|q| q[0] >= 0.0 && q[1] >= -1e-12 && q[1] <= 0.02 + 1e-12));
         // Every point on the arc is 5 mm from the top's centre or on the cylinder's sides.
@@ -410,7 +415,7 @@ mod tests {
         assert!((rim - 0.008).abs() < 1e-9, "{rim}");
         // A sphere inclusion inside it: an interface the model's filling changes across.
         m.add_material(crate::Material::new("ptfe", 2.1, 1.0).unwrap()).unwrap();
-        m.inclusions.push(Inclusion { shape: sphere(0.002), at: Point3::new(0.0, 0.0, 0.005), material: Some("ptfe".into()) });
+        m.bodies_mut().push(crate::Body::from(Inclusion { shape: sphere(0.002), at: Point3::new(0.0, 0.0, 0.005), material: Some("ptfe".into()) }));
         let p = m.meridian_profile(0.0005).unwrap();
         assert!(p.segments.len() > 8, "{:?} {:?}", p.points, p.segments);
         assert!((p.densest - 2.1).abs() < 1e-12);
@@ -426,7 +431,12 @@ mod tests {
         let e = model(square).meridian_profile(0.001).unwrap_err().to_string();
         assert!(e.contains("the solid is not turned about the z axis"), "{e}");
         let mut m = model(cylinder(0.01, 0.02));
-        m.features.push(Feature { combine: Combine::Add, shape: sphere(0.002), at: Point3::new(0.005, 0.0, 0.02), axis: crate::Axis::Z });
+        m.bodies_mut().push(crate::Body::from(Feature {
+            combine: Combine::Add,
+            shape: sphere(0.002),
+            at: Point3::new(0.005, 0.0, 0.02),
+            axis: crate::Axis::Z,
+        }));
         let e = m.meridian_profile(0.001).unwrap_err().to_string();
         assert!(e.contains("feature 1 is a sphere off the z axis"), "{e}");
         let e =

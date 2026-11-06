@@ -11,6 +11,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::analysis::Analysis;
+use crate::body::{BodiesMut, Body, MeshView, ViewCache};
 use crate::error::{ModelError, Result, invalid};
 use crate::geom::{Aabb, Point3};
 use crate::material::Material;
@@ -34,12 +35,13 @@ pub struct Model {
     /// The region solved and what bounds it (crate::domain).
     #[serde(default)]
     pub domain: crate::domain::Domain,
-    /// Bodies inside the solid (other materials, conductors).
+    /// The bodies, in the order they were placed ([`crate::body`]): read with
+    /// [`Model::bodies`], changed with [`Model::bodies_mut`] or the setters.
     #[serde(default)]
-    pub inclusions: Vec<Inclusion>,
-    /// Primitives combined with the solid's shape, in order.
-    #[serde(default)]
-    pub features: Vec<Feature>,
+    bodies: Vec<Body>,
+    /// The mesher's view of the bodies (features and inclusions), made when first read.
+    #[serde(skip)]
+    view: ViewCache,
     pub ports: Vec<Port>,
     /// What drives an open problem.
     #[serde(default)]
@@ -53,12 +55,6 @@ pub struct Model {
     /// The job: the kind of analysis and the run's confirmed settings.
     #[serde(default)]
     pub job: crate::job::Job,
-    /// The bodies of an imported part that are not placed in the region, by what they were read
-    /// as: its walls (`metal`: the region is the air they enclose) or the region itself
-    /// (`interior`). The others are bodies in the region ([`Model::features`],
-    /// [`Model::inclusions`]).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub imported: Vec<PartBody>,
     /// The mesh of the waveguide (made by `emcraft-mesh`), shared: the copies of the model a
     /// session keeps to undo to share it rather than copy it.
     #[serde(skip)]
@@ -100,32 +96,57 @@ impl Default for Model {
             materials: vec![Material::vacuum()],
             waveguide: None,
             domain: crate::domain::Domain::default(),
-            inclusions: Vec::new(),
-            features: Vec::new(),
+            bodies: Vec::new(),
+            view: ViewCache::default(),
             ports: Vec::new(),
             sources: Vec::new(),
             lumped: Vec::new(),
             elements: Vec::new(),
             job: crate::job::Job::Open,
-            imported: Vec::new(),
             mesh: None,
         }
     }
 }
 
-/// An imported part's body read as the region's walls or as the region ([`Model::imported`]).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct PartBody {
-    pub name: String,
-    /// `metal` (walls) or `interior` (the region).
-    pub material: String,
-    /// A wall's surface where the region lies, for the window to draw the part round its air;
-    /// not solved, not saved (the import is in the history).
-    #[serde(skip)]
-    pub shape: Option<crate::shape::Shape>,
-}
-
 impl Model {
+    /// The bodies, in the order they were placed.
+    pub fn bodies(&self) -> &[Body] {
+        &self.bodies
+    }
+
+    /// The bodies to change in place (the mesher's view follows).
+    pub fn bodies_mut(&mut self) -> BodiesMut<'_> {
+        BodiesMut { bodies: &mut self.bodies, view: &mut self.view }
+    }
+
+    /// The bodies as the mesher reads them.
+    pub fn mesh_view(&self) -> &MeshView {
+        self.view.get(&self.bodies)
+    }
+
+    /// The bodies combined with the region's shape, as features, in their order.
+    pub fn features(&self) -> &[Feature] {
+        &self.mesh_view().features
+    }
+
+    /// The bodies meshed apart, as inclusions, in their order.
+    pub fn inclusions(&self) -> &[Inclusion] {
+        &self.mesh_view().inclusions
+    }
+
+    /// An imported part's walls and region body, with where each lies among the bodies.
+    pub fn parts(&self) -> impl Iterator<Item = (usize, &Body)> {
+        self.bodies.iter().enumerate().filter(|(_, b)| b.is_part())
+    }
+
+    /// Sets an imported part's walls and region body in place of the last part's (first among
+    /// the bodies).
+    pub fn set_parts(&mut self, parts: Vec<Body>) {
+        let mut bodies = self.bodies_mut();
+        bodies.retain(|b| !b.is_part());
+        bodies.splice(0..0, parts);
+    }
+
     pub fn new() -> Model {
         Model::default()
     }
@@ -169,9 +190,7 @@ impl Model {
     /// boundary, sources, lumped ports and the mesh.
     fn drop_what_fits_the_old_geometry(&mut self) {
         self.pcb = None;
-        self.imported.clear();
-        self.inclusions.clear();
-        self.features.clear();
+        self.bodies_mut().clear();
         self.domain.open = None;
         self.sources.clear();
         self.lumped.clear();
@@ -198,10 +217,10 @@ impl Model {
         {
             return Err(invalid("inclusion", "must lie inside the spherical layer's inner sphere"));
         }
-        if self.inclusions.iter().any(|other| other.bounds().overlaps_inside(bounds)) {
+        if self.inclusions().iter().any(|other| other.bounds().overlaps_inside(bounds)) {
             return Err(invalid("inclusion", "not supported yet: inclusions whose bounding boxes overlap"));
         }
-        self.inclusions.push(inc);
+        self.bodies_mut().push(inc.into());
         self.mesh = None;
         Ok(())
     }
@@ -210,18 +229,18 @@ impl Model {
     /// meet the solid's; the mesher checks the surfaces meet cleanly.
     /// Takes feature `i` out of the model; the mesh is dropped (it no longer fits).
     pub fn remove_feature(&mut self, i: usize) -> Option<Feature> {
-        (i < self.features.len()).then(|| {
-            self.mesh = None;
-            self.features.remove(i)
-        })
+        let k = *self.mesh_view().feature_body.get(i)?;
+        self.mesh = None;
+        let b = self.bodies_mut().remove(k);
+        b.feature()
     }
 
     /// Takes inclusion `i` out of the model; the mesh is dropped (it no longer fits).
     pub fn remove_inclusion(&mut self, i: usize) -> Option<Inclusion> {
-        (i < self.inclusions.len()).then(|| {
-            self.mesh = None;
-            self.inclusions.remove(i)
-        })
+        let k = *self.mesh_view().inclusion_body.get(i)?;
+        self.mesh = None;
+        let b = self.bodies_mut().remove(k);
+        b.inclusion()
     }
 
     /// Sets the job.
@@ -257,7 +276,7 @@ impl Model {
         if self.spherical_layer().is_some() {
             return Err(invalid("feature", "not supported yet: features combined with a sphere lined by a spherical layer"));
         }
-        self.features.push(f);
+        self.bodies_mut().push(f.into());
         self.mesh = None;
         Ok(())
     }
@@ -283,10 +302,10 @@ impl Model {
     /// The corners of everything that radiates or scatters: inclusions, features, dipoles and
     /// the ends of lumped ports (an open problem's Huygens box encloses them).
     pub fn radiators(&self) -> impl Iterator<Item = Point3> + '_ {
-        self.inclusions
+        self.inclusions()
             .iter()
             .flat_map(|i| i.bounds().corners())
-            .chain(self.features.iter().flat_map(|f| f.bounds().corners()))
+            .chain(self.features().iter().flat_map(|f| f.bounds().corners()))
             .chain(self.sources.iter().filter_map(Source::position))
             .chain(self.lumped.iter().flat_map(|l| [l.from, l.to]))
     }
@@ -333,8 +352,9 @@ impl Model {
                 _ => return Err(invalid("move", "a cylinder or sphere region stands on the origin")),
             };
         }
-        m.features.iter_mut().for_each(|f| f.at = shift(f.at));
-        m.inclusions.iter_mut().for_each(|i| i.at = shift(i.at));
+        // The bodies in the region move with it (an imported part's walls are drawn where
+        // they were read).
+        m.bodies_mut().iter_mut().filter(|b| !b.is_part()).for_each(|b| b.at = shift(b.at));
         for src in &mut m.sources {
             if let Source::Dipole { at, .. } = src {
                 *at = shift(*at);
@@ -358,11 +378,11 @@ impl Model {
     /// the material's index (a dielectric inclusion's, or the solid's).
     pub fn material_at(&self, p: Point3) -> Option<usize> {
         let s = self.domain.solid.as_ref()?;
-        let inside = self.features.iter().fold(s.shape.contains(p), |inside, f| f.combine.apply(inside, f.contains(p)));
+        let inside = self.features().iter().fold(s.shape.contains(p), |inside, f| f.combine.apply(inside, f.contains(p)));
         if !inside {
             return None;
         }
-        let name = match self.inclusions.iter().find(|inc| inc.contains(p)) {
+        let name = match self.inclusions().iter().find(|inc| inc.contains(p)) {
             Some(inc) => inc.material.as_ref()?,
             None => &s.material,
         };
@@ -375,7 +395,7 @@ impl Model {
             return Some(Aabb::new(Point3::ORIGIN, Point3::new(w.width.get(), w.height.get(), w.length())));
         }
         let s = self.domain.solid.as_ref()?;
-        Some(self.features.iter().filter(|f| f.combine == Combine::Add).map(Feature::bounds).fold(s.shape.bounds(), Aabb::union))
+        Some(self.features().iter().filter(|f| f.combine == Combine::Add).map(Feature::bounds).fold(s.shape.bounds(), Aabb::union))
     }
 
     /// Everything a frequency-domain solve needs, each problem named.

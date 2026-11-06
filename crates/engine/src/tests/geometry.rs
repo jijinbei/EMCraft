@@ -120,7 +120,7 @@ fn imported_surfaces_mesh_and_carry_ports() {
     // Drawn as its air: the body is the region.
     let r = s.execute("geometry.import", &json!({"path": path, "materials": {"guide.stl": "interior"}})).unwrap();
     assert_eq!(r["region"], "guide.stl", "{r}");
-    assert_eq!(s.model.imported, vec![emcraft_model::PartBody { name: "guide.stl".into(), material: "interior".into(), shape: None }]);
+    assert_eq!(crate::bodies::parts(&s.model), vec![crate::bodies::Part { name: "guide.stl".into(), material: "interior" }]);
     assert_eq!(r["faces"], 6);
     approx::assert_abs_diff_eq!(r["volume"].as_f64().unwrap(), 22.5e-3 * 10e-3 * 30e-3, epsilon = 1e-15);
     s.execute("mesh.generate", &json!({"size": 3})).unwrap();
@@ -287,8 +287,8 @@ fn bodies_are_placed_by_what_they_are_made_of() {
     assert_eq!(names(&s), [("body 1".to_owned(), "metal".to_owned()), ("body 2".into(), "vacuum".into()), ("body 3".into(), "ceramic".into())]);
     // The puck made metal: placed again, last.
     s.execute("geometry.body.material", &json!({"body": "body 3", "material": "metal"})).unwrap();
-    assert_eq!(s.model.features.len(), 3);
-    assert!(s.model.inclusions.is_empty());
+    assert_eq!(s.model.features().len(), 3);
+    assert!(s.model.inclusions().is_empty());
     for bad in [json!({"body": "nothing", "material": "metal"}), json!({"body": "body 1", "material": "unobtainium"})] {
         assert!(s.execute("geometry.body.material", &bad).is_err(), "{bad}");
     }
@@ -368,7 +368,7 @@ fn a_part_drawn_as_its_metal_gives_the_air_it_encloses() {
     let exact = 22.86 * 10.16 * 32.0 - 2.0 * 5.43 * 10.16 * 2.0;
     assert!((r["pieces"]["kept"][0].as_f64().unwrap() - exact).abs() < 1e-6 * exact, "{r}");
     assert_eq!(r["pieces"]["dropped"], 0);
-    assert!(s.model.features.is_empty() && s.model.inclusions.is_empty());
+    assert!(s.model.features().is_empty() && s.model.inclusions().is_empty());
     // The ports are the channel's ends: whole rectangles, the TE modes in closed form.
     s.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
     let Ok(emcraft_model::PortShape::Rect { x0, y0, a, b }) = s.model.port_shape(emcraft_model::End::Start) else { panic!() };
@@ -595,9 +595,9 @@ fn an_imported_part_is_metal_and_its_material_changes_the_region() {
     let channel = 22.86 * 10.16 * 32.0 - 2.0 * 5.43 * 10.16 * 2.0;
     let volume = |s: &Session| s.model.domain.solid.as_ref().unwrap().shape.volume() * 1e9;
     assert!((volume(&s) - channel).abs() < 1e-6 * channel);
-    assert_eq!((s.model.imported.len(), s.model.imported[0].name.as_str(), s.model.imported[0].material.as_str()), (1, "Block", "metal"));
+    assert_eq!(crate::bodies::parts(&s.model), vec![crate::bodies::Part { name: "Block".into(), material: "metal" }]);
     // The block is kept to be drawn round its channel.
-    assert!(matches!(s.model.imported[0].shape, Some(emcraft_model::Shape::Surface { .. })));
+    assert!(matches!(s.model.parts().next().map(|(_, b)| &b.shape), Some(emcraft_model::Shape::Surface { .. })));
     s.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
     let v = s.execute("project.values", &json!({"command": "geometry.body.material", "body": "Block"})).unwrap();
     assert_eq!(v, json!({"body": "Block", "material": "metal"}));
@@ -605,13 +605,13 @@ fn an_imported_part_is_metal_and_its_material_changes_the_region() {
     let r = s.execute("geometry.body.material", &json!({"body": "Block", "material": "interior"})).unwrap();
     assert_eq!(r["region"], "Block", "{r}");
     assert!(volume(&s) > 32.86 * 20.16 * 32.0 - channel - 1.0, "{}", volume(&s));
-    assert_eq!(s.model.imported[0].material, "interior");
+    assert_eq!(crate::bodies::parts(&s.model)[0].material, "interior");
     // Back to metal: the channel again, the port still there; undo goes back a step.
     s.execute("geometry.body.material", &json!({"body": "Block", "material": "metal"})).unwrap();
     assert!((volume(&s) - channel).abs() < 1e-6 * channel);
     assert_eq!(s.model.ports.len(), 1);
     s.execute("edit.undo", &json!({})).unwrap();
-    assert_eq!(s.model.imported[0].material, "interior");
+    assert_eq!(crate::bodies::parts(&s.model)[0].material, "interior");
     // Two regions, or a region with a material of its own, are refused.
     let e = s.execute("geometry.body.material", &json!({"body": "Block", "material": "nothing"})).unwrap_err();
     assert!(!matches!(e, EngineError::Panicked(_)), "{e}");

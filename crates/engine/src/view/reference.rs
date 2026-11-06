@@ -178,11 +178,11 @@ pub fn reference(session: &Session) -> Result<Reference> {
 /// The reference of a body between two ports: an empty box, circular guide or coaxial line.
 fn body_reference(session: &Session, solid: &emcraft_model::Solid) -> Result<Reference> {
     let (_, m) = session.model.material(&solid.material)?;
-    let plain = session.model.inclusions.is_empty() && !m.is_lossy();
+    let plain = session.model.inclusions().is_empty() && !m.is_lossy();
     let index2 = m.eps_r.get() * m.mu_r.get();
-    match (&solid.shape, &session.model.features[..]) {
+    match (&solid.shape, session.model.features()) {
         // A box between two ports is an empty guide.
-        (emcraft_model::Shape::Box { size }, []) if session.model.inclusions.is_empty() => {
+        (emcraft_model::Shape::Box { size }, []) if session.model.inclusions().is_empty() => {
             Ok(Reference::Exact(ExactLine { a: size[0], sections: vec![(size[2], m.clone())] }))
         }
         // An empty circular guide: TE11, cut off at x'₁₁/r (the first zero of J₁').

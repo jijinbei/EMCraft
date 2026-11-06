@@ -140,7 +140,7 @@ fn local_sizes(refine: &[Refinement]) -> Result<Vec<LocalSize>> {
 /// for a conductor (a hole).
 fn inclusion_sizes(model: &Model, sizes: &Sizes, size: f64) -> Result<Vec<f64>> {
     model
-        .inclusions
+        .inclusions()
         .iter()
         .map(|inc| match &inc.material {
             Some(name) => Ok(sizes.of(model.material(name)?.0).get()),
@@ -154,7 +154,7 @@ fn inclusion_sizes(model: &Model, sizes: &Sizes, size: f64) -> Result<Vec<f64>> 
 fn spherical_layer(model: &Model) -> Result<Option<SphericalLayer>> {
     let layer = model.spherical_layer();
     if let Some(SphericalLayer { inner, .. }) = layer {
-        if !model.features.is_empty() {
+        if !model.features().is_empty() {
             return Err(MeshError::Invalid { what: "spherical layer".into(), why: "not supported yet: features with a spherical layer".into() });
         }
         if !(inner > 0.0 && inner.is_finite()) {
@@ -172,11 +172,16 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
     let kept;
     let mut across: Vec<usize> = Vec::new();
     let model = match &model.domain.rotation {
-        Some(rot) if !model.inclusions.is_empty() => {
+        Some(rot) if !model.inclusions().is_empty() => {
             let mut m = model.clone();
-            let sides: Vec<Option<bool>> = m.inclusions.iter().map(|inc| rot.sector_side(&inc.shape, inc.at)).collect();
-            let mut side = sides.iter();
-            m.inclusions.retain(|_| side.next().is_some_and(|s| *s != Some(false)));
+            let sides: Vec<Option<bool>> = m.inclusions().iter().map(|inc| rot.sector_side(&inc.shape, inc.at)).collect();
+            // The inclusions wholly on the dropped side go (their bodies among the model's).
+            let gone: Vec<usize> = m.mesh_view().inclusion_body.iter().zip(&sides).filter(|(_, s)| **s == Some(false)).map(|(k, _)| *k).collect();
+            let mut bodies = m.bodies_mut();
+            for k in gone.into_iter().rev() {
+                bodies.remove(k);
+            }
+            drop(bodies);
             across = sides.iter().filter(|s| **s != Some(false)).enumerate().filter(|(_, s)| s.is_none()).map(|(k, _)| k).collect();
             kept = m;
             &kept
@@ -193,7 +198,7 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
     let shape = &shape;
     let size = sizes.of(material).get();
     let inner_size = inclusion_sizes(model, sizes, size)?;
-    let estimate = model.inclusions.iter().zip(&inner_size).fold(tets_in(shape.volume(), size), |e, (inc, h)| e + tets_in(inc.shape.volume(), *h));
+    let estimate = model.inclusions().iter().zip(&inner_size).fold(tets_in(shape.volume(), size), |e, (inc, h)| e + tets_in(inc.shape.volume(), *h));
     too_large(estimate)?;
     // A spherical layer (model.open, shape sphere): the solid's region is the ball inside the
     // layer's inner sphere, its surface an interface (tagged per triangle and frozen, like an
@@ -213,7 +218,7 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
     if !refine.is_empty() {
         too_large(estimate + refined_estimate(&main.surface.positions, size, refine))?;
     }
-    let mut features = joined(&model.features, shape, size)?;
+    let mut features = joined(model.features(), shape, size)?;
     features.extend(cuts);
     if !features.is_empty() {
         main = combine_all(main, &features, shape, size)?;
@@ -225,7 +230,7 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
         let bodies: Vec<Tessellation> = across
             .iter()
             .map(|&i| {
-                let inc = &model.inclusions[i];
+                let inc = &model.inclusions()[i];
                 let h = inner_size.get(i).copied().unwrap_or(size);
                 placed(tessellate(&inc.shape, interface_size(&inc.shape, size.min(h), inc.material.is_none())), inc.at)
             })
@@ -268,7 +273,7 @@ fn halved(model: &Model, shape: &Shape) -> Result<(Shape, Vec<Feature>)> {
     for plane in &model.domain.symmetry {
         let d = plane.axis.index();
         let crossed =
-            model.features.iter().any(|f| f.combine == Combine::Add && f.bounds().min[d] < plane.at - tol && f.bounds().max[d] > plane.at + tol);
+            model.features().iter().any(|f| f.combine == Combine::Add && f.bounds().min[d] < plane.at - tol && f.bounds().max[d] > plane.at + tol);
         match shortened(&shape, d, plane.at, tol) {
             Some(short) if !crossed => shape = short,
             _ => {
@@ -403,7 +408,7 @@ impl Body<'_> {
         let (model, size) = (self.model, self.size);
         // The interfaces' current triangulations, oriented out of each inclusion.
         let mut interfaces: Vec<Tessellation> = model
-            .inclusions
+            .inclusions()
             .iter()
             .zip(&self.inner_size)
             .enumerate()
@@ -414,7 +419,7 @@ impl Body<'_> {
             .collect();
         // Their caps on the cut faces, which only the inclusion's own region holds.
         let mut caps: Vec<Option<Tessellation>> =
-            (0..model.inclusions.len()).map(|i| self.cuts.iter().find(|(k, _)| *k == i).map(|(_, c)| c.caps.clone())).collect();
+            (0..model.inclusions().len()).map(|i| self.cuts.iter().find(|(k, _)| *k == i).map(|(_, c)| c.caps.clone())).collect();
         let mut out = Regions {
             meshes: Vec::new(),
             start_face: main.start_face,
@@ -480,7 +485,7 @@ impl Body<'_> {
             out.meshes = vec![(outer_mesh, self.material)];
             out.meshes.extend(shell.map(|m| (m, self.material)));
             out.caps_from = vec![None; out.meshes.len()];
-            for (((inc, t), h), cap) in model.inclusions.iter().zip(&mut interfaces).zip(&self.inner_size).zip(&caps) {
+            for (((inc, t), h), cap) in model.inclusions().iter().zip(&mut interfaces).zip(&self.inner_size).zip(&caps) {
                 let Some(name) = &inc.material else { continue };
                 let (m, _) = model.material(name)?;
                 let n = t.surface.triangles.len() as u32;
@@ -524,7 +529,7 @@ impl Body<'_> {
         }
         r > 0
             || (self.shell && face < regions.first_tag)
-            || regions.interfaces.iter().zip(&self.model.inclusions).any(|(tags, inc)| inc.material.is_some() && tags.contains(face))
+            || regions.interfaces.iter().zip(self.model.inclusions()).any(|(tags, inc)| inc.material.is_some() && tags.contains(face))
     }
 
     /// The regions joined into one mesh: nodes with the same coordinates (the frozen interfaces'
@@ -821,7 +826,8 @@ mod tests {
         })));
         // A conductor instead: a hole, its surface a wall.
         let mut c = m.clone();
-        c.inclusions[0].material = None;
+        let k = c.mesh_view().inclusion_body[0];
+        c.bodies_mut()[k].fill = emcraft_model::Fill::Metal;
         let hole = solid(&c, metres(0.0025)).unwrap();
         assert!(hole.tet_material.iter().all(|m| *m == 0));
         let walls = hole.boundary.len();
@@ -1227,7 +1233,7 @@ mod tests {
     fn nearly_touching_boundaries_stop_quickly() {
         let (m, size) = (stepped_coax(0.001), 0.0015);
         let s = m.domain.solid.as_ref().unwrap();
-        let main = combine_all(tessellate(&s.shape, size), &m.features, &s.shape, size).unwrap();
+        let main = combine_all(tessellate(&s.shape, size), m.features(), &s.shape, size).unwrap();
         let start = std::time::Instant::now();
         let e = region(&main, size, Vec::new(), &[]).err().expect("nearly touching boundaries are refused");
         assert!(e.to_string().contains("nearly touch"), "{e}");
@@ -1297,10 +1303,15 @@ mod tests {
         }
         // One radius: the same mesh as one hole 20 mm long.
         let mut one = stepped_coax(0.001);
-        one.features.truncate(1);
-        if let Some(Shape::Cylinder { length, .. }) = one.features.first_mut().map(|f| &mut f.shape) {
+        let first = one.mesh_view().feature_body[0];
+        let mut bodies = one.bodies_mut();
+        let kept: Vec<emcraft_model::Body> =
+            bodies.iter().enumerate().filter(|(k, b)| *k == first || b.feature().is_none()).map(|(_, b)| b.clone()).collect();
+        *bodies = kept;
+        if let Some(Shape::Cylinder { length, .. }) = bodies.iter_mut().find(|b| b.feature().is_some()).map(|b| &mut b.shape) {
             *length = metres(0.02);
         }
+        drop(bodies);
         let digest = |m: &Model| {
             let mesh = solid(m, metres(size)).unwrap();
             (mesh.nodes.len(), mesh.tets.len(), crate::volumes(&mesh).iter().sum::<f64>())

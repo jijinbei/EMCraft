@@ -108,7 +108,7 @@ pub fn kind_of(command: &str, p: &ParamSpec, session: &Session) -> Kind {
         // An imported part's walls or region change material too.
         ("geometry.body.material", "body") => {
             let m = session.model();
-            let part = m.imported.iter().map(|b| b.name.clone());
+            let part = emcraft_engine::bodies::parts(m).into_iter().map(|b| b.name);
             return Kind::Choice(part.chain(emcraft_engine::bodies::bodies(m).into_iter().map(|b| b.name)).collect());
         }
         ("geometry.body.edit" | "geometry.body.delete", "body") => {

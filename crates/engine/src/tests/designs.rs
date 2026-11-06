@@ -58,7 +58,7 @@ fn the_horn_template_builds_its_walls_and_air() {
 #[test]
 fn the_termination_template_holds_its_absorber() {
     let s = built("termination", json!(null));
-    assert_eq!(s.model.inclusions.len(), 1);
+    assert_eq!(s.model.inclusions().len(), 1);
     assert_eq!(s.model.ports.len(), 1);
 }
 

@@ -189,7 +189,7 @@ impl crate::Model {
         let fits = |n: u32, centre: [f64; 2]| self.rotation_issue_of(&Rotation { n, m: 0, centre }).is_none();
         match &solid.shape {
             // Round, and its features about the axis too: any number; else the most there are.
-            crate::Shape::Cylinder { .. } | crate::Shape::Sphere { .. } if self.features.is_empty() => {
+            crate::Shape::Cylinder { .. } | crate::Shape::Sphere { .. } if self.features().is_empty() => {
                 let centre = [0.0, 0.0];
                 fits(MIN_SECTORS + 1, centre).then_some(FoundRotation { centre, most: None })
             }
@@ -283,9 +283,9 @@ impl crate::Model {
                 .filter(|p| f.contains(*p))
                 .collect()
         };
-        let inside: Vec<Vec<Point3>> = self.features.iter().map(samples).collect();
-        for (i, f) in self.features.iter().enumerate() {
-            let onto = self.features.iter().zip(&inside).any(|(g, theirs)| {
+        let inside: Vec<Vec<Point3>> = self.features().iter().map(samples).collect();
+        for (i, f) in self.features().iter().enumerate() {
+            let onto = self.features().iter().zip(&inside).any(|(g, theirs)| {
                 g.combine == f.combine
                     && inside[i].iter().all(|p| g.contains(r.turned(*p)))
                     && theirs.iter().all(|q| f.contains(r.turned_by(*q, -r.angle())))
@@ -314,9 +314,9 @@ impl crate::Model {
                 .filter(|p| inc.contains(*p))
                 .collect()
         };
-        let inside: Vec<Vec<Point3>> = self.inclusions.iter().map(samples).collect();
-        for (i, inc) in self.inclusions.iter().enumerate() {
-            let onto = self.inclusions.iter().zip(&inside).any(|(o, theirs)| {
+        let inside: Vec<Vec<Point3>> = self.inclusions().iter().map(samples).collect();
+        for (i, inc) in self.inclusions().iter().enumerate() {
+            let onto = self.inclusions().iter().zip(&inside).any(|(o, theirs)| {
                 o.material == inc.material
                     && inside[i].iter().all(|p| o.contains(r.turned(*p)))
                     && theirs.iter().all(|q| inc.contains(r.turned_by(*q, -r.angle())))

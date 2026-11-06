@@ -138,7 +138,7 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
         }
     }
     if let Some(solid) = &m.domain.solid {
-        let hollow = !m.inclusions.is_empty() || m.features.iter().any(|f| f.combine != Combine::Add);
+        let hollow = !m.inclusions().is_empty() || m.features().iter().any(|f| f.combine != Combine::Add);
         let alpha = if m.domain.open.is_some() {
             // The air around an open problem.
             20
@@ -150,7 +150,7 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
             255
         };
         out.scene.tagged(Pick::Solid.tag(), |scene| shape(scene, &solid.shape, &|q| q, tint(&solid.material), alpha));
-        for (i, f) in m.features.iter().enumerate() {
+        for (i, f) in m.features().iter().enumerate() {
             let (color, alpha) = match f.combine {
                 Combine::Add => (tint(&solid.material), alpha),
                 Combine::Subtract => (sc().metal_dark, 255),
@@ -158,7 +158,7 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
             };
             out.scene.tagged(Pick::Feature(i).tag(), |scene| shape(scene, &f.shape, &turned(f.axis, f.at), color, alpha));
         }
-        for (i, inc) in m.inclusions.iter().enumerate() {
+        for (i, inc) in m.inclusions().iter().enumerate() {
             let color = match &inc.material {
                 Some(name) => material_rgb(m, mat(name)),
                 None => sc().metal_dark,
@@ -194,7 +194,7 @@ fn inside(m: &Model) -> Option<Inside> {
         return w.plain().then(|| super::shell::guide_box(m, b.min.to_array(), b.max.to_array()));
     }
     let solid = m.domain.solid.as_ref()?;
-    if !m.features.is_empty() {
+    if !m.features().is_empty() {
         return None;
     }
     let mut out = Inside::default();
@@ -212,9 +212,8 @@ fn inside(m: &Model) -> Option<Inside> {
 /// An imported part's metal round the air it encloses, before and after meshing: see-through,
 /// so the region inside shows and takes the clicks.
 pub(super) fn part_walls(m: &Model, out: &mut Built) {
-    for (i, b) in m.imported.iter().enumerate() {
-        if let Some(wall) = &b.shape {
-            out.scene.tagged(Pick::Part(i).tag(), |scene| shape(scene, wall, &|q| q, sc().metal_dark, 40));
-        }
+    // The walls (the region body is the region, drawn as it).
+    for (i, (_, b)) in m.parts().enumerate().filter(|(_, (_, b))| b.kind == emcraft_model::Kind::Walls) {
+        out.scene.tagged(Pick::Part(i).tag(), |scene| shape(scene, &b.shape, &|q| q, sc().metal_dark, 40));
     }
 }

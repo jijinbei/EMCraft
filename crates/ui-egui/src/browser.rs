@@ -408,7 +408,7 @@ fn geometry(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         rows.push(r.picks(Pick::Solid));
     }
     // An imported part's walls and region body: a double-click gives them another material.
-    for (i, b) in m.imported.iter().enumerate() {
+    for (i, b) in emcraft_engine::bodies::parts(m).into_iter().enumerate() {
         let text =
             if b.material == emcraft_engine::bodies::METAL { t!("{name}: metal walls (imported)") } else { t!("{name}: the region (imported)") };
         let item = Item::new("geometry.body.material", "", "body", serde_json::json!(b.name));

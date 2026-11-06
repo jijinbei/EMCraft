@@ -198,7 +198,7 @@ pub fn inclusion(s: &mut Session, p: &Params) -> Result<Value> {
     let inclusion =
         Inclusion { shape: shape(p)?, at: p.point("at").or(Point3::ORIGIN)?, material: p.string("material").optional()?.map(str::to_owned) };
     s.model.add_inclusion(inclusion)?;
-    Ok(json!({"inclusions": s.model.inclusions.len()}))
+    Ok(json!({"inclusions": s.model.inclusions().len()}))
 }
 
 /// Largest geometry file read.
@@ -323,16 +323,15 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         // The metal bodies are the cavity's walls now; the others are placed in it.
         let metal = |b: &emcraft_io::Surface| material_of(&materials, &b.name) == crate::bodies::METAL;
         placed.extend(bodies.iter().filter(|b| metal(b)).map(|b| json!({"body": b.name, "material": crate::bodies::METAL, "as": "walls"})));
-        imported.extend(bodies.iter().filter(|b| metal(b)).map(|b| emcraft_model::PartBody {
-            name: b.name.clone(),
-            material: crate::bodies::METAL.into(),
-            shape: Some(Shape::Surface {
+        imported.extend(bodies.iter().filter(|b| metal(b)).map(|b| {
+            let shape = Shape::Surface {
                 name: b.name.clone(),
                 positions: b.positions.clone(),
                 triangles: b.triangles.clone(),
                 tags: b.tags.clone(),
                 surfaces: Vec::new(),
-            }),
+            };
+            crate::bodies::part(&b.name, shape, false)
         }));
         let keep: Vec<bool> = bodies.iter().map(|b| !metal(b)).collect();
         retain_kept(&mut bodies, &keep);
@@ -350,10 +349,12 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
             return Err(p.error("materials", format!("`{}` is the region: its filling is `material`", body.name)));
         }
         placed.push(json!({"body": body.name, "material": crate::bodies::INTERIOR, "as": "region"}));
-        imported.push(emcraft_model::PartBody { name: body.name.clone(), material: crate::bodies::INTERIOR.into(), shape: None });
+        let name = body.name.clone();
         let source = sources.remove(k);
         let known = exact.as_mut().map(|e| e.remove(k));
-        s.model.set_solid(Solid { shape: surface(body, &source, fit, known.as_deref(), &mut fitted), material: material.clone() })?;
+        let shape = surface(body, &source, fit, known.as_deref(), &mut fitted);
+        imported.push(crate::bodies::part(&name, shape.clone(), true));
+        s.model.set_solid(Solid { shape, material: material.clone() })?;
     }
     let mut exact = exact.map(Vec::into_iter);
     for (b, source) in bodies.into_iter().zip(sources) {
@@ -366,7 +367,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     if let Some(t) = thickness {
         s.model.set_open(Some(emcraft_model::Open { thickness: t, reflection: None, shape: emcraft_model::OpenShape::Box }))?;
     }
-    s.model.imported = imported;
+    s.model.set_parts(imported);
     let bounds = s.model.bounds().unwrap_or_default();
     let unit = s.display.length.to_si(1.0);
     let pieces = cavity
@@ -621,7 +622,7 @@ pub fn feature(s: &mut Session, p: &Params) -> Result<Value> {
         axis: p.choice("axis").or_default()?,
     };
     s.model.add_feature(feature)?;
-    Ok(json!({"features": s.model.features.len()}))
+    Ok(json!({"features": s.model.features().len()}))
 }
 
 /// `model.region`: the region automatic round what the model holds (`auto`, its `margin` and

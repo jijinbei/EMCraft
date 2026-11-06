@@ -134,7 +134,7 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
             v["axis"] = json!(axis.id());
             // An intersection (`clip`) has no material to give; a conducting inclusion is metal.
             let material = match b.at {
-                BodyRef::Inclusion(i) => m.inclusions.get(i).map(|inc| inc.material.clone().unwrap_or_else(|| METAL.to_owned())),
+                BodyRef::Inclusion(i) => m.inclusions().get(i).map(|inc| inc.material.clone().unwrap_or_else(|| METAL.to_owned())),
                 BodyRef::Feature(_) => (b.material != "clip").then(|| b.material.clone()),
             };
             if let Some(mat) = material {
@@ -144,7 +144,7 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
         }
         "geometry.body.material" => {
             let wanted = p.string("body").required()?;
-            match m.imported.iter().find(|b| b.name == wanted) {
+            match crate::bodies::parts(m).into_iter().find(|b| b.name == wanted) {
                 Some(b) => json!({"body": b.name, "material": b.material}),
                 None => {
                     let b = crate::bodies::body_named(m, p)?;

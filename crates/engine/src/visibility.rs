@@ -58,8 +58,8 @@ impl GeometryObject {
             Self::Layer(i) => m.waveguide.as_ref().is_some_and(|w| i < w.layers.len()),
             Self::Strip(i) => m.waveguide.as_ref().is_some_and(|w| i < w.strips.len()),
             Self::Via(i) => m.waveguide.as_ref().is_some_and(|w| i < w.vias.len()),
-            Self::Feature(i) => i < m.features.len(),
-            Self::Inclusion(i) => i < m.inclusions.len(),
+            Self::Feature(i) => i < m.features().len(),
+            Self::Inclusion(i) => i < m.inclusions().len(),
         }
     }
 
@@ -79,8 +79,8 @@ impl GeometryObject {
                 .as_ref()
                 .and_then(|w| w.layers.get(i).map(|s| (w.layers[..i].iter().map(|s| s.thickness.get()).sum::<f64>(), s.thickness.get())))
                 .is_some_and(|(y, l)| p.y >= y - 1e-10 && p.y <= y + l + 1e-10),
-            Self::Feature(i) => m.features.get(i).is_some_and(|s| s.contains(p)),
-            Self::Inclusion(i) => m.inclusions.get(i).is_some_and(|s| s.contains(p)),
+            Self::Feature(i) => m.features().get(i).is_some_and(|s| s.contains(p)),
+            Self::Inclusion(i) => m.inclusions().get(i).is_some_and(|s| s.contains(p)),
             Self::Strip(i) => m
                 .waveguide
                 .as_ref()

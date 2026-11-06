@@ -211,8 +211,8 @@ fn unfold(mesh: &mut Mesh) {
 pub(super) fn bend(mesh: &mut Mesh, model: &Model, shape: &Shape, size: f64) {
     let surfaces: Vec<Curved> = Curved::of(shape, Point3::ORIGIN, Axis::Z)
         .into_iter()
-        .chain(model.inclusions.iter().flat_map(|i| Curved::of(&i.shape, i.at, Axis::Z)))
-        .chain(model.features.iter().flat_map(|f| Curved::of(&f.shape, f.at, f.axis)))
+        .chain(model.inclusions().iter().flat_map(|i| Curved::of(&i.shape, i.at, Axis::Z)))
+        .chain(model.features().iter().flat_map(|f| Curved::of(&f.shape, f.at, f.axis)))
         .collect();
     // One topology serves both: moving nodes does not change it.
     let topo = crate::Topology::new(mesh);

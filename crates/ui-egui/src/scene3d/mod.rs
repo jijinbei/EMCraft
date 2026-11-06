@@ -383,7 +383,7 @@ fn present_materials(session: &Session, selected: &[Pick], out: &mut Built) {
             }
             Some(Pick::Layer(i)) => m.waveguide.as_ref().and_then(|w| w.layers.get(i)).and_then(|s| m.material(&s.material).ok()).map(|(i, _)| i),
             Some(Pick::Solid) if m.mesh.is_none() => m.domain.solid.as_ref().and_then(|s| m.material(&s.material).ok()).map(|(i, _)| i),
-            Some(Pick::Inclusion(i)) => m.inclusions.get(i).and_then(|s| s.material.as_ref()).and_then(|s| m.material(s).ok()).map(|(i, _)| i),
+            Some(Pick::Inclusion(i)) => m.inclusions().get(i).and_then(|s| s.material.as_ref()).and_then(|s| m.material(s).ok()).map(|(i, _)| i),
             _ => None,
         };
         let Some(i) = index else { return true };

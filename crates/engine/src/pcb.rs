@@ -229,7 +229,8 @@ fn failed(s: impl ToString) -> EngineError {
 fn install(s: &mut Session, board: Board) -> Result<Value> {
     board.check()?;
     let reply = json!({"board": board.name, "segments": board.segments.len(), "layers": board.layers.len(), "notes": board.notes});
-    s.model = emcraft_model::Model { pcb: Some(board), ..Default::default() };
+    s.model = emcraft_model::Model::default();
+    s.model.pcb = Some(board);
     s.views.pcb = Diagnosis::Unrouted;
     s.views.pcb_illustration = Illustration::default();
     s.views.pcb_stage = None;

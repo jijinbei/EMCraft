@@ -206,10 +206,10 @@ impl Model {
                             "not supported yet: waveguide ports with a spherical layer (use lumped ports or sources)",
                         ));
                     }
-                    if !self.features.is_empty() {
+                    if !self.features().is_empty() {
                         return Err(invalid("open boundary", "not supported yet: features combined with a sphere lined by a spherical layer"));
                     }
-                    if self.inclusions.iter().any(|i| !inside_ball(&i.bounds(), radius.get() - o.thickness.get())) {
+                    if self.inclusions().iter().any(|i| !inside_ball(&i.bounds(), radius.get() - o.thickness.get())) {
                         return Err(invalid("open boundary", "the inclusions must lie inside the spherical layer's inner sphere"));
                     }
                 }

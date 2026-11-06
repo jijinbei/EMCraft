@@ -52,8 +52,8 @@ struct Held {
 fn held(app: &EmcraftApp) -> Option<Held> {
     let m = app.session.model();
     let (shape, at, axis, at_ref) = match app.ui_state.selection()[..] {
-        [Pick::Feature(i)] => m.features.get(i).map(|f| (f.shape.clone(), f.at, f.axis, emcraft_engine::bodies::BodyRef::Feature(i)))?,
-        [Pick::Inclusion(i)] => m.inclusions.get(i).map(|f| (f.shape.clone(), f.at, Axis::Z, emcraft_engine::bodies::BodyRef::Inclusion(i)))?,
+        [Pick::Feature(i)] => m.features().get(i).map(|f| (f.shape.clone(), f.at, f.axis, emcraft_engine::bodies::BodyRef::Feature(i)))?,
+        [Pick::Inclusion(i)] => m.inclusions().get(i).map(|f| (f.shape.clone(), f.at, Axis::Z, emcraft_engine::bodies::BodyRef::Inclusion(i)))?,
         _ => return None,
     };
     if matches!(shape, Shape::Surface { .. }) {

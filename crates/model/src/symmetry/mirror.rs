@@ -197,14 +197,14 @@ impl Symmetry {
         };
         // Features and inclusions: each mirrored by one of the same combination, shape and axis
         // (compared through their boxes; a body is its own image when it straddles the plane).
-        for (i, f) in m.features.iter().enumerate() {
+        for (i, f) in m.features().iter().enumerate() {
             let image = self.mirrored(f.bounds());
-            let mirrored = m.features.iter().any(|o| o.combine == f.combine && o.axis == f.axis && same(o.bounds(), image));
+            let mirrored = m.features().iter().any(|o| o.combine == f.combine && o.axis == f.axis && same(o.bounds(), image));
             if !mirrored || !self.surface_mirrors(&f.shape, |q| f.at + f.axis.turn(q.to_vec()), tol) {
                 return Err(format!("feature {} has no mirror image about the plane: the solid is not symmetric about it", i + 1));
             }
         }
-        if let Some(k) = unmirrored(m.inclusions.iter().map(|inc| (inc.bounds(), inc.material.is_none())).collect()) {
+        if let Some(k) = unmirrored(m.inclusions().iter().map(|inc| (inc.bounds(), inc.material.is_none())).collect()) {
             return Err(format!("inclusion {} has no mirror image about the plane: the solid is not symmetric about it", k + 1));
         }
         if m.domain.open.is_some() || !m.lumped.is_empty() || !m.sources.is_empty() {
@@ -563,9 +563,9 @@ mod tests {
             at: Point3::new(x, 0.0, 0.015),
             axis: Axis::Y,
         };
-        m.features.push(post(0.006));
+        m.bodies_mut().push(crate::Body::from(post(0.006)));
         assert!(m.symmetry_issue().is_some_and(|why| why.starts_with("feature 1 has no mirror image")));
-        m.features.push(post(0.014));
+        m.bodies_mut().push(crate::Body::from(post(0.014)));
         assert_eq!(m.symmetry_issue(), None);
     }
 

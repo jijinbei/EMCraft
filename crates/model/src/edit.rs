@@ -91,6 +91,31 @@ fn replace_in<T>(
     }
 }
 
+/// Replaces the body `k` (among the bodies) with what `add` places, checked as a new one, at
+/// its place among them; on a refusal the old body stays.
+fn replace_body(m: &mut Model, k: usize, add: impl FnOnce(&mut Model) -> Result<()>) -> Result<()> {
+    if k >= m.bodies().len() {
+        return Err(invalid("body", "is gone from the model"));
+    }
+    let old = m.bodies_mut().remove(k);
+    match add(m) {
+        Ok(()) => {
+            let mut bodies = m.bodies_mut();
+            if let Some(added) = bodies.pop() {
+                let at = k.min(bodies.len());
+                bodies.insert(at, added);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            let mut bodies = m.bodies_mut();
+            let at = k.min(bodies.len());
+            bodies.insert(at, old);
+            Err(e)
+        }
+    }
+}
+
 impl Model {
     /// Where the material named `name` is used: sections, layers, the solid and inclusions.
     pub fn material_uses(&self, name: &str) -> Vec<MaterialUse> {
@@ -103,7 +128,7 @@ impl Model {
             uses.push(MaterialUse::Region);
         }
         uses.extend(
-            self.inclusions.iter().enumerate().filter(|(_, inc)| inc.material.as_deref() == Some(name)).map(|(i, _)| MaterialUse::Inclusion(i)),
+            self.inclusions().iter().enumerate().filter(|(_, inc)| inc.material.as_deref() == Some(name)).map(|(i, _)| MaterialUse::Inclusion(i)),
         );
         uses
     }
@@ -154,11 +179,18 @@ impl Model {
     /// Points everything that uses material `old` at `new`.
     fn rename_uses(&mut self, old: &str, new: &str) {
         for u in self.material_uses(old) {
+            if let MaterialUse::Inclusion(i) = u {
+                let k = self.mesh_view().inclusion_body.get(i).copied();
+                if let Some(b) = k.and_then(|k| self.bodies_mut().get_mut(k).map(|b| b.fill = crate::body::Fill::Material(new.to_owned()))) {
+                    b
+                }
+                continue;
+            }
             let slot = match u {
                 MaterialUse::Section(k) => self.waveguide.as_mut().and_then(|w| w.sections.get_mut(k)).map(|s| &mut s.material),
                 MaterialUse::Layer(k) => self.waveguide.as_mut().and_then(|w| w.layers.get_mut(k)).map(|l| &mut l.material),
                 MaterialUse::Region => self.domain.solid.as_mut().map(|s| &mut s.material),
-                MaterialUse::Inclusion(k) => self.inclusions.get_mut(k).and_then(|inc| inc.material.as_mut()),
+                MaterialUse::Inclusion(_) => None,
             };
             if let Some(slot) = slot {
                 new.clone_into(slot);
@@ -200,13 +232,15 @@ impl Model {
     /// Replaces feature `i` with `f`, checked as [`Model::add_feature`] checks a new one; it keeps
     /// its place in the order features combine in. The mesh is dropped.
     pub fn replace_feature(&mut self, i: usize, f: Feature) -> Result<()> {
-        replace_in(self, i, f, "feature", |m| &mut m.features, Model::add_feature)
+        let k = *self.mesh_view().feature_body.get(i).ok_or_else(|| invalid("feature", format!("no feature {i}")))?;
+        replace_body(self, k, |m| m.add_feature(f))
     }
 
     /// Replaces inclusion `i` with `inc`, checked as [`Model::add_inclusion`] checks a new one.
     /// The mesh is dropped.
     pub fn replace_inclusion(&mut self, i: usize, inc: Inclusion) -> Result<()> {
-        replace_in(self, i, inc, "inclusion", |m| &mut m.inclusions, Model::add_inclusion)
+        let k = *self.mesh_view().inclusion_body.get(i).ok_or_else(|| invalid("inclusion", format!("no inclusion {i}")))?;
+        replace_body(self, k, |m| m.add_inclusion(inc))
     }
 }
 
@@ -270,9 +304,9 @@ mod tests {
         m.add_inclusion(sphere(0.03)).unwrap();
         // Onto the other one: refused, both stay as they were.
         assert!(m.replace_inclusion(0, sphere(0.029)).is_err());
-        assert_eq!(m.inclusions, vec![sphere(0.01), sphere(0.03)]);
+        assert_eq!(m.inclusions(), vec![sphere(0.01), sphere(0.03)]);
         m.replace_inclusion(0, sphere(0.015)).unwrap();
-        assert_eq!(m.inclusions, vec![sphere(0.015), sphere(0.03)]);
+        assert_eq!(m.inclusions(), vec![sphere(0.015), sphere(0.03)]);
         assert!(m.replace_inclusion(2, sphere(0.02)).is_err());
         let post = |x: f64| Feature {
             combine: Combine::Subtract,
@@ -283,9 +317,9 @@ mod tests {
         m.add_feature(post(0.005)).unwrap();
         m.add_feature(post(0.035)).unwrap();
         m.replace_feature(0, post(0.006)).unwrap();
-        assert_eq!(m.features, vec![post(0.006), post(0.035)]);
+        assert_eq!(m.features(), vec![post(0.006), post(0.035)]);
         assert!(m.replace_feature(1, post(1.0)).is_err(), "apart from the solid");
-        assert_eq!(m.features[1], post(0.035));
+        assert_eq!(m.features()[1], post(0.035));
         // Ports keep their order; a source outside is refused.
         m.add_port(Port::new("a", End::Start)).unwrap();
         m.add_port(Port::new("b", End::End)).unwrap();

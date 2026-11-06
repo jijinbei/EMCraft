@@ -120,7 +120,7 @@ fn an_interior_body_is_the_region_and_keeps_the_bodies() {
     t.execute("geometry.body", &json!({"shape": "cylinder", "radius": 1, "length": 10.16, "at": [0, 0, 15], "axis": "y", "material": "metal"}))
         .unwrap();
     t.execute("geometry.body", &json!({"shape": "box", "size": [22.86, 10.16, 30], "at": [-11.43, -5.08, 0], "material": "interior"})).unwrap();
-    assert_eq!(t.model.features.len(), 1);
+    assert_eq!(t.model.features().len(), 1);
     // An interior cylinder off the origin is refused.
     assert!(t.execute("geometry.body", &json!({"shape": "cylinder", "radius": 5, "length": 10, "at": [1, 0, 0], "material": "interior"})).is_err());
 }
