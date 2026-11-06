@@ -49,9 +49,9 @@ struct Held {
 }
 
 /// The single body selected, when it is a primitive (box, cylinder, sphere).
-fn held(app: &EmcraftApp, v: &View3d) -> Option<Held> {
+fn held(app: &EmcraftApp) -> Option<Held> {
     let m = app.session.model();
-    let (shape, at, axis, at_ref) = match v.selected[..] {
+    let (shape, at, axis, at_ref) = match app.ui_state.selection()[..] {
         [Pick::Feature(i)] => m.features.get(i).map(|f| (f.shape.clone(), f.at, f.axis, emcraft_engine::bodies::BodyRef::Feature(i)))?,
         [Pick::Inclusion(i)] => m.inclusions.get(i).map(|f| (f.shape.clone(), f.at, Axis::Z, emcraft_engine::bodies::BodyRef::Inclusion(i)))?,
         _ => return None,
@@ -137,7 +137,7 @@ fn step(app: &EmcraftApp) -> f64 {
 
 /// The grip under the pointer `at` (within [`crate::tools3d::GRIP_PX`]), nearest first.
 pub fn under(app: &EmcraftApp, v: &View3d, rect: Rect, at: Pos2) -> Option<(Grip, Pos2)> {
-    let h = held(app, v)?;
+    let h = held(app)?;
     grips_of(&h)
         .into_iter()
         .filter_map(|(g, q, _)| screen(&v.camera, rect, q).map(|s| (g, s)))
@@ -148,7 +148,7 @@ pub fn under(app: &EmcraftApp, v: &View3d, rect: Rect, at: Pos2) -> Option<(Grip
 /// Starts dragging the grip under `at`.
 pub fn start(app: &EmcraftApp, v: &mut View3d, rect: Rect, at: Pos2) -> bool {
     let Some((grip, _)) = under(app, v, rect, at) else { return false };
-    let Some(held) = held(app, v) else { return false };
+    let Some(held) = held(app) else { return false };
     v.tools.body_drag = Some(BodyDrag { held, grip, raw: 0.0, snapped: 0.0 });
     true
 }
@@ -208,7 +208,7 @@ pub fn end(app: &EmcraftApp, v: &mut View3d, out: &mut Actions) {
 
 /// Draws the selected body's grips (the dragged one where it is, with its value).
 pub fn draw(app: &EmcraftApp, v: &View3d, p: &egui::Painter, rect: Rect) {
-    let Some(h) = held(app, v) else { return };
+    let Some(h) = held(app) else { return };
     let t = &Tokens::get();
     let l = app.session.display().length;
     let dragging = v.tools.body_drag.as_ref().filter(|d| d.held.name == h.name);

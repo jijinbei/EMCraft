@@ -187,7 +187,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "compare": app.replies.compare.as_ref().map(|c| c.worst),
         "frames": app.frames,
         "workflow": crate::steps::inspect(app),
-        "view3d": app.view3d.inspect(app.session.display().length),
+        "view3d": app.view3d.inspect(&app.ui_state, app.session.display().length),
         "navigation": {"mapping": app.prefs.nav().id, "orbit_around": app.prefs.orbit_around().id(), "navigator": app.prefs.navigator().id()},
         "undo": app.session.undo().len(),
         "redo": app.session.redo().len(),

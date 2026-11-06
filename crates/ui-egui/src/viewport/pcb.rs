@@ -134,13 +134,13 @@ pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mu
 
 /// A net clicked in 3D becomes the route.
 fn pick_route(app: &EmcraftApp, st: &mut Parts, board: &emcraft_model::pcb::Board, out: &mut Actions) {
-    let Some(crate::scene3d::Pick::Net(i)) = st.view3d.single() else { return };
+    let Some(crate::scene3d::Pick::Net(i)) = app.ui_state.selection().single() else { return };
     let nets = crate::scene3d::board::nets(board);
     let Some(net) = nets.get(i).filter(|n| board.segments.iter().any(|s| &s.net == *n)) else { return };
     if app.session.views().pcb.net() == Some(net.as_str()) || app.busy() {
         return;
     }
-    st.view3d.selected.clear();
+    out.push(Action::Select { row: None, picks: Vec::new() });
     st.views.pcb.attempted = None;
     out.push(Action::run("view.pcb", json!({"net": net, "stage": Stage::Net.id()})));
 }

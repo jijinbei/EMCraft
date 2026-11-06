@@ -200,7 +200,6 @@ impl FaceCache {
 /// The tools' state.
 #[derive(Clone, Debug, Default)]
 pub struct Tools {
-    pub tool: Option<Tool>,
     pub hover: Option<Hover>,
     faces: FaceCache,
     /// The points clicked so far (a gap's first end, a measurement's first pick).
@@ -214,9 +213,9 @@ pub struct Tools {
 }
 
 impl Tools {
-    /// Turns a tool on (or all off), dropping what the last one had picked.
-    pub fn set(&mut self, tool: Option<Tool>) {
-        self.tool = tool;
+    /// What the tool had picked dropped, `tool` on next (or none; the mode is the window's,
+    /// crate::ui_state).
+    pub fn reset(&mut self, tool: Option<Tool>) {
         self.picks.clear();
         self.hover = None;
         if tool != Some(Tool::Measure) {
@@ -225,18 +224,18 @@ impl Tools {
     }
 
     /// Escape: what was picked goes; with nothing picked, the tool goes off.
-    pub fn escape(&mut self) {
-        if self.picks.is_empty() && self.measured.is_none() {
-            self.tool = None;
-        }
+    /// Whether nothing was picked (the tool goes off then).
+    pub fn escape(&mut self) -> bool {
+        let nothing = self.picks.is_empty() && self.measured.is_none();
         self.picks.clear();
         self.measured = None;
+        nothing
     }
 
     /// The state for `ui.inspect`.
-    pub fn inspect(&self, l: emcraft_model::units::Length) -> Value {
+    pub fn inspect(&self, tool: Option<Tool>, l: emcraft_model::units::Length) -> Value {
         json!({
-            "tool": self.tool.map(Tool::id),
+            "tool": tool.map(Tool::id),
             "pointer": self.hover.as_ref().map(|h| {
                 let mut v = h.snap.inspect(l);
                 v["port"] = h.port.map_or(Value::Null, |p| json!(p.id()));
@@ -405,7 +404,7 @@ fn port_target(m: &emcraft_model::Model, face: &Face) -> PortTarget {
 /// Finds what the pointer (`at`, in `rect`) is over while a tool is on.
 pub fn hover(app: &EmcraftApp, v: &mut View3d, rect: Rect, at: Option<Pos2>) {
     let mut faces = std::mem::take(&mut v.tools.faces);
-    v.tools.hover = v.tools.tool.and_then(|tool| over(app, v, tool, rect, at, &mut faces));
+    v.tools.hover = app.ui_state.tool().and_then(|tool| over(app, v, tool, rect, at, &mut faces));
     v.tools.faces = faces;
 }
 
@@ -480,8 +479,8 @@ fn shown(l: emcraft_model::units::Length, p: [f64; 3]) -> Value {
 }
 
 /// While a tool is on, a band over the 3D view says so: what it does and how to leave it.
-pub fn banner(v: &View3d, ui: &egui::Ui, rect: Rect) {
-    let Some(tool) = v.tools.tool else { return };
+pub fn banner(app: &EmcraftApp, ui: &egui::Ui, rect: Rect) {
+    let Some(tool) = app.ui_state.tool() else { return };
     let t = &crate::theme::Tokens::get();
     let text = format!("{}  ·  {}", tr(tool.hint()), tr(t!("Escape or a click on empty space ends it")));
     let p = ui.painter_at(rect);
@@ -494,7 +493,7 @@ pub fn banner(v: &View3d, ui: &egui::Ui, rect: Rect) {
 
 /// A click with a tool on: what it asks for.
 pub fn click(app: &EmcraftApp, v: &mut View3d, out: &mut Actions) {
-    let (Some(tool), Some(hover)) = (v.tools.tool, v.tools.hover.clone()) else { return };
+    let (Some(tool), Some(hover)) = (app.ui_state.tool(), v.tools.hover.clone()) else { return };
     let m = app.session.model();
     let l = app.session.display().length;
     match tool {
@@ -570,7 +569,7 @@ impl RefPlane {
 
 /// The reference plane of the selected port (as dragged, while it is).
 pub fn ref_plane(app: &EmcraftApp, v: &View3d) -> Option<RefPlane> {
-    let [Pick::Port(i)] = v.selected[..] else { return None };
+    let [Pick::Port(i)] = app.ui_state.selection()[..] else { return None };
     let m = app.session.model();
     let p = m.ports.get(i)?;
     let face = crate::scene3d::port_quad(m, p)?;
@@ -629,7 +628,7 @@ pub fn draw(app: &EmcraftApp, v: &View3d, p: &egui::Painter, rect: Rect) {
         reference(p, &r, cam, rect, l);
     }
     crate::grips::draw(app, v, p, rect);
-    if let (Some(tool), Some(h)) = (v.tools.tool, &v.tools.hover) {
+    if let (Some(tool), Some(h)) = (app.ui_state.tool(), &v.tools.hover) {
         hovered(app, v, tool, h, p, rect);
     }
     // The points picked, and a line from the last to the pointer.
@@ -647,7 +646,7 @@ pub fn draw(app: &EmcraftApp, v: &View3d, p: &egui::Painter, rect: Rect) {
         dimension(p, cam, rect, &m.picks, &m.reply);
     }
     // The end faces a port may take, named for scenarios and agents.
-    if v.tools.tool == Some(Tool::Port) {
+    if app.ui_state.tool() == Some(Tool::Port) {
         let m = app.session.model();
         if let Some(b) = m.bounds() {
             let (c, lo, hi) = (b.center(), b.min.z.min(0.0), b.max.z);

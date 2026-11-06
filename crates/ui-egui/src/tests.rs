@@ -702,13 +702,13 @@ fn field_phase_with_both_vectors_reuses_the_scene() {
     h.app.field.view.show_e = true;
     h.app.field.view.show_h = true;
     h.frames(2);
-    let generation = h.app.view3d.inspect(h.app.session.display().length)["scene_generation"].clone();
+    let generation = h.app.view3d.inspect(&h.app.ui_state, h.app.session.display().length)["scene_generation"].clone();
     let history = h.app.session.history().len();
     let started = std::time::Instant::now();
     for i in 0..24 {
         h.app.field.view.phase = i as f64 * 0.2;
         h.frames(1);
-        assert_eq!(h.app.view3d.inspect(h.app.session.display().length)["scene_generation"], generation);
+        assert_eq!(h.app.view3d.inspect(&h.app.ui_state, h.app.session.display().length)["scene_generation"], generation);
     }
     assert_eq!(h.app.session.history().len(), history, "phase playback must not solve again");
     eprintln!("24 cached phase frames with E/H arrows: {:?}", started.elapsed());

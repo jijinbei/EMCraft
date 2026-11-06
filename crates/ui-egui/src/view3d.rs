@@ -127,9 +127,6 @@ pub struct View3d {
     pub dragging: bool,
     /// Fit on the next frame.
     pub fit_next: bool,
-    /// What is selected (by a click or a box in the view, or on its browser rows), in the order
-    /// it was, highlighted; the last is the one a click took last.
-    pub selected: crate::selection::Selection,
     /// The box being dragged (a plain left drag), in screen points.
     pub boxsel: Option<BoxSel>,
     /// What a row elsewhere (the port-mode table) points at while hovered: highlighted for one
@@ -191,7 +188,6 @@ impl Default for View3d {
             last_size: [0, 0],
             dragging: false,
             fit_next: false,
-            selected: crate::selection::Selection::default(),
             boxsel: None,
             hover: None,
             drawn_on_gpu: false,
@@ -326,16 +322,8 @@ impl View3d {
     }
 
     /// What is drawn highlighted: the hovered row's part, else the selection.
-    pub fn highlighted(&self) -> &[scene3d::Pick] {
-        self.hover.as_ref().map_or(&self.selected[..], std::slice::from_ref)
-    }
-
-    /// The only part selected, when one is.
-    pub fn single(&self) -> Option<scene3d::Pick> {
-        match self.selected[..] {
-            [p] => Some(p),
-            _ => None,
-        }
+    pub fn highlighted<'a>(&'a self, selected: &'a [scene3d::Pick]) -> &'a [scene3d::Pick] {
+        self.hover.as_ref().map_or(selected, std::slice::from_ref)
     }
 
     /// Turns to a standard view (animated); the home (isometric) view also frames the model.
@@ -399,7 +387,8 @@ impl View3d {
     }
 
     /// The state for `ui.inspect` (lengths in `l`).
-    pub fn inspect(&self, l: emcraft_model::units::Length) -> serde_json::Value {
+    pub fn inspect(&self, ui: &crate::ui_state::UiState, l: emcraft_model::units::Length) -> serde_json::Value {
+        let selected = ui.selection();
         let c = &self.camera;
         let b =
             self.built.as_ref().zip(self.shown()).map(|((k, _), b)| {
@@ -413,8 +402,8 @@ impl View3d {
             // Triangles drawn with their edges (the mesh's wireframe).
             "wired": b.map(|x| x.3),
             "ms": self.last_ms, "size": self.last_size,
-            "selected": self.selected.last().map(|p| format!("{p:?}")),
-            "selection": self.selected.iter().map(|p| format!("{p:?}")).collect::<Vec<_>>(),
+            "selected": selected.last().map(|p| format!("{p:?}")),
+            "selection": selected.iter().map(|p| format!("{p:?}")).collect::<Vec<_>>(),
             "box": self.boxsel.map(|b| serde_json::json!({"crossing": b.crossing, "rect": [b.rect.min.x, b.rect.min.y, b.rect.max.x, b.rect.max.y]})),
             "hover": self.hover.map(|p| format!("{p:?}")),
             "gpu": self.drawn_on_gpu,
@@ -428,7 +417,7 @@ impl View3d {
             "gpu_field": self.field_frame.is_some(),
             "section": self.section.map(|s| s.inspect(l)),
             "section_dims": self.section_dims,
-            "tools": self.tools.inspect(l),
+            "tools": self.tools.inspect(ui.tool(), l),
         })
     }
 }
@@ -507,17 +496,10 @@ pub fn show(app: &EmcraftApp, st: &mut crate::viewport::Parts, ui: &mut egui::Ui
     if overlay == Overlay::Field {
         publish_plane(app, &v.camera, field, rect, bounds);
     }
+    // A click or a box asks the selection (crate::ui_state); a double click's edit follows.
+    out.extend(edit.select);
     let picked = picked_rows(app, v);
-    if edit.select {
-        out.push(Action::Select { row: picked.last().map(|(k, _)| k.clone()), picks: v.selected.to_vec() });
-    }
-    let single = picked.first().filter(|_| v.single().is_some());
-    if edit.double
-        && let Some((_, row)) = single
-        && !app.busy()
-    {
-        out.extend(row.edit_action());
-    }
+    let single = picked.first().filter(|_| app.ui_state.selection().single().is_some());
     // Moving pictures (a drag, a view change, a playing field).
     let moving = v.dragging || v.anim.is_some() || (overlay == Overlay::Field && field.player.playing);
     let drawer = drawer_of(ui);
@@ -531,7 +513,7 @@ pub fn show(app: &EmcraftApp, st: &mut crate::viewport::Parts, ui: &mut egui::Ui
         v.gpu_frame = None;
     }
     pointer_tag(v, ui, rect, look.outline && !moving);
-    draw(v, ui, rect, moving, look);
+    draw(v, app.ui_state.selection(), ui, rect, moving, look);
     let p = ui.painter().with_clip_rect(rect);
     labels(&p, rect, &v.camera, &built.labels);
     crate::section3d::annotate(app, v, &p, rect, bounds);
@@ -552,10 +534,10 @@ pub fn show(app: &EmcraftApp, st: &mut crate::viewport::Parts, ui: &mut egui::Ui
             Card { tex: text, edit: item.clone().map(Action::EditItem), delete: item.map(|i| Action::DeleteItems(vec![i])), enabled: !app.busy() };
         let card = card.show(ui, rect, out);
         crate::tools3d::ref_field(app, v, ui, card.center_bottom(), out);
-    } else if v.selected.len() > 1 {
+    } else if app.ui_state.selection().len() > 1 {
         // Several parts: how many, and Delete for those that are items of the model.
         let items: Vec<crate::browser::Item> = picked.iter().filter_map(|(_, r)| r.item.clone()).collect();
-        let text = trf(t!("{n} selected"), args!(n = v.selected.len()));
+        let text = trf(t!("{n} selected"), args!(n = app.ui_state.selection().len()));
         let card = Card { tex: text, edit: None, delete: (!items.is_empty()).then_some(Action::DeleteItems(items)), enabled: !app.busy() };
         card.show(ui, rect, out);
     }
@@ -564,10 +546,16 @@ pub fn show(app: &EmcraftApp, st: &mut crate::viewport::Parts, ui: &mut egui::Ui
         Navigator::Cube => crate::view_cube::show(v, ui, rect, out),
         Navigator::Axes => navigator(&v.camera, ui, rect, out),
     }
-    let bar = NavBar { facing, standalone: app.place.view() != crate::View::Field, playing: field.player.playing, ports: overlay == Overlay::Ports };
+    let bar = NavBar {
+        facing,
+        standalone: app.place.view() != crate::View::Field,
+        playing: field.player.playing,
+        ports: overlay == Overlay::Ports,
+        tool: app.ui_state.tool(),
+    };
     bar.show(v, ui, rect, bounds, out);
     // A tool on: the band saying so, over the picture.
-    crate::tools3d::banner(v, ui, rect);
+    crate::tools3d::banner(app, ui, rect);
     if v.section.is_some() && app.place.view() != crate::View::Field {
         section_bar(v, ui, rect, bounds, app.session.display().length);
     }
@@ -645,7 +633,7 @@ fn scene_key(app: &EmcraftApp, v: &View3d, field: &mut FieldState, overlay: Over
         revision: app.revision,
         overlay,
         field: planes,
-        highlighted: v.highlighted().to_vec(),
+        highlighted: v.highlighted(app.ui_state.selection()).to_vec(),
         theme: crate::theme::key(),
         language: lang::current(),
     }
@@ -734,10 +722,10 @@ fn dynamic_field_arrows(app: &EmcraftApp, field: &FieldState, built: &mut Built)
 /// The browser rows of what is selected in the view, in its order (looked up again only when the
 /// selection or the session changed).
 fn picked_rows(app: &EmcraftApp, v: &mut View3d) -> Vec<(String, crate::browser::Row)> {
-    if v.selected.is_empty() {
+    if app.ui_state.selection().is_empty() {
         return Vec::new();
     }
-    let key = (app.revision, v.selected.to_vec());
+    let key = (app.revision, app.ui_state.selection().to_vec());
     if v.picked.as_ref().is_none_or(|(k, _)| *k != key) {
         let rows = crate::browser::rows_of(app, &key.1);
         v.picked = Some((key, rows));
@@ -747,10 +735,8 @@ fn picked_rows(app: &EmcraftApp, v: &mut View3d) -> Vec<(String, crate::browser:
 
 /// What the pointer asked of the view this frame.
 struct Gesture {
-    /// The selection changed (a click or a box).
-    select: bool,
-    /// A double-click on something picked: edit it.
-    double: bool,
+    /// What a click or a box asks of the selection.
+    select: Option<Action>,
     /// The pointer's move this frame while dragging the field view's plane.
     plane_drag: Option<egui::Vec2>,
     grip: GripDrag,

@@ -1,6 +1,7 @@
 //! The window's state and its transitions, apart from the drawing: what fills the window (the
 //! page), what is open over it (one overlay at a time — a question, a template's card or the
-//! search) and the dialog being filled. The drawing reads it and asks for a change with an
+//! search), the dialog being filled, the 3D view's mode (one tool at a time) and what is
+//! selected. The drawing reads it and asks for a change with an
 //! [`Action`]; [`UiState::update`] makes it, and nothing else does: the fields are private, the
 //! drafts in them (a path being typed, a dialog's fields) the only thing the drawing edits.
 //!
@@ -11,7 +12,9 @@
 use crate::dialogs::Dialog;
 use crate::files::{Answer, Ask, FileAction};
 use crate::page::Pages;
+use crate::selection::{Selection, Then};
 use crate::template_dialog::TemplateDialog;
+use crate::tools3d::Tool;
 use crate::{Action, EmcraftApp};
 
 emcraft_macros::named_enum! {
@@ -60,6 +63,14 @@ impl Overlay {
     }
 }
 
+/// What the 3D view's pointer does: navigate and select, or a tool's picks (one at a time).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Mode {
+    #[default]
+    Idle,
+    Tool(Tool),
+}
+
 /// Who has the keyboard when Escape is pressed: what decides whether the top layer takes it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Keyboard {
@@ -79,12 +90,14 @@ pub struct UiState {
     pub page: Pages,
     overlay: Option<Overlay>,
     dialog: Option<Dialog>,
+    mode: Mode,
+    selection: Selection,
 }
 
 impl UiState {
     /// The window showing `page`, nothing open over it.
     pub fn at(page: Pages) -> UiState {
-        UiState { page, overlay: None, dialog: None }
+        UiState { page, ..UiState::default() }
     }
 
     /// What is open over the window.
@@ -123,28 +136,61 @@ impl UiState {
         self.dialog.as_mut()
     }
 
-    /// The layers open, top first.
-    pub fn layers(&self) -> impl Iterator<Item = Layer> {
-        let over = self.overlay.as_ref().map(Overlay::layer);
-        let dialog = self.dialog.is_some().then_some(Layer::Dialog);
-        let settings = self.page.settings_shown().is_some().then_some(Layer::Settings);
-        over.into_iter().chain(dialog).chain(settings)
+    /// The 3D view's mode.
+    pub fn mode(&self) -> Mode {
+        self.mode
     }
 
-    /// The layer Escape closes, given the layers open below these ones (the 3D view's, top
-    /// first) and who has the keyboard: the top one, unless a field it does not own has it.
+    /// The tool on, if any.
+    pub fn tool(&self) -> Option<Tool> {
+        match self.mode {
+            Mode::Tool(t) => Some(t),
+            Mode::Idle => None,
+        }
+    }
+
+    /// What is selected.
+    pub fn selection(&self) -> &Selection {
+        &self.selection
+    }
+
+    /// Turns `tool` on (or the tools off).
+    pub fn set_tool(&mut self, tool: Option<Tool>) {
+        self.mode = tool.map_or(Mode::Idle, Mode::Tool);
+    }
+
+    /// Selects `selection` in place of what was.
+    pub fn select(&mut self, selection: Selection) {
+        self.selection = selection;
+    }
+
+    /// The layers open, top first, with `view`'s (the 3D view's gestures, open where they
+    /// are) among them.
+    pub fn layers(&self, view: &[Layer]) -> Vec<Layer> {
+        let open = |l: Layer| match l {
+            Layer::Ask | Layer::Template | Layer::Search => self.overlay.as_ref().is_some_and(|o| o.layer() == l),
+            Layer::Dialog => self.dialog.is_some(),
+            Layer::Settings => self.page.settings_shown().is_some(),
+            Layer::Selection => !self.selection.is_clear(),
+            Layer::Pen | Layer::Box | Layer::Tool => view.contains(&l),
+        };
+        Layer::ALL.into_iter().filter(|l| open(*l)).collect()
+    }
+
+    /// The layer Escape closes, given the 3D view's open and who has the keyboard: the top
+    /// one, unless a field it does not own has it.
     ///
     /// ```
     /// use emcraft_ui_egui::ui_state::{Keyboard, Layer, UiState};
     ///
     /// let s = UiState::default();
-    /// assert_eq!(s.escape_target(&[Layer::Tool, Layer::Selection], Keyboard::Free), Some(Layer::Tool));
+    /// assert_eq!(s.escape_target(&[Layer::Tool], Keyboard::Free), Some(Layer::Tool));
     /// // A field elsewhere lets go of the keyboard and closes nothing.
     /// assert_eq!(s.escape_target(&[Layer::Tool], Keyboard::Elsewhere), None);
     /// assert_eq!(s.escape_target(&[], Keyboard::Free), None);
     /// ```
-    pub fn escape_target(&self, below: &[Layer], keyboard: Keyboard) -> Option<Layer> {
-        let top = self.layers().chain(below.iter().copied()).next()?;
+    pub fn escape_target(&self, view: &[Layer], keyboard: Keyboard) -> Option<Layer> {
+        let top = *self.layers(view).first()?;
         let owned = match top {
             // Their own fields: Escape is theirs while one has the keyboard.
             Layer::Ask | Layer::Search => true,
@@ -205,7 +251,28 @@ impl UiState {
     /// prompt's answer), performed after.
     pub fn update(&mut self, action: &Action) -> Option<Vec<Action>> {
         let then = match action {
-            Action::Close(layer @ (Layer::Ask | Layer::Template | Layer::Search | Layer::Dialog | Layer::Settings)) => self.close(*layer),
+            Action::Close(layer @ (Layer::Ask | Layer::Template | Layer::Search | Layer::Dialog | Layer::Settings | Layer::Selection)) => {
+                self.close(*layer)
+            }
+            // A click in the 3D view (no tool on): the selection's table, then what it asks of
+            // the view (crate::selection::step).
+            Action::Click(click) => match crate::selection::step(&mut self.selection, *click) {
+                Then::Fit => Some(Action::Fit),
+                Then::Edit => Some(Action::EditSelected),
+                Then::Nothing => None,
+            },
+            Action::Select { row, picks } => {
+                self.selection = Selection::of(picks.clone(), row.clone());
+                None
+            }
+            // A box let go: what it took, added to the selection or instead of it.
+            Action::SelectBox { picks, add } => {
+                if !add {
+                    self.selection.clear();
+                }
+                self.selection.add(picks);
+                None
+            }
             Action::DialogCancel => {
                 self.dialog = None;
                 None
@@ -257,7 +324,11 @@ impl UiState {
                 self.page.close_settings();
                 None
             }
-            Layer::Pen | Layer::Box | Layer::Tool | Layer::Selection => None,
+            Layer::Selection => {
+                self.selection.clear();
+                None
+            }
+            Layer::Pen | Layer::Box | Layer::Tool => None,
         }
     }
 
@@ -296,6 +367,29 @@ mod tests {
     use crate::files::{Prompt, Purpose, Then};
     use crate::page::Tab;
 
+    fn selected() -> UiState {
+        let mut s = UiState::default();
+        s.select(Selection::of(vec![crate::scene3d::Pick::Guide], None));
+        s
+    }
+
+    /// A click on empty space clears the selection; a double click on it fits the view; a
+    /// double click on a part picks it alone to edit it; a box adds with Shift.
+    #[test]
+    fn clicks_and_boxes_change_the_selection_and_ask_the_view() {
+        use crate::scene3d::Pick;
+        use crate::selection::Click;
+        let mut s = selected();
+        assert_eq!(s.update(&Action::Click(Click::Single { pick: None, add: false })), Some(vec![]));
+        assert!(s.selection().is_clear());
+        assert_eq!(s.update(&Action::Click(Click::Double { pick: None })), Some(vec![Action::Fit]));
+        assert_eq!(s.update(&Action::Click(Click::Double { pick: Some(Pick::Port(1)) })), Some(vec![Action::EditSelected]));
+        s.update(&Action::SelectBox { picks: vec![Pick::Guide], add: true });
+        assert_eq!(&s.selection()[..], [Pick::Port(1), Pick::Guide]);
+        s.update(&Action::SelectBox { picks: vec![Pick::Port(0)], add: false });
+        assert_eq!(&s.selection()[..], [Pick::Port(0)]);
+    }
+
     fn asking() -> UiState {
         let mut s = UiState::default();
         s.set_ask(Ask::Save(Then::New));
@@ -306,7 +400,9 @@ mod tests {
     /// the key from the layers below a question or the search.
     #[rstest::rstest]
     #[case::question_first(asking(), &[Layer::Tool], Keyboard::Elsewhere, Some(Layer::Ask))]
-    #[case::the_settings_over_the_view(UiState::at(Pages::at(Tab::Settings)), &[Layer::Selection], Keyboard::Free, Some(Layer::Settings))]
+    #[case::the_settings_over_the_view(UiState::at(Pages::at(Tab::Settings)), &[Layer::Tool], Keyboard::Free, Some(Layer::Settings))]
+    #[case::the_tool_over_the_selection(selected(), &[Layer::Tool], Keyboard::Free, Some(Layer::Tool))]
+    #[case::the_selection_last(selected(), &[], Keyboard::Free, Some(Layer::Selection))]
     #[case::a_field_elsewhere(UiState::at(Pages::at(Tab::Settings)), &[], Keyboard::Elsewhere, None)]
     #[case::the_view_below(UiState::default(), &[Layer::Box, Layer::Tool], Keyboard::Free, Some(Layer::Box))]
     fn escape_reaches_the_top_layer(#[case] s: UiState, #[case] below: &[Layer], #[case] k: Keyboard, #[case] want: Option<Layer>) {

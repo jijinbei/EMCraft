@@ -36,7 +36,8 @@ pub(super) fn drawer_of(ui: &egui::Ui) -> Drawer {
 
 /// The scene drawn into `rect` by the GPU: by the window's in a paint callback, or offscreen
 /// into a picture (drawn again when what it shows changed); without either, a message.
-pub(super) fn draw(v: &mut View3d, ui: &egui::Ui, rect: Rect, moving: bool, look: crate::prefs::GpuLook) {
+/// `selected`: what is outlined.
+pub(super) fn draw(v: &mut View3d, selected: &[crate::scene3d::Pick], ui: &egui::Ui, rect: Rect, moving: bool, look: crate::prefs::GpuLook) {
     let t = &Tokens::get();
     let drawer = drawer_of(ui);
     let p = &ui.painter().with_clip_rect(rect);
@@ -45,7 +46,7 @@ pub(super) fn draw(v: &mut View3d, ui: &egui::Ui, rect: Rect, moving: bool, look
     let began = Instant::now();
     let frame = match drawer {
         Drawer::None => None,
-        _ => Some(gpu_frame(v, ui, rect, moving, look)),
+        _ => Some(gpu_frame(v, selected, ui, rect, moving, look)),
     };
     match (drawer, frame) {
         (Drawer::Window, Some(frame)) => {
@@ -97,7 +98,14 @@ pub(super) fn draw(v: &mut View3d, ui: &egui::Ui, rect: Rect, moving: bool, look
 }
 
 /// The frame of the scene the GPU draws into `rect`, supersampled at rest when small enough.
-pub(super) fn gpu_frame(v: &mut View3d, ui: &egui::Ui, rect: Rect, moving: bool, look: crate::prefs::GpuLook) -> crate::gpu3d::Frame {
+pub(super) fn gpu_frame(
+    v: &mut View3d,
+    selected: &[crate::scene3d::Pick],
+    ui: &egui::Ui,
+    rect: Rect,
+    moving: bool,
+    look: crate::prefs::GpuLook,
+) -> crate::gpu3d::Frame {
     let offscreen = v.drawn_by == Drawer::Offscreen;
     let t = &Tokens::get();
     let ppp = f64::from(ui.ctx().pixels_per_point());
@@ -135,8 +143,8 @@ pub(super) fn gpu_frame(v: &mut View3d, ui: &egui::Ui, rect: Rect, moving: bool,
     let hover = v.pointer_tag.map_or(0, |(_, _, tag)| tag);
     crate::gpu3d::Frame {
         look: gpu_look,
-        selected: v.selected.iter().map(|p| p.tag()).collect(),
-        hover: if v.selected.iter().any(|p| p.tag() == hover) { 0 } else { hover },
+        selected: selected.iter().map(|p| p.tag()).collect(),
+        hover: if selected.iter().any(|p| p.tag() == hover) { 0 } else { hover },
         outline: rgba(t.accent, 1.0),
         hover_color: rgba(t.accent, 0.5),
         ppp: ppp as f32,
@@ -388,12 +396,14 @@ pub(super) struct NavBar {
     pub(super) playing: bool,
     /// The ports are the subject: their tools too.
     pub(super) ports: bool,
+    /// The tool on.
+    pub(super) tool: Option<crate::tools3d::Tool>,
 }
 
 impl NavBar {
     /// The bar at the bottom of `rect`; the section view cuts the model's `bounds`.
     pub(super) fn show(self, v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f64; 3]), out: &mut Actions) {
-        let NavBar { facing, standalone, playing, ports } = self;
+        let NavBar { facing, standalone, playing, ports, tool: on_tool } = self;
         let t = &Tokens::get();
         let ortho = v.camera.projection == Projection::Orthographic;
         let mut items: Vec<(Glyph, Handle, crate::lang::Text)> = vec![
@@ -437,7 +447,7 @@ impl NavBar {
             let resp = ui.hit(r, handle, Sense::click());
             resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
             let on = (handle == Handle::Fixed(Fixed::View3dSection) && v.section.is_some())
-                || matches!(handle, Handle::Tool(tool) if v.tools.tool == Some(tool));
+                || matches!(handle, Handle::Tool(tool) if on_tool == Some(tool));
             if resp.hovered() || on {
                 p.rect_filled(r, 5.0, if on { t.accent_soft } else { t.hover });
             }
@@ -449,7 +459,7 @@ impl NavBar {
                     Handle::Standard(side) => out.push(Action::StandardView(side)),
                     Handle::Fixed(Fixed::View3dPlay) => out.push(Action::SetPlaying(!playing)),
                     Handle::Fixed(Fixed::View3dSection) => v.section = v.section.is_none().then(|| Cut::middle(0, bounds)),
-                    Handle::Tool(tool) => out.push(Action::Tool((v.tools.tool != Some(tool)).then_some(tool))),
+                    Handle::Tool(tool) => out.push(Action::Tool((on_tool != Some(tool)).then_some(tool))),
                     Handle::Fixed(Fixed::View3dFace) => {
                         if let Some((lo, hi, side)) = facing {
                             v.goal = Some(Goal::Face(lo, hi, side));

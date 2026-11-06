@@ -1,7 +1,7 @@
 //! Escape on the window: the frame's key, given to the top layer ([`crate::ui_state`] decides
-//! which) before anything is drawn, so no widget sees it too. The 3D view's layers (the pen,
-//! the selection box, the tool, the selection) are the app's: their presence and their way out
-//! are here until they join the window's state.
+//! which) before anything is drawn, so no widget sees it too. The 3D view's gestures (the pen,
+//! the selection box, what the tool picked) are drafts of the view: whether they are open and
+//! how they let go are here.
 
 use crate::ui_state::{Keyboard, Layer};
 use crate::{Action, EmcraftApp};
@@ -11,15 +11,14 @@ fn view_layers(app: &EmcraftApp) -> Vec<Layer> {
     let open = [
         (Layer::Pen, app.views.pcb.drawing.is_some()),
         (Layer::Box, app.view3d.boxsel.is_some()),
-        (Layer::Tool, app.view3d.tools.tool.is_some() || app.view3d.tools.measured.is_some()),
-        (Layer::Selection, !app.view3d.selected.is_clear()),
+        (Layer::Tool, app.ui_state.tool().is_some() || app.view3d.tools.measured.is_some()),
     ];
     open.into_iter().filter_map(|(l, on)| on.then_some(l)).collect()
 }
 
 /// The layers open now, top first.
 pub fn stack(app: &EmcraftApp) -> Vec<Layer> {
-    app.ui_state.layers().chain(view_layers(app)).collect()
+    app.ui_state.layers(&view_layers(app))
 }
 
 /// The layer Escape closes now: none while a menu or a drop-down is open (it takes Escape).
@@ -56,9 +55,12 @@ pub(crate) fn close(app: &mut EmcraftApp, layer: Layer) -> Option<Action> {
         }
         Layer::Box => app.view3d.cancel_box(),
         // What the tool picked goes first, then the tool.
-        Layer::Tool => app.view3d.tools.escape(),
-        Layer::Selection => app.view3d.selected.clear(),
-        Layer::Ask | Layer::Template | Layer::Search | Layer::Dialog | Layer::Settings => return app.ui_state.close(layer),
+        Layer::Tool => {
+            if app.view3d.tools.escape() {
+                app.ui_state.set_tool(None);
+            }
+        }
+        Layer::Ask | Layer::Template | Layer::Search | Layer::Dialog | Layer::Settings | Layer::Selection => return app.ui_state.close(layer),
     }
     None
 }

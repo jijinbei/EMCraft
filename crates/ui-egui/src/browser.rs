@@ -243,15 +243,15 @@ pub fn rows_of(app: &EmcraftApp, picks: &[Pick]) -> Vec<(String, Row)> {
 
 /// The items of the model the selected parts in 3D name, in their order.
 pub fn selected_items(app: &EmcraftApp) -> Vec<Item> {
-    rows_of(app, &app.view3d.selected).into_iter().filter_map(|(_, r)| r.item).collect()
+    rows_of(app, app.ui_state.selection()).into_iter().filter_map(|(_, r)| r.item).collect()
 }
 
 /// Whether a row shows selected: one of the parts selected in 3D, or (a row with no part) the
 /// row clicked.
 fn row_selected(app: &EmcraftApp, key: &str, r: &Row) -> bool {
     match r.pick {
-        Some(p) => app.view3d.selected.contains(&p),
-        None => app.view3d.selected.row() == Some(key),
+        Some(p) => app.ui_state.selection().contains(&p),
+        None => app.ui_state.selection().row() == Some(key),
     }
 }
 
@@ -731,7 +731,7 @@ fn browser_row(app: &EmcraftApp, ui: &mut egui::Ui, section: &str, r: &Row, out_
         && toggles
         && let Some(p) = r.pick
     {
-        let mut picks = app.view3d.selected.clone();
+        let mut picks = app.ui_state.selection().clone();
         picks.toggle(p);
         let row = rows_of(app, &picks).pop().map(|(k, _)| k);
         out.push(Action::Select { row, picks: picks.to_vec() });
@@ -819,7 +819,7 @@ fn row_menu(app: &EmcraftApp, r: &Row, key: &str, ui: &mut egui::Ui, out: &mut A
     }
     if let Some(item) = &r.item {
         // A row among several parts selected deletes them all.
-        let several = r.pick.is_some_and(|p| app.view3d.selected.len() > 1 && app.view3d.selected.contains(&p));
+        let several = r.pick.is_some_and(|p| app.ui_state.selection().len() > 1 && app.ui_state.selection().contains(&p));
         let items = if several { selected_items(app) } else { vec![item.clone()] };
         let delete = egui::Button::new(lang::tr(t!("Delete"))).shortcut_text("Del");
         ui.act(true, delete, Fixed::RowMenuDelete.into(), Action::DeleteItems(items), out);
@@ -835,7 +835,7 @@ fn row_menu(app: &EmcraftApp, r: &Row, key: &str, ui: &mut egui::Ui, out: &mut A
 /// Delete deletes the items of the parts selected in 3D, else the selected row's (when no field
 /// takes the key and nothing asks).
 fn delete_key(app: &EmcraftApp, ui: &egui::Ui, tree: &[(&'static str, Vec<Row>)], out: &mut Actions) {
-    if app.view3d.selected.is_clear() {
+    if app.ui_state.selection().is_clear() {
         return;
     }
     if app.busy() || app.ui_state.dialog().is_some() || app.ui_state.ask().is_some() || ui.ctx().text_edit_focused() {
@@ -849,7 +849,7 @@ fn delete_key(app: &EmcraftApp, ui: &egui::Ui, tree: &[(&'static str, Vec<Row>)]
         out.push(Action::DeleteItems(picked));
         return;
     }
-    let Some(selected) = app.view3d.selected.row() else { return };
+    let Some(selected) = app.ui_state.selection().row() else { return };
     let item = tree.iter().flat_map(|(s, rows)| rows.iter().map(move |r| (s, r))).find(|(s, r)| format!("{s}/{}", r.text) == *selected);
     if let Some(item) = item.and_then(|(_, r)| r.item.clone()) {
         out.push(Action::DeleteItems(vec![item]));

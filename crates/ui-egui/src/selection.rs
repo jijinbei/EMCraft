@@ -134,6 +134,14 @@ impl Selection {
         self.row.as_deref()
     }
 
+    /// The only part selected, when one is.
+    pub fn single(&self) -> Option<Pick> {
+        match self.parts[..] {
+            [p] => Some(p),
+            _ => None,
+        }
+    }
+
     /// Whether nothing at all is selected.
     pub fn is_clear(&self) -> bool {
         self.parts.is_empty() && self.row.is_none()

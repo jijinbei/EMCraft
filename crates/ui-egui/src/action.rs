@@ -51,6 +51,17 @@ pub enum Action {
         row: Option<String>,
         picks: Vec<Pick>,
     },
+    /// A click in the 3D view while no tool is on (the selection's table: `crate::selection`).
+    Click(crate::selection::Click),
+    /// What a selection box took, added to the selection (`add`) or instead of it.
+    SelectBox {
+        picks: Vec<Pick>,
+        add: bool,
+    },
+    /// The 3D view fitted to the model.
+    Fit,
+    /// Opens the edit dialog of the one part selected (its row's).
+    EditSelected,
     /// Folds or unfolds a browser section.
     Fold(String),
     /// A row elsewhere points at a part of the 3D view: highlighted until the next frame.
@@ -171,7 +182,8 @@ impl Action {
             | Action::CheckResults
             | Action::ExportTouchstone
             | Action::SetDevice { .. }
-            | Action::Measure(_) => true,
+            | Action::Measure(_)
+            | Action::EditSelected => true,
             Action::File(f) => f.waits_for_job(),
             Action::OpenDialog { .. }
             | Action::DialogCancel
@@ -182,6 +194,9 @@ impl Action {
             | Action::OpenStep(_)
             | Action::Fix(_)
             | Action::Select { .. }
+            | Action::Click(_)
+            | Action::SelectBox { .. }
+            | Action::Fit
             | Action::Fold(_)
             | Action::Hover(_)
             | Action::FocusMode(_)
@@ -358,8 +373,12 @@ impl EmcraftApp {
             Action::SetTab(t) => self.tab = t,
             Action::OpenStep(step) => crate::steps::open_step(self, step),
             Action::Fix(command) => crate::steps::fix(self, &command)?,
-            Action::Select { row, picks } => {
-                self.view3d.selected = crate::selection::Selection::of(picks, row);
+            Action::Fit => self.view3d.goal = Some(crate::view3d::Goal::Fit),
+            Action::EditSelected => {
+                let row = self.ui_state.selection().single().and_then(|p| crate::browser::rows_of(self, &[p]).into_iter().next());
+                if let Some(a) = row.and_then(|(_, r)| r.edit_action()) {
+                    return self.apply(a);
+                }
             }
             Action::Fold(section) => {
                 if self.browser.folded.contains(&section) {
@@ -374,7 +393,14 @@ impl EmcraftApp {
             Action::Redo => return self.run("edit.redo", json!({})),
             Action::CancelJob => return Ok(json!({"cancelled": self.cancel_job()})),
             // The window's own transitions, made above (crate::ui_state).
-            Action::DialogCancel | Action::OpenSearch | Action::Show(_) | Action::OpenSettings(_) | Action::CloseSettings => {}
+            Action::DialogCancel
+            | Action::OpenSearch
+            | Action::Show(_)
+            | Action::OpenSettings(_)
+            | Action::CloseSettings
+            | Action::Click(_)
+            | Action::Select { .. }
+            | Action::SelectBox { .. } => {}
             Action::Close(layer) => {
                 if let Some(then) = crate::layers::close(self, layer) {
                     return self.apply(then);
@@ -392,7 +418,7 @@ impl EmcraftApp {
             Action::EditItem(item) => self.open_item_dialog(&item)?,
             Action::DeleteItems(items) => {
                 // What was selected is going.
-                self.view3d.selected.clear();
+                self.ui_state.select(crate::selection::Selection::default());
                 let mut replies = Vec::with_capacity(items.len());
                 // An imported part's walls are not deleted: their material changes.
                 for item in items.into_iter().filter(|i| !i.delete.is_empty()) {
@@ -426,7 +452,8 @@ impl EmcraftApp {
             Action::StandardView(v) => self.view3d.standard(v),
             Action::SetPlaying(on) => self.field.player.playing = on,
             Action::Tool(tool) => {
-                self.view3d.tools.set(tool);
+                self.ui_state.set_tool(tool);
+                self.view3d.tools.reset(tool);
                 if tool.is_some() {
                     self.place = self.place.show(View::Model);
                     self.ui_state.page.show(crate::page::Tab::Project);

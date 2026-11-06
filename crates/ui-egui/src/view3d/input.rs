@@ -175,11 +175,11 @@ pub(super) fn navigate(
     if resp.double_clicked_by(egui::PointerButton::Middle) && inside {
         v.goal = Some(if n.nav.middle_double_fits { Goal::Fit } else { Goal::Home });
     }
-    if v.tools.tool.is_some() {
-        return Gesture { select: false, double: false, plane_drag, grip: grip_drag, tool_click: resp.clicked() };
+    if app.ui_state.tool().is_some() {
+        return Gesture { select: None, plane_drag, grip: grip_drag, tool_click: resp.clicked() };
     }
-    let double = n.click(v, ui, &resp);
-    Gesture { select: select || resp.clicked(), double, plane_drag, grip: grip_drag, tool_click: false }
+    let select = select.or_else(|| n.click(v, ui, &resp));
+    Gesture { select, plane_drag, grip: grip_drag, tool_click: false }
 }
 
 /// What a frame's gestures in the view read: the mapping, the view's rectangle and the model's
@@ -229,25 +229,24 @@ impl Nav<'_> {
             Some(LeftDrag::Nav(m, mods.shift))
         } else if self.ctrl && !mods.shift && !mods.alt {
             Some(LeftDrag::Nav(NavMode::Orbit, false))
-        } else if v.tools.tool.is_none() {
+        } else if self.app.ui_state.tool().is_none() {
             Some(LeftDrag::Box { add: mods.shift })
         } else {
             None
         }
     }
 
-    /// The box follows the pointer from the press; let go, it selects (`true`). The left drag
-    /// ends with the button.
-    fn box_drag(&self, v: &mut View3d, resp: &egui::Response) -> bool {
-        let mut select = false;
+    /// The box follows the pointer from the press; let go, what it takes is selected. The left
+    /// drag ends with the button.
+    fn box_drag(&self, v: &mut View3d, resp: &egui::Response) -> Option<Action> {
+        let mut select = None;
         match (v.left, resp.dragged()) {
             (Some(LeftDrag::Box { .. }), true) => {
                 v.boxsel = self.press.zip(self.latest).map(|(a, b)| BoxSel::from_drag(a, b)).filter(|b| b.rect.is_finite());
             }
             (Some(LeftDrag::Box { add }), false) => {
                 if let Some(b) = v.boxsel.take() {
-                    box_select(v, self.rect, b, add);
-                    select = true;
+                    select = Some(Action::SelectBox { picks: boxed(v, self.rect, b), add });
                 }
             }
             _ => {}
@@ -348,40 +347,27 @@ impl Nav<'_> {
         orbits
     }
 
-    /// A click picks what is under it (Shift or Ctrl adds or takes it away; empty space
-    /// clears); a double-click on a part picks it alone (`true`), on nothing fits the view.
-    fn click(&self, v: &mut View3d, ui: &egui::Ui, resp: &egui::Response) -> bool {
+    /// A click, with what is under it (the selection's table makes of it what it does:
+    /// crate::selection::step).
+    fn click(&self, v: &mut View3d, ui: &egui::Ui, resp: &egui::Response) -> Option<Action> {
         if !(resp.clicked() || resp.double_clicked()) {
-            return false;
+            return None;
         }
-        let Some(pos) = resp.interact_pointer_pos() else { return false };
+        let pos = resp.interact_pointer_pos()?;
         let pick = v.pick_at(ui.ctx(), self.rect, pos);
         let click = if resp.double_clicked() {
             selection::Click::Double { pick }
         } else {
             selection::Click::Single { pick, add: self.mods.shift || self.ctrl }
         };
-        match selection::step(&mut v.selected, click) {
-            selection::Then::Edit => true,
-            selection::Then::Fit => {
-                v.goal = Some(Goal::Fit);
-                false
-            }
-            selection::Then::Nothing => false,
-        }
+        Some(Action::Click(click))
     }
 }
 
-/// Selects the parts the box `b` (screen points over the view in `rect`) takes, added to what is
-/// selected when `add` (Shift held), else instead of it.
-pub(super) fn box_select(v: &mut View3d, rect: Rect, b: BoxSel, add: bool) {
+/// The parts the box `b` (screen points over the view in `rect`) takes.
+pub(super) fn boxed(v: &View3d, rect: Rect, b: BoxSel) -> Vec<scene3d::Pick> {
     let local = BoxSel { rect: b.rect.translate(-rect.min.to_vec2()), crossing: b.crossing };
-    let picks =
-        v.shown().map(|s| selection::boxed(&s.scene, &v.camera, f64::from(rect.width()), f64::from(rect.height()), local)).unwrap_or_default();
-    if !add {
-        v.selected.clear();
-    }
-    v.selected.add(&picks);
+    v.shown().map(|s| selection::boxed(&s.scene, &v.camera, f64::from(rect.width()), f64::from(rect.height()), local)).unwrap_or_default()
 }
 
 /// The selection box: by window a solid outline, by crossing a dashed one in another colour, as

@@ -399,7 +399,7 @@ impl Item {
     fn active(self, app: &EmcraftApp) -> bool {
         match self {
             Item::Command(id) => app.ui_state.dialog().is_some_and(|d| d.command.id == id),
-            Item::Tool(tool) => app.view3d.tools.tool == Some(tool),
+            Item::Tool(tool) => app.ui_state.tool() == Some(tool),
         }
     }
 
