@@ -122,3 +122,17 @@ fn an_interior_body_is_the_region_and_keeps_the_bodies() {
     // An interior cylinder off the origin is refused.
     assert!(t.execute("geometry.body", &json!({"shape": "cylinder", "radius": 5, "length": 10, "at": [1, 0, 0], "material": "interior"})).is_err());
 }
+
+/// The steps' states come in the bar's order (each at its step's index), the region after the
+/// settings whose band sizes it (ADR 0005).
+#[test]
+fn the_steps_come_in_the_bar_s_order_the_region_after_the_settings() {
+    let mut s = Session::new();
+    s.execute("geometry.body", &json!({"shape": "sphere", "radius": 5, "material": "metal"})).unwrap();
+    let states = crate::workflow::steps(&s);
+    assert!(states.iter().enumerate().all(|(k, st)| st.step.index() == k));
+    use crate::workflow::Step;
+    assert!(Step::Setup.index() < Step::Boundaries.index() && Step::Boundaries.index() < Step::Mesh.index());
+    assert_eq!(Step::Boundaries.label(), "Region");
+    assert_eq!(Step::of_command("model.region"), Some(Step::Boundaries));
+}

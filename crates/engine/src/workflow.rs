@@ -25,10 +25,12 @@ emcraft_macros::named_enum! {
         Geometry = "geometry" => "Geometry",
         Materials = "materials" => "Materials",
         Excitation = "excitation" => "Excitation",
-        Boundaries = "boundaries" => "Boundaries",
-        /// The run's settings, the band among them: confirmed before the mesh, which the band's
-        /// top sizes.
+        /// The run's settings, the band among them: confirmed before the region and the mesh,
+        /// which the band's top sizes.
         Setup = "setup" => "Setup",
+        /// The region the model is solved in: its walls, layer and symmetry, automatic from the
+        /// bodies, ports and band (ADR 0005; its id kept from when it was called Boundaries).
+        Boundaries = "boundaries" => "Region",
         Mesh = "mesh" => "Mesh",
         Run = "run" => "Run",
         Results = "results" => "Results",
@@ -48,7 +50,7 @@ impl Step {
             Step::Geometry => &["geometry.waveguide", "geometry.solid", "geometry.feature", "geometry.inclusion", "geometry.import", "file.sample"],
             Step::Materials => &["model.material.create"],
             Step::Excitation => &["model.port.create", "model.port.lumped", "source.dipole", "source.plane_wave", "source.clear"],
-            Step::Boundaries => &["model.walls", "model.open", "model.symmetry"],
+            Step::Boundaries => &["model.region", "model.walls", "model.open", "model.symmetry"],
             Step::Mesh => &["mesh.generate"],
             Step::Setup => &["project.setup"],
             Step::Run => &["solve.run"],
@@ -64,7 +66,7 @@ impl Step {
             _ if id.starts_with("geometry.") || id == "file.sample" => Step::Geometry,
             "model.material.create" => Step::Materials,
             _ if id.starts_with("model.port.") || id.starts_with("source.") || id == "solve.port_modes" => Step::Excitation,
-            "model.walls" | "model.open" | "model.symmetry" => Step::Boundaries,
+            "model.region" | "model.background" | "model.walls" | "model.open" | "model.symmetry" => Step::Boundaries,
             "mesh.generate" | "project.estimate" => Step::Mesh,
             _ if id.starts_with("solve.") => Step::Run,
             _ if id.starts_with("results.") || id.starts_with("view.") => Step::Results,
@@ -308,10 +310,11 @@ pub fn steps(s: &Session) -> [StepState; 9] {
         );
         return states;
     }
-    let above = [intent(s), geometry(s), materials(s), excitation(s), boundaries(s), setup(s), mesh(s)];
+    // In the bar's order (Step's): the region after the settings whose band sizes it.
+    let above = [intent(s), geometry(s), materials(s), excitation(s), setup(s), boundaries(s), mesh(s)];
     let (run, results) = run_and_results(s, &above);
-    let [intent, geometry, materials, excitation, boundaries, setup, mesh] = above;
-    [intent, geometry, materials, excitation, boundaries, setup, mesh, run, results]
+    let [intent, geometry, materials, excitation, setup, boundaries, mesh] = above;
+    [intent, geometry, materials, excitation, setup, boundaries, mesh, run, results]
 }
 
 /// The steps a run cannot do without: the geometry, the confirmed settings and the mesh; once a kind of analysis is
