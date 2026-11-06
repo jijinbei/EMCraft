@@ -172,6 +172,7 @@ emcraft_macros::named_enum! {
         Cylinder = "cylinder",
         Sphere = "sphere",
         Prism = "prism",
+        Revolved = "revolved",
     }
 }
 
@@ -185,6 +186,11 @@ pub(crate) fn shape(p: &Params) -> Result<Shape> {
         Primitive::Cylinder => Shape::Cylinder { radius: dimension("radius")?, length: dimension("length")? },
         Primitive::Sphere => Shape::Sphere { radius: dimension("radius")? },
         Primitive::Prism => Shape::prism(&p.pairs("points", emcraft_model::MAX_PRISM_POINTS).required_or("for a prism")?, dimension("length")?)?,
+        Primitive::Revolved => {
+            let points = p.pairs("points", emcraft_model::MAX_PRISM_POINTS).required_or("for a revolved body")?;
+            let sides = p.integer("sides", 3..=Shape::MAX_REVOLVED_SIDES).or(64)?;
+            Shape::revolved("revolved", &points, sides)?
+        }
     })
 }
 

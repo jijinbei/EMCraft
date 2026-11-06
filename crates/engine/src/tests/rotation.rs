@@ -54,6 +54,12 @@ fn close(r: &Value, harmonics: &[u64], tol: f64) {
     }
 }
 
+/// **Setup**: a vacuum pillbox, radius a = 10 mm, length d = 15 mm, perfectly conducting, on a
+/// quarter (C4), harmonic m = 1, first-order elements of 4 mm.
+/// **Closed form**: f = c/(2π) √((x/a)² + (pπ/d)²); TE111 with x = x′₁₁ = 1.841184 (p = 1),
+/// TM110 with x = x₁₁ = 3.831706 (p = 0) (D. M. Pozar, *Microwave Engineering*, 4th ed., §6.3).
+/// **Reference**: the Bessel zeros from Abramowitz–Stegun Table 9.5; `exact` evaluates the
+/// formula apart from the solver.
 #[test]
 fn a_pillbox_on_a_quarter_gives_its_modes() {
     let mut s = pillbox();
@@ -180,6 +186,11 @@ fn passes(m: u32, size: f64, f: f64, x: f64, tol: f64) {
     assert!(s11.norm() < tol && (s21 - want).norm() < tol, "m {m}: S11 {s11}, S21 {s21}, exact {want}");
 }
 
+/// **Setup**: an empty circular guide, radius 10 mm, 30 mm long, on a quarter; ports on its ends
+/// carrying the rotating modes TE11+ (12 GHz) and TM01 (14 GHz), 4 mm elements.
+/// **Closed form**: a matched straight guide: S11 = 0, S21 = e^{−jβL}, β = √(k₀² − (x/a)²),
+/// x = x′₁₁ or x₀₁ (Pozar §3.4).
+/// **Reference**: the zeros from Abramowitz–Stegun Table 9.5, β evaluated in the test.
 #[test]
 fn a_circular_guide_on_a_quarter_passes_its_rotating_modes() {
     // TE11+ (ν = 1) and TM01 (ν = 0).
@@ -321,6 +332,13 @@ fn revolution_modes(s: &mut Session, m: u32, near: f64, count: usize, size: f64)
     r["modes"].as_array().unwrap().iter().map(|x| x["frequency"].as_f64().unwrap()).collect()
 }
 
+/// **Setup**: the pillbox (a = 10 mm, d = 15 mm) as a body of revolution from its cylinder, m = 0,
+/// 0.5 mm triangles; a vacuum sphere of radius 10 mm, m = 1.
+/// **Closed form**: TM010 and TM011 as in [`a_pillbox_on_a_quarter_gives_its_modes`]; the sphere's
+/// TM101 at k a = 2.743707, the first zero of [x j₁(x)]′ (R. F. Harrington, *Time-Harmonic
+/// Electromagnetic Fields*, 1961, §6.10).
+/// **Reference**: `exact` and `emcraft_theory::bessel::sphere_cavity_resonances`, both written
+/// apart from the solver (the latter is the 3D sphere cavity's reference too).
 #[test]
 fn a_body_of_revolution_takes_the_model_s_profile() {
     // The pillbox from its cylinder: TM010 and TM011.
@@ -424,6 +442,13 @@ fn a_widened_guide_as_a_body_of_revolution_gives_its_s() {
     }
 }
 
+/// **Setup**: a circular guide, radius 10 mm, 30 mm long, filled with εr = 2.2 over 5 mm from
+/// z = 12.5 mm; TE11 (m = 1) at 11 and 13 GHz, 0.25 mm triangles.
+/// **Closed form**: the slab between two lines of the TE11 wave impedance Z ∝ 1/β:
+/// Γ = (β₁ − β₂)/(β₁ + β₂), P = e^{−jβ₂ℓ}, S11 = Γ(1 − P²)/(1 − Γ²P²), S21 = P(1 − Γ²)/(1 − Γ²P²),
+/// moved to the ports by e^{−jβ₁·} (Pozar §2.6, §3.4; the guide's modes are the empty guide's in
+/// both media, the slab filling the cross-section).
+/// **Reference**: evaluated in the test from β₁, β₂.
 #[test]
 fn a_dielectric_plug_in_a_circular_guide_as_a_body_of_revolution() {
     // The guide filled with εr = 2.2 over 5 mm from z = 12.5 mm (to 10 µm of the wall, as an
@@ -552,6 +577,13 @@ fn layered_sphere_te101(a: f64, b: f64, eps_r: f64) -> f64 {
     0.5 * (lo + hi) * emcraft_model::units::C0 / (2.0 * std::f64::consts::PI)
 }
 
+/// **Setup**: a spherical cavity, radius a = 10 mm, with a concentric sphere of εr = 2.2 and
+/// radius b = 5 mm; m = 0, 0.2 mm triangles.
+/// **Closed form**: TE101, E_φ ∝ R(r): R = j₁(k₁r) inside, R = j₁(k₀r)y₁(k₀a) − y₁(k₀r)j₁(k₀a)
+/// outside (R(a) = 0), R and (rR)′ continuous at b (Harrington §6.10).
+/// **Reference**: [`layered_sphere_te101`]'s bisection, which an apart script with the
+/// derivatives in closed form matches to 6e-10 and whose limits b → 0, b → a and εr = 1 give the
+/// empty or filled cavity's root 4.493409 (tests/oracle/bor-dielectric-sphere).
 #[test]
 fn a_dielectric_sphere_in_a_spherical_cavity_as_a_body_of_revolution() {
     // εr = 2.2 to 5 mm in a 10 mm cavity: TE101 (m = 0, E_φ only) against the two-layer root.
@@ -567,6 +599,10 @@ fn a_dielectric_sphere_in_a_spherical_cavity_as_a_body_of_revolution() {
     assert!((got / want - 1.0).abs() < 3e-3, "{got} GHz against {want} ({f:?})");
 }
 
+/// **Setup**: a sphere of radius 10 mm as an imported surface (its meridian in 32 chords, turned in
+/// 64 sides), m = 1, 0.5 mm triangles; a cube imported the same way, refused.
+/// **Closed form**: TM101 at k a = 2.743707 (Harrington §6.10).
+/// **Reference**: `emcraft_theory::bessel::sphere_cavity_resonances`.
 #[test]
 fn an_imported_body_of_revolution_takes_its_section_as_its_profile() {
     // A sphere of radius 10 mm as an imported surface (its meridian in 32 chords, turned in 64
@@ -598,6 +634,12 @@ fn revolution_radiation(s: &mut Session, theta: &[f64], size: f64) -> Value {
     s.execute("solve.revolution.radiation", &json!({"frequency": 3, "theta": theta, "size": size})).unwrap()
 }
 
+/// **Setup**: a current element I·l = 1 A × 1 mm along z at 3 GHz (λ = 100 mm) at the centre of
+/// a vacuum sphere of radius 60 mm lined by a 20 mm spherical layer, and in a cylinder (radius
+/// 60 mm, 120 mm long) lined on its wall and ends; m = 0, 3 mm triangles.
+/// **Closed form**: P = η₀(k I l)²/(12π), directivity (3/2) sin²θ (C. A. Balanis, *Antenna
+/// Theory*, 4th ed., §4.2), η₀ = μ₀c.
+/// **Reference**: `emcraft_theory::radiation::dipole_power`, the formula as printed.
 #[test]
 fn a_dipole_on_the_axis_of_an_open_body_of_revolution_radiates_its_closed_form() {
     // A 1 mm current element at 3 GHz (λ = 100 mm): η (k I l)²/(12π) and directivity 3/2 at
@@ -626,6 +668,16 @@ fn a_dipole_on_the_axis_of_an_open_body_of_revolution_radiates_its_closed_form()
     assert!(s.execute("solve.revolution.radiation", &json!({"frequency": 3})).is_err());
 }
 
+/// **Setup**: a sphere of εr = 4, radius 15 mm (k a = 0.94) at the centre of a vacuum sphere of
+/// radius 60 mm lined by a 20 mm spherical layer, lit at 3 GHz by a plane wave along +z with E
+/// along x (orders m = ±1), 2 mm triangles.
+/// **Closed form**: the Mie series: σ = 4π|S₂(θ)|²/k² (E-plane), 4π|S₁(θ)|²/k² (H-plane), S₁, S₂
+/// from aₙ, bₙ (C. F. Bohren, D. R. Huffman, *Absorption and Scattering of Light by Small
+/// Particles*, 1983, §4.4).
+/// **Reference**: `emcraft_theory::radiation::sphere_rcs`, which an apart script matches to
+/// twelve digits; the script gives Bohren and Huffman's BHMIE example (m = 1.55, x = 5.2128:
+/// Q_sca = Q_ext = 3.10543, Q_back = 2.92534) as published, the Rayleigh limit and the optical
+/// theorem (tests/oracle/bor-mie-sphere).
 #[test]
 fn a_dielectric_sphere_scatters_a_plane_wave_as_the_mie_series_has_it() {
     // εr = 4, radius 15 mm at 3 GHz (k a = 0.94), the wave along +z with E along x: the bistatic
@@ -645,4 +697,67 @@ fn a_dielectric_sphere_scatters_a_plane_wave_as_the_mie_series_has_it() {
             assert!((got / want - 1.0).abs() < 0.05, "θ = {deg}°, {key}: {got} m² against {want} m²");
         }
     }
+}
+
+/// An open-ended circular guide (radius 11 mm, wall 2 mm, 42 mm long, closed below its port) in a
+/// cylinder of radius 35 mm, 110 mm long, lined by a 10 mm layer, fed in TE11 at 10 GHz.
+fn open_guide(s: &mut Session) {
+    s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 35, "length": 110})).unwrap();
+    s.execute("geometry.feature", &json!({"combine": "subtract", "shape": "cylinder", "radius": 13, "length": 42, "at": [0, 0, 28]})).unwrap();
+    s.execute("geometry.feature", &json!({"combine": "add", "shape": "cylinder", "radius": 11, "length": 42, "at": [0, 0, 30]})).unwrap();
+    s.execute("model.port.create", &json!({"name": "feed", "end": "start", "modes": 2, "face": [30, -11, -11, 22, 22]})).unwrap();
+    s.execute("model.open", &json!({"thickness": 10, "shape": "box"})).unwrap();
+}
+
+/// **Setup**: [`open_guide`], TE11 (m = 1 and its mirror: E along x) into the guide.
+/// **Cross-check** (no closed form): the same guide in 3D in a 70 × 70 × 110 mm box lined by a
+/// 10 mm layer (`solve.radiation`, order 2, 3.6 mm, 1.6 M unknowns, 165 s; this commit's 3D
+/// solver): directivity 7.258 on the axis, 4.130 (E) and 4.161 (H) at 30°, 1.271 (E) and 1.049
+/// (H) at 60°; the half-plane's within 1 % of each. Its |S11| (0.125 there) converges here: 0.1158,
+/// 0.1075, 0.1062, 0.1059 at 2, 1, 0.5, 0.25 mm — the 3D mesh's elements are coarser than the wall.
+#[test]
+fn an_open_ended_guide_as_a_body_of_revolution_radiates_as_in_3d() {
+    let mut s = Session::new();
+    open_guide(&mut s);
+    let r = s.execute("solve.revolution.radiation", &json!({"frequency": 10, "theta": [0, 30, 60], "size": 0.5})).unwrap();
+    assert_eq!(r["modes"][0], "TE11");
+    for (k, e, h) in [(0, 7.258, 7.258), (1, 4.130, 4.161), (2, 1.271, 1.049)] {
+        let (de, dh) = (r["points"][k]["directivity"].as_f64().unwrap(), r["points"][k]["directivity_h"].as_f64().unwrap());
+        assert!(
+            (de / e - 1.0).abs() < 0.015 && (dh / h - 1.0).abs() < 0.015,
+            "θ {}: E {de} against {e}, H {dh} against {h}",
+            r["points"][k]["theta"]
+        );
+    }
+    let s11 = r["s"]["s11"]["mag"].as_f64().unwrap();
+    assert!((s11 - 0.1059).abs() < 0.002, "|S11| {s11}");
+    // Lumped ports and sources with ports are refused.
+    s.execute("source.dipole", &json!({"at": [0, 0, 80], "direction": [0, 0, 1], "length": 1})).unwrap();
+    assert!(s.execute("solve.revolution.radiation", &json!({"frequency": 10})).is_err());
+}
+
+/// **Setup**: a conical horn — [`open_guide`]'s feed flared from radius 11 mm at z = 60 mm to
+/// 25 mm at z = 100 mm (walls 2 mm), revolved profiles in a cylinder of radius 80 mm, 150 mm long,
+/// lined by 15 mm — fed in TE11 at 10 GHz.
+/// **Estimate** (no closed form): a circular aperture of diameter d = 50 mm with the TE11
+/// distribution has the aperture efficiency 0.837 (S. Silver, *Microwave Antenna Theory and
+/// Design*, 1949, §6.8; Balanis, *Antenna Theory*, Table 12.2): D ≈ 0.837 (πd/λ)² = 22.9 for a
+/// flare short enough that its phase error (s = d²/(8λℓ) = 0.14) costs little. The solve gives
+/// 23.0 at 1 mm and 22.9 at 0.5 mm, |S11| 0.060 and 0.059.
+#[test]
+fn a_conical_horn_as_a_body_of_revolution_has_its_aperture_s_directivity() {
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 80, "length": 150})).unwrap();
+    s.execute("geometry.feature", &json!({"combine": "subtract", "shape": "revolved", "points": [[0, 38], [13, 38], [13, 60], [27, 100], [0, 100]]}))
+        .unwrap();
+    s.execute("geometry.feature", &json!({"combine": "add", "shape": "revolved", "points": [[0, 40], [11, 40], [11, 60], [25.7, 102], [0, 102]]}))
+        .unwrap();
+    s.execute("model.port.create", &json!({"name": "feed", "end": "start", "modes": 2, "face": [40, -11, -11, 22, 22]})).unwrap();
+    s.execute("model.open", &json!({"thickness": 15, "shape": "box"})).unwrap();
+    let r = s.execute("solve.revolution.radiation", &json!({"frequency": 10, "theta": [0], "size": 1})).unwrap();
+    let lambda = emcraft_model::units::C0 / 1e10;
+    let estimate = 0.837 * (std::f64::consts::PI * 0.05 / lambda).powi(2);
+    let d = r["points"][0]["directivity"].as_f64().unwrap();
+    assert!((d / estimate - 1.0).abs() < 0.05, "directivity {d} against {estimate}");
+    assert!(r["s"]["s11"]["mag"].as_f64().unwrap() < 0.07);
 }

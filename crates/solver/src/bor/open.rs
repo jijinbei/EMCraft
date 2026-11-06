@@ -368,6 +368,24 @@ pub fn radiate(p: &Profile, layer: &Layer, source: &BorSource, frequency: f64) -
     Ok(Radiated { huygens, m, unknowns: d.count })
 }
 
+/// An open body of revolution `p` lined by `layer`, fed by its `ports` in order m at `frequency`
+/// (Hz): the S-parameters between their first modes and, for a unit wave of port `excitation`'s
+/// first mode in, the Huygens surface's samples (for m ≥ 1 with the order −m's mirror: the
+/// linearly polarized feed, E along x at φ = 0).
+pub fn radiate_ports(
+    p: &Profile,
+    layer: &Layer,
+    ports: &[super::BorPort],
+    m: u32,
+    excitation: usize,
+    frequency: f64,
+) -> Result<(super::BorSweepPoint, Radiated)> {
+    let (point, d, xs) = super::ports::solved(p, m, ports, frequency, Some(layer))?;
+    let x = xs.get(excitation).ok_or_else(|| invalid("excitation", "no such port"))?;
+    let huygens = sample(p, &d, layer, x, m, frequency)?;
+    Ok((point, Radiated { huygens, m, unknowns: d.count }))
+}
+
 /// The Huygens surface's samples of the solution `x` of order m (and, for m = 1, its mirror of
 /// order −1).
 fn sample(p: &Profile, d: &Dofs, layer: &Layer, x: &[C], m: u32, frequency: f64) -> Result<Huygens> {

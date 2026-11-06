@@ -112,19 +112,32 @@ pub(crate) fn revolution_setup(s: &Session, p: &Params, top: f64) -> Result<(emc
     let size = p.positive_length("size").optional()?.unwrap_or_else(|| (wavelength / 40.0).min(span / 20.0));
     // The outline's curves in chords of the triangles' size.
     let pr = s.model.meridian_profile(size)?;
+    let ports = bor_ports(&s.model, &pr)?;
+    Ok((profile_mesh(&s.model, &pr, size)?, ports))
+}
+
+/// The model's ports as a body of revolution's: on the profile's lowest or highest end, or on the
+/// plane z = `at` of a face across z (a guide's closed end inside the body).
+fn bor_ports(model: &emcraft_model::Model, pr: &emcraft_model::symmetry::meridian::MeridianProfile) -> Result<Vec<emcraft_solver::bor::BorPort>> {
     let [lo, hi] = pr.points.iter().fold([f64::INFINITY, f64::NEG_INFINITY], |b, q| [b[0].min(q[1]), b[1].max(q[1])]);
-    let ports = s
-        .model
+    model
         .ports
         .iter()
-        .map(|x| match x.face {
-            None => Ok(emcraft_solver::bor::BorPort { z: if x.end == emcraft_model::End::Start { lo } else { hi }, modes: x.modes as usize }),
-            Some(_) => {
-                Err(EngineError::failed(format!("not supported yet: port {} on a face (a body of revolution's ports lie on its ends)", x.name)))
-            }
+        .map(|x| {
+            let z = match &x.face {
+                None if x.end == emcraft_model::End::Start => lo,
+                None => hi,
+                Some(f) if f.axis == emcraft_model::Axis::Z => f.at,
+                Some(_) => {
+                    return Err(EngineError::failed(format!(
+                        "port {}'s face is not across z: a body of revolution's ports lie across its axis",
+                        x.name
+                    )));
+                }
+            };
+            Ok(emcraft_solver::bor::BorPort { z, modes: x.modes as usize })
         })
-        .collect::<Result<Vec<_>>>()?;
-    Ok((profile_mesh(&s.model, &pr, size)?, ports))
+        .collect()
 }
 
 /// `solve.revolution.radiation`: the open model as a body of revolution, its one source, the far
@@ -141,8 +154,11 @@ pub fn revolution_radiation(s: &mut Session, p: &Params) -> Result<Value> {
         _ => return Err(EngineError::failed("a body of revolution's layer lines a cylinder (layer shape box) or a sphere (shape sphere)")),
     };
     let layer = Layer::new(shape, open.thickness.get(), open.reflection.unwrap_or(emcraft_solver::driven::PML_REFLECTION))?;
-    if !s.model.ports.is_empty() || !s.model.lumped.is_empty() {
-        return Err(EngineError::failed("not supported yet: ports on an open body of revolution (drive it by a source)"));
+    if !s.model.lumped.is_empty() {
+        return Err(EngineError::failed("not supported yet: lumped ports on a body of revolution (feed it by a waveguide port or a source)"));
+    }
+    if !s.model.ports.is_empty() {
+        return revolution_fed(s, p, &layer, frequency);
     }
     let tol = 1e-9 * layer.thickness;
     // The source and the turn of the wave's polarization from x̂ (the far field's φ shifts by it).
@@ -171,17 +187,7 @@ pub fn revolution_radiation(s: &mut Session, p: &Params) -> Result<Value> {
     let pr = s.model.meridian_profile(size)?;
     let profile = profile_mesh(&s.model, &pr, size)?;
     let r = emcraft_solver::bor::open::radiate(&profile, &layer, &source, frequency)?;
-    let thetas: Vec<f64> = match p.list("theta", 721).optional()? {
-        Some(list) => list
-            .iter()
-            .map(|v| {
-                v.as_f64()
-                    .filter(|t| t.is_finite() && (0.0..=180.0).contains(t))
-                    .ok_or_else(|| p.error("theta", "must hold angles from 0 to 180 degrees"))
-            })
-            .collect::<Result<_>>()?,
-        None => (0..=12).map(|k| 15.0 * f64::from(k)).collect(),
-    };
+    let thetas = polar_angles(p)?;
     let power = r.huygens.power();
     let l = s.display.length.from_si(1.0);
     let wave = matches!(source, BorSource::PlaneWave { .. });
@@ -205,6 +211,73 @@ pub fn revolution_radiation(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(
         json!({"frequency": s.show_frequency(frequency), "m": r.m, "power": power, "points": points, "triangles": profile.triangles.len(), "unknowns": r.unknowns}),
     )
+}
+
+/// `theta` (degrees, 0 to 180; default 0 to 180 by 15).
+fn polar_angles(p: &Params) -> Result<Vec<f64>> {
+    Ok(match p.list("theta", 721).optional()? {
+        Some(list) => list
+            .iter()
+            .map(|v| {
+                v.as_f64()
+                    .filter(|t| t.is_finite() && (0.0..=180.0).contains(t))
+                    .ok_or_else(|| p.error("theta", "must hold angles from 0 to 180 degrees"))
+            })
+            .collect::<Result<_>>()?,
+        None => (0..=12).map(|k| 15.0 * f64::from(k)).collect(),
+    })
+}
+
+/// [`revolution_radiation`] fed by the model's ports: order `m` (default 1, the linearly polarized
+/// TE11 feed; E along x at φ = 0), a unit wave of `port`'s first mode in, S between the ports' first
+/// modes and the directivity in the E-plane (φ = 0) and the H-plane (φ = 90°).
+fn revolution_fed(s: &Session, p: &Params, layer: &emcraft_solver::bor::open::Layer, frequency: f64) -> Result<Value> {
+    if !s.model.sources.is_empty() {
+        return Err(EngineError::failed("not supported yet: ports and sources together on a body of revolution"));
+    }
+    let m = p.integer("m", 0..=64).or(1)? as u32;
+    let excitation = match p.string("port").optional()? {
+        Some(name) => s.model.ports.iter().position(|x| x.name == name).ok_or_else(|| p.error("port", format!("no port `{name}`")))?,
+        None => 0,
+    };
+    let first = s.model.meridian_profile(1e-3)?;
+    let span = first.points.iter().fold(0.0f64, |a, q| a.max(q[0]).max(q[1].abs()));
+    let wavelength = emcraft_model::units::C0 / (frequency * first.densest.sqrt());
+    let size = p.positive_length("size").optional()?.unwrap_or_else(|| (wavelength / 25.0).min(span / 20.0));
+    let pr = s.model.meridian_profile(size)?;
+    let ports = bor_ports(&s.model, &pr)?;
+    let profile = profile_mesh(&s.model, &pr, size)?;
+    let (point, r) = emcraft_solver::bor::open::radiate_ports(&profile, layer, &ports, m, excitation, frequency)?;
+    let mut sp = serde_json::Map::new();
+    for a in 0..ports.len() {
+        for b in 0..ports.len() {
+            sp.insert(format!("s{}{}", a + 1, b + 1), complex(point.s.get(a, b).unwrap_or_default()));
+        }
+    }
+    let points: Vec<Value> = polar_angles(p)?
+        .iter()
+        .map(|&deg| {
+            let theta = deg.to_radians();
+            let (et, ep) = r.huygens.far_field(theta, 0.0);
+            json!({
+                "theta": deg,
+                "e_theta": complex(et),
+                "e_phi": complex(ep),
+                "directivity": r.huygens.directivity(theta, 0.0),
+                "directivity_h": r.huygens.directivity(theta, std::f64::consts::FRAC_PI_2),
+            })
+        })
+        .collect();
+    Ok(json!({
+        "frequency": s.show_frequency(frequency),
+        "m": m,
+        "modes": point.modes,
+        "s": Value::Object(sp),
+        "power": r.huygens.power(),
+        "points": points,
+        "triangles": profile.triangles.len(),
+        "unknowns": r.unknowns,
+    }))
 }
 
 /// `solve.cyclic`: a rotationally symmetric cavity's modes per harmonic, from its sector.

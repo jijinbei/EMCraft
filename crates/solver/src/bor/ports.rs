@@ -106,12 +106,18 @@ const GAUSS: [(f64, f64); 5] = [
 /// assert!(s_parameters(&p, 1, &[BorPort { z: 0.5, modes: 1 }], 12e9).is_err());
 /// ```
 pub fn s_parameters(p: &Profile, m: u32, ports: &[BorPort], frequency: f64) -> Result<BorSweepPoint> {
-    Ok(solved(p, m, ports, frequency)?.0)
+    Ok(solved(p, m, ports, frequency, None)?.0)
 }
 
 /// [`s_parameters`] with the unknowns' numbering and each excitation's solution (port q's first
-/// mode, a unit wave in).
-pub(super) fn solved(p: &Profile, m: u32, ports: &[BorPort], frequency: f64) -> Result<(BorSweepPoint, Dofs, Vec<Vec<C>>)> {
+/// mode, a unit wave in), the profile lined by `layer` when it is open.
+pub(super) fn solved(
+    p: &Profile,
+    m: u32,
+    ports: &[BorPort],
+    frequency: f64,
+    layer: Option<&super::open::Layer>,
+) -> Result<(BorSweepPoint, Dofs, Vec<Vec<C>>)> {
     if ports.is_empty() || ports.len() > 16 {
         return Err(invalid("ports", "1 to 16 ports on the profile's ends"));
     }
@@ -204,7 +210,7 @@ pub(super) fn solved(p: &Profile, m: u32, ports: &[BorPort], frequency: f64) -> 
         terms.push(list);
     }
     let support: Vec<Vec<usize>> = terms.iter().map(|l| l.iter().flat_map(|t| t.b.iter().map(|x| x.0)).collect()).collect();
-    let (k, mm, _) = assemble_with(p, m, &d, &support, None)?;
+    let (k, mm, _) = assemble_with(p, m, &d, &support, layer.map(|l| (l, k0)))?;
     let mut a = k.clone();
     for (v, w) in a.val.iter_mut().zip(&mm.val) {
         *v -= w * (k0 * k0);
