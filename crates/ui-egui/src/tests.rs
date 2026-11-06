@@ -64,6 +64,11 @@ fn scenario_crash_reports() {
 }
 
 #[test]
+fn scenario_browser_tree() {
+    scenario("browser_tree");
+}
+
+#[test]
 fn scenario_busy_rule() {
     scenario("busy_rule");
 }

@@ -1,0 +1,16 @@
+[
+  {"note": "The browser as the model is made: the bodies (the waveguide, its sections under it), the materials with what uses them, the domain (the region, under it its outer boundary and planes), the excitation, the mesh, the results; every row named by a stable id"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"call": "engine.execute", "params": {"command": "model.symmetry", "params": {"axis": "x", "kind": "magnetic"}}},
+  {"frames": 2},
+  {"expect": {"handles": ["fold:Bodies", "fold:Materials", "fold:Domain", "fold:Excitation", "fold:Mesh", "row:waveguide", "row:section:1", "row:section:3", "row:material:ptfe-like", "row:material:vacuum", "row:region", "row:outer", "row:symmetry:x", "row:port:1", "row:port:2", "row:mesh"], "hidden": ["row:material:metal", "fold:Geometry", "fold:Boundaries"]}},
+  {"shot": "browser-tree"},
+  {"note": "A row's double-click edits what it names: the outer boundary its walls"},
+  {"click": "row:outer", "double": true},
+  {"expect": {"dialog": "model.walls"}},
+  {"key": "Escape"},
+  {"note": "A click selects the row by its id, whatever the language"},
+  {"call": "ui.set", "params": {"language": "ja"}},
+  {"click": "row:symmetry:x"},
+  {"expect": {"inspect": {"browser_row": "symmetry:x"}}}
+]

@@ -211,6 +211,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
     }
     v["purpose"] = json!(app.home.purpose.map(emcraft_model::Analysis::id));
     v["page"] = json!(app.ui_state.page.shown().id());
+    v["browser_row"] = json!(app.ui_state.selection().row());
     v["recording"] = json!(app.recorder.on.as_ref().map(|r| r.entries.len()));
     v["replaying"] = json!(app.recorder.playing.as_ref().map(std::collections::VecDeque::len));
     v["layers"] = json!(crate::layers::stack(app).iter().map(|l| l.id()).collect::<Vec<_>>());
