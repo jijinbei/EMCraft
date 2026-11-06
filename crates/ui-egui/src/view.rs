@@ -25,6 +25,7 @@ emcraft_macros::named_enum! {
         Dispersion = "dispersion" => "Dispersion",
     }
 }
+emcraft_macros::named_serde!(View);
 
 /// Where the window is: the PCB diagnosis' own window, or a view of the workflow with its
 /// step's panel open (or none). The step panel never shows over the PCB window, and a view of

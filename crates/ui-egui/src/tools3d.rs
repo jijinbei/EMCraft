@@ -43,6 +43,7 @@ emcraft_macros::named_enum! {
         Measure = "measure" => "Measure",
     }
 }
+emcraft_macros::named_serde!(Tool);
 
 impl Tool {
     pub fn glyph(self) -> Glyph {
@@ -81,9 +82,10 @@ emcraft_macros::named_enum! {
         Face = "face",
     }
 }
+emcraft_macros::named_serde!(SnapKind);
 
 /// A picked point (m), what it snapped to and the edge's direction or the face's normal.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Snap {
     pub at: [f64; 3],
     pub kind: SnapKind,

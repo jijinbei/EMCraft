@@ -15,7 +15,7 @@ use crate::steps::{ModeFocus, Step};
 use crate::{EmcraftApp, UiError, View};
 
 /// Something a person (a click, a key), an agent or a test asks of the app.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Action {
     /// Runs an engine command: a quick one at once, a long one on the worker thread.
     /// Commands in order, each after the one before has finished (a long one on the worker);
@@ -120,7 +120,7 @@ pub enum Action {
         precision: emcraft_engine::Precision,
     },
     /// The 3D view from a standard side, fitted.
-    StandardView(StandardView),
+    StandardView(#[serde(with = "crate::record::named")] StandardView),
     /// The field's phase animation plays or pauses.
     SetPlaying(bool),
     /// A tool of the 3D view on (the ports' with the Excitation step and the model in 3D), or
@@ -138,7 +138,7 @@ pub enum Action {
 }
 
 /// A preference set from the settings.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Pref {
     /// The theme, by name.
     Theme(String),
@@ -190,7 +190,7 @@ impl Action {
     /// Whether [`EmcraftApp::apply_all`] puts what goes wrong in the message area. The others
     /// report it where it arises (a command's failure, by `run`) or show it in place (a
     /// dialog's refusal, under its field; a step's field errors).
-    fn reports_errors(&self) -> bool {
+    pub(crate) fn reports_errors(&self) -> bool {
         matches!(
             self,
             Action::OpenDialog { .. }
@@ -281,6 +281,15 @@ impl EmcraftApp {
     /// Performs one action: the reply of a command it runs (`{"started": id}` for a long one),
     /// else what it changed.
     pub fn apply(&mut self, action: Action) -> Result<Value, UiError> {
+        // What is asked for is recorded (crate::record), not what follows from it.
+        self.record(&action);
+        self.recorder.depth += 1;
+        let r = self.perform(action);
+        self.recorder.depth -= 1;
+        r
+    }
+
+    fn perform(&mut self, action: Action) -> Result<Value, UiError> {
         // One rule for a running job: what waits for it is refused here, and greyed out where
         // it is drawn (`UiExt::act`).
         if action.waits_for_job() {

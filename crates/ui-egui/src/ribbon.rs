@@ -30,6 +30,7 @@ emcraft_macros::named_enum! {
         Results = "RESULTS",
     }
 }
+emcraft_macros::named_serde!(RibbonTab);
 
 /// The ribbon: tabs of panels of commands, each command in one place (views are switched
 /// from the view tabs over the viewport, files from the File menu and the start page).

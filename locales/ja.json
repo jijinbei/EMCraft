@@ -577,6 +577,7 @@
     "`{text}` is not a number": "`{text}` は数値ではありません",
     "`{text}` is not a whole number": "`{text}` は整数ではありません",
     "a job is running": "ジョブを実行中です",
+    "The recording is played.": "記録を再生し終えました。",
     "an NVIDIA GPU": "NVIDIA GPU",
     "an expression holds at most {n} characters": "式は最大 {n} 文字です",
     "as it was": "変更なし",

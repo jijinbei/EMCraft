@@ -37,7 +37,7 @@ pub fn is_part(path: &str) -> bool {
 }
 
 /// What a path asked for is for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Purpose {
     Open,
     SaveAs,
@@ -46,7 +46,7 @@ pub enum Purpose {
 }
 
 /// What to do once the unsaved changes are dealt with.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Then {
     New,
     Open,
@@ -105,7 +105,7 @@ impl Default for Files {
 
 /// What the File menu, the start page, the file dialog, the path prompt and the question
 /// before changes are lost ask for.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum FileAction {
     /// New, open, a recent project or a sample, asking first when there are unsaved changes.
     Request(Then),
@@ -122,7 +122,7 @@ pub enum FileAction {
 }
 
 /// An answer to "save the changes?".
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Answer {
     Save,
     Discard,
@@ -219,7 +219,7 @@ pub(crate) fn land(app: &mut EmcraftApp, opened: bool) {
 }
 
 /// An empty project in the preferred units.
-fn new_project(app: &mut EmcraftApp) {
+pub(crate) fn new_project(app: &mut EmcraftApp) {
     let units = json!({"length": app.prefs.length, "frequency": app.prefs.frequency});
     if app.session.display().length != app.prefs.length || app.session.display().frequency != app.prefs.frequency {
         let _ = app.run("units.set", units);

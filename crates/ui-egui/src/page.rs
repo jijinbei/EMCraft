@@ -19,6 +19,7 @@ emcraft_macros::named_enum! {
         Settings = "settings" => "Settings",
     }
 }
+emcraft_macros::named_serde!(Tab);
 
 /// The window's pages: the tab shown, the settings' section while they are open, and the tab
 /// they were opened from (closing them goes back to it).

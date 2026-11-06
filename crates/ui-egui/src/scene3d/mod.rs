@@ -52,7 +52,7 @@ emcraft_macros::named_enum! {
 }
 
 /// What a picked triangle belongs to.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Pick {
     /// The waveguide's walls (once meshed).
     Guide,

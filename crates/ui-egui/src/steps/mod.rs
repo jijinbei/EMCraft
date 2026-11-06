@@ -193,6 +193,37 @@ impl Fields {
         self.fill_defaults();
         self.errors.clear();
     }
+
+    /// The fields as typed, for a recording (crate::record).
+    pub fn drafts(&self) -> Value {
+        serde_json::json!({
+            "start": self.start, "stop": self.stop, "points": self.points, "order": self.order, "count": self.count,
+            "frequency": self.frequency, "cell": self.cell, "touchstone": self.touchstone, "format": self.format, "excite": self.excite,
+        })
+    }
+
+    /// The fields typed as [`Fields::drafts`] wrote them (a text missing or not one left as it is).
+    pub fn set_drafts(&mut self, v: &Value) {
+        let text = |k: &str| v.get(k).and_then(Value::as_str).map(dialogs::bounded);
+        for (field, key) in [
+            (&mut self.start, "start"),
+            (&mut self.stop, "stop"),
+            (&mut self.points, "points"),
+            (&mut self.order, "order"),
+            (&mut self.count, "count"),
+            (&mut self.frequency, "frequency"),
+            (&mut self.cell, "cell"),
+            (&mut self.touchstone, "touchstone"),
+            (&mut self.format, "format"),
+        ] {
+            if let Some(t) = text(key) {
+                *field = t;
+            }
+        }
+        if let Some(list) = v.get("excite").and_then(Value::as_array) {
+            self.excite = list.iter().filter_map(Value::as_str).take(1024).map(dialogs::bounded).collect();
+        }
+    }
 }
 
 emcraft_macros::named_enum! {
@@ -279,7 +310,7 @@ impl Estimate {
 
 /// A port mode picked in the Excitation panel: the Port modes view marks its row and scrolls
 /// to it once.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ModeFocus {
     pub port: String,
     pub mode: usize,

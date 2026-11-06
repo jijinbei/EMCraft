@@ -75,6 +75,7 @@ mod param_labels;
 pub mod picture;
 pub mod prefs;
 pub mod raster;
+pub mod record;
 pub mod ribbon;
 pub mod scenario;
 pub mod scene3d;
@@ -165,6 +166,8 @@ pub struct EmcraftApp {
     pub home: home::Home,
     /// The window's state: the page, what is open over it, the dialog (crate::ui_state).
     pub ui_state: ui_state::UiState,
+    /// The actions being recorded or played back (crate::record).
+    pub recorder: record::Recorder,
     /// The command that failed and why, until a command succeeds: the panel that asked for it
     /// shows it there (the message log keeps every one).
     pub failure: Option<Failure>,
@@ -256,6 +259,7 @@ impl EmcraftApp {
             files: files::Files::default(),
             home: home::Home::default(),
             ui_state: ui_state::UiState::default(),
+            recorder: record::Recorder::default(),
             failure: None,
             focus_last: None,
             language: lang::ENGLISH,
@@ -465,6 +469,8 @@ impl EmcraftApp {
         files::drop_hint(&ctx);
         shortcuts(self, &ctx, &mut out);
         self.apply_all(out);
+        // A recording being played: its next action (crate::record).
+        self.play_next();
         self.collect_screenshots(&ctx);
         self.keep_prefs();
         self.focus_last = ctx.memory(egui::Memory::focused);

@@ -211,6 +211,8 @@ pub fn inspect(app: &EmcraftApp) -> Value {
     }
     v["purpose"] = json!(app.home.purpose.map(emcraft_model::Analysis::id));
     v["page"] = json!(app.ui_state.page.shown().id());
+    v["recording"] = json!(app.recorder.on.as_ref().map(|r| r.entries.len()));
+    v["replaying"] = json!(app.recorder.playing.as_ref().map(std::collections::VecDeque::len));
     v["layers"] = json!(crate::layers::stack(app).iter().map(|l| l.id()).collect::<Vec<_>>());
     v["tabs"] = json!(app.ui_state.page.tabs().iter().map(|t| t.id()).collect::<Vec<_>>());
     v["kept"] = json!(emcraft_engine::archive::rows(&app.session));
@@ -347,6 +349,8 @@ pub fn handle(app: &mut EmcraftApp, ctx: &egui::Context, req: &ControlRequest) -
         "ui.start" => ui_start(app, a),
         "ui.dialog" => ui_dialog(app, a),
         "ui.cancel" => Ok(wrap(app.apply(Action::CancelJob))),
+        "ui.record" => record(app, a),
+        "ui.replay" => replay(app, a),
         "ui.messages" => Ok(ok(messages(app, a))),
         "ui.move" => pointer(app, a, Press::None),
         "ui.click" => pointer(app, a, if a.bool("double") == Some(true) { Press::Double } else { Press::Single }),
@@ -425,6 +429,38 @@ fn autosave(app: &mut EmcraftApp, a: Args) -> Handled {
         app.autosave_now()?;
     }
     Ok(ok(app.autosave_inspect()))
+}
+
+/// Starts recording (`on`: true) or stops it, the recording written to `path` when given.
+fn record(app: &mut EmcraftApp, a: Args) -> Handled {
+    if a.bool("on").ok_or("`on` must be true or false")? {
+        app.start_recording();
+        return Ok(ok(json!({"recording": true})));
+    }
+    let r = app.stop_recording().ok_or("nothing is being recorded")?;
+    let n = r.entries.len();
+    if let Some(path) = a.str("path") {
+        let text = serde_json::to_string_pretty(&r).map_err(|e| e.to_string())?;
+        std::fs::write(path, text).map_err(|e| format!("cannot write {}: {e}", clip(path, 200)))?;
+    }
+    Ok(ok(json!({"actions": n, "dropped": r.dropped, "recording": r})))
+}
+
+/// Plays a recording back: from `path`, or `recording` itself.
+fn replay(app: &mut EmcraftApp, a: Args) -> Handled {
+    let text = match (a.str("path"), a.get("recording")) {
+        (Some(path), _) => {
+            let size = std::fs::metadata(path).map_err(|e| format!("cannot read {}: {e}", clip(path, 200)))?.len();
+            if size > crate::record::MAX_BYTES {
+                return Err(format!("a recording is at most {} MiB", crate::record::MAX_BYTES >> 20));
+            }
+            std::fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", clip(path, 200)))?
+        }
+        (None, Some(r)) => r.to_string(),
+        (None, None) => return Err("give `path` or `recording`".into()),
+    };
+    let r = crate::record::Recording::parse(&text)?;
+    Ok(wrap(app.play(r)))
 }
 
 fn engine_execute(app: &mut EmcraftApp, req: &ControlRequest, a: Args) -> Handled {

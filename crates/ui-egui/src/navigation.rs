@@ -236,6 +236,7 @@ emcraft_macros::named_enum! {
         Cursor = "cursor" => "Under the cursor",
     }
 }
+emcraft_macros::named_serde!(OrbitAround);
 
 emcraft_macros::named_enum! {
     /// The view's orientation control in its corner.
@@ -248,6 +249,7 @@ emcraft_macros::named_enum! {
         Axes = "axes" => "Axes",
     }
 }
+emcraft_macros::named_serde!(Navigator);
 
 /// How fast the wheel zooms: the camera's distance changes by e^(−0.0015) a point scrolled.
 pub const WHEEL_ZOOM_PER_POINT: f64 = 0.0015;

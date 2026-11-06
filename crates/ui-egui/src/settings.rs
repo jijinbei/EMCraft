@@ -28,6 +28,7 @@ emcraft_macros::named_enum! {
         Files = "files" => "Files",
     }
 }
+emcraft_macros::named_serde!(Section);
 
 /// A theme card's size, in points.
 const CARD: [f32; 2] = [168.0, 132.0];

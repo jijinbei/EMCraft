@@ -56,7 +56,7 @@ impl Act {
 }
 
 /// An item of the model a row names, with the commands that edit and delete it.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct Item {
     /// Its edit command (its dialog opens on `project.values`).
     pub edit: &'static str,

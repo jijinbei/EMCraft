@@ -286,7 +286,7 @@ pub struct PcbUi {
 
 /// What the board's 3D view draws with: a net's traces on a layer, `width` wide (m), from the
 /// last point clicked (m) once there is one.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Pen {
     pub net: String,
     pub layer: String,

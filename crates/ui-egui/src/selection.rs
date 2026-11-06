@@ -172,7 +172,7 @@ impl Selection {
 }
 
 /// A click in the 3D view while no tool is on.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Click {
     /// One click on `pick` (`None`: empty space); `add`: Shift or Ctrl held.
     Single { pick: Option<Pick>, add: bool },

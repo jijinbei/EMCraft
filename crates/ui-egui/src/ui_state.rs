@@ -42,6 +42,7 @@ emcraft_macros::named_enum! {
         Selection = "selection",
     }
 }
+emcraft_macros::named_serde!(Layer);
 
 /// What is open over the window: one at a time.
 pub enum Overlay {
