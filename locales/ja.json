@@ -542,6 +542,8 @@
     "`{text}` is not a number": "`{text}` は数値ではありません",
     "`{text}` is not a whole number": "`{text}` は整数ではありません",
     "a job is running": "ジョブを実行中です",
+    "{n} sectors about z · harmonic {m}": "z 軸まわり {n} 分割 · 高調波 {m}",
+    "Rotational symmetry": "回転対称",
     "{at} {unit} · electric wall": "{at} {unit} · 電気壁",
     "{at} {unit} · magnetic wall": "{at} {unit} · 磁気壁",
     "Symmetry plane {axis}": "対称面 {axis}",

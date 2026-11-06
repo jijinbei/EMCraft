@@ -589,6 +589,10 @@ fn domain(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         let name = words(t!("Symmetry plane {axis}"), args!(axis = axis));
         rows.push(node(format!("symmetry:{axis}"), name, Some(detail), glyph, edit).under());
     }
+    if let Some(r) = &d.rotation {
+        let detail = words(t!("{n} sectors about z · harmonic {m}"), args!(n = r.n, m = r.m));
+        rows.push(node("rotation", words(t!("Rotational symmetry"), &[]), Some(detail), Glyph::Symmetry, Act::Edit("model.rotation")).under());
+    }
     if let Some(p) = &d.periodic {
         let detail = Both { en: periodic_text(p), shown: periodic_text(p) };
         rows.push(node("periodic", words(t!("Periodic boundaries"), &[]), Some(detail), Glyph::Periodic, Act::Edit("model.periodic")).under());
