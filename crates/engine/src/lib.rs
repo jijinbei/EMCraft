@@ -24,6 +24,10 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+/// The translations the steps' checks are written against (`emcraft_i18n::text!`), read so
+/// cargo builds the engine again when they change.
+const _TRANSLATIONS: &[u8] = include_bytes!("../../../locales/ja.json");
+
 mod adapt;
 pub mod archive;
 mod args;

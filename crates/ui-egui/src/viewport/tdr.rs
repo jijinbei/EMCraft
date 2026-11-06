@@ -6,10 +6,10 @@ use emcraft_engine::tdr::Mode;
 use super::*;
 
 /// The transforms offered, with their labels and tips (`None`: the engine picks).
-const MODES: [(Option<Mode>, &str, &str); 3] = [
-    (None, "Auto", "Low pass on a harmonic sweep (f = k Δf), else band pass"),
-    (Some(Mode::LowPass), "Low pass", "The step response: a step at each change of impedance (lines without a cut-off)"),
-    (Some(Mode::BandPass), "Band pass", "|h(t)|: a peak where each reflection comes from (guides with a cut-off)"),
+const MODES: [(Option<Mode>, crate::lang::Text, crate::lang::Text); 3] = [
+    (None, t!("Auto"), t!("Low pass on a harmonic sweep (f = k Δf), else band pass")),
+    (Some(Mode::LowPass), t!("Low pass"), t!("The step response: a step at each change of impedance (lines without a cut-off)")),
+    (Some(Mode::BandPass), t!("Band pass"), t!("|h(t)|: a peak where each reflection comes from (guides with a cut-off)")),
 ];
 
 pub(super) struct Tdr;
@@ -38,7 +38,7 @@ impl ChartView for Tdr {
     fn block(_: &EmcraftApp, _: &mut Parts, ui: &mut egui::Ui, _: usize, _: &mut Actions) {
         crate::ui_kit::caption(
             ui,
-            "Time is the round trip from the port's reference plane; resolution about 1/(2 f_max) (low pass) or 1/bandwidth (band pass).",
+            t!("Time is the round trip from the port's reference plane; resolution about 1/(2 f_max) (low pass) or 1/bandwidth (band pass)."),
         );
     }
 }
@@ -50,7 +50,7 @@ pub(super) const NOTE: egui::Vec2 = egui::vec2(300.0, 64.0);
 fn controls(app: &EmcraftApp, tdr: &mut crate::state::TdrParams, ui: &mut egui::Ui) {
     let ports: Vec<String> = app.session.sparameter_entries().into_iter().map(|e| e.name).collect();
     ui.horizontal(|ui| {
-        ui.text(Style::Body, "port");
+        ui.text(Style::Body, t!("port"));
         let shown = tdr.port.clone().or_else(|| ports.first().cloned()).unwrap_or_default();
         let r = egui::ComboBox::from_id_salt("tdr:port").selected_text(shown.as_str()).show_ui(ui, |ui| {
             for p in &ports {

@@ -136,20 +136,20 @@ pub fn show(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut 
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.text(Style::Title, Raw("EMCraft"));
-                ui.label(egui::RichText::new(tr("Start")).size(30.0).color(t.text_dim));
+                ui.label(egui::RichText::new(tr(t!("Start"))).size(30.0).color(t.text_dim));
             });
             ui.add_space(t.space_12);
             ui.horizontal(|ui| {
-                if big(ui, Glyph::New, "New project", true, Fixed::HomeNew) {
+                if big(ui, Glyph::New, t!("New project"), true, Fixed::HomeNew) {
                     out.push(Action::File(FileAction::Request(Then::New)));
                 }
-                if big(ui, Glyph::OpenFile, "Open…", false, Fixed::HomeOpen) {
+                if big(ui, Glyph::OpenFile, t!("Open…"), false, Fixed::HomeOpen) {
                     out.push(Action::File(FileAction::Request(Then::Open)));
                 }
                 if big(
                     ui,
                     Glyph::Import,
-                    if app.home.purpose == Some(crate::steps::Solver::Pcb) { "Import PCB…" } else { "Import a SolidCraft design…" },
+                    if app.home.purpose == Some(crate::steps::Solver::Pcb) { t!("Import PCB…") } else { t!("Import a SolidCraft design…") },
                     false,
                     Fixed::HomeImport,
                 ) {
@@ -172,7 +172,7 @@ pub fn show(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut 
                 ui.add_space(32.0);
                 ui.vertical(|ui| {
                     ui.set_width(right);
-                    heading(ui, "New projects");
+                    heading(ui, t!("New projects"));
                     settings(app, ui, out);
                 });
             });
@@ -180,13 +180,13 @@ pub fn show(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut 
     });
 }
 
-fn heading(ui: &mut egui::Ui, text: &str) {
+fn heading(ui: &mut egui::Ui, text: crate::lang::Text) {
     ui.text(Style::Heading, text);
     ui.add_space(Tokens::get().space_4);
 }
 
 /// A large button: a glyph and a label; the primary one in the accent.
-fn big(ui: &mut egui::Ui, glyph: Glyph, label: &str, primary: bool, handle: Fixed) -> bool {
+fn big(ui: &mut egui::Ui, glyph: Glyph, label: crate::lang::Text, primary: bool, handle: Fixed) -> bool {
     let t = &Tokens::get();
     let label = tr(label);
     let g = ui.painter().layout_no_wrap(label.to_owned(), FontId::proportional(t.font_heading), t.text);
@@ -272,8 +272,8 @@ fn recover(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
     for (i, f) in found.iter().enumerate() {
         let tip = match &f.original {
-            Some(o) => trf("Autosaved copy of {project}\n{file}", args!(project = o, file = f.file.display())),
-            None => trf("Autosaved copy of a project never saved\n{file}", args!(file = f.file.display())),
+            Some(o) => trf(t!("Autosaved copy of {project}\n{file}"), args!(project = o, file = f.file.display())),
+            None => trf(t!("Autosaved copy of a project never saved\n{file}"), args!(file = f.file.display())),
         };
         let r = t.card(t.accent_soft).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
             ui.set_width(ui.available_width().min(520.0));
@@ -285,11 +285,17 @@ fn recover(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let x = ui.add(egui::Button::new("×").frame(false));
                     scenario::publish_target(Handle::RecoverDismiss(i), x.rect);
-                    if x.hint("Discard the copy").clicked() {
+                    if x.hint(t!("Discard the copy")).clicked() {
                         out.push(Action::DismissRecovery(i));
                     }
                     let then = Then::Recover { file: f.file.display().to_string(), original: f.original.clone() };
-                    ui.act(!app.busy(), crate::ui_kit::styled("Recover", true), Handle::Recover(i), || Action::File(FileAction::Request(then)), out);
+                    ui.act(
+                        !app.busy(),
+                        crate::ui_kit::styled(t!("Recover"), true),
+                        Handle::Recover(i),
+                        || Action::File(FileAction::Request(then)),
+                        out,
+                    );
                 });
             });
         });
@@ -300,10 +306,10 @@ fn recover(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 }
 
 fn recent(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    heading(ui, "Recent");
+    heading(ui, t!("Recent"));
     let list = &app.prefs.recent;
     if list.is_empty() {
-        ui.text(Style::SmallDim, "Projects you open or save appear here.");
+        ui.text(Style::SmallDim, t!("Projects you open or save appear here."));
         return;
     }
     let mut open = None;
@@ -314,11 +320,11 @@ fn recent(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         let name = p.file_stem().map_or_else(|| path.clone(), |s| s.to_string_lossy().into_owned());
         let exists = p.exists();
         let folder = p.parent().map(|d| d.display().to_string()).unwrap_or_default();
-        let sub = if exists { folder } else { tr("missing").to_owned() };
+        let sub = if exists { folder } else { tr(t!("missing")).to_owned() };
         let r = ui.named(card(None, Glyph::Waveguide, &name, &sub, !exists), Handle::Recent(i));
         let r = r.on_hover_text(path.as_str());
         r.context_menu(|ui| {
-            if ui.button(tr("Remove from the list")).clicked() {
+            if ui.button(tr(t!("Remove from the list"))).clicked() {
                 forget = Some(i);
             }
         });
@@ -337,7 +343,7 @@ fn recent(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 /// What the job is for: the four kinds of analysis as cards (drawn as Home's are), the one
 /// chosen marked; a click chooses it (again: lets it go, every template shown).
 fn purposes(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    heading(ui, "Analysis");
+    heading(ui, t!("Analysis"));
     // Each kind as a card with a picture of what it gives, as many to a row as fit.
     let kinds = crate::steps::Solver::ALL;
     let gap = 12.0;
@@ -361,7 +367,7 @@ fn purposes(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 }
 
 fn samples(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {
-    heading(ui, "Templates");
+    heading(ui, t!("Templates"));
     let purpose = app.home.purpose;
     let list: Vec<&emcraft_engine::templates::Template> =
         emcraft_engine::templates::TEMPLATES.iter().filter(|s| purpose.is_none_or(|k| s.kinds.contains(&k))).collect();
@@ -371,7 +377,10 @@ fn samples(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut A
     let offset = usize::from(purpose.is_some());
     grid(ui, list.len() + offset, |ui, i| {
         if i < offset {
-            if ui.named(card(None, Glyph::New, tr("Blank"), tr("An empty project for this analysis"), false), Fixed::HomeBlank.into()).clicked() {
+            if ui
+                .named(card(None, Glyph::New, tr(t!("Blank")), tr(t!("An empty project for this analysis")), false), Fixed::HomeBlank.into())
+                .clicked()
+            {
                 blank = true;
             }
             return;
@@ -402,9 +411,9 @@ fn settings(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
     crate::settings::unit_choices(app, ui, out);
     ui.add_space(t.space_4);
-    ui.text(Style::SmallDim, "Units apply to new projects; an open one changes its own with Units in step 1.");
+    ui.text(Style::SmallDim, t!("Units apply to new projects; an open one changes its own with Units in step 1."));
     ui.add_space(t.space_12);
-    let all = crate::ui_kit::styled("All settings…", false);
+    let all = crate::ui_kit::styled(t!("All settings…"), false);
     ui.act(true, all, Fixed::HomeSettings.into(), || Action::Settings(Some(Section::Appearance)), out)
-        .hint("The theme, the 3D view, dialogs and files");
+        .hint(t!("The theme, the 3D view, dialogs and files"));
 }

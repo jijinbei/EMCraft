@@ -18,8 +18,8 @@ impl ChartView for FarField {
     fn controls(_: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, _out: &mut Actions) -> Option<SharedChart> {
         let p = &mut st.views.pattern;
         ui.horizontal_wrapped(|ui| {
-            for (cut, hint) in [(Cut::Phi, "θ varies at an azimuth φ"), (Cut::Theta, "φ varies at a polar angle θ")] {
-                let r = ui.named(pill(tr(cut.label()), p.cut == cut, 10, PillSize::Small), Handle::PatternCut(cut.id())).hint(hint);
+            for (cut, hint) in [(Cut::Phi, t!("θ varies at an azimuth φ")), (Cut::Theta, t!("φ varies at a polar angle θ"))] {
+                let r = ui.named(pill(crate::lang::lookup(cut.label()), p.cut == cut, 10, PillSize::Small), Handle::PatternCut(cut.id())).hint(hint);
                 if r.clicked() && p.cut != cut {
                     *p = PatternSettings { cut, angle: if cut == Cut::Theta { 90.0 } else { 0.0 }, ..*p };
                 }
@@ -36,8 +36,8 @@ impl ChartView for FarField {
             }
             ui.separator();
             for c in FarComponent::ALL {
-                let r = ui.named(pill(tr(c.label()), p.component == c, 10, PillSize::Small), Handle::PatternComponent(c.id()));
-                if r.hint("the total, or one polarization's share").clicked() {
+                let r = ui.named(pill(crate::lang::lookup(c.label()), p.component == c, 10, PillSize::Small), Handle::PatternComponent(c.id()));
+                if r.hint(t!("the total, or one polarization's share")).clicked() {
                     p.component = c;
                 }
             }

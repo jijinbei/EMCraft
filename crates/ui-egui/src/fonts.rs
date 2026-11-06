@@ -109,7 +109,7 @@ mod tests {
         let full_bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/fonts/full/NotoSansJP-Regular.otf")).unwrap();
         let full = ttf_parser::Face::parse(&full_bytes, 0).unwrap();
         let has = |f: &ttf_parser::Face, c: char| f.glyph_index(c).is_some_and(|g| g.0 != 0);
-        let ja = include_str!("../locales/ja.json");
+        let ja = include_str!("../../../locales/ja.json");
         let mut missing: Vec<char> = ja.chars().filter(|c| !c.is_ascii() && has(&full, *c) && !has(&face, *c)).collect();
         missing.sort_unstable();
         missing.dedup();

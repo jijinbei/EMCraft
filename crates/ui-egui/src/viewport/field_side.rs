@@ -17,7 +17,7 @@ use super::*;
 pub(super) const SIDE: f32 = 230.0;
 
 /// A small heading.
-fn heading(ui: &mut egui::Ui, text: &str) {
+fn heading(ui: &mut egui::Ui, text: crate::lang::Text) {
     let t = &Tokens::get();
     ui.label(egui::RichText::new(tr(text)).size(t.font_small).color(t.text_dim).strong());
 }
@@ -25,12 +25,12 @@ fn heading(ui: &mut egui::Ui, text: &str) {
 pub(super) fn side(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
     if !field.beside_3d {
-        heading(ui, "WHERE");
+        heading(ui, t!("WHERE"));
         locator(app, field, ui);
         ui.add_space(t.space_8);
     }
     if field.view.mode.is_none() && app.session.results().sweep.is_some() {
-        heading(ui, "FREQUENCY");
+        heading(ui, t!("FREQUENCY"));
         spark(app, field, ui);
         power_readout(app, field, ui);
         ui.add_space(t.space_8);
@@ -38,18 +38,24 @@ pub(super) fn side(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, 
     probes(app, field, ui, out);
     ui.add_space(t.space_8);
     if field.beside_3d {
-        ui.text(Style::SmallDim, "Move the field plane in the model. Use 2D plot for point probes.");
+        ui.text(Style::SmallDim, t!("Move the field plane in the model. Use 2D plot for point probes."));
     } else {
         readout(app, field, ui);
     }
     ui.add_space(t.space_8);
-    heading(ui, "SAVE");
+    heading(ui, t!("SAVE"));
     ui.horizontal(|ui| {
         let s = &app.session;
         let picture = || Action::dialog_with("view.field", FieldParams::picture(field, s, "field.png").to_params());
-        ui.action_button(Fixed::FieldSavePicture.into(), "Picture…", "This picture as a PNG (view.field)", picture, out);
+        ui.action_button(Fixed::FieldSavePicture.into(), t!("Picture…"), t!("This picture as a PNG (view.field)"), picture, out);
         let video = || Action::dialog_with("view.animation", FieldParams::animation(field, s, "field-animation.png").to_params());
-        ui.action_button(Fixed::FieldSaveVideo.into(), "Animation…", "A period of this view as a looping animated PNG (view.animation)", video, out);
+        ui.action_button(
+            Fixed::FieldSaveVideo.into(),
+            t!("Animation…"),
+            t!("A period of this view as a looping animated PNG (view.animation)"),
+            video,
+            out,
+        );
     });
 }
 
@@ -161,7 +167,7 @@ fn locator(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
         FontId::proportional(t.font_small),
         t.text,
     );
-    painter.text(rect.right_bottom() - vec2(8.0, 6.0), Align2::RIGHT_BOTTOM, tr("drag to move"), FontId::proportional(t.font_small), t.text_dim);
+    painter.text(rect.right_bottom() - vec2(8.0, 6.0), Align2::RIGHT_BOTTOM, tr(t!("drag to move")), FontId::proportional(t.font_small), t.text_dim);
     // Dragging along the normal's direction on the drawing moves the plane.
     let mut unit_axis = [0.0; 3];
     unit_axis[axis] = size[axis];
@@ -232,7 +238,7 @@ pub(super) fn spark(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui)
             field.view.frequency = f;
         }
     }
-    resp.hint("Click to show the nearest solved frequency");
+    resp.hint(t!("Click to show the nearest solved frequency"));
     ui.horizontal_wrapped(|ui| {
         for row in 0..first.s.ports() {
             let colour = crate::theme::color32(palette.pen(view::sparameter_pen(row)));
@@ -249,7 +255,7 @@ fn power_readout(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
             value: emcraft_engine::power::at(&app.session, field.view.frequency, field.view.excitation).map_err(|e| e.to_string()),
         });
     }
-    heading(ui, "POWER DISTRIBUTION");
+    heading(ui, t!("POWER DISTRIBUTION"));
     let Some(readout) = field.power.as_ref() else { return };
     let report = match &readout.value {
         Ok(v) => v,
@@ -259,7 +265,7 @@ fn power_readout(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
         }
     };
     egui::Grid::new("field:power").num_columns(3).spacing(vec2(8.0, 3.0)).show(ui, |ui| {
-        for name in ["Port", "Incident power", "Output share"] {
+        for name in [t!("Port"), t!("Incident power"), t!("Output share")] {
             ui.small(tr(name));
         }
         ui.end_row();
@@ -271,8 +277,8 @@ fn power_readout(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
             ui.end_row();
         }
     });
-    ui.small(trf("Unaccounted: {value}%", args!(value = format!("{:.2}", 100.0 * report["unaccounted"].as_f64().unwrap_or(0.0)))));
-    ui_kit::caption(ui, "Power in reported S entries. The balance includes loss, radiation, higher modes and numerical error.");
+    ui.small(trf(t!("Unaccounted: {value}%"), args!(value = format!("{:.2}", 100.0 * report["unaccounted"].as_f64().unwrap_or(0.0)))));
+    ui_kit::caption(ui, t!("Power in reported S entries. The balance includes loss, radiation, higher modes and numerical error."));
 }
 
 /// The project's probes (`view.probe.*`): + adds one at the pinned point (the plane's middle
@@ -283,7 +289,7 @@ fn probes(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut
     let probes = &app.session.views().probes;
     let unit = app.session.display().length;
     ui.horizontal(|ui| {
-        heading(ui, "PROBES");
+        heading(ui, t!("PROBES"));
         let at = field.samples.as_ref().and_then(|s| {
             let q = field.pinned.or_else(|| {
                 let (x, y) = s.axes();
@@ -291,7 +297,7 @@ fn probes(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut
             })?;
             Some(s.model_point(q, unit).to_array().map(|v| unit.from_si(v)))
         });
-        let hint = "A probe at the pinned point (the plane's middle without one)";
+        let hint = t!("A probe at the pinned point (the plane's middle without one)");
         let busy = app.busy();
         if let Some(at) = at {
             ui.act(
@@ -338,7 +344,7 @@ fn probes(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut
             let (x, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
             let r = ui.hit(x, Handle::ProbeDelete(i), Sense::click());
             crate::ui_kit::close_mark(ui, x, r.hovered());
-            if r.hint("Remove this probe").clicked() && !app.busy() {
+            if r.hint(t!("Remove this probe")).clicked() && !app.busy() {
                 out.push(del());
             }
         });
@@ -362,8 +368,8 @@ fn readout(app: &EmcraftApp, field: &FieldState, ui: &mut egui::Ui) {
         ui.label(if strong { r.strong() } else { r });
     };
     for (what, probe, hint) in [
-        ("POINTER", field.hover, "hover the picture to read the fields"),
-        ("PINNED", field.pinned.and_then(|q| samples.probe(q)), "click the picture to pin a point (right click lets it go)"),
+        (t!("POINTER"), field.hover, t!("hover the picture to read the fields")),
+        (t!("PINNED"), field.pinned.and_then(|q| samples.probe(q)), t!("click the picture to pin a point (right click lets it go)")),
     ] {
         heading(ui, what);
         match probe {
@@ -376,12 +382,12 @@ fn readout(app: &EmcraftApp, field: &FieldState, ui: &mut egui::Ui) {
                 line(
                     ui,
                     trf(
-                        "{component} = {now} {unit} (amplitude {amplitude} {unit})",
+                        t!("{component} = {now} {unit} (amplitude {amplitude} {unit})"),
                         args!(component = comp.label(), now = fmt(now), unit = unit, amplitude = fmt(amp)),
                     ),
                     true,
                 );
-                if what == "PINNED" {
+                if what == t!("PINNED") {
                     // Each component a row with its unit.
                     for (f, v, u) in [("E", p.e, "V/m"), ("H", p.h, "A/m")] {
                         for (axis, c) in [("x", v.x), ("y", v.y), ("z", v.z)] {

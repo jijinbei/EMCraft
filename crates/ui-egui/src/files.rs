@@ -148,7 +148,7 @@ fn request(app: &mut EmcraftApp, then: Then) {
         return;
     }
     if app.busy() {
-        app.error_with("busy: wait for the running job or cancel it first", &[]);
+        app.error_with(t!("busy: wait for the running job or cancel it first"), &[]);
         return;
     }
     if app.session.is_dirty() {
@@ -314,7 +314,7 @@ pub(crate) fn dropped(app: &mut EmcraftApp, ctx: &egui::Context) {
         ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_string_lossy().into_owned()).filter(|p| !p.is_empty()).collect());
     let Some(path) = paths.into_iter().next() else { return };
     if app.busy() {
-        app.error_with("busy: wait for the running job or cancel it first", &[]);
+        app.error_with(t!("busy: wait for the running job or cancel it first"), &[]);
     } else if is_part(&path) {
         import_part(app, &path);
     } else {
@@ -379,7 +379,7 @@ fn drop_hint(ctx: &egui::Context) {
     p.rect_stroke(card, t.radius_xl, egui::Stroke::new(2.0, t.accent), egui::StrokeKind::Inside);
     let icon = egui::Rect::from_center_size(card.center() - vec2(0.0, 26.0), vec2(48.0, 48.0));
     crate::glyphs::paint(&p, icon, crate::glyphs::Glyph::Import, t.text, t.accent);
-    let text = if name.as_deref().is_none_or(is_part) { tr("Drop to import") } else { tr("Drop to open") };
+    let text = if name.as_deref().is_none_or(is_part) { tr(t!("Drop to import")) } else { tr(t!("Drop to open")) };
     p.text(card.center() + vec2(0.0, 22.0), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(t.font_heading), t.text);
     if let Some(n) = name {
         p.text(card.center() + vec2(0.0, 48.0), egui::Align2::CENTER_CENTER, n, egui::FontId::proportional(t.font_small), t.text_dim);
@@ -392,9 +392,9 @@ fn path_prompt(ask: &mut Option<Ask>, ctx: &egui::Context, out: &mut Actions) {
     let t = &Tokens::get();
     let (mut ok, mut cancel) = (false, false);
     let (title, what) = match p.purpose {
-        Purpose::Open => ("Open project", "The project file (.emcraft)"),
-        Purpose::SaveAs => ("Save project as", "The project file (.emcraft)"),
-        Purpose::Import => ("Import a part", "A SolidCraft design (.solidcraft), 3MF or STL"),
+        Purpose::Open => (t!("Open project"), t!("The project file (.emcraft)")),
+        Purpose::SaveAs => (t!("Save project as"), t!("The project file (.emcraft)")),
+        Purpose::Import => (t!("Import a part"), t!("A SolidCraft design (.solidcraft), 3MF or STL")),
     };
     let at = ctx.content_rect().center_top() + vec2(-220.0, 120.0);
     egui::Area::new(egui::Id::new("emcraft_file_prompt")).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
@@ -409,12 +409,12 @@ fn path_prompt(ask: &mut Option<Ask>, ctx: &egui::Context, out: &mut Actions) {
             }
             ui.horizontal(|ui| {
                 let label = match p.purpose {
-                    Purpose::Open => "Open",
-                    Purpose::SaveAs => "Save",
-                    Purpose::Import => "Choose",
+                    Purpose::Open => t!("Open"),
+                    Purpose::SaveAs => t!("Save"),
+                    Purpose::Import => t!("Choose"),
                 };
                 ok |= ui_kit::button(ui, label, true, Fixed::FileOk).clicked();
-                cancel = ui_kit::button(ui, "Cancel", false, Fixed::FileCancel).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape));
+                cancel = ui_kit::button(ui, t!("Cancel"), false, Fixed::FileCancel).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape));
             });
         });
     });
@@ -437,17 +437,20 @@ fn confirm(app: &EmcraftApp, ask: Option<&Ask>, ctx: &egui::Context, out: &mut A
     egui::Area::new(egui::Id::new("emcraft_file_confirm")).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
         t.card(t.dialog_body).inner_margin(14).show(ui, |ui| {
             ui.set_width(400.0);
-            let answers: &[(&str, bool, Fixed, Answer)] = match job {
+            let answers: &[(crate::lang::Text, bool, Fixed, Answer)] = match job {
                 Some(job) => {
-                    ui.text(Style::Prompt, trf("{command} is running", args!(command = crate::label(&job.command))));
-                    &[("Stop it", true, Fixed::ConfirmStopJob, Answer::StopJob), ("Keep running", false, Fixed::ConfirmCancel, Answer::Cancel)]
+                    ui.text(Style::Prompt, trf(t!("{command} is running"), args!(command = crate::label(&job.command))));
+                    &[
+                        (t!("Stop it"), true, Fixed::ConfirmStopJob, Answer::StopJob),
+                        (t!("Keep running"), false, Fixed::ConfirmCancel, Answer::Cancel),
+                    ]
                 }
                 None => {
-                    ui.text(Style::Prompt, trf("Save the changes to {name}?", args!(name = app.session.name())));
+                    ui.text(Style::Prompt, trf(t!("Save the changes to {name}?"), args!(name = app.session.name())));
                     &[
-                        ("Save", true, Fixed::ConfirmSave, Answer::Save),
-                        ("Don't save", false, Fixed::ConfirmDiscard, Answer::Discard),
-                        ("Cancel", false, Fixed::ConfirmCancel, Answer::Cancel),
+                        (t!("Save"), true, Fixed::ConfirmSave, Answer::Save),
+                        (t!("Don't save"), false, Fixed::ConfirmDiscard, Answer::Discard),
+                        (t!("Cancel"), false, Fixed::ConfirmCancel, Answer::Cancel),
                     ]
                 }
             };
@@ -515,27 +518,27 @@ pub fn title(app: &EmcraftApp) -> String {
 pub fn menu(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     ui.set_min_width(240.0);
     let busy = app.busy();
-    let item = |ui: &mut egui::Ui, out: &mut Actions, text: &str, keys: &str, handle: Fixed, enabled: bool, action: Action| {
+    let item = |ui: &mut egui::Ui, out: &mut Actions, text: crate::lang::Text, keys: &str, handle: Fixed, enabled: bool, action: Action| {
         ui.act(enabled, egui::Button::new(tr(text)).shortcut_text(keys), handle.into(), || action, out);
     };
     let file = Action::File;
-    item(ui, out, "New project", "Ctrl+N", Fixed::FileNew, !busy, file(FileAction::Request(Then::New)));
-    item(ui, out, "Open…", "Ctrl+O", Fixed::FileOpen, !busy, file(FileAction::Request(Then::Open)));
+    item(ui, out, t!("New project"), "Ctrl+N", Fixed::FileNew, !busy, file(FileAction::Request(Then::New)));
+    item(ui, out, t!("Open…"), "Ctrl+O", Fixed::FileOpen, !busy, file(FileAction::Request(Then::Open)));
     let recent = &app.prefs.recent;
     ui.add_enabled_ui(!busy && !recent.is_empty(), |ui| {
-        ui.menu_button(tr("Open recent"), |ui| {
+        ui.menu_button(tr(t!("Open recent")), |ui| {
             for path in recent {
                 if ui.button(path).clicked() {
                     out.push(file(FileAction::Request(Then::OpenPath(path.clone()))));
                 }
             }
             ui.separator();
-            if ui.button(tr("Clear the list")).clicked() {
+            if ui.button(tr(t!("Clear the list"))).clicked() {
                 out.push(Action::Pref(Pref::ClearRecent));
             }
         });
     });
-    ui.menu_button(tr("Samples"), |ui| {
+    ui.menu_button(tr(t!("Samples")), |ui| {
         for s in emcraft_engine::templates::TEMPLATES {
             if ui.add_enabled(!busy, egui::Button::new(s.name)).hint(Raw(sample_label(s.name))).clicked() {
                 out.push(Action::Template(Some(s.name.to_owned())));
@@ -543,11 +546,11 @@ pub fn menu(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         }
     });
     ui.separator();
-    item(ui, out, "Save", "Ctrl+S", Fixed::FileSave, !busy, file(FileAction::Save));
-    item(ui, out, "Save as…", "Ctrl+Shift+S", Fixed::FileSaveAs, !busy, file(FileAction::SaveAs));
+    item(ui, out, t!("Save"), "Ctrl+S", Fixed::FileSave, !busy, file(FileAction::Save));
+    item(ui, out, t!("Save as…"), "Ctrl+Shift+S", Fixed::FileSaveAs, !busy, file(FileAction::SaveAs));
     ui.separator();
-    item(ui, out, "Export history as script…", "", Fixed::FileExport, !app.session.history().is_empty(), Action::AskExport);
-    item(ui, out, "Start page", "", Fixed::FileStart, true, Action::SetHome(true));
+    item(ui, out, t!("Export history as script…"), "", Fixed::FileExport, !app.session.history().is_empty(), Action::AskExport);
+    item(ui, out, t!("Start page"), "", Fixed::FileStart, true, Action::SetHome(true));
 }
 
 /// Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S.

@@ -133,7 +133,7 @@ fn view_name(d: [i8; 3]) -> String {
         .map(|k| {
             let mut e = [0i8; 3];
             e[k] = d[k];
-            tr(face_name(e))
+            crate::lang::lookup(face_name(e))
         })
         .collect::<Vec<_>>()
         .join(" · ")
@@ -257,7 +257,7 @@ pub fn show(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, _out: &mut Actions) {
     }
     if let Some(f) = hovered {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        resp.clone().on_hover_text(trf("{view} — drag to orbit, Shift snaps", args!(view = view_name(f.dir))));
+        resp.clone().on_hover_text(trf(t!("{view} — drag to orbit, Shift snaps"), args!(view = view_name(f.dir))));
     }
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "view cube"));
     if resp.clicked()
@@ -281,11 +281,11 @@ pub fn show(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, _out: &mut Actions) {
     // The buttons round it, shown while the pointer is near: four quarter turns, Home and Fit.
     let square_on = faces.iter().filter(|f| f.middle).count() == 1;
     let (distance, button) = if square_on { (54.0, 20.0) } else { (74.0, 16.0) };
-    let buttons: [(&'static str, egui::Vec2, egui::Vec2, Goal, &str); 4] = [
-        ("left", vec2(-distance, 0.0), vec2(1.0, 0.0), Goal::Turn { right: -1.0, up: 0.0, degrees: 90.0 }, "Orbit left 90°"),
-        ("right", vec2(distance, 0.0), vec2(-1.0, 0.0), Goal::Turn { right: 1.0, up: 0.0, degrees: 90.0 }, "Orbit right 90°"),
-        ("up", vec2(0.0, -distance), vec2(0.0, 1.0), Goal::Turn { right: 0.0, up: 1.0, degrees: 90.0 }, "Orbit up 90°"),
-        ("down", vec2(0.0, distance), vec2(0.0, -1.0), Goal::Turn { right: 0.0, up: -1.0, degrees: 90.0 }, "Orbit down 90°"),
+    let buttons: [(&'static str, egui::Vec2, egui::Vec2, Goal, crate::lang::Text); 4] = [
+        ("left", vec2(-distance, 0.0), vec2(1.0, 0.0), Goal::Turn { right: -1.0, up: 0.0, degrees: 90.0 }, t!("Orbit left 90°")),
+        ("right", vec2(distance, 0.0), vec2(-1.0, 0.0), Goal::Turn { right: 1.0, up: 0.0, degrees: 90.0 }, t!("Orbit right 90°")),
+        ("up", vec2(0.0, -distance), vec2(0.0, 1.0), Goal::Turn { right: 0.0, up: 1.0, degrees: 90.0 }, t!("Orbit up 90°")),
+        ("down", vec2(0.0, distance), vec2(0.0, -1.0), Goal::Turn { right: 0.0, up: -1.0, degrees: 90.0 }, t!("Orbit down 90°")),
     ];
     for (name, offset, dir, goal, tip) in buttons {
         let at = c + offset * scale;
@@ -303,8 +303,8 @@ pub fn show(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, _out: &mut Actions) {
     let home = Rect::from_center_size(c + vec2(-65.0, -65.0) * scale, vec2(26.0, 26.0) * scale);
     let fit = Rect::from_center_size(c + vec2(67.0, 67.0) * scale, vec2(22.0, 22.0) * scale);
     for (name, r, goal, glyph, tip) in [
-        ("home", home, Goal::Home, crate::glyphs::Glyph::Home, "Home view (isometric)"),
-        ("fit", fit, Goal::Fit, crate::glyphs::Glyph::Fit, "Fit the model to the view (double-click the view)"),
+        ("home", home, Goal::Home, crate::glyphs::Glyph::Home, t!("Home view (isometric)")),
+        ("fit", fit, Goal::Fit, crate::glyphs::Glyph::Fit, t!("Fit the model to the view (double-click the view)")),
     ] {
         let b = ui.hit(r, Handle::CubeButton(name), Sense::click());
         let tip = tr(tip);

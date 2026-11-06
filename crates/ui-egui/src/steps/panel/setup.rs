@@ -10,7 +10,7 @@ pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, out: &m
     // Home is the sole authority for the analysis, including its inferred (auto) choice.
     let solver = app.session.model().analysis();
     f.fill_defaults();
-    ui_kit::section(ui, "Settings");
+    ui_kit::section(ui, t!("Settings"));
     let solves = solve_frequencies(app, f, solver);
     f.diagram = band_diagram(app, f, ui, &solves);
     let e = |f: &Fields, k: &str| f.error(k).map(str::to_owned);
@@ -18,35 +18,35 @@ pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, out: &m
     match solver {
         Solver::Frequency | Solver::TimeDomain => {
             let (es, ez) = (e(f, "start"), e(f, "stop"));
-            field(ui, "start", &mut f.start, fu, es.as_deref(), Fixed::SetupStart);
-            field(ui, "stop", &mut f.stop, fu, ez.as_deref(), Fixed::SetupStop);
+            field(ui, t!("start"), &mut f.start, fu, es.as_deref(), Fixed::SetupStart);
+            field(ui, t!("stop"), &mut f.stop, fu, ez.as_deref(), Fixed::SetupStop);
             let ep = e(f, "points");
-            field(ui, "Frequency points", &mut f.points, "", ep.as_deref(), Fixed::SetupPoints);
+            field(ui, t!("Frequency points"), &mut f.points, "", ep.as_deref(), Fixed::SetupPoints);
             if solver == Solver::TimeDomain {
                 let ec = e(f, "cell");
-                field(ui, "cell", &mut f.cell, lu, ec.as_deref(), Fixed::SetupCell);
+                field(ui, t!("cell"), &mut f.cell, lu, ec.as_deref(), Fixed::SetupCell);
             }
         }
         Solver::Eigenmodes => {
             let ec = e(f, "count");
-            field(ui, "modes", &mut f.count, "", ec.as_deref(), Fixed::SetupCount);
+            field(ui, t!("modes"), &mut f.count, "", ec.as_deref(), Fixed::SetupCount);
             let ef = e(f, "frequency");
-            field(ui, "near", &mut f.frequency, fu, ef.as_deref(), Fixed::SetupFrequency);
+            field(ui, t!("near"), &mut f.frequency, fu, ef.as_deref(), Fixed::SetupFrequency);
         }
         Solver::Pcb => {}
         Solver::Radiation => {
             let ef = e(f, "frequency");
-            field(ui, "frequency", &mut f.frequency, fu, ef.as_deref(), Fixed::SetupFrequency);
+            field(ui, t!("frequency"), &mut f.frequency, fu, ef.as_deref(), Fixed::SetupFrequency);
         }
     }
     match solver {
         Solver::TimeDomain | Solver::Pcb => {}
         Solver::Frequency | Solver::Eigenmodes | Solver::Radiation => {
             let eo = e(f, "order");
-            field(ui, "Element order", &mut f.order, "", eo.as_deref(), Fixed::SetupOrder);
+            field(ui, t!("Element order"), &mut f.order, "", eo.as_deref(), Fixed::SetupOrder);
             ui_kit::caption(
                 ui,
-                "Order 1 uses less memory; order 2 usually improves accuracy on the same mesh. Compare refined meshes to check convergence.",
+                t!("Order 1 uses less memory; order 2 usually improves accuracy on the same mesh. Compare refined meshes to check convergence."),
             );
         }
     }
@@ -66,12 +66,12 @@ fn confirm(app: &EmcraftApp, ui: &mut egui::Ui, ok: bool, out: &mut Actions) {
     ui.add_space(8.0);
     let pending = super::super::unconfirmed(app);
     if pending {
-        let label = format!("✔ {}", tr("Confirm settings"));
+        let label = format!("✔ {}", tr(t!("Confirm settings")));
         let r = ui.act(ok && !app.busy(), ui_kit::styled(Raw(&label), true), Fixed::SetupConfirm.into(), || Action::ConfirmSetup, out);
-        let _ = r.hint_disabled("put the marked fields right first");
-        ui_kit::small(ui, "Not confirmed: the mesh and Run wait for these settings.", t.warning);
+        let _ = r.hint_disabled(t!("put the marked fields right first"));
+        ui_kit::small(ui, t!("Not confirmed: the mesh and Run wait for these settings."), t.warning);
     } else {
-        let r = ui.label(egui::RichText::new(format!("✔ {}", tr("Settings confirmed"))).size(t.font_body).color(t.success));
+        let r = ui.label(egui::RichText::new(format!("✔ {}", tr(t!("Settings confirmed")))).size(t.font_body).color(t.success));
         scenario::publish_target(Fixed::SetupConfirm, r.rect);
     }
 }
@@ -81,7 +81,7 @@ fn confirm(app: &EmcraftApp, ui: &mut egui::Ui, ok: bool, out: &mut Actions) {
 /// `solve.device`.
 fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, out: &mut Actions) {
     let t = &Tokens::get();
-    ui_kit::section(ui, "Compute device");
+    ui_kit::section(ui, t!("Compute device"));
     let none = json!({});
     let list = app.workflow.devices.as_ref().unwrap_or(&none);
     let current = app.session.compute().device();
@@ -89,18 +89,18 @@ fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, out: &mut Actions
     let busy = app.busy();
     let devices = super::super::device_rows(list);
     let mut chosen: Option<(Device, Precision)> = None;
-    ui_kit::row(ui, "device", false, |ui| {
+    ui_kit::row(ui, t!("device"), false, |ui| {
         for d in &devices {
             let name = d.device.id();
             let radio = egui::RadioButton::new(current == d.device, egui::RichText::new(name).size(t.font_small));
             let r = ui.named_enabled(d.available && !busy, radio, Handle::Device(d.device));
             let r = match (d.available, &d.problem) {
-                (false, Some(p)) => r.hint_disabled(trf("{name} cannot run here: {problem}", args!(name = name, problem = p))),
-                (false, None) => r.hint_disabled(trf("{name} cannot run here", args!(name = name))),
+                (false, Some(p)) => r.hint_disabled(trf(t!("{name} cannot run here: {problem}"), args!(name = name, problem = p))),
+                (false, None) => r.hint_disabled(trf(t!("{name} cannot run here"), args!(name = name))),
                 (true, _) => r.hint(match d.device {
-                    Device::Cpu => "the CPU's threads",
-                    Device::Cuda => "an NVIDIA GPU",
-                    Device::CubeclCpu => "the GPU's kernels on the CPU (to check them without a GPU)",
+                    Device::Cpu => t!("the CPU's threads"),
+                    Device::Cuda => t!("an NVIDIA GPU"),
+                    Device::CubeclCpu => t!("the GPU's kernels on the CPU (to check them without a GPU)"),
                 }),
             };
             if r.clicked() && current != d.device {
@@ -116,13 +116,13 @@ fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, out: &mut Actions
     // The CPU's threads run in double; a device runs the precisions it lists.
     let on_cpu = current == Device::Cpu;
     let runs = |p: Precision| devices.iter().any(|d| d.device == current && d.runs(p));
-    ui_kit::row(ui, "precision", false, |ui| {
+    ui_kit::row(ui, t!("precision"), false, |ui| {
         for p in Precision::ALL {
             let on = if on_cpu { p == Precision::Double } else { precision == p };
             let enabled = !on_cpu && runs(p) && !busy;
-            let radio = egui::RadioButton::new(on, egui::RichText::new(tr(p.id())).size(t.font_small));
+            let radio = egui::RadioButton::new(on, egui::RichText::new(crate::lang::lookup(p.id())).size(t.font_small));
             let r = ui.named_enabled(enabled, radio, Handle::Precision(p));
-            let r = r.hint_disabled(if on_cpu { "the CPU's threads run in double" } else { "this device does not run it" });
+            let r = r.hint_disabled(if on_cpu { t!("the CPU's threads run in double") } else { t!("this device does not run it") });
             if r.clicked() && !on {
                 chosen = Some((current, p));
             }
@@ -136,15 +136,15 @@ fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, out: &mut Actions
     }
     let pending = app.job.as_ref().is_some_and(|j| j.command == "solve.device");
     let template = match solver {
-        _ if pending => "Switching the device…",
-        Solver::TimeDomain if !on_cpu => "The next solve runs on {device} in {precision} precision.",
-        Solver::TimeDomain => "The next solve runs on the CPU's threads (double precision).",
+        _ if pending => t!("Switching the device…"),
+        Solver::TimeDomain if !on_cpu => t!("The next solve runs on {device} in {precision} precision."),
+        Solver::TimeDomain => t!("The next solve runs on the CPU's threads (double precision)."),
         Solver::Frequency | Solver::Eigenmodes | Solver::Radiation if !on_cpu => {
-            "The next solve runs on the CPU, its factorization's large fronts on {device} (complex double)."
+            t!("The next solve runs on the CPU, its factorization's large fronts on {device} (complex double).")
         }
-        _ => "The next solve runs on the CPU's threads.",
+        _ => t!("The next solve runs on the CPU's threads."),
     };
-    let next = trf(template, args!(device = current.id(), precision = tr(precision.id())));
+    let next = trf(template, args!(device = current.id(), precision = crate::lang::lookup(precision.id())));
     ui_kit::small(ui, next, t.text);
     if let Some((device, precision)) = chosen {
         out.push(Action::SetDevice { device, precision });
@@ -230,14 +230,14 @@ fn band_diagram(app: &EmcraftApp, f: &Fields, ui: &mut egui::Ui, solves: &[f64])
     }
     let n = solves.len();
     let template = if n == 1 {
-        "band {a} to {z} {unit}; the solve works at {n} frequency"
+        t!("band {a} to {z} {unit}; the solve works at {n} frequency")
     } else {
-        "band {a} to {z} {unit}; the solve works at {n} frequencies"
+        t!("band {a} to {z} {unit}; the solve works at {n} frequencies")
     };
     let mut tip = trf(template, args!(a = fmt(a), z = fmt(z), unit = fu, n = n));
     for (f, label, _) in &cuts {
         tip.push('\n');
-        tip.push_str(&trf("cut-off {mode}: {f} {unit}", args!(mode = label, f = fmt((f * 1e4).round() / 1e4), unit = fu)));
+        tip.push_str(&trf(t!("cut-off {mode}: {f} {unit}"), args!(mode = label, f = fmt((f * 1e4).round() / 1e4), unit = fu)));
     }
     resp.on_hover_text(tip);
     Some(json!({"cutoffs": cuts.iter().map(|c| c.1.clone()).collect::<Vec<_>>(), "solves": n}))

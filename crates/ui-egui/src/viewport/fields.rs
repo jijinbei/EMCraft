@@ -110,12 +110,12 @@ fn picture_column(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, o
     let size = p.size();
     let available = ui.available_size();
     ui.horizontal_wrapped(|ui| {
-        let r = ui.add(egui::Slider::new(&mut field.plot_zoom, 0.001..=6.0).logarithmic(true).text(tr("Zoom")));
+        let r = ui.add(egui::Slider::new(&mut field.plot_zoom, 0.001..=6.0).logarithmic(true).text(tr(t!("Zoom"))));
         scenario::publish_target(Fixed::FieldPlotZoom, r.rect);
-        if ui_kit::button(ui, "Fit width", false, Fixed::FieldPlotWidth).clicked() {
+        if ui_kit::button(ui, t!("Fit width"), false, Fixed::FieldPlotWidth).clicked() {
             field.plot_zoom = 1.0;
         }
-        if ui_kit::button(ui, "Fit whole plot", false, Fixed::FieldPlotFit).clicked() {
+        if ui_kit::button(ui, t!("Fit whole plot"), false, Fixed::FieldPlotFit).clicked() {
             let width_fit = available.x / size.x;
             field.plot_zoom = ((available.y - 36.0).max(80.0) / size.y / width_fit.max(0.01)).clamp(0.001, 6.0);
         }
@@ -222,7 +222,7 @@ pub(super) fn probe_picture(app: &EmcraftApp, field: &mut FieldState, ui: &egui:
         let fmt = emcraft_render::axes::format;
         let unit = if comp.is_magnetic() { "A/m" } else { "V/m" };
         let text = trf(
-            "{component} {now} {unit} (amp. {amplitude} {unit})",
+            t!("{component} {now} {unit} (amp. {amplitude} {unit})"),
             args!(component = comp.label(), now = fmt(now), amplitude = fmt(amp), unit = unit),
         );
         let galley = painter.layout_no_wrap(text, FontId::proportional(t.font_small), t.text);
@@ -267,8 +267,8 @@ pub(super) fn field_controls(app: &EmcraftApp, field: &mut FieldState, ui: &mut 
         }
         plane_choice(app, field, ui);
         ui.separator();
-        let r = ui.named(egui::Button::selectable(!field.beside_3d, tr("2D plot")), Fixed::FieldBeside3d.into());
-        if r.hint("Switch between a field plane in the 3D model and a flat plot").clicked() {
+        let r = ui.named(egui::Button::selectable(!field.beside_3d, tr(t!("2D plot"))), Fixed::FieldBeside3d.into());
+        if r.hint(t!("Switch between a field plane in the 3D model and a flat plot")).clicked() {
             field.beside_3d = !field.beside_3d;
         }
     });
@@ -284,9 +284,9 @@ pub(super) fn field_choice(app: &EmcraftApp, field: &mut FieldState, ui: &mut eg
     {
         let mut idx = field.view.mode.unwrap_or(0);
         let label = |i: usize| {
-            e.modes
-                .get(i)
-                .map_or(String::new(), |m| trf("mode {n}: {f}", args!(n = (i + 1), f = format!("{:.4} {}", fu.from_si(m.frequency), fu.symbol()))))
+            e.modes.get(i).map_or(String::new(), |m| {
+                trf(t!("mode {n}: {f}"), args!(n = (i + 1), f = format!("{:.4} {}", fu.from_si(m.frequency), fu.symbol())))
+            })
         };
         egui::ComboBox::from_id_salt("mode").selected_text(label(idx)).show_ui(ui, |ui| {
             for i in 0..e.modes.len() {
@@ -299,7 +299,7 @@ pub(super) fn field_choice(app: &EmcraftApp, field: &mut FieldState, ui: &mut eg
 
 /// The plane, where it cuts, and a button that keeps it in the 3D view.
 pub(super) fn plane_choice(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
-    for (p, name) in [(Plane::H, "H-plane"), (Plane::E, "E-plane"), (Plane::Cross, "Cross-section")] {
+    for (p, name) in [(Plane::H, t!("H-plane")), (Plane::E, t!("E-plane")), (Plane::Cross, t!("Cross-section"))] {
         let r = ui.named(egui::Button::selectable(field.view.plane == p, tr(name)), Handle::FieldPlane(p));
         if r.clicked() && field.view.plane != p {
             field.view.plane = p;
@@ -338,7 +338,7 @@ pub(super) fn plane_choice(app: &EmcraftApp, field: &mut FieldState, ui: &mut eg
     }
     crate::glyphs::paint(ui.painter(), r.shrink(3.0), crate::glyphs::Glyph::KeepPlane, t.icon, t.accent);
     let kept = field.kept.iter().any(|k| (k.plane, k.at) == here);
-    if resp.hint("Keep this plane in the 3D view").clicked() && !kept && field.kept.len() < MAX_KEPT {
+    if resp.hint(t!("Keep this plane in the 3D view")).clicked() && !kept && field.kept.len() < MAX_KEPT {
         field.kept.push(crate::state::KeptPlane { plane: here.0, at: here.1, samples: None });
     }
 }
@@ -350,19 +350,19 @@ pub(super) fn kept_planes(app: &EmcraftApp, field: &mut FieldState, ui: &mut egu
     }
     ui.horizontal_wrapped(|ui| {
         let t = &Tokens::get();
-        crate::ui_kit::small(ui, "In 3D:", t.text_dim);
+        crate::ui_kit::small(ui, t!("In 3D:"), t.text_dim);
         let unit = app.session.display().length.symbol();
         let mut drop = None;
         for (k, crate::state::KeptPlane { plane, at, .. }) in field.kept.iter().enumerate() {
             let name = match plane {
-                Plane::H => "H-plane y",
-                Plane::E => "E-plane x",
-                Plane::Cross => "cross z",
+                Plane::H => t!("H-plane y"),
+                Plane::E => t!("E-plane x"),
+                Plane::Cross => t!("cross z"),
             };
             let chip =
                 egui::Button::new(egui::RichText::new(format!("{} = {} {unit}  ✕", tr(name), emcraft_render::axes::format(*at))).size(t.font_small));
             let r = ui.named(chip, Handle::FieldKept(k));
-            if r.hint("Remove from the 3D view").clicked() {
+            if r.hint(t!("Remove from the 3D view")).clicked() {
                 drop = Some(k);
             }
         }
@@ -389,14 +389,14 @@ pub(super) fn field_display(app: &EmcraftApp, field: &mut FieldState, ui: &mut e
         field.view.show_e = !now.is_magnetic();
         field.view.show_h = now.is_magnetic();
     }
-    ui.checkbox(&mut field.view.show_e, tr("E arrows"));
-    ui.checkbox(&mut field.view.show_h, tr("H arrows"));
+    ui.checkbox(&mut field.view.show_e, tr(t!("E arrows")));
+    ui.checkbox(&mut field.view.show_h, tr(t!("H arrows")));
     // Each entry of S is an excitation: a port, or a terminal of a terminal port. The one
     // shown is the driven port (`view.driven`), the input everywhere else too.
     let entries = app.session.sparameter_entries();
     if entries.len() > 1 && field.view.mode.is_none() {
         ui.separator();
-        ui.text(Style::Body, "excite");
+        ui.text(Style::Body, t!("excite"));
         for (i, e) in entries.iter().enumerate() {
             if ui.radio(field.view.excitation == i, e.name.as_str()).clicked() && field.view.excitation != i {
                 field.view.excitation = i;

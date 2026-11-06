@@ -43,7 +43,7 @@ impl ChartView for SParameters {
             Some(Part::Table) => table(app, ui),
             Some(Part::Planes) => {
                 reference_planes(app, &mut st.views.deembed, ui, out);
-                crate::ui_kit::caption(ui, "Click: the fields there · drag: a band to solve more finely");
+                crate::ui_kit::caption(ui, t!("Click: the fields there · drag: a band to solve more finely"));
             }
             None => {}
         }
@@ -140,7 +140,7 @@ fn frequency_marker(field: &mut FieldState, ui: &egui::Ui, r: &egui::Response, m
             painter.vline(x, map.rows(), Stroke::new(1.5, t.accent));
             let (at, align) =
                 if x + 60.0 > r.rect.right() { (pos2(x - 4.0, top), Align2::RIGHT_TOP) } else { (pos2(x + 4.0, top), Align2::LEFT_TOP) };
-            painter.text(at, align, tr("fields shown"), FontId::proportional(t.font_small), t.accent);
+            painter.text(at, align, tr(t!("fields shown")), FontId::proportional(t.font_small), t.accent);
         }
     }
     if r.clicked()
@@ -184,14 +184,15 @@ fn refine_band(app: &EmcraftApp, refine: &mut crate::state::Refine, ui: &mut egu
         let ends = format!("{} – {} {}", emcraft_render::axes::format(fu.from_si(a)), emcraft_render::axes::format(fu.from_si(b)), fu.symbol());
         ui.text(Style::Small, ends);
         let r = ui.named(egui::DragValue::new(&mut refine.points).range(2..=MAX_REFINE).suffix(" pts"), Fixed::RefinePoints.into());
-        r.hint("frequencies in the band");
+        r.hint(t!("frequencies in the band"));
         let params = json!({"start": fu.from_si(a), "stop": fu.from_si(b), "points": refine.points});
         let busy = app.busy();
-        let hint = if busy { "a job is running" } else { "Solve these frequencies and merge them into the sweep (solve.refine)" };
-        let r =
-            ui.act(!busy, crate::ui_kit::styled("Refine", true), Fixed::RefineStart.into(), || Action::run("solve.refine", params), out).hint(hint);
+        let hint = if busy { t!("a job is running") } else { t!("Solve these frequencies and merge them into the sweep (solve.refine)") };
+        let r = ui
+            .act(!busy, crate::ui_kit::styled(t!("Refine"), true), Fixed::RefineStart.into(), || Action::run("solve.refine", params), out)
+            .hint(hint);
         let (x, _) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::hover());
-        if crate::ui_kit::icon_button(ui, x, crate::ui_kit::Mark::Close, "Clear the band", Fixed::RefineClear).clicked() || r.clicked() {
+        if crate::ui_kit::icon_button(ui, x, crate::ui_kit::Mark::Close, t!("Clear the band"), Fixed::RefineClear).clicked() || r.clicked() {
             refine.band = None;
         }
     });
@@ -211,14 +212,15 @@ fn reference_planes(app: &EmcraftApp, edits: &mut Vec<f64>, ui: &mut egui::Ui, o
     let instant = !sw.driven.has_terminals() && sw.driven.periodic.is_none();
     let busy = app.busy();
     ui.horizontal_wrapped(|ui| {
-        ui.text(Style::SmallDim, "Ref. plane").on_hover_text(tr("Each port's reference plane: its distance inside the model (de-embedding)"));
+        ui.text(Style::SmallDim, t!("Ref. plane")).on_hover_text(tr(t!("Each port's reference plane: its distance inside the model (de-embedding)")));
         for (i, port) in ports.iter().enumerate() {
             let Some(value) = edits.get_mut(i) else { continue };
             let now = l.from_si(port.deembed);
             ui.text(Style::Small, port.name.clone());
             let drag = egui::DragValue::new(value).speed(0.1).suffix(format!(" {}", l.symbol())).max_decimals(4);
             let r = ui.named_enabled(!busy, drag, Handle::Deembed(&port.name));
-            let r = if instant { r.hint("S follows at once (a phase shift of the port's mode)") } else { r.hint("terminal ports: solved again") };
+            let r =
+                if instant { r.hint(t!("S follows at once (a phase shift of the port's mode)")) } else { r.hint(t!("terminal ports: solved again")) };
             if (r.drag_stopped() || r.lost_focus()) && (*value - now).abs() > 1e-12 {
                 out.push(Action::run("model.port.deembed", json!({"name": port.name, "deembed": *value})));
             } else if !(r.dragged() || r.has_focus()) {
@@ -259,7 +261,7 @@ impl STable {
         let n = entries.len().clamp(2, TABLE_ENTRIES);
         let caption = entries.iter().any(|e| e.terminal.is_some()).then(|| {
             let names: Vec<String> = entries.iter().enumerate().map(|(i, e)| format!("{} = {}", i + 1, e.name)).collect();
-            trf("Entries of S: {entries}", args!(entries = names.join(", ")))
+            trf(t!("Entries of S: {entries}"), args!(entries = names.join(", ")))
         });
         let freqs: Vec<f64> = sw.results.iter().map(|r| fu.from_si(r.frequency)).collect();
         let fd = frequency_decimals(&freqs);
@@ -354,7 +356,7 @@ fn full_mark(ui: &mut egui::Ui, full: bool) -> egui::Response {
     let d = 3.5;
     let corners = vec![c + vec2(0.0, -d), c + vec2(d, 0.0), c + vec2(0.0, d), c + vec2(-d, 0.0)];
     ui.painter().add(egui::Shape::convex_polygon(corners, t.text, Stroke::NONE));
-    r.hint("Solved in full; the rest by the fast sweep")
+    r.hint(t!("Solved in full; the rest by the fast sweep"))
 }
 
 /// The decimals that tell a sweep's frequencies (display units) apart: enough for their
@@ -374,7 +376,7 @@ fn frequency_decimals(freqs: &[f64]) -> usize {
 fn history(app: &EmcraftApp, compare: &mut Vec<u32>, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
     let rows = emcraft_engine::archive::rows(&app.session);
-    crate::ui_kit::section(ui, "History");
+    crate::ui_kit::section(ui, t!("History"));
     let busy = app.busy();
     let palette = crate::theme::palette();
     let font = FontId::proportional(t.font_small);
@@ -396,7 +398,7 @@ fn history(app: &EmcraftApp, compare: &mut Vec<u32>, ui: &mut egui::Ui, out: &mu
         let ink = if current { t.text } else { t.text_dim };
         let star = if pinned { " ★" } else { "" };
         p.text(pos2(rect.left() + 26.0, rect.top() + 9.0), Align2::LEFT_CENTER, format!("#{id}{star}"), FontId::proportional(t.font_body), ink);
-        let what = if r.changes.is_empty() { tr("as it was").to_owned() } else { r.changes.join(", ") };
+        let what = if r.changes.is_empty() { tr(t!("as it was")).to_owned() } else { r.changes.join(", ") };
         let line = p.with_clip_rect(rect.shrink2(vec2(4.0, 0.0)));
         line.text(pos2(rect.left() + 26.0, rect.bottom() - 9.0), Align2::LEFT_CENTER, &what, font.clone(), t.text_dim);
         if let Some(db) = r.best_s11_db {
@@ -414,7 +416,7 @@ fn history(app: &EmcraftApp, compare: &mut Vec<u32>, ui: &mut egui::Ui, out: &mu
         }
         resp.context_menu(|ui| history_menu(ui, id, pinned, !busy, out));
     }
-    crate::ui_kit::caption(ui, "Click: draw it over the chart · right-click: restore, pin, delete");
+    crate::ui_kit::caption(ui, t!("Click: draw it over the chart · right-click: restore, pin, delete"));
 }
 
 /// A kept solve's swatch centred on `c`: its two curves' colours when drawn (`drawn`: its place
@@ -440,30 +442,33 @@ fn swatch(p: &egui::Painter, c: egui::Pos2, current: bool, drawn: Option<usize>,
 /// large), its deepest |S11| and where, and for one read back from the project file (`stored`)
 /// that restoring it solves it again.
 fn history_tip(app: &EmcraftApp, r: &emcraft_engine::archive::HistoryRow, stored: bool) -> String {
-    let mut tip = trf("{n} frequencies", args!(n = r.points.unwrap_or(0)));
+    let mut tip = trf(t!("{n} frequencies"), args!(n = r.points.unwrap_or(0)));
     if let Some(label) = &r.label {
         tip = format!("{label}\n{tip}");
     }
     let made = &r.provenance;
-    tip = format!("{tip}\n{}", trf("solved in {seconds} s on {device}", args!(seconds = format!("{:.1}", made.seconds), device = made.device.id())));
+    tip = format!(
+        "{tip}\n{}",
+        trf(t!("solved in {seconds} s on {device}"), args!(seconds = format!("{:.1}", made.seconds), device = made.device.id()))
+    );
     if let (Some(unknowns), Some(tets)) = (made.unknowns, made.tetrahedra) {
-        tip = format!("{tip}\n{}", trf("{unknowns} unknowns, {tets} tetrahedra", args!(unknowns = unknowns, tets = tets)));
+        tip = format!("{tip}\n{}", trf(t!("{unknowns} unknowns, {tets} tetrahedra"), args!(unknowns = unknowns, tets = tets)));
     }
     if stored {
-        tip = format!("{tip}\n{}", tr("Saved: restore solves it again"));
+        tip = format!("{tip}\n{}", tr(t!("Saved: restore solves it again")));
     }
     let (Some(db), Some(at)) = (r.best_s11_db, r.best_at) else { return tip };
     let unit = app.session.display().frequency.symbol();
-    let deepest = trf("deepest |S11| {db} dB at {f} {unit}", args!(db = format!("{db:.1}"), f = format!("{at:.4}"), unit = unit));
+    let deepest = trf(t!("deepest |S11| {db} dB at {f} {unit}"), args!(db = format!("{db:.1}"), f = format!("{at:.4}"), unit = unit));
     format!("{tip}\n{deepest}")
 }
 
 /// A kept solve's menu: restore, pin or unpin, delete.
 fn history_menu(ui: &mut egui::Ui, id: u32, pinned: bool, enabled: bool, out: &mut Actions) {
     let items = [
-        ("Restore", Fixed::HistoryRestore, "results.history.restore", json!({"id": id})),
-        (if pinned { "Unpin" } else { "Pin" }, Fixed::HistoryPin, "results.history.pin", json!({"id": id, "pinned": !pinned})),
-        ("Delete", Fixed::HistoryDelete, "results.history.delete", json!({"id": id})),
+        (t!("Restore"), Fixed::HistoryRestore, "results.history.restore", json!({"id": id})),
+        (if pinned { t!("Unpin") } else { t!("Pin") }, Fixed::HistoryPin, "results.history.pin", json!({"id": id, "pinned": !pinned})),
+        (t!("Delete"), Fixed::HistoryDelete, "results.history.delete", json!({"id": id})),
     ];
     for (label, handle, command, params) in items {
         if ui.named_enabled(enabled, egui::Button::new(tr(label)), handle.into()).clicked() {

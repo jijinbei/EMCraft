@@ -16,11 +16,11 @@ pub fn summary(study: &Study) -> String {
     let extra = match study.kind {
         Kind::Sweep => {
             let predicted = study.rows.iter().filter(|r| r.is_predicted()).count();
-            trf(", {solved} solved, {predicted} predicted", args!(solved = g.solves, predicted = predicted))
+            trf(t!(", {solved} solved, {predicted} predicted"), args!(solved = g.solves, predicted = predicted))
         }
         Kind::Optimize => match g.at_best {
-            Some((m, s)) => trf(" · Bayesian, surrogate {mean} ± {sigma}", args!(mean = short(m), sigma = short(s))),
-            None => tr(" · Bayesian").to_owned(),
+            Some((m, s)) => trf(t!(" · Bayesian, surrogate {mean} ± {sigma}"), args!(mean = short(m), sigma = short(s))),
+            None => tr(t!(" · Bayesian")).to_owned(),
         },
     };
     format!("{}{extra}", plain_summary(study))
@@ -29,26 +29,26 @@ pub fn summary(study: &Study) -> String {
 fn plain_summary(study: &Study) -> String {
     let names = study.variables.join(", ");
     let failed = study.rows.iter().filter(|r| r.error.is_some()).count();
-    let failed = if failed > 0 { trf(", {n} failed", args!(n = failed)) } else { String::new() };
+    let failed = if failed > 0 { trf(t!(", {n} failed"), args!(n = failed)) } else { String::new() };
     let (n, solve) = (study.rows.len(), &study.solve);
     match study.kind {
         Kind::Sweep if study.is_grid() => {
             let sizes: Vec<String> = study.grid.iter().map(|v| v.len().to_string()).collect();
             trf(
-                "Sweep of {names} on a grid: {sizes} = {n} points by {solve}{failed}",
+                t!("Sweep of {names} on a grid: {sizes} = {n} points by {solve}{failed}"),
                 args!(names = names, sizes = sizes.join(" × "), n = n, solve = solve, failed = failed),
             )
         }
-        Kind::Sweep => trf("Sweep of {names}: {n} values by {solve}{failed}", args!(names = names, n = n, solve = solve, failed = failed)),
+        Kind::Sweep => trf(t!("Sweep of {names}: {n} values by {solve}{failed}"), args!(names = names, n = n, solve = solve, failed = failed)),
         Kind::Optimize => {
             let best = study.best.and_then(|b| study.rows.get(b)).map(|r| {
                 let at: Vec<String> = study.variables.iter().zip(&r.values).map(|(n, v)| format!("{n} = {}", short(*v))).collect();
-                trf("best {at} (goal {goal})", args!(at = at.join(", "), goal = r.objective.map_or_else(|| "–".into(), short)))
+                trf(t!("best {at} (goal {goal})"), args!(at = at.join(", "), goal = r.objective.map_or_else(|| "–".into(), short)))
             });
-            let state = tr(if study.converged { "converged" } else { "stopped at its budget" });
+            let state = tr(if study.converged { t!("converged") } else { t!("stopped at its budget") });
             let goal = study.goal.clone().unwrap_or_default();
             trf(
-                "Optimization of {names}: {goal}, {n} solves, {state}; {best}",
+                t!("Optimization of {names}: {goal}, {n} solves, {state}; {best}"),
                 args!(names = names, goal = goal, n = n, state = state, best = best.unwrap_or_default()),
             )
         }
@@ -80,7 +80,7 @@ impl ChartView for StudyView {
         let parameters = parameters(study);
         if let [first, _, ..] = parameters.as_slice() {
             ui.horizontal(|ui| {
-                crate::ui_kit::small(ui, "Show", t.text_dim);
+                crate::ui_kit::small(ui, t!("Show"), t.text_dim);
                 for p in &parameters {
                     let on = state.parameter.as_ref().unwrap_or(first) == p;
                     if ui.named(pill(&format!("|{}|", p.to_uppercase()), on, 10, PillSize::Small), Handle::StudyParameter(p)).clicked() && !on {
@@ -140,7 +140,7 @@ fn slice_picker(ui: &mut egui::Ui, study: &Study, slice: &mut Slice) {
     let t = &Tokens::get();
     slice.at.resize(study.variables.len(), 0);
     ui.horizontal_wrapped(|ui| {
-        crate::ui_kit::small(ui, "Along", t.text_dim);
+        crate::ui_kit::small(ui, t!("Along"), t.text_dim);
         for (k, n) in study.variables.iter().enumerate() {
             let on = slice.free == k;
             if ui.named(pill(n, on, 10, PillSize::Small), Handle::StudyAlong(n)).clicked() && !on {
@@ -154,7 +154,7 @@ fn slice_picker(ui: &mut egui::Ui, study: &Study, slice: &mut Slice) {
         }
         let Some(axis) = study.grid.get(k) else { continue };
         ui.horizontal_wrapped(|ui| {
-            crate::ui_kit::small(ui, trf("{name} at", args!(name = n)), t.text_dim);
+            crate::ui_kit::small(ui, trf(t!("{name} at"), args!(name = n)), t.text_dim);
             for (i, v) in axis.iter().enumerate().take(MAX_PILLS) {
                 let on = slice.at.get(k) == Some(&i);
                 if ui.named(pill(&short(*v), on, 10, PillSize::Small), Handle::StudyAt(n, i)).clicked()
@@ -213,15 +213,15 @@ impl Points {
         }
         if optimize {
             headers.push(match emcraft_engine::view::goal_unit(study) {
-                Some(u) => trf("goal ({unit})", args!(unit = u)),
-                None => tr("goal").to_owned(),
+                Some(u) => trf(t!("goal ({unit})"), args!(unit = u)),
+                None => tr(t!("goal")).to_owned(),
             });
         } else if let Some(p) = parameter {
             let p = p.to_uppercase();
-            headers.extend([trf("min |{p}| dB", args!(p = p)), trf("max |{p}| dB", args!(p = p))]);
+            headers.extend([trf(t!("min |{p}| dB"), args!(p = p)), trf(t!("max |{p}| dB"), args!(p = p))]);
         }
         if modes {
-            headers.push(trf("modes ({unit})", args!(unit = study.frequency_unit)));
+            headers.push(trf(t!("modes ({unit})"), args!(unit = study.frequency_unit)));
         }
         let (mut rows, mut notes) = (Vec::new(), Vec::new());
         for (i, r) in study.rows.iter().enumerate().take(MAX_ROWS) {
@@ -246,9 +246,9 @@ impl Points {
             let sigma = parameter.and_then(|p| r.db_sigma(p)).map(|s| s.into_iter().fold(0.0, f64::max));
             notes.push(match (&r.error, study.best == Some(i), r.is_predicted(), sigma) {
                 (Some(e), _, _, _) => (emcraft_engine::text::clip(e, 120), Some(Note::Error)),
-                (None, true, _, _) => (tr("best").to_owned(), Some(Note::Best)),
-                (None, false, true, Some(s)) => (trf("predicted ± {sigma} dB", args!(sigma = format!("{s:.3}"))), Some(Note::Predicted)),
-                (None, false, true, None) => (tr("predicted").to_owned(), Some(Note::Predicted)),
+                (None, true, _, _) => (tr(t!("best")).to_owned(), Some(Note::Best)),
+                (None, false, true, Some(s)) => (trf(t!("predicted ± {sigma} dB"), args!(sigma = format!("{s:.3}"))), Some(Note::Predicted)),
+                (None, false, true, None) => (tr(t!("predicted")).to_owned(), Some(Note::Predicted)),
                 (None, false, false, _) => (String::new(), None),
             });
             rows.push(row);

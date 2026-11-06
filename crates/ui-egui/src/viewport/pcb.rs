@@ -168,28 +168,30 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
         }
         Stage::Net => choose_net(ui, board, selected, out),
         Stage::Settings => {
-            for (label, field) in
-                [("Reference net", &mut state.ground), ("Reference impedance (Ω)", &mut state.reference), ("Maximum frequency", &mut state.stop)]
-            {
+            for (label, field) in [
+                (t!("Reference net"), &mut state.ground),
+                (t!("Reference impedance (Ω)"), &mut state.reference),
+                (t!("Maximum frequency"), &mut state.stop),
+            ] {
                 ui.horizontal(|ui| {
                     ui.label(tr(label));
                     let r = ui.add(egui::TextEdit::singleline(field).desired_width(110.));
-                    scenario::publish_target(Handle::Choice("pcb_control", label), r.rect);
+                    scenario::publish_target(Handle::Choice("pcb_control", label.en()), r.rect);
                 });
             }
             ui.small(app.session.display().frequency.symbol());
             // The form is the conditions once confirmed; until then the diagnosis waits for it.
             ui.add_space(6.);
             if state.unconfirmed {
-                let label = format!("✔ {}", tr("Confirm conditions"));
+                let label = format!("✔ {}", tr(t!("Confirm conditions")));
                 let r = ui.add_enabled(!app.busy(), ui_kit::styled(Raw(&label), true));
                 scenario::publish_target(Handle::Choice("pcb_control", "confirm"), r.rect);
                 if r.clicked() {
                     out.push(Action::run("pcb.conditions", state.conditions()));
                 }
-                ui_kit::small(ui, "Not confirmed: the diagnosis waits for these conditions.", Tokens::get().warning);
+                ui_kit::small(ui, t!("Not confirmed: the diagnosis waits for these conditions."), Tokens::get().warning);
             } else {
-                let r = ui.label(egui::RichText::new(format!("✔ {}", tr("Conditions confirmed"))).color(Tokens::get().success));
+                let r = ui.label(egui::RichText::new(format!("✔ {}", tr(t!("Conditions confirmed")))).color(Tokens::get().success));
                 scenario::publish_target(Handle::Choice("pcb_control", "confirm"), r.rect);
             }
         }
@@ -199,10 +201,10 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
                 ui.label(format!("{} → {}  |  {} Ω  |  {} {}", selected, c.ground, c.reference, unit.from_si(c.stop_hz), unit.symbol()));
             }
             let ready = confirmed.is_some() && !state.unconfirmed;
-            let r = ui.add_enabled(ready && !app.busy(), egui::Button::new(tr("Inspect route")));
+            let r = ui.add_enabled(ready && !app.busy(), egui::Button::new(tr(t!("Inspect route"))));
             scenario::publish_target(Handle::Choice("pcb_control", "inspect"), r.rect);
             if !ready {
-                ui_kit::caption(ui, "Confirm the conditions first (step 3).");
+                ui_kit::caption(ui, t!("Confirm the conditions first (step 3)."));
             }
             if r.clicked() {
                 out.push(Action::run("pcb.inspect", json!({"net": selected})));
@@ -214,13 +216,13 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
         Stage::Results => {
             match (result, &app.replies.pcb) {
                 (Some(result), _) => {
-                    let r = ui.button(tr("Keep for comparison"));
+                    let r = ui.button(tr(t!("Keep for comparison")));
                     scenario::publish_target(Handle::Choice("pcb_control", "keep"), r.rect);
                     if r.clicked() {
                         state.baseline = Some(result.clone());
                     }
                 }
-                (None, Some(_)) => ui_kit::caption(ui, "Conditions changed; inspect the route again."),
+                (None, Some(_)) => ui_kit::caption(ui, t!("Conditions changed; inspect the route again.")),
                 (None, None) => {}
             }
             if app.replies.pcb.is_none() && confirmed.is_some() && state.attempted.as_ref() != Some(&(app.revision, selected.to_owned())) {
@@ -242,10 +244,10 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
 /// Where a board comes from: a KiCad file or a template.
 fn board_sources(ui: &mut egui::Ui, out: &mut Actions) {
     ui.horizontal_wrapped(|ui| {
-        if ui.button(tr("Import PCB…")).clicked() {
+        if ui.button(tr(t!("Import PCB…"))).clicked() {
             out.push(Action::File(crate::files::FileAction::PickPart));
         }
-        ui.menu_button(tr("Templates"), |ui| {
+        ui.menu_button(tr(t!("Templates")), |ui| {
             for template in emcraft_engine::templates::made_for(crate::steps::Solver::Pcb) {
                 if ui.button(crate::lang::sample_label(template.name)).clicked() {
                     out.push(Action::Template(Some(template.name.into())));
@@ -259,9 +261,9 @@ fn board_sources(ui: &mut egui::Ui, out: &mut Actions) {
 /// The routed nets to choose the route from.
 fn choose_net(ui: &mut egui::Ui, board: &emcraft_model::pcb::Board, selected: &str, out: &mut Actions) {
     let nets: BTreeSet<_> = board.segments.iter().map(|s| s.net.as_str()).collect();
-    let r = egui::ComboBox::from_id_salt("pcb_net").selected_text(if selected.is_empty() { tr("Choose a routed net") } else { selected }).show_ui(
-        ui,
-        |ui| {
+    let r = egui::ComboBox::from_id_salt("pcb_net")
+        .selected_text(if selected.is_empty() { tr(t!("Choose a routed net")) } else { selected })
+        .show_ui(ui, |ui| {
             for net in nets {
                 let r = ui.selectable_label(net == selected, net);
                 scenario::publish_target(Handle::Choice("pcb_net", net), r.rect);
@@ -269,8 +271,7 @@ fn choose_net(ui: &mut egui::Ui, board: &emcraft_model::pcb::Board, selected: &s
                     out.push(Action::run("view.pcb", json!({"net": net, "stage": Stage::Net.id()})));
                 }
             }
-        },
-    );
+        });
     scenario::publish_target(Handle::Choice("pcb_control", "net"), r.response.rect);
 }
 
@@ -280,7 +281,7 @@ fn pen(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui, boa
     let Some(pen) = state.drawing.as_mut() else { return };
     let l = app.session.display().length;
     ui.add_space(6.);
-    ui.heading(tr("Draw the route"));
+    ui.heading(tr(t!("Draw the route")));
     ui.horizontal_wrapped(|ui| {
         let nets: BTreeSet<&str> = board.segments.iter().map(|g| g.net.as_str()).chain(board.copper.iter().map(|c| c.net.as_str())).collect();
         egui::ComboBox::from_id_salt("pcb_pen_net").selected_text(pen.net.as_str()).show_ui(ui, |ui| {
@@ -304,7 +305,7 @@ fn pen(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui, boa
             pen.width = l.to_si(width);
         }
     });
-    ui_kit::caption(ui, "Click to add segments; right click or Esc ends.");
+    ui_kit::caption(ui, t!("Click to add segments; right click or Esc ends."));
     let net = pen.net.clone();
     segments(app, state, ui, board, &net, out);
 }
@@ -319,7 +320,7 @@ const DRAW_SNAP: f64 = 0.4e-3;
 fn draw(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, view: Rect, board: &emcraft_model::pcb::Board, out: &mut Actions) {
     let (state, v) = (&mut st.views.pcb, &st.view3d);
     let toggle = Rect::from_min_size(pos2(view.right() - 140., view.top() + 8.), vec2(130., 28.));
-    let r = ui.new_child(egui::UiBuilder::new().max_rect(toggle)).selectable_label(state.drawing.is_some(), tr("Draw the route"));
+    let r = ui.new_child(egui::UiBuilder::new().max_rect(toggle)).selectable_label(state.drawing.is_some(), tr(t!("Draw the route")));
     scenario::publish_target(Handle::Choice("pcb_mode", "draw"), r.rect);
     if r.clicked() {
         state.drawing = match state.drawing {
@@ -390,7 +391,7 @@ fn minimap(view: Rect) -> Rect {
 /// (traces, vias and pours are added from the ribbon).
 fn segments(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui, board: &emcraft_model::pcb::Board, net: &str, out: &mut Actions) {
     let l = app.session.display().length;
-    egui::CollapsingHeader::new(tr("Route segments")).id_salt("pcb_segments").default_open(true).show(ui, |ui| {
+    egui::CollapsingHeader::new(tr(t!("Route segments"))).id_salt("pcb_segments").default_open(true).show(ui, |ui| {
         for g in board.segments.iter().filter(|g| g.net == net).take(64) {
             ui.horizontal(|ui| {
                 ui.small(format!("{} · {}", g.id, g.layer));
@@ -400,7 +401,7 @@ fn segments(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui
                 if (r.drag_stopped() || r.lost_focus()) && (*width - l.from_si(g.width)).abs() > 1e-12 && !app.busy() {
                     out.push(Action::run("pcb.segment", json!({"id": g.id, "width": *width})));
                 }
-                let d = ui.small_button("×").on_hover_text(tr("Delete"));
+                let d = ui.small_button("×").on_hover_text(tr(t!("Delete")));
                 scenario::publish_target(Handle::Choice("pcb_delete", &g.id), d.rect);
                 if d.clicked() && !app.busy() {
                     state.widths.remove(&g.id);
@@ -420,10 +421,10 @@ fn fem(app: &EmcraftApp, c: &emcraft_engine::pcb::Conditions, ui: &mut egui::Ui,
     let ends = emcraft_engine::pcb_fem::route_ends(board, net);
     let stop = Some(app.session.display().frequency.from_si(c.stop_hz));
     let ready = ends.len() == 2;
-    let r = ui.add_enabled(ready && !app.busy(), egui::Button::new(tr("Make the FEM model")));
+    let r = ui.add_enabled(ready && !app.busy(), egui::Button::new(tr(t!("Make the FEM model"))));
     scenario::publish_target(Handle::Choice("pcb_control", "fem"), r.rect);
     if ends.len() != 2 {
-        ui_kit::caption(ui, "The route needs exactly two free ends for its ports.");
+        ui_kit::caption(ui, t!("The route needs exactly two free ends for its ports."));
     }
     if let (true, Some(f)) = (r.clicked(), stop) {
         let mut list = vec![("pcb.region".to_owned(), json!({"net": net}))];
@@ -442,7 +443,7 @@ fn stackup(app: &EmcraftApp, ui: &mut egui::Ui, selected: &str, ground: &str) {
     let Some(board) = app.session.model().pcb.as_ref() else {
         return;
     };
-    ui.heading(tr("Layer stackup (section)"));
+    ui.heading(tr(t!("Layer stackup (section)")));
     let t = Tokens::get();
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width().min(540.), 180.), Sense::hover());
     scenario::publish_target(Handle::Choice("pcb_control", "stackup"), r);
@@ -593,13 +594,13 @@ fn draw_report(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui,
         return;
     };
     ui.label(trf(
-        "Selected net: {net}; routed length {length} {unit}",
+        t!("Selected net: {net}; routed length {length} {unit}"),
         args!(net = report.net, length = format!("{:.3}", report.length), unit = report.length_unit),
     ));
-    ui.heading(tr("Return-path geometry"));
+    ui.heading(tr(t!("Return-path geometry")));
     let mut shown = BTreeSet::new();
     if report.findings.is_empty() {
-        ui_kit::caption(ui, "No issues found.");
+        ui_kit::caption(ui, t!("No issues found."));
     }
     for f in &report.findings {
         if !shown.insert((f.code.id(), f.detail.as_str())) {
@@ -608,7 +609,7 @@ fn draw_report(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui,
         ui.colored_label(if f.code == Code::NearbySignal { t.warning } else { t.error }, tr(finding_label(f.code)));
         ui.small(f.detail.as_str());
     }
-    ui.heading(tr("Ideal transmission-line estimate"));
+    ui.heading(tr(t!("Ideal transmission-line estimate")));
     for row in &report.sections {
         ui.small(format!(
             "{} → {}: {:.2} Ω, {:.1} ps",
@@ -619,45 +620,45 @@ fn draw_report(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui,
         ));
     }
     if let Some(si) = report.si.as_ref().filter(|_| report.model_available) {
-        ui.small(trf("Propagation delay: {value} ps", args!(value = format!("{:.1}", Time::Picosecond.from_si(si.delay_s)))));
+        ui.small(trf(t!("Propagation delay: {value} ps"), args!(value = format!("{:.1}", Time::Picosecond.from_si(si.delay_s)))));
         let along = |f: fn(&emcraft_engine::pcb::LinePoint) -> f64| si.points.iter().map(|p| [p.frequency, f(p)]).collect::<Vec<_>>();
         let top = si.points.last().map_or(1.0, |p| p.frequency);
         let series = [("s11", t.error, along(|p| p.s11.mag)), ("s21", t.accent, along(|p| p.s21.mag))];
         chart(ui, top, &series, false, app.session.display().frequency.symbol());
-        ui.small(tr("TDR reflection (ideal line model)"));
+        ui.small(tr(t!("TDR reflection (ideal line model)")));
         let horizon = 4.0 * si.delay_s.max(si.resolution_s);
         let end = si.tdr.iter().position(|p| p.time_s > horizon).unwrap_or(si.tdr.len()).max(2).min(si.tdr.len());
         let shown = &si.tdr[..end];
         let top = shown.last().map_or(1.0, |p| p.time_s);
         chart(ui, top, &[("reflection", t.warning, shown.iter().map(|p| [p.time_s, p.reflection]).collect())], true, "ns");
         ui.small(trf(
-            "TDR window {window} ns; resolution {resolution} ps",
+            t!("TDR window {window} ns; resolution {resolution} ps"),
             args!(
                 window = format!("{:.2}", Time::Nanosecond.from_si(horizon)),
                 resolution = format!("{:.1}", Time::Picosecond.from_si(si.resolution_s))
             ),
         ));
     } else {
-        ui_kit::caption(ui, "No S-parameters: the route is outside the line model.");
+        ui_kit::caption(ui, t!("No S-parameters: the route is outside the line model."));
     }
     if let Some(old) = &state.baseline {
-        ui.label(trf("Comparison — geometry findings: {before} → {after}", args!(before = old.findings.len(), after = report.findings.len())));
+        ui.label(trf(t!("Comparison — geometry findings: {before} → {after}"), args!(before = old.findings.len(), after = report.findings.len())));
     }
     for note in &report.import_notes {
         ui_kit::caption(ui, Raw(note.as_str()));
     }
 }
 
-fn finding_label(code: Code) -> &'static str {
+fn finding_label(code: Code) -> crate::lang::Text {
     match code {
-        Code::ReturnGap => "Reference copper missing beneath the route",
-        Code::ReferenceEdge => "Return corridor reaches a reference edge or slot",
-        Code::NoReference => "No filled reference plane",
-        Code::RouteTopology => "Route is branched, disconnected or closed",
-        Code::ViaTransition => "Signal via needs a transition model",
-        Code::MissingReturnVia => "Verify the return via at this layer transition",
-        Code::NearbySignal => "Nearby parallel signal: check coupling",
-        Code::UnsupportedCrossSection => "Cross-section outside the supported line model",
+        Code::ReturnGap => t!("Reference copper missing beneath the route"),
+        Code::ReferenceEdge => t!("Return corridor reaches a reference edge or slot"),
+        Code::NoReference => t!("No filled reference plane"),
+        Code::RouteTopology => t!("Route is branched, disconnected or closed"),
+        Code::ViaTransition => t!("Signal via needs a transition model"),
+        Code::MissingReturnVia => t!("Verify the return via at this layer transition"),
+        Code::NearbySignal => t!("Nearby parallel signal: check coupling"),
+        Code::UnsupportedCrossSection => t!("Cross-section outside the supported line model"),
     }
 }
 

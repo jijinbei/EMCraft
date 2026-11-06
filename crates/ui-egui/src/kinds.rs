@@ -16,9 +16,9 @@ use crate::{Hint, UiExt};
 #[derive(Clone, Copy, Debug)]
 pub struct KindCard {
     pub glyph: Glyph,
-    pub name: &'static str,
-    pub plain: &'static str,
-    pub detail: &'static str,
+    pub name: crate::lang::Text,
+    pub plain: crate::lang::Text,
+    pub detail: crate::lang::Text,
 }
 
 /// The card of a kind of analysis.
@@ -26,33 +26,33 @@ pub fn kind_card(kind: Solver) -> KindCard {
     let (glyph, name, plain, detail) = match kind {
         Solver::Frequency => (
             Glyph::KindSweep,
-            "S-parameters",
-            "What passes and what reflects, over the band",
-            "S-parameters between ports, swept over the band (solve.frequency)",
+            t!("S-parameters"),
+            t!("What passes and what reflects, over the band"),
+            t!("S-parameters between ports, swept over the band (solve.frequency)"),
         ),
         Solver::Eigenmodes => (
             Glyph::KindResonator,
-            "Eigenmodes",
-            "The resonances of a closed cavity and their Q",
-            "A closed resonator's modes and Q; nothing drives it (solve.eigenmodes)",
+            t!("Eigenmodes"),
+            t!("The resonances of a closed cavity and their Q"),
+            t!("A closed resonator's modes and Q; nothing drives it (solve.eigenmodes)"),
         ),
         Solver::Radiation => (
             Glyph::KindAntenna,
-            "Radiation",
-            "How an antenna radiates: its far-field pattern",
-            "An antenna or a scatterer in an open boundary: fields and far field (solve.radiation)",
+            t!("Radiation"),
+            t!("How an antenna radiates: its far-field pattern"),
+            t!("An antenna or a scatterer in an open boundary: fields and far field (solve.radiation)"),
         ),
         Solver::Pcb => (
             Glyph::Chart,
-            "PCB signal and return path",
-            "Signal quality and ground continuity on a routed net",
-            "PCB geometry screening and ideal transmission-line estimates (pcb.inspect)",
+            t!("PCB signal and return path"),
+            t!("Signal quality and ground continuity on a routed net"),
+            t!("PCB geometry screening and ideal transmission-line estimates (pcb.inspect)"),
         ),
         Solver::TimeDomain => (
             Glyph::KindPulse,
-            "Time domain",
-            "A pulse sent through, and what comes back in time",
-            "A pulse over the band: S-parameters by finite integration (solve.time_domain)",
+            t!("Time domain"),
+            t!("A pulse sent through, and what comes back in time"),
+            t!("A pulse over the band: S-parameters by finite integration (solve.time_domain)"),
         ),
     };
     KindCard { glyph, name, plain, detail }
@@ -98,7 +98,7 @@ pub fn tile(ui: &mut egui::Ui, kind: Solver, size: egui::Vec2, look: Look, handl
         p.text(pos2(r.center().x, r.bottom() - 14.0), Align2::CENTER_CENTER, tr(name), FontId::proportional(t.font_body), name_ink);
     }
     if look.on && look.auto {
-        p.text(r.right_top() + vec2(-8.0, 6.0), Align2::RIGHT_TOP, tr("auto"), FontId::proportional(t.font_small - 1.0), t.text_dim);
+        p.text(r.right_top() + vec2(-8.0, 6.0), Align2::RIGHT_TOP, tr(t!("auto")), FontId::proportional(t.font_small - 1.0), t.text_dim);
     }
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, look.enabled, tr(name)));
     resp.on_hover_cursor(egui::CursorIcon::PointingHand).hint(format!("{}\n{}", tr(name), tr(detail)))
@@ -335,7 +335,7 @@ pub fn switch(app: &crate::EmcraftApp, ui: &mut egui::Ui, r: Rect, out: &mut cra
     let p = ui.painter().with_clip_rect(r);
     p.rect(r, 12.0, fill, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
     glyphs::paint(&p, Rect::from_center_size(pos2(r.left() + 18.0, r.center().y), vec2(18.0, 18.0)), glyph, t.icon, colours(current)[0]);
-    let label = if chosen.is_none() { format!("{} ({})", tr(name), tr("auto")) } else { tr(name).to_owned() };
+    let label = if chosen.is_none() { format!("{} ({})", tr(name), tr(t!("auto"))) } else { tr(name).to_owned() };
     p.text(pos2(r.left() + 34.0, r.center().y), Align2::LEFT_CENTER, label, FontId::proportional(t.font_body), t.text);
     let c = pos2(r.right() - 14.0, r.center().y);
     p.add(egui::Shape::convex_polygon(vec![c + vec2(-4.0, -2.0), c + vec2(4.0, -2.0), c + vec2(0.0, 3.0)], t.text_dim, Stroke::NONE));

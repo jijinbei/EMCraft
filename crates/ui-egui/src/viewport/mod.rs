@@ -351,7 +351,7 @@ pub(super) fn empty(ui: &mut egui::Ui, text: impl Shown) {
 }
 
 /// The card's message while a view has nothing to show, with the button under it that makes it.
-pub(super) fn empty_with_action(ui: &mut egui::Ui, text: &str, button: impl FnOnce(&mut egui::Ui) -> egui::Response) {
+pub(super) fn empty_with_action(ui: &mut egui::Ui, text: crate::lang::Text, button: impl FnOnce(&mut egui::Ui) -> egui::Response) {
     ui.vertical_centered(|ui| {
         ui.add_space(40.0);
         ui.text(Style::HeadingDim, text);
@@ -371,10 +371,10 @@ pub(crate) fn stale_band(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions)
         ui.horizontal(|ui| {
             let (m, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
             crate::steps::stale_mark(ui.painter(), m.center());
-            ui.label(egui::RichText::new(tr("Out of date")).color(t.selected_ink)).hint("The model changed after this run.");
+            ui.label(egui::RichText::new(tr(t!("Out of date"))).color(t.selected_ink)).hint(t!("The model changed after this run."));
             let busy = app.busy();
-            let hint = if busy { "a job is running" } else { "Solve again (the Setup step's run)" };
-            ui.act(!busy, crate::ui_kit::styled("Re-run", true), Fixed::StaleRerun.into(), || Action::StartRun, out).hint(hint);
+            let hint = if busy { t!("a job is running") } else { t!("Solve again (the Setup step's run)") };
+            ui.act(!busy, crate::ui_kit::styled(t!("Re-run"), true), Fixed::StaleRerun.into(), || Action::StartRun, out).hint(hint);
         });
     });
     scenario::publish_rect(Fixed::Stale, r.response.rect);

@@ -21,6 +21,20 @@ use crate::{Action, Actions, EmcraftApp, UiError, UiExt, View, dialogs, scenario
 
 pub use emcraft_engine::workflow::{Check, Status, Step, StepState};
 
+/// A step's check as the window shows it: its template translated, its values filled in (the
+/// steps it names by their shown names); the English text when it has no template.
+pub fn check_text(c: &Check) -> String {
+    if c.template.is_empty() {
+        return crate::lang::lookup(&c.text).to_owned();
+    }
+    let steps = |ids: &str| {
+        ids.split(", ").map(|id| Step::ALL.iter().find(|s| s.id() == id).map_or(id, |s| crate::lang::shown(*s))).collect::<Vec<_>>().join("、")
+    };
+    let values: Vec<String> = c.args.iter().map(|(k, v)| if k == "steps" { steps(v) } else { v.clone() }).collect();
+    let args: Vec<(&str, &dyn std::fmt::Display)> = c.args.iter().zip(&values).map(|((k, _), v)| (k.as_str(), v as &dyn std::fmt::Display)).collect();
+    crate::lang::fill(crate::lang::lookup(&c.template), &args)
+}
+
 mod bar;
 mod panel;
 mod run;
@@ -353,16 +367,16 @@ pub fn estimate_line(ui: &mut egui::Ui, e: &Result<Value, String>, handle: crate
             let n = |k: &str| e.get(k).and_then(Value::as_f64);
             let measured = e.get("basis").and_then(Value::as_str) == Some("measured");
             let time = duration(n("seconds").unwrap_or(f64::NAN));
-            let text = if measured { format!("⏱ ≈ {time}") } else { format!("⏱ ≈ {time} ({})", crate::lang::tr("ref.")) };
+            let text = if measured { format!("⏱ ≈ {time}") } else { format!("⏱ ≈ {time} ({})", crate::lang::tr(t!("ref."))) };
             let mut detail = vec![e.get("what").and_then(Value::as_str).unwrap_or("").to_owned()];
             if let (Some(u), Some(mb)) = (n("unknowns"), n("memory_mb")) {
-                detail.push(crate::lang::trf("{n} unknowns, {mb} MB", crate::lang::args!(n = format!("{u:.0}"), mb = format!("{mb:.0}"))));
+                detail.push(crate::lang::trf(t!("{n} unknowns, {mb} MB"), crate::lang::args!(n = format!("{u:.0}"), mb = format!("{mb:.0}"))));
             }
             detail.push(
                 crate::lang::tr(if measured {
-                    "scaled from this machine's last sweep"
+                    t!("scaled from this machine's last sweep")
                 } else {
-                    "from a reference machine; a sweep here measures this one"
+                    t!("from a reference machine; a sweep here measures this one")
                 })
                 .to_owned(),
             );
@@ -395,14 +409,14 @@ pub fn statuses_now(app: &EmcraftApp) -> std::borrow::Cow<'_, [StepState; 9]> {
     };
     // Settings changed in the form but not confirmed: Setup is to do again, and Run waits.
     if app.session.model().job.setup().is_some() && unconfirmed(app) {
-        let text = "the settings changed: confirm them again".to_owned();
+        let text = t!("the settings changed: confirm them again").en();
         if let Some(setup) = states.get_mut(Step::Setup.index()) {
             setup.status = setup.status.min(Status::Todo);
-            setup.messages.push(Check { text, command: Some("project.setup".into()) });
+            setup.messages.push(Check::new(text, &[], Some("project.setup")));
         }
         if let Some(run) = states.get_mut(Step::Run.index()).filter(|r| r.status > Status::Waiting) {
             run.status = Status::Waiting;
-            run.messages = vec![Check { text: format!("waits for {}", Step::Setup.id()), command: None }];
+            run.messages = vec![Check::new(t!("waits for {steps}").en(), &[("steps", Step::Setup.id().to_owned())], None)];
         }
     }
     if app.workflow.refusal.is_some() {
@@ -566,7 +580,7 @@ pub fn fix(app: &mut EmcraftApp, command: &str) -> Result<(), UiError> {
 fn positive(text: &str) -> Result<f64, String> {
     let v = dialogs::parse_number(text)?;
     if !(v > 0.0) {
-        return Err(crate::lang::tr("must be greater than 0").into());
+        return Err(crate::lang::tr(t!("must be greater than 0")).into());
     }
     Ok(v)
 }
@@ -575,9 +589,9 @@ fn positive(text: &str) -> Result<f64, String> {
 fn integer(text: &str, lo: u64, hi: u64) -> Result<u64, String> {
     let s = text.trim();
     let range = crate::lang::args!(lo = lo, hi = hi);
-    let v: u64 = s.parse().map_err(|_| crate::lang::trf("must be a whole number from {lo} to {hi}", range))?;
+    let v: u64 = s.parse().map_err(|_| crate::lang::trf(t!("must be a whole number from {lo} to {hi}"), range))?;
     if !(lo..=hi).contains(&v) {
-        return Err(crate::lang::trf("must be from {lo} to {hi}", range));
+        return Err(crate::lang::trf(t!("must be from {lo} to {hi}"), range));
     }
     Ok(v)
 }

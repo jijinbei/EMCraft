@@ -461,7 +461,7 @@ pub fn show(app: &EmcraftApp, st: &mut crate::viewport::Parts, ui: &mut egui::Ui
         ui.painter().text(
             rect.center(),
             Align2::CENTER_CENTER,
-            tr("No geometry yet: open a sample or start at step 1, Geometry."),
+            tr(t!("No geometry yet: open a sample or start at step 1, Geometry.")),
             FontId::proportional(t.font_heading),
             t.text_dim,
         );
@@ -533,7 +533,7 @@ pub fn show(app: &EmcraftApp, st: &mut crate::viewport::Parts, ui: &mut egui::Ui
         paint_box(&p, b);
     }
     if let Some((_, row)) = single {
-        let hint = if row.editable() && row.item.is_none() { tr("  ·  double-click to edit") } else { "" };
+        let hint = if row.editable() && row.item.is_none() { tr(t!("  ·  double-click to edit")) } else { "" };
         // Its symbols set as mathematics; a port with its role.
         let text = match &row.role {
             Some(role) => format!("{}  ·  {}{hint}", row.tex(), crate::math::texify(&role.tip())),
@@ -547,7 +547,7 @@ pub fn show(app: &EmcraftApp, st: &mut crate::viewport::Parts, ui: &mut egui::Ui
     } else if v.selected.len() > 1 {
         // Several parts: how many, and Delete for those that are items of the model.
         let items: Vec<crate::browser::Item> = picked.iter().filter_map(|(_, r)| r.item.clone()).collect();
-        let text = trf("{n} selected", args!(n = v.selected.len()));
+        let text = trf(t!("{n} selected"), args!(n = v.selected.len()));
         let card = Card { tex: text, edit: None, delete: (!items.is_empty()).then_some(Action::DeleteItems(items)), enabled: !app.busy() };
         card.show(ui, rect, out);
     }

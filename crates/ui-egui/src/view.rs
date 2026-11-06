@@ -96,16 +96,16 @@ impl View {
 
     /// What the card says while the view has nothing to show (`None` for the views that say it
     /// themselves, with a button that makes it).
-    fn empty(self) -> Option<&'static str> {
+    fn empty(self) -> Option<crate::lang::Text> {
         match self {
             View::Model | View::Pcb | View::PortModes | View::Compare => None,
-            View::SParameters => Some("No S-parameters yet: Run (step 7)."),
-            View::Tdr => Some("No sweep yet: Run (step 7) (a harmonic sweep, f = k Δf, for low pass)."),
-            View::Field => Some("No fields yet: solve a sweep, eigenmodes or an open problem first."),
-            View::FarField => Some("No far field yet: Run (step 7) on an open model with sources or lumped ports."),
-            View::Eigenmodes => Some("No eigenmodes yet: Run (step 7)."),
-            View::Study => Some("No study yet: define a variable, then Sweep or Optimize (step 5)."),
-            View::Dispersion => Some("No dispersion diagram yet: periodic boundaries (step 4), then Dispersion (step 5)."),
+            View::SParameters => Some(t!("No S-parameters yet: Run (step 7).")),
+            View::Tdr => Some(t!("No sweep yet: Run (step 7) (a harmonic sweep, f = k Δf, for low pass).")),
+            View::Field => Some(t!("No fields yet: solve a sweep, eigenmodes or an open problem first.")),
+            View::FarField => Some(t!("No far field yet: Run (step 7) on an open model with sources or lumped ports.")),
+            View::Eigenmodes => Some(t!("No eigenmodes yet: Run (step 7).")),
+            View::Study => Some(t!("No study yet: define a variable, then Sweep or Optimize (step 5).")),
+            View::Dispersion => Some(t!("No dispersion diagram yet: periodic boundaries (step 4), then Dispersion (step 5).")),
         }
     }
 
@@ -160,7 +160,7 @@ impl View {
 
     /// What the card says instead of the view while it has nothing to show, for the views that
     /// leave it to the card.
-    pub fn missing(self, app: &EmcraftApp) -> Option<&'static str> {
+    pub fn missing(self, app: &EmcraftApp) -> Option<crate::lang::Text> {
         if self.available(app) { None } else { self.empty() }
     }
 }

@@ -27,19 +27,19 @@ const ABOVE: &[&str] = &["path", "parameters"];
 /// A parameter's short label under Options.
 fn short(name: &'static str) -> &'static str {
     match name {
-        "path" => "File",
-        "unit" => "STL unit",
-        "angle" => "Edge angle",
-        "material" => "Filling",
-        "region" => "Region",
-        "keep" => "Keep",
-        "margin" => "Margin",
-        "materials" => "Materials",
-        "open" => "Open (PML)",
-        "thickness" => "PML thickness",
-        "fit_surfaces" => "Fit surfaces",
-        "parameters" => "Parameters",
-        "tolerance" => "Tolerance",
+        "path" => t!("File").en(),
+        "unit" => t!("STL unit").en(),
+        "angle" => t!("Edge angle").en(),
+        "material" => t!("Filling").en(),
+        "region" => t!("Region").en(),
+        "keep" => t!("Keep").en(),
+        "margin" => t!("Margin").en(),
+        "materials" => t!("Materials").en(),
+        "open" => t!("Open (PML)").en(),
+        "thickness" => t!("PML thickness").en(),
+        "fit_surfaces" => t!("Fit surfaces").en(),
+        "parameters" => t!("Parameters").en(),
+        "tolerance" => t!("Tolerance").en(),
         other => other,
     }
 }
@@ -90,11 +90,11 @@ pub(crate) fn body(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, asked: &
     chips(ui, format);
     ui.add_space(t.space_6);
     let empty = text(d, "path").is_empty();
-    let pick = ui.named_enabled(!app.busy(), ui_kit::glyph_button(Glyph::OpenFile, "Choose file…", empty), Fixed::DialogPick.into());
-    asked.ask(crate::dialog_ui::Asked::Pick, pick.hint("A SolidCraft design (.solidcraft), 3MF or STL").clicked());
-    ui.vertical_centered(|ui| ui_kit::small(ui, "or drop it on the window", t.text_dim));
+    let pick = ui.named_enabled(!app.busy(), ui_kit::glyph_button(Glyph::OpenFile, t!("Choose file…"), empty), Fixed::DialogPick.into());
+    asked.ask(crate::dialog_ui::Asked::Pick, pick.hint(t!("A SolidCraft design (.solidcraft), 3MF or STL")).clicked());
+    ui.vertical_centered(|ui| ui_kit::small(ui, t!("or drop it on the window"), t.text_dim));
     ui.add_space(t.space_4);
-    let mut drawn = crate::dialog_ui::fields(ui, d, session, &|n| n == "path", &short);
+    let mut drawn = crate::dialog_ui::fields(ui, d, session, &|n| n == "path", &|n| Raw(crate::lang::lookup(short(n))));
     match probe.map(|p| &p.reply) {
         Some(Ok(r)) => detected(ui, d, r, session, &mut drawn),
         Some(Err(e)) => {
@@ -120,15 +120,15 @@ pub(crate) fn body(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, asked: &
         vec![c + vec2(-2.5, -4.5), c + vec2(3.5, 0.0), c + vec2(-2.5, 4.5)]
     };
     p.add(egui::Shape::convex_polygon(tri, t.text, Stroke::NONE));
-    p.text(pos2(r.left() + 20.0, r.center().y), Align2::LEFT_CENTER, tr("Options"), FontId::proportional(t.font_label), t.text);
-    fold.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tr("Options")));
+    p.text(pos2(r.left() + 20.0, r.center().y), Align2::LEFT_CENTER, tr(t!("Options")), FontId::proportional(t.font_label), t.text);
+    fold.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tr(t!("Options"))));
     if fold.clicked() {
         d.options = !d.options;
     }
     let design = format == Some("solidcraft");
     if d.options {
         let shown = |n: &str| !ABOVE.contains(&n) || (n == "parameters" && !design);
-        drawn.extend(crate::dialog_ui::fields(ui, d, session, &shown, &short));
+        drawn.extend(crate::dialog_ui::fields(ui, d, session, &shown, &|n| Raw(crate::lang::lookup(short(n)))));
     }
     // The command's whole description, last.
     if d.help {
@@ -142,9 +142,9 @@ pub(crate) fn body(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, asked: &
 fn chips(ui: &mut egui::Ui, format: Option<&str>) {
     let t = &Tokens::get();
     let kinds = [
-        ("solidcraft", Glyph::Feature, "SolidCraft", "parametric"),
-        ("3mf", Glyph::Box, "3MF", "face tags kept"),
-        ("stl", Glyph::Mesh, "STL", "one body"),
+        ("solidcraft", Glyph::Feature, "SolidCraft", t!("parametric")),
+        ("3mf", Glyph::Box, "3MF", t!("face tags kept")),
+        ("stl", Glyph::Mesh, "STL", t!("one body")),
     ];
     let gap = 6.0;
     let w = ((ui.available_width() - 2.0 * gap) / 3.0).max(60.0);
@@ -188,20 +188,20 @@ fn detected(
         let bodies: Vec<&str> = r.bodies.iter().map(|b| b.name.as_str()).collect();
         let names = bodies.iter().take(6).copied().collect::<Vec<_>>().join(", ");
         let more = if bodies.len() > 6 { "…" } else { "" };
-        let count = if bodies.len() == 1 { tr("1 body").to_owned() } else { trf("{n} bodies", args!(n = bodies.len())) };
+        let count = if bodies.len() == 1 { tr(t!("1 body")).to_owned() } else { trf(t!("{n} bodies"), args!(n = bodies.len())) };
         ui.horizontal_wrapped(|ui| {
             ui.text(Style::Strong, count);
             ui.text(Style::Small, format!("{names}{more}"));
         });
         if let Some(size) = r.size {
             let v: Vec<String> = size.iter().map(|x| crate::dialogs::value_text(&json!((x * 1e6).round() / 1e6))).collect();
-            let units = if r.units == "display" { tr("in display units (STL has none)") } else { tr("units from the file") };
+            let units = if r.units == "display" { tr(t!("in display units (STL has none)")) } else { tr(t!("units from the file")) };
             ui_kit::small(ui, format!("{} {l} · {units}", v.join(" × ")), t.text_dim);
         }
         let params = &r.parameters;
         if !params.is_empty() {
             ui.add_space(t.space_4);
-            ui_kit::small(ui, "Parameters", t.text_dim);
+            ui_kit::small(ui, t!("Parameters"), t.text_dim);
             parameters(ui, d, params, drawn);
         }
     });
@@ -252,11 +252,11 @@ fn outcome(ui: &mut egui::Ui, d: &mut Dialog) {
     let region = text(d, "region");
     let open = d.fields.iter().any(|f| f.name == "open" && f.on);
     let (kind, line) = match region {
-        "cavity" => (Pictogram::Cavity, "Metal bodies become walls; the air they enclose is the region"),
-        "box" | "" if open => (Pictogram::Box, "Metal bodies in a box of air lined by a PML"),
-        "box" => (Pictogram::Box, "Metal bodies in a box of air: the air is the region"),
-        "" => (Pictogram::Cavity, "Bodies are metal: the air they enclose is the region, else a box of air round them"),
-        _ => (Pictogram::One, "The named body is the region; the others metal in it"),
+        "cavity" => (Pictogram::Cavity, t!("Metal bodies become walls; the air they enclose is the region")),
+        "box" | "" if open => (Pictogram::Box, t!("Metal bodies in a box of air lined by a PML")),
+        "box" => (Pictogram::Box, t!("Metal bodies in a box of air: the air is the region")),
+        "" => (Pictogram::Cavity, t!("Bodies are metal: the air they enclose is the region, else a box of air round them")),
+        _ => (Pictogram::One, t!("The named body is the region; the others metal in it")),
     };
     ui.horizontal(|ui| {
         let (r, _) = ui.allocate_exact_size(vec2(44.0, 30.0), Sense::hover());

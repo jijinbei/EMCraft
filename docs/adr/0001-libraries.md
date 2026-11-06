@@ -9,7 +9,7 @@ FieldCraft, so its behaviour is deterministic and fully verified.
 | Crate | Licence | Used for |
 |---|---|---|
 | `thiserror` | MIT OR Apache-2.0 | error types |
-| `serde`, `serde_json` | MIT OR Apache-2.0 | command parameters and replies, scripts, oracle files |
+| `serde`, `serde_json` | MIT OR Apache-2.0 | command parameters and replies, scripts, oracle files; `emcraft-i18n` reads the translations with it when a crate compiles |
 | `num-complex` | MIT OR Apache-2.0 | complex arithmetic of the frequency-domain solver |
 | `png` | MIT OR Apache-2.0 | PNG pictures |
 | `ab_glyph` (with `ab_glyph_rasterizer`, `owned_ttf_parser`) | Apache-2.0 (`owned_ttf_parser`, `ttf-parser` MIT OR Apache-2.0) | text in pictures (`emcraft-render::text`): reads the embedded DejaVu Sans and rasterises its outlines with exact-area anti-aliasing, deterministically |

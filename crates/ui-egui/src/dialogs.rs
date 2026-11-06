@@ -83,7 +83,7 @@ const VIAS: &[Column] = &[
     col("y1", Cell::Number, false),
 ];
 const XYZ: &[&str] = &["x", "y", "z"];
-const FACE: &[&str] = &["z", "x0", "y0", "a", "b"];
+const FACE: &[&str] = &[t!("Plane at").en(), t!("u from").en(), t!("v from").en(), t!("Width").en(), t!("Height").en()];
 
 fn strings(v: &[&str]) -> Vec<String> {
     v.iter().map(|s| (*s).to_owned()).collect()
@@ -343,7 +343,7 @@ impl Dialog {
                 Ok(Some(v)) => {
                     out.insert(f.name.to_owned(), v);
                 }
-                Ok(None) if f.required => f.error = Some(tr("required").into()),
+                Ok(None) if f.required => f.error = Some(tr(t!("required")).into()),
                 Ok(None) => {}
                 Err(e) => f.error = Some(e),
             }
@@ -364,7 +364,7 @@ pub fn numeric(text: &str) -> Result<Value, String> {
     let t = text.trim();
     if t.starts_with('=') {
         if t.len() > emcraft_engine::expr::MAX_LEN + 1 {
-            return Err(trf("an expression holds at most {n} characters", args!(n = emcraft_engine::expr::MAX_LEN)));
+            return Err(trf(t!("an expression holds at most {n} characters"), args!(n = emcraft_engine::expr::MAX_LEN)));
         }
         return Ok(json!(t));
     }
@@ -374,8 +374,8 @@ pub fn numeric(text: &str) -> Result<Value, String> {
 /// A finite number from a field's text.
 pub fn parse_number(text: &str) -> Result<f64, String> {
     let t = text.trim();
-    let v: f64 = t.parse().map_err(|_| trf("`{text}` is not a number", args!(text = clip(t, 40))))?;
-    if v.is_finite() { Ok(v) } else { Err(tr("must be a finite number").into()) }
+    let v: f64 = t.parse().map_err(|_| trf(t!("`{text}` is not a number"), args!(text = clip(t, 40))))?;
+    if v.is_finite() { Ok(v) } else { Err(tr(t!("must be a finite number")).into()) }
 }
 
 fn number_value(v: f64) -> Value {
@@ -400,7 +400,7 @@ fn field_value(f: &Field) -> Result<Option<Value>, String> {
             if t.starts_with('=') {
                 return numeric(t).map(Some);
             }
-            json!(t.parse::<i64>().map_err(|_| trf("`{text}` is not a whole number", args!(text = clip(t, 40))))?)
+            json!(t.parse::<i64>().map_err(|_| trf(t!("`{text}` is not a whole number"), args!(text = clip(t, 40))))?)
         }
         Kind::Text | Kind::Choice(_) => {
             if empty {
@@ -434,13 +434,13 @@ fn field_value(f: &Field) -> Result<Option<Value>, String> {
                     let cell = cell.trim();
                     if cell.is_empty() {
                         if c.required {
-                            return Err(trf("row {n}: `{column}` is required", args!(n = (i + 1), column = c.name)));
+                            return Err(trf(t!("row {n}: `{column}` is required"), args!(n = (i + 1), column = c.name)));
                         }
                         continue;
                     }
                     let v = match c.cell {
                         Cell::Number => {
-                            numeric(cell).map_err(|e| trf("row {n}, {column}: {error}", args!(n = (i + 1), column = c.name, error = e)))?
+                            numeric(cell).map_err(|e| trf(t!("row {n}, {column}: {error}"), args!(n = (i + 1), column = c.name, error = e)))?
                         }
                         Cell::Material => json!(cell),
                     };
@@ -454,7 +454,7 @@ fn field_value(f: &Field) -> Result<Option<Value>, String> {
             if empty {
                 return Ok(None);
             }
-            serde_json::from_str(f.text.trim()).map_err(|e| trf("not JSON: {error}", args!(error = e)))?
+            serde_json::from_str(f.text.trim()).map_err(|e| trf(t!("not JSON: {error}"), args!(error = e)))?
         }
     }))
 }

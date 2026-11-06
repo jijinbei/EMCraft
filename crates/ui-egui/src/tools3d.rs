@@ -54,11 +54,11 @@ impl Tool {
     }
 
     /// What it does, on hover.
-    pub fn hint(self) -> &'static str {
+    pub fn hint(self) -> crate::lang::Text {
         match self {
-            Tool::Port => "Click a flat face: a port there",
-            Tool::Lumped => "Click two points: a lumped port between them",
-            Tool::Measure => "Click two points, edges or faces: the distance (Esc clears)",
+            Tool::Port => t!("Click a flat face: a port there"),
+            Tool::Lumped => t!("Click two points: a lumped port between them"),
+            Tool::Measure => t!("Click two points, edges or faces: the distance (Esc clears)"),
         }
     }
 
@@ -111,7 +111,7 @@ pub enum PortTarget {
     /// An imported cavity's opening across x or y: a port there at once (m: `face`).
     Opening { axis: emcraft_model::Axis, face: [f64; 5], end: End },
     /// No port goes here: why.
-    No(&'static str),
+    No(crate::lang::Text),
 }
 
 impl PortTarget {
@@ -337,10 +337,10 @@ fn snap(face: &Face, hit: Option<[f64; 3]>, cam: &Camera, rect: Rect, at: Pos2) 
 }
 
 /// Why no port goes on a face that is not flat across an axis.
-const FLAT_ONLY: &str = "Ports lie on flat faces across x, y or z";
+const FLAT_ONLY: crate::lang::Text = t!("Ports lie on flat faces across x, y or z");
 
 /// Why no port goes on an imported cavity's wall.
-const OPENINGS_ONLY: &str = "Ports go on the channel's openings, not on its walls";
+const OPENINGS_ONLY: crate::lang::Text = t!("Ports go on the channel's openings, not on its walls");
 
 /// What a port goes on at `face`.
 fn port_target(m: &emcraft_model::Model, face: &Face) -> PortTarget {
@@ -384,7 +384,7 @@ fn port_target(m: &emcraft_model::Model, face: &Face) -> PortTarget {
         }
     }
     if m.solid.is_none() {
-        return PortTarget::No("A port inside the model needs a solid");
+        return PortTarget::No(t!("A port inside the model needs a solid"));
     }
     // A port's own face, where the body's face is found in front of the port's.
     let k = axis.index();
@@ -689,9 +689,9 @@ fn hovered(app: &EmcraftApp, v: &View3d, tool: Tool, h: &Hover, p: &egui::Painte
 fn port_text(app: &EmcraftApp, target: Option<PortTarget>) -> String {
     let m = app.session.model();
     match target {
-        Some(PortTarget::Existing(i)) => m.ports.get(i).map_or_else(String::new, |p| trf("Port {name}", args!(name = p.name))),
-        Some(PortTarget::End(_) | PortTarget::Opening { .. }) => format!("+ {}", trf("Port {name}", args!(name = next_name(m)))),
-        Some(PortTarget::Inside { .. }) => format!("+ {}…", trf("Port {name}", args!(name = next_name(m)))),
+        Some(PortTarget::Existing(i)) => m.ports.get(i).map_or_else(String::new, |p| trf(t!("Port {name}"), args!(name = p.name))),
+        Some(PortTarget::End(_) | PortTarget::Opening { .. }) => format!("+ {}", trf(t!("Port {name}"), args!(name = next_name(m)))),
+        Some(PortTarget::Inside { .. }) => format!("+ {}…", trf(t!("Port {name}"), args!(name = next_name(m)))),
         Some(PortTarget::No(why)) => tr(why).to_owned(),
         None => String::new(),
     }
@@ -782,7 +782,7 @@ fn dimension(p: &egui::Painter, cam: &Camera, rect: Rect, [a, b]: &[Snap; 2], re
     let mut lines =
         vec![(distance, t.text), (format!("Δx {}", comp(0)), t.axis_x), (format!("Δy {}", comp(1)), t.axis_y), (format!("Δz {}", comp(2)), t.axis_z)];
     if let Some(g) = num("gap") {
-        lines.push((trf("gap {gap} {unit}", args!(gap = trimmed(g, 4), unit = unit)), t.text));
+        lines.push((trf(t!("gap {gap} {unit}"), args!(gap = trimmed(g, 4), unit = unit)), t.text));
     }
     if let Some(angle) = num("angle") {
         lines.push((format!("∠ {}°", trimmed(angle, 2)), t.text));
@@ -849,7 +849,7 @@ pub fn ref_field(app: &EmcraftApp, v: &mut View3d, ui: &mut egui::Ui, at: Pos2, 
     ui.painter().rect_filled(area, 6.0, t.panel.gamma_multiply(0.92));
     let mut child =
         ui.new_child(egui::UiBuilder::new().max_rect(area.shrink2(vec2(8.0, 2.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
-    crate::ui_kit::small(&mut child, "Ref. plane", t.text_dim);
+    crate::ui_kit::small(&mut child, t!("Ref. plane"), t.text_dim);
     let edit = egui::TextEdit::singleline(text).desired_width(64.0).char_limit(24);
     let resp = child.add_enabled_ui(!busy, |ui| ui.named(edit, Fixed::View3dRefField.into())).inner;
     crate::ui_kit::small(&mut child, Raw(l.symbol()), t.text_dim);
@@ -862,7 +862,7 @@ pub fn ref_field(app: &EmcraftApp, v: &mut View3d, ui: &mut egui::Ui, at: Pos2, 
         }
     }
     let zero = child.add_enabled_ui(!busy && now != 0.0, |ui| ui.named(egui::Button::new("0").small(), Fixed::View3dRefZero.into())).inner;
-    if zero.hint("Back to the port's face").clicked() {
+    if zero.hint(t!("Back to the port's face")).clicked() {
         set(0.0, out);
     }
 }

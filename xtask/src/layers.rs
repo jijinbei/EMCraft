@@ -43,6 +43,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("tetmesh", Class::Standalone),
     // L0, no workspace dependencies: declarative macros every crate may use.
     ("macros", Class::Standalone),
+    // L0, no workspace dependencies: the translations checked at compile time.
+    ("i18n", Class::Standalone),
     ("fem", Class::Layer(1)),
     ("theory", Class::Layer(1)),
     ("render", Class::Layer(1)),

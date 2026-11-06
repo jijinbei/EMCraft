@@ -92,7 +92,7 @@ pub enum Mark {
 }
 
 /// A button of the section bar in `r`, lit when `on`, `tip` on hover; whether it was clicked.
-pub fn button(ui: &mut egui::Ui, r: Rect, handle: crate::handle::Fixed, mark: Mark, tip: &str, on: bool) -> bool {
+pub fn button(ui: &mut egui::Ui, r: Rect, handle: crate::handle::Fixed, mark: Mark, tip: crate::lang::Text, on: bool) -> bool {
     use crate::UiExt;
     let t = &Tokens::get();
     let p = &ui.painter_at(r);
@@ -258,9 +258,9 @@ fn port_marks(
         let input = driven == Some(j);
         let size = len(fhi[other] - flo[other]);
         let text = if input {
-            crate::lang::trf("{name} · in · {size}", crate::lang::args!(name = port.name, size = size))
+            crate::lang::trf(t!("{name} · in · {size}"), crate::lang::args!(name = port.name, size = size))
         } else {
-            crate::lang::trf("{name} · out · {size}", crate::lang::args!(name = port.name, size = size))
+            crate::lang::trf(t!("{name} · out · {size}"), crate::lang::args!(name = port.name, size = size))
         };
         out.push(PortMark { a, b: e, text, input });
     }

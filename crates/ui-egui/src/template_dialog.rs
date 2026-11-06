@@ -117,7 +117,7 @@ pub fn show(app: &EmcraftApp, dlg: &mut TemplateDialog, ctx: &egui::Context, out
         ui.horizontal(|ui| {
             ui.text(Style::Heading, Raw(&dlg.name));
             ui.add_space(8.0);
-            ui_kit::small(ui, sample_label(&dlg.name), t.text_dim);
+            ui_kit::small(ui, Raw(sample_label(&dlg.name)), t.text_dim);
         });
         ui.add_space(8.0);
         ui.horizontal_top(|ui| {
@@ -132,9 +132,9 @@ pub fn show(app: &EmcraftApp, dlg: &mut TemplateDialog, ctx: &egui::Context, out
             let ready = dlg.error.is_none() && !busy;
             let values = dlg.values().unwrap_or(Value::Null);
             let name = dlg.name.clone();
-            ui.act(ready, ui_kit::styled("Open", true), Fixed::TemplateOpen.into(), || Action::OpenTemplate(name, values), out);
-            ui.act(true, ui_kit::styled("Cancel", false), Fixed::TemplateCancel.into(), || Action::Template(None), out);
-            if ui.named(egui::Button::new(crate::lang::tr("Reset")).frame(false), Fixed::TemplateReset.into()).clicked() {
+            ui.act(ready, ui_kit::styled(t!("Open"), true), Fixed::TemplateOpen.into(), || Action::OpenTemplate(name, values), out);
+            ui.act(true, ui_kit::styled(t!("Cancel"), false), Fixed::TemplateCancel.into(), || Action::Template(None), out);
+            if ui.named(egui::Button::new(crate::lang::tr(t!("Reset"))).frame(false), Fixed::TemplateReset.into()).clicked() {
                 for f in &mut dlg.fields {
                     f.text = crate::steps::fmt(f.default);
                 }
@@ -152,10 +152,10 @@ fn fields(ui: &mut egui::Ui, dlg: &mut TemplateDialog) {
     let t = &Tokens::get();
     ui.vertical(|ui| {
         ui.set_width(250.0);
-        ui_kit::section(ui, "Parameters");
+        ui_kit::section(ui, t!("Parameters"));
         egui::ScrollArea::vertical().id_salt("template_fields").max_height(PREVIEW[1]).show(ui, |ui| {
             if dlg.fields.is_empty() {
-                ui_kit::caption(ui, "none");
+                ui_kit::caption(ui, t!("none"));
             }
             let (mut hovered, mut focused) = (None, None);
             for f in &mut dlg.fields {

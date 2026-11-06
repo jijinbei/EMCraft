@@ -144,12 +144,12 @@ pub fn scan(dir: &Path) -> Vec<Found> {
 /// `2 d ago`.
 pub fn ago(when: Option<SystemTime>) -> String {
     use crate::lang::{args, tr, trf};
-    let Some(secs) = when.and_then(|w| SystemTime::now().duration_since(w).ok()).map(|d| d.as_secs()) else { return tr("just now").to_owned() };
+    let Some(secs) = when.and_then(|w| SystemTime::now().duration_since(w).ok()).map(|d| d.as_secs()) else { return tr(t!("just now")).to_owned() };
     match secs {
-        0..60 => tr("just now").to_owned(),
-        60..3600 => trf("{n} min ago", args!(n = secs / 60)),
-        3600..86_400 => trf("{n} h ago", args!(n = secs / 3600)),
-        _ => trf("{n} d ago", args!(n = secs / 86_400)),
+        0..60 => tr(t!("just now")).to_owned(),
+        60..3600 => trf(t!("{n} min ago"), args!(n = secs / 60)),
+        3600..86_400 => trf(t!("{n} h ago"), args!(n = secs / 3600)),
+        _ => trf(t!("{n} d ago"), args!(n = secs / 86_400)),
     }
 }
 
@@ -196,7 +196,7 @@ impl EmcraftApp {
             }
             Err(e) if self.autosave.failed.as_ref() != Some(e) => {
                 self.autosave.failed = Some(e.clone());
-                self.error_with("Autosave failed: {error}", crate::lang::args!(error = e));
+                self.error_with(t!("Autosave failed: {error}"), crate::lang::args!(error = e));
             }
             Err(_) => {}
         }

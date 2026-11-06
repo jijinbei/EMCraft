@@ -2184,6 +2184,7 @@ dependencies = [
  "emcraft-fdtd",
  "emcraft-fem",
  "emcraft-gpu",
+ "emcraft-i18n",
  "emcraft-io",
  "emcraft-macros",
  "emcraft-mesh",
@@ -2233,6 +2234,13 @@ dependencies = [
  "emcraft-solver",
  "num-complex",
  "serde",
+]
+
+[[package]]
+name = "emcraft-i18n"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
@@ -2360,6 +2368,7 @@ dependencies = [
  "egui",
  "emcraft-engine",
  "emcraft-gpu",
+ "emcraft-i18n",
  "emcraft-macros",
  "emcraft-mesh",
  "emcraft-model",

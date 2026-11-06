@@ -107,8 +107,8 @@ fn placeholders_are_filled_once_and_braces_kept() {
 #[test]
 fn the_language_is_the_threads_own() {
     assert!(set("ja"));
-    assert_eq!((current(), tr("Settings")), ("ja", "設定"));
-    std::thread::spawn(|| assert_eq!((current(), tr("Settings")), ("en", "Settings"))).join().unwrap();
+    assert_eq!((current(), tr(t!("Settings"))), ("ja", "設定"));
+    std::thread::spawn(|| assert_eq!((current(), tr(t!("Settings"))), ("en", "Settings"))).join().unwrap();
     assert_eq!(command_label("mesh.generate"), japanese().commands["mesh.generate"].label);
     assert!(!set("klingon"));
     assert_eq!(Some(command_label("mesh.generate")), emcraft_engine::find_command("mesh.generate").map(|c| c.label));
@@ -280,7 +280,7 @@ fn tour() -> Record {
     // Keep this language coverage tour independent of the machine's preferred accelerator.
     call(&mut h, "engine.execute", json!({"command":"solve.device","params":{"device":"cpu","precision":"double"}}));
     record(true);
-    h.app.info_with("Open a sample or a project (File) or build a model from the ribbon.", &[]);
+    h.app.info_with(t!("Open a sample or a project (File) or build a model from the ribbon."), &[]);
     // The start page, empty and with a project missing from the recent list, the settings
     // (Files with no recent project too), the prompts.
     h.app.page = crate::home::Page::Home;
@@ -676,76 +676,17 @@ fn tour() -> Record {
 
 /// Texts a tour of the window cannot reach, with why.
 const UNREACHED: &[(&str, &str)] = &[
-    ("Click to add segments; right click or Esc ends.", "step 1 while drawing (scenario pcb_edit)"),
-    ("Route segments", "step 1 while drawing (scenario pcb_edit)"),
-    ("The route needs exactly two free ends for its ports.", "step 4 for a branching route; the samples' routes run end to end"),
-    ("Show object", "tooltip on the eye of a hidden material (scenario material_visibility)"),
-    ("Drop to import", "shown while a file is dragged over the window, which the headless harness does not do"),
-    ("Drop to open", "shown while a file is dragged over the window, which the headless harness does not do"),
     (
         "No GPU: the 3D view needs a graphics adapter (or a software one, such as Mesa's llvmpipe).",
         "shown only on a machine without any wgpu adapter",
     ),
-    ("Time-domain radiation", "a time-domain solve with sources takes too long for the gate"),
-    ("Time domain: {n} frequencies", "a time-domain solve takes too long for the gate"),
-    ("modes ({unit})", "a study of eigenmodes takes too long for the gate"),
-    ("predicted", "a surrogate sweep of eigenmodes takes too long for the gate"),
-    (" · Bayesian", "a Bayesian optimization with fewer than two points solved (unit tests of study::bayes)"),
-    ("Entries of S: {entries}", "needs a terminal port (scenario terminal_ports)"),
-    ("Port {name} (on a face)", "needs a port on an imported face (scenario import_cavity)"),
-    ("Port {name} (on a face): {n} mode{impedance}", "needs a port on an imported face (scenario import_cavity)"),
-    ("Port {name} (on a face): {n} modes{impedance}", "needs a port on an imported face (scenario import_cavity)"),
-    ("Region: {name} (imported), {material}", "needs an imported file (scenario import_bodies)"),
-    ("{name}: metal walls (imported)", "needs an imported file (scenario import_cavity)"),
-    ("{name}: the region (imported)", "needs an imported file (scenario import_cavity)"),
-    ("Ports go on the channel's openings, not on its walls", "a port-tool click on an imported cavity's wall (unit test tools3d::tests)"),
-    ("NOT passive", "needs a sweep that is not passive"),
-    ("Back to the port's face", "a hint on the selected port's reference plane (scenario view3d_port_tool)"),
-    ("GPU {device}: {n} fronts", "needs a GPU device (the CUDA runtime and an NVIDIA GPU)"),
-    ("GPU {device}", "needs a GPU device"),
-    ("CPU kernels ({device})", "needs the cubecl-cpu device (scenario time_domain_device)"),
-    ("The time domain's steps on the GPU", "needs a GPU device"),
-    ("CPU (no front large enough for {device})", "needs a GPU device"),
-    ("The factorization on the CPU, its large fronts on the GPU", "needs a GPU device"),
-    ("Blank", "needs a purpose chosen on the start page (scenario purpose_first)"),
-    ("An empty project for this analysis", "needs an analysis chosen on the start page (scenario purpose_first)"),
-    ("as it was", "needs two solves kept (scenario run_history)"),
-    ("Click: draw it over the chart · right-click: restore, pin, delete", "needs two solves kept (scenario run_history)"),
     ("|S| (linear)", "in the S-parameter display menu, open (scenario sparameter_display)"),
     ("phase (°)", "in the S-parameter display menu, open (scenario sparameter_display)"),
-    ("History", "needs two solves kept (scenario run_history)"),
-    ("Pin", "needs two solves kept (scenario run_history)"),
-    ("Unpin", "needs two solves kept (scenario run_history)"),
-    ("Restore", "needs two solves kept (scenario run_history)"),
-    ("{n} frequencies", "needs two solves kept (scenario run_history)"),
-    ("deepest |S11| {db} dB at {f} {unit}", "needs two solves kept (scenario run_history)"),
-    ("solved in {seconds} s on {device}", "needs two solves kept (scenario run_history)"),
-    ("{unknowns} unknowns, {tets} tetrahedra", "needs two solves kept (scenario run_history)"),
-    ("Saved: restore solves it again", "a tip of a solve read back from a project file (scenario saved_history)"),
     (
         "Not read back (solve again): {what}",
         "a project file whose results no longer fit its model (engine test results_that_do_not_fit_are_left_out_with_why)",
     ),
-    ("Parameters", "needs a template's card (scenario template_dialog)"),
-    ("More commands", "needs a window too narrow for the ribbon's buttons (scenario small_window)"),
     ("More tabs", "needs a window too narrow for the ribbon's tabs (scenario small_window)"),
-    ("Switching the device…", "shown while `solve.device` runs, a moment"),
-    ("The next solve runs on {device} in {precision} precision.", "needs a device other than the CPU"),
-    ("The next solve runs on the CPU, its factorization's large fronts on {device} (complex double).", "needs a device other than the CPU"),
-    ("{name} cannot run here", "depends on the machine's devices"),
-    ("{name} cannot run here: {problem}", "depends on the machine's devices"),
-    ("an NVIDIA GPU", "depends on the machine's devices"),
-    ("this device does not run it", "needs a device other than the CPU"),
-    ("Running with {n} accepted warning.", "starts a full solve"),
-    ("Running with {n} accepted warnings.", "starts a full solve"),
-    ("starting", "only until a job says how much work it has: a moment, timing-dependent"),
-    ("Script", "a script's progress: it ends before a frame shows it"),
-    ("fast: {n} in full, residual {r}", "a fast sweep after its first pass in the basis, timing-dependent (scenario time_left)"),
-    ("goal", "an optimization of a number the solve gives (maximize, minimize): the tour's goal is in dB"),
-    ("{command} · {what} · {secs} s", "a job whose run cannot be estimated (opening a file): it ends before a frame shows it"),
-    ("terminal ports: solved again", "needs a sweep with terminal ports (scenario terminal_ports)"),
-    ("{view} — drag to orbit, Shift snaps", "the view cube's tip, shown while the pointer rests on a face"),
-    ("View from {side} ({view})", "the axes navigator's tip (Settings ▸ 3D view ▸ Navigator: Axes; scenario navigation)"),
 ];
 
 /// The texts that are looked up by name rather than written where they are shown: the views',
@@ -766,7 +707,7 @@ fn named() -> BTreeSet<String> {
     // The mouse mappings' help (shown for the chosen one), the orbit centres, the navigators and
     // the view cube's faces (those turned away are not drawn).
     for p in crate::navigation::NAV_PRESETS {
-        add(p.help);
+        add(p.help.en());
     }
     add("Touchpad");
     crate::navigation::OrbitAround::ALL.iter().for_each(|v| add(v.label()));
@@ -776,6 +717,7 @@ fn named() -> BTreeSet<String> {
         panels.iter().for_each(|(p, _)| add(p));
     }
     crate::commands::UI_COMMANDS.iter().filter_map(|c| c.label).for_each(&mut add);
+    crate::param_labels::VALUE_LABELS.iter().for_each(|(_, l)| add(l));
     for b in emcraft_engine::theme::Base::ALL {
         let mut name = b.id().to_owned();
         if let Some(first) = name.get_mut(0..1) {
@@ -801,12 +743,64 @@ fn a_tour_of_the_window_in_japanese_finds_every_text_translated_and_none_unused(
     for n in &named {
         assert!(japanese().strings.contains_key(n), "no Japanese for the label `{n}`");
     }
-    let unused: Vec<&String> =
-        japanese().strings.keys().filter(|k| !r.asked.contains(*k) && !named.contains(*k) && !UNREACHED.iter().any(|(u, _)| u == k)).collect();
+    let source = in_source();
+    let unused: Vec<&String> = japanese()
+        .strings
+        .keys()
+        .filter(|k| !r.asked.contains(*k) && !named.contains(*k) && !source.contains(*k) && !UNREACHED.iter().any(|(u, _)| u == k))
+        .collect();
     assert!(
         unused.is_empty(),
         "{} translations are never asked for (stale, or add them to UNREACHED with why):\n{}",
         unused.len(),
         unused.iter().map(|m| format!("{m:?}")).collect::<Vec<_>>().join("\n")
     );
+}
+
+/// Every text the window's code writes as `t!("…")` and the engine's as `text!("…")` (its
+/// steps' checks): what the compiler checked is translated, so a translation none of them (nor
+/// the tour, nor a label) asks for is stale.
+fn in_source() -> BTreeSet<String> {
+    fn walk(dir: &std::path::Path, out: &mut BTreeSet<String>) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p, out);
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                let text = std::fs::read_to_string(&p).unwrap_or_default();
+                let mut rest = text.as_str();
+                while let Some(i) = rest.find("t!(\"").or_else(|| rest.find("text!(\"").map(|i| i + 3)) {
+                    rest = &rest[i + 4..];
+                    let mut lit = String::new();
+                    let mut chars = rest.char_indices();
+                    let mut end = rest.len();
+                    while let Some((k, c)) = chars.next() {
+                        match c {
+                            '\\' => {
+                                if let Some((_, n)) = chars.next() {
+                                    lit.push(match n {
+                                        'n' => '\n',
+                                        other => other,
+                                    });
+                                }
+                            }
+                            '"' => {
+                                end = k;
+                                break;
+                            }
+                            c => lit.push(c),
+                        }
+                    }
+                    rest = &rest[end..];
+                    out.insert(lit);
+                }
+            }
+        }
+    }
+    let mut out = BTreeSet::new();
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    walk(&crates.join("ui-egui/src"), &mut out);
+    walk(&crates.join("engine/src"), &mut out);
+    out
 }

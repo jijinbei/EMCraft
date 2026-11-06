@@ -64,7 +64,7 @@ pub struct NavPreset {
     pub id: &'static str,
     pub label: &'static str,
     /// What the mouse does, for the settings page.
-    pub help: &'static str,
+    pub help: crate::lang::Text,
     /// The wheel zooms the other way.
     pub reverse_zoom: bool,
     /// A middle double-click fits (else it goes home).
@@ -84,7 +84,7 @@ pub const NAV_PRESETS: &[NavPreset] = &[
     NavPreset {
         id: FUSION,
         label: "Fusion",
-        help: "Middle drag pans, Shift+middle orbits, right drag orbits",
+        help: t!("Middle drag pans, Shift+middle orbits, right drag orbits"),
         reverse_zoom: false,
         middle_double_fits: false,
         bindings: &[bind(Middle, NavKeys::SHIFT, Orbit), bind(Middle, NavKeys::NONE, Pan), bind(Right, NavKeys::NONE, Orbit)],
@@ -92,7 +92,7 @@ pub const NAV_PRESETS: &[NavPreset] = &[
     NavPreset {
         id: "solidworks",
         label: "SolidWorks",
-        help: "Middle drag orbits, Ctrl+middle pans, Shift+middle zooms",
+        help: t!("Middle drag orbits, Ctrl+middle pans, Shift+middle zooms"),
         reverse_zoom: true,
         middle_double_fits: true,
         bindings: &[bind(Middle, NavKeys::CTRL, Pan), bind(Middle, NavKeys::SHIFT, Zoom), bind(Middle, NavKeys::NONE, Orbit)],
@@ -100,7 +100,7 @@ pub const NAV_PRESETS: &[NavPreset] = &[
     NavPreset {
         id: "inventor",
         label: "Inventor",
-        help: "Middle drag pans, Shift+middle orbits, Ctrl+middle zooms, right drag orbits",
+        help: t!("Middle drag pans, Shift+middle orbits, Ctrl+middle zooms, right drag orbits"),
         reverse_zoom: false,
         middle_double_fits: false,
         bindings: &[
@@ -113,7 +113,7 @@ pub const NAV_PRESETS: &[NavPreset] = &[
     NavPreset {
         id: "alias",
         label: "Alias",
-        help: "Shift+Alt+left drag orbits, Shift+Alt+middle pans, Shift+Alt+right zooms; middle drag also pans and right drag orbits",
+        help: t!("Shift+Alt+left drag orbits, Shift+Alt+middle pans, Shift+Alt+right zooms; middle drag also pans and right drag orbits"),
         reverse_zoom: false,
         middle_double_fits: false,
         bindings: &[
@@ -128,7 +128,7 @@ pub const NAV_PRESETS: &[NavPreset] = &[
     NavPreset {
         id: "maya",
         label: "Maya",
-        help: "Alt+left drag orbits, Alt+middle pans, Alt+right zooms; middle drag also pans",
+        help: t!("Alt+left drag orbits, Alt+middle pans, Alt+right zooms; middle drag also pans"),
         reverse_zoom: false,
         middle_double_fits: false,
         bindings: &[
@@ -141,7 +141,7 @@ pub const NAV_PRESETS: &[NavPreset] = &[
     NavPreset {
         id: "blender",
         label: "Blender",
-        help: "Middle drag orbits, Shift+middle pans, Ctrl+middle zooms; right drag leaves the camera alone",
+        help: t!("Middle drag orbits, Shift+middle pans, Ctrl+middle zooms; right drag leaves the camera alone"),
         reverse_zoom: false,
         middle_double_fits: false,
         bindings: &[bind(Middle, NavKeys::SHIFT, Pan), bind(Middle, NavKeys::CTRL, Zoom), bind(Middle, NavKeys::NONE, Orbit)],
@@ -149,7 +149,7 @@ pub const NAV_PRESETS: &[NavPreset] = &[
     NavPreset {
         id: "tinkercad",
         label: "Tinkercad",
-        help: "Right drag orbits, middle or Shift+right drag pans",
+        help: t!("Right drag orbits, middle or Shift+right drag pans"),
         reverse_zoom: false,
         middle_double_fits: false,
         bindings: &[bind(Right, NavKeys::SHIFT, Pan), bind(Right, NavKeys::NONE, Orbit), bind(Middle, NavKeys::NONE, Pan)],
@@ -157,7 +157,7 @@ pub const NAV_PRESETS: &[NavPreset] = &[
     NavPreset {
         id: OPENSCAD,
         label: "OpenSCAD",
-        help: "Left drag orbits; right or middle drag pans, Shift+right or Shift+middle drag zooms",
+        help: t!("Left drag orbits; right or middle drag pans, Shift+right or Shift+middle drag zooms"),
         reverse_zoom: false,
         middle_double_fits: false,
         bindings: &[
@@ -171,7 +171,7 @@ pub const NAV_PRESETS: &[NavPreset] = &[
     NavPreset {
         id: "hfss",
         label: "HFSS",
-        help: "Alt+left drag pans, Shift+Alt+left zooms, Ctrl+left drag orbits",
+        help: t!("Alt+left drag pans, Shift+Alt+left zooms, Ctrl+left drag orbits"),
         reverse_zoom: false,
         middle_double_fits: false,
         // Ctrl+left orbit is the drag every mapping has.
@@ -180,7 +180,7 @@ pub const NAV_PRESETS: &[NavPreset] = &[
     NavPreset {
         id: TOUCHPAD,
         label: "Touchpad",
-        help: "Hold Shift and move the pointer to pan; hold Alt and move it to orbit. No button is needed. Scrolling zooms.",
+        help: t!("Hold Shift and move the pointer to pan; hold Alt and move it to orbit. No button is needed. Scrolling zooms."),
         reverse_zoom: false,
         middle_double_fits: false,
         bindings: &[bind(Middle, NavKeys::NONE, Pan), bind(Right, NavKeys::NONE, Orbit)],

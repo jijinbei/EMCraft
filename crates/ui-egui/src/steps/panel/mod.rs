@@ -90,7 +90,7 @@ pub fn not_needed(app: &EmcraftApp, step: Step) -> Option<String> {
     let chosen = app.session.model().job.chosen()?;
     emcraft_engine::workflow::not_needed(Some(chosen))
         .contains(&step)
-        .then(|| trf("Not needed for {kind}", args!(kind = tr(crate::kinds::kind_card(chosen).name))))
+        .then(|| trf(t!("Not needed for {kind}"), args!(kind = tr(crate::kinds::kind_card(chosen).name))))
 }
 
 fn header(app: &EmcraftApp, ui: &mut egui::Ui, s: &StepState) {
@@ -103,9 +103,9 @@ fn header(app: &EmcraftApp, ui: &mut egui::Ui, s: &StepState) {
         } else {
             mark(ui.painter(), r.center(), s.status);
         }
-        ui.text(Style::Heading, trf("Step {n} · {step}", args!(n = s.step.index(), step = shown(s.step))));
+        ui.text(Style::Heading, trf(t!("Step {n} · {step}"), args!(n = s.step.index(), step = shown(s.step))));
         if run_going {
-            ui_kit::small(ui, "running", t.accent);
+            ui_kit::small(ui, t!("running"), t.accent);
         } else {
             ui_kit::small(ui, Raw(shown(s.status)), status_color(s.status));
         }
@@ -118,14 +118,14 @@ fn checks(ui: &mut egui::Ui, s: &StepState, out: &mut Actions) {
     let t = &Tokens::get();
     if s.messages.is_empty() {
         if s.status == Status::Done {
-            ui_kit::small(ui, "Nothing to fix here.", t.success);
+            ui_kit::small(ui, t!("Nothing to fix here."), t.success);
             ui.add_space(6.0);
         }
         return;
     }
     for (i, m) in s.messages.iter().enumerate() {
         ui.horizontal_wrapped(|ui| {
-            ui.label(egui::RichText::new(&m.text).size(t.font_small).color(if s.status == Status::Done {
+            ui.label(egui::RichText::new(crate::steps::check_text(m)).size(t.font_small).color(if s.status == Status::Done {
                 t.text_dim
             } else {
                 status_color(s.status)
@@ -143,14 +143,14 @@ fn checks(ui: &mut egui::Ui, s: &StepState, out: &mut Actions) {
 
 fn fix_label(command: &str) -> String {
     match Step::of_command(command) {
-        Some(step) if is_solve(command) => trf("Go to {step}", args!(step = shown(step))),
-        Some(Step::Intent) if command == "project.analysis" => tr("Choose the analysis").to_owned(),
-        _ => trf("Fix: {command}", args!(command = crate::commands::button_label(command))),
+        Some(step) if is_solve(command) => trf(t!("Go to {step}"), args!(step = shown(step))),
+        Some(Step::Intent) if command == "project.analysis" => tr(t!("Choose the analysis")).to_owned(),
+        _ => trf(t!("Fix: {command}"), args!(command = crate::commands::button_label(command))),
     }
 }
 
 /// A one-line text field with its error under it; `true` when Enter was pressed in it.
-pub(crate) fn field(ui: &mut egui::Ui, label: &str, text: &mut String, unit: &str, error: Option<&str>, handle: Fixed) -> bool {
+pub(crate) fn field(ui: &mut egui::Ui, label: crate::lang::Text, text: &mut String, unit: &str, error: Option<&str>, handle: Fixed) -> bool {
     let t = &Tokens::get();
     let mut enter = false;
     ui_kit::row(ui, label, false, |ui| {
@@ -173,7 +173,7 @@ pub(crate) fn field(ui: &mut egui::Ui, label: &str, text: &mut String, unit: &st
     enter
 }
 
-pub(super) fn kv(ui: &mut egui::Ui, k: &str, v: String) {
+pub(super) fn kv(ui: &mut egui::Ui, k: crate::lang::Text, v: String) {
     let t = &Tokens::get();
     ui.horizontal(|ui| {
         ui.add_sized(vec2(t.form_label_width, 16.0), egui::Label::new(Style::SmallDim.rich(tr(k))));

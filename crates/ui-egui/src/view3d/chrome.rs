@@ -76,7 +76,7 @@ pub(super) fn draw(v: &mut View3d, ui: &egui::Ui, rect: Rect, moving: bool, look
         }
         _ => {
             v.picture = None;
-            v.gpu_error = Some(tr("No GPU: the 3D view needs a graphics adapter (or a software one, such as Mesa's llvmpipe).").to_owned());
+            v.gpu_error = Some(tr(t!("No GPU: the 3D view needs a graphics adapter (or a software one, such as Mesa's llvmpipe).")).to_owned());
         }
     }
     v.last_ms = began.elapsed().as_secs_f64() * 1e3;
@@ -245,9 +245,9 @@ impl Card {
         let p = &ui.painter().with_clip_rect(rect);
         let g = p.layout_job(crate::math::job(&tex, t.font_small, t.text));
         let (size, pitch) = (20.0, 24.0);
-        let actions: Vec<(Glyph, Fixed, &str, Action)> = [
-            edit.map(|a| (Glyph::Edit, Fixed::View3dSelectedEdit, "Edit", a)),
-            delete.map(|a| (Glyph::Delete, Fixed::View3dSelectedDelete, "Delete", a)),
+        let actions: Vec<(Glyph, Fixed, crate::lang::Text, Action)> = [
+            edit.map(|a| (Glyph::Edit, Fixed::View3dSelectedEdit, t!("Edit"), a)),
+            delete.map(|a| (Glyph::Delete, Fixed::View3dSelectedDelete, t!("Delete"), a)),
         ]
         .into_iter()
         .flatten()
@@ -367,7 +367,7 @@ pub(super) fn navigator(cam: &Camera, ui: &mut egui::Ui, rect: Rect, out: &mut A
             p.circle_stroke(tip, if hover { 8.0 } else { 7.0 }, Stroke::new(2.0, color));
         }
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, view.id()));
-        if resp.on_hover_text(trf("View from {side} ({view})", args!(side = name, view = view.id()))).clicked() {
+        if resp.on_hover_text(trf(t!("View from {side} ({view})"), args!(side = name, view = view.id()))).clicked() {
             clicked = Some(view);
         }
     }
@@ -396,28 +396,28 @@ impl NavBar {
         let NavBar { facing, standalone, playing, ports } = self;
         let t = &Tokens::get();
         let ortho = v.camera.projection == Projection::Orthographic;
-        let mut items: Vec<(Glyph, Handle, &str)> = vec![
-            (Glyph::Fit, Fixed::View3dFit.into(), "Fit the model to the view (double-click the view)"),
-            (Glyph::Home, Handle::Standard(StandardView::Iso), "Home view (isometric)"),
+        let mut items: Vec<(Glyph, Handle, crate::lang::Text)> = vec![
+            (Glyph::Fit, Fixed::View3dFit.into(), t!("Fit the model to the view (double-click the view)")),
+            (Glyph::Home, Handle::Standard(StandardView::Iso), t!("Home view (isometric)")),
         ];
         if facing.is_some() {
-            items.push((Glyph::Lookat, Fixed::View3dFace.into(), "Face the field's plane"));
+            items.push((Glyph::Lookat, Fixed::View3dFace.into(), t!("Face the field's plane")));
             // The standalone model view needs a player; the Field view already has one.
             if standalone {
                 items.push(if playing {
-                    (Glyph::Pause, Fixed::View3dPlay.into(), "Pause the field's animation")
+                    (Glyph::Pause, Fixed::View3dPlay.into(), t!("Pause the field's animation"))
                 } else {
-                    (Glyph::Play, Fixed::View3dPlay.into(), "Play the field's animation")
+                    (Glyph::Play, Fixed::View3dPlay.into(), t!("Play the field's animation"))
                 });
             }
         }
         if standalone {
-            items.push((Glyph::Section, Fixed::View3dSection.into(), if v.section.is_some() { "Section view: on" } else { "Section view" }));
+            items.push((Glyph::Section, Fixed::View3dSection.into(), if v.section.is_some() { t!("Section view: on") } else { t!("Section view") }));
         }
         items.push(if ortho {
-            (Glyph::Orthographic, Fixed::View3dProjection.into(), "Orthographic — click for perspective")
+            (Glyph::Orthographic, Fixed::View3dProjection.into(), t!("Orthographic — click for perspective"))
         } else {
-            (Glyph::Perspective, Fixed::View3dProjection.into(), "Perspective — click for orthographic")
+            (Glyph::Perspective, Fixed::View3dProjection.into(), t!("Perspective — click for orthographic"))
         });
         // The tools: the ports' where ports are the subject, the ruler everywhere.
         use crate::tools3d::Tool;
@@ -480,8 +480,8 @@ pub(super) fn section_bar(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, (lo, hi
     let mut x = bar.left() + 6.0;
     use crate::section3d::{Mark, Preset, button};
     for (preset, handle, letter, tip) in [
-        (Preset::HPlane, Fixed::View3dSectionHPlane, "H", "H-plane cut (y = b/2)"),
-        (Preset::EPlane, Fixed::View3dSectionEPlane, "E", "E-plane cut (x = a/2)"),
+        (Preset::HPlane, Fixed::View3dSectionHPlane, "H", t!("H-plane cut (y = b/2)")),
+        (Preset::EPlane, Fixed::View3dSectionEPlane, "E", t!("E-plane cut (x = a/2)")),
     ] {
         let r = Rect::from_min_size(pos2(x, bar.center().y - size / 2.0), vec2(size, size));
         if button(ui, r, handle, Mark::Text(letter), tip, preset.is(cut, (lo, hi))) {
@@ -494,7 +494,7 @@ pub(super) fn section_bar(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, (lo, hi
     for (axis, name) in crate::handle::AXES.into_iter().enumerate() {
         let r = Rect::from_min_size(pos2(x, bar.center().y - size / 2.0), vec2(size, size));
         let resp = ui.hit(r, Handle::SectionAxis(axis), Sense::click());
-        let tip = trf("Cut across {axis}", args!(axis = name));
+        let tip = trf(t!("Cut across {axis}"), args!(axis = name));
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &tip));
         let chosen = axis == k;
         if chosen || resp.hovered() {
@@ -515,7 +515,7 @@ pub(super) fn section_bar(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, (lo, hi
     child.spacing_mut().slider_width = sr.width();
     let s = child.add(egui::Slider::new(&mut at, a.min(b)..=a.max(b)).show_value(false));
     scenario::publish_target(Fixed::View3dSectionAt, s.rect);
-    if s.hint("Where the cut lies").changed() && at.is_finite() {
+    if s.hint(t!("Where the cut lies")).changed() && at.is_finite() {
         cut.at = l.to_si(at);
     }
     x += slider_w;
@@ -524,7 +524,7 @@ pub(super) fn section_bar(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, (lo, hi
     x += value_w;
     let r = Rect::from_min_size(pos2(x, bar.center().y - size / 2.0), vec2(size, size));
     let resp = ui.hit(r, Fixed::View3dSectionFlip.into(), Sense::click());
-    let tip = tr("Keep the other side");
+    let tip = tr(t!("Keep the other side"));
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
     if resp.hovered() {
         p.rect_filled(r, 5.0, t.hover);
@@ -535,7 +535,7 @@ pub(super) fn section_bar(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, (lo, hi
     }
     x += pitch;
     let r = Rect::from_min_size(pos2(x, bar.center().y - size / 2.0), vec2(size, size));
-    if button(ui, r, Fixed::View3dSectionLook, Mark::Glyph(Glyph::Lookat), "Look straight at the cut", false) {
+    if button(ui, r, Fixed::View3dSectionLook, Mark::Glyph(Glyph::Lookat), t!("Look straight at the cut"), false) {
         let outline = v.shown().map_or_else(|| crate::section3d::flat(cut, (lo, hi)), |b| crate::section3d::outline(&b.scene, cut, (lo, hi)));
         v.camera.projection = Projection::Orthographic;
         v.goal = crate::section3d::look(cut, outline);
@@ -543,7 +543,7 @@ pub(super) fn section_bar(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, (lo, hi
     x += pitch;
     let r = Rect::from_min_size(pos2(x, bar.center().y - size / 2.0), vec2(size, size));
     let dims = v.section_dims;
-    if button(ui, r, Fixed::View3dSectionDims, Mark::Glyph(Glyph::Ruler), if dims { "Dimensions: on" } else { "Dimensions: off" }, dims) {
+    if button(ui, r, Fixed::View3dSectionDims, Mark::Glyph(Glyph::Ruler), if dims { t!("Dimensions: on") } else { t!("Dimensions: off") }, dims) {
         v.section_dims = !dims;
     }
     v.section = Some(cut);

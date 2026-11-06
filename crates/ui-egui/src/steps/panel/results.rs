@@ -9,32 +9,40 @@ pub(super) fn results(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, state
         crate::viewport::stale_band(app, ui, out);
     }
     if !app.session.results().any() {
-        ui.text(crate::Style::SmallDim, "No results yet: Run (step 7). The view tabs over the viewport show them.");
+        ui.text(crate::Style::SmallDim, t!("No results yet: Run (step 7). The view tabs over the viewport show them."));
         return;
     }
     if app.session.results().sweep.is_none() {
         return;
     }
-    ui_kit::section(ui, "Checks");
+    ui_kit::section(ui, t!("Checks"));
     let busy = app.busy();
-    ui.act(!busy, ui_kit::styled("Passivity and reciprocity", false), Fixed::ResultsCheck.into(), || Action::CheckResults, out);
+    ui.act(!busy, ui_kit::styled(t!("Passivity and reciprocity"), false), Fixed::ResultsCheck.into(), || Action::CheckResults, out);
     if let Some((_, c)) = &app.workflow.check {
         let n = |k: &str| c.get(k).and_then(Value::as_f64).unwrap_or(f64::NAN);
         let passive = c.get("passive").and_then(Value::as_bool) == Some(true);
-        kv(ui, "largest σ(S)", format!("{:.6} — {}", n("largest_singular_value"), tr(if passive { "passive" } else { "NOT passive" })));
-        kv(ui, "max |S − S^T|", format!("{:.3e}", n("reciprocity_error")));
+        kv(ui, t!("largest σ(S)"), format!("{:.6} — {}", n("largest_singular_value"), tr(if passive { t!("passive") } else { t!("NOT passive") })));
+        kv(ui, t!("max |S − S^T|"), format!("{:.3e}", n("reciprocity_error")));
     }
-    ui_kit::section(ui, "Mesh accuracy");
+    ui_kit::section(ui, t!("Mesh accuracy"));
     ui_kit::caption(
         ui,
-        "Passivity and reciprocity check physical consistency. They do not measure mesh error. Refine the mesh and compare the results at frequencies important to your design.",
+        t!(
+            "Passivity and reciprocity check physical consistency. They do not measure mesh error. Refine the mesh and compare the results at frequencies important to your design."
+        ),
     );
-    ui.act(!busy && !stale, ui_kit::styled("Set up mesh convergence", false), Fixed::ResultsConvergence.into(), || Action::dialog("mesh.adapt"), out);
+    ui.act(
+        !busy && !stale,
+        ui_kit::styled(t!("Set up mesh convergence"), false),
+        Fixed::ResultsConvergence.into(),
+        || Action::dialog("mesh.adapt"),
+        out,
+    );
     ui_kit::caption(
         ui,
-        "Adaptive mesh changes the mesh at one frequency. Review its tolerance and pass limit, then rerun your analysis on the final mesh.",
+        t!("Adaptive mesh changes the mesh at one frequency. Review its tolerance and pass limit, then rerun your analysis on the final mesh."),
     );
-    ui_kit::section(ui, "Touchstone");
+    ui_kit::section(ui, t!("Touchstone"));
     let ports = app.session.sparameter_entries().len().max(1);
     if f.touchstone.is_empty() {
         f.touchstone = format!("emcraft.s{ports}p");
@@ -43,15 +51,15 @@ pub(super) fn results(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, state
         f.format = "ri".into();
     }
     let ep = f.error("touchstone").map(str::to_owned);
-    field(ui, "path", &mut f.touchstone, "", ep.as_deref(), Fixed::ResultsTouchstonePath);
+    field(ui, t!("path"), &mut f.touchstone, "", ep.as_deref(), Fixed::ResultsTouchstonePath);
     ui.horizontal(|ui| {
         ui.add_space(t.form_label_width + 6.0);
-        for (v, label) in [("ri", "real, imaginary"), ("ma", "magnitude, angle")] {
+        for (v, label) in [("ri", t!("real, imaginary")), ("ma", t!("magnitude, angle"))] {
             let r = ui.radio_value(&mut f.format, v.to_owned(), egui::RichText::new(tr(label)).size(t.font_small));
             scenario::publish_target(Handle::Touchstone(v), r.rect);
         }
     });
-    ui.act(!busy, ui_kit::styled("Export", true), Fixed::ResultsTouchstone.into(), || Action::ExportTouchstone, out);
+    ui.act(!busy, ui_kit::styled(t!("Export"), true), Fixed::ResultsTouchstone.into(), || Action::ExportTouchstone, out);
 }
 
 /// Writes the Touchstone file the Results step's fields name.
@@ -59,7 +67,7 @@ pub fn export_touchstone(app: &mut EmcraftApp) {
     let f = &mut app.workflow.fields;
     let (path, format) = (f.touchstone.trim().to_owned(), f.format.clone());
     if path.is_empty() {
-        f.set_error("touchstone", Some(crate::lang::tr("give a file").into()));
+        f.set_error("touchstone", Some(crate::lang::tr(t!("give a file")).into()));
         return;
     }
     f.set_error("touchstone", None);

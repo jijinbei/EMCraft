@@ -400,10 +400,10 @@ impl EmcraftApp {
         match std::fs::write(path.trim(), text) {
             Ok(()) => {
                 let n = self.session.history().len();
-                self.info_with("Exported {n} commands to {path}.", args!(n = n, path = path.trim()));
+                self.info_with(t!("Exported {n} commands to {path}."), args!(n = n, path = path.trim()));
             }
             Err(e) => {
-                self.error_with("Cannot write {path}: {error}", args!(path = path.trim(), error = e));
+                self.error_with(t!("Cannot write {path}: {error}"), args!(path = path.trim(), error = e));
 
                 self.ask = Some(crate::files::Ask::Export(path));
             }

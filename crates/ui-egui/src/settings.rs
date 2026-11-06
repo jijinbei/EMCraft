@@ -11,7 +11,7 @@ use emcraft_model::units::{Frequency, Length};
 
 use crate::action::Pref;
 use crate::handle::{Fixed, Handle};
-use crate::lang::{Raw, Shown, args, shown, tr, trf};
+use crate::lang::{Raw, Shown, Text, args, shown, tr, trf};
 use crate::theme::{Theme, Tokens};
 use crate::{Action, Actions, EmcraftApp, Hint, Style, UiExt, scenario};
 
@@ -41,10 +41,10 @@ pub fn show(app: &EmcraftApp, section: Section, ui: &mut egui::Ui, out: &mut Act
     let t = &Tokens::get();
     egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.panel).inner_margin(egui::Margin::symmetric(36, 24))).show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.text(Style::Title, "Settings");
+            ui.text(Style::Title, t!("Settings"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let done = crate::ui_kit::styled("Done", true);
-                ui.act(true, done, Fixed::SettingsClose.into(), || Action::Settings(None), out).hint("Back (Escape)");
+                let done = crate::ui_kit::styled(t!("Done"), true);
+                ui.act(true, done, Fixed::SettingsClose.into(), || Action::Settings(None), out).hint(t!("Back (Escape)"));
             });
         });
         ui.add_space(t.space_16);
@@ -78,7 +78,7 @@ pub fn show(app: &EmcraftApp, section: Section, ui: &mut egui::Ui, out: &mut Act
 }
 
 /// A setting's heading and what it does.
-fn heading(ui: &mut egui::Ui, title: &str, about: impl Shown) {
+fn heading(ui: &mut egui::Ui, title: Text, about: impl Shown) {
     let t = &Tokens::get();
     ui.label(egui::RichText::new(tr(title)).size(t.font_button).strong().color(t.text));
     if !about.shown().is_empty() {
@@ -121,7 +121,7 @@ fn options<T: Copy + PartialEq>(
     out: &mut Actions,
     group: &'static str,
     current: T,
-    list: &[(T, &str, &str, &str)],
+    list: &[(T, Text, &str, Text)],
     action: impl Fn(T) -> Action,
 ) {
     let t = &Tokens::get();
@@ -142,7 +142,7 @@ pub fn theme_label(th: &Theme) -> String {
     let name = th.name.as_str();
     match name.chars().next() {
         Some(first) if !th.fallback && Base::parse(name).is_some() => {
-            tr(&first.to_uppercase().chain(name.chars().skip(1)).collect::<String>()).to_owned()
+            crate::lang::lookup(&first.to_uppercase().chain(name.chars().skip(1)).collect::<String>()).to_owned()
         }
         _ => name.to_owned(),
     }
@@ -150,23 +150,23 @@ pub fn theme_label(th: &Theme) -> String {
 
 fn appearance(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
-    heading(ui, "Theme", "The colours of the window, the 3D view and the pictures. It changes at once.");
+    heading(ui, t!("Theme"), t!("The colours of the window, the 3D view and the pictures. It changes at once."));
     let (built_in, yours): (Vec<&Theme>, Vec<&Theme>) = app.themes.list.iter().map(|th| &**th).partition(|th| Base::parse(&th.name).is_some());
     theme_cards(app, ui, &built_in, out);
     gap(ui);
     heading(
         ui,
-        "Your themes",
-        "Theme files (JSON) in the folder below, each changing a built-in theme's colours (docs/themes.md). Read again after you edit them.",
+        t!("Your themes"),
+        t!("Theme files (JSON) in the folder below, each changing a built-in theme's colours (docs/themes.md). Read again after you edit them."),
     );
     if yours.is_empty() {
-        ui.text(Style::Dim, "None yet.");
+        ui.text(Style::Dim, t!("None yet."));
         ui.add_space(t.space_8);
     } else {
         theme_cards(app, ui, &yours, out);
     }
     ui.horizontal(|ui| {
-        let reload = crate::ui_kit::styled("Read the themes again", false);
+        let reload = crate::ui_kit::styled(t!("Read the themes again"), false);
         ui.act(true, reload, Fixed::SettingsReloadThemes.into(), || Action::Pref(Pref::ReloadThemes), out);
         path_label(ui, app.themes.dir.as_deref());
     });
@@ -176,14 +176,16 @@ fn appearance(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 }
 
 fn language(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    heading(ui, "Language", "The language of the window. It changes at once.");
+    heading(ui, t!("Language"), t!("The language of the window. It changes at once."));
     let list: Vec<(&str, &str, &str)> = crate::lang::languages().iter().map(|l| (l.id, l.name.as_str(), l.id)).collect();
     choices(ui, out, "language", app.prefs.language(), &list, |id| Action::Pref(Pref::Language(id.to_owned())));
     gap(ui);
     heading(
         ui,
-        "What stays in English",
-        "The engine's messages and errors, the text drawn in pictures (charts, field plots), the command and parameter ids, and the command line.",
+        t!("What stays in English"),
+        t!(
+            "The engine's messages and errors, the text drawn in pictures (charts, field plots), the command and parameter ids, and the command line."
+        ),
     );
 }
 
@@ -196,7 +198,7 @@ fn path_label(ui: &mut egui::Ui, path: Option<&std::path::Path>) {
             ui.add(egui::Label::new(egui::RichText::new(&text).monospace().size(t.font_small).color(t.text_dim)).truncate()).on_hover_text(text);
         }
         None => {
-            ui.text(Style::SmallDim, "no configuration folder");
+            ui.text(Style::SmallDim, t!("no configuration folder"));
         }
     }
 }
@@ -271,7 +273,7 @@ fn theme_card(ui: &mut egui::Ui, th: &Theme, current: bool) -> egui::Response {
     let name_at = pos2(r.left() + 12.0, win.bottom() + 20.0);
     let clip = p.with_clip_rect(r.shrink(6.0));
     clip.text(name_at, Align2::LEFT_CENTER, theme_label(th), FontId::proportional(t.font_body), t.text);
-    let kind = tr(if th.is_dark() { "dark" } else { "light" });
+    let kind = tr(if th.is_dark() { t!("dark") } else { t!("light") });
     clip.text(pos2(r.right() - 12.0, name_at.y), Align2::RIGHT_CENTER, kind, FontId::proportional(t.font_small), t.text_dim);
     if current {
         let dot = pos2(r.right() - 14.0, r.top() + 14.0);
@@ -289,12 +291,12 @@ fn theme_card(ui: &mut egui::Ui, th: &Theme, current: bool) -> egui::Response {
 pub fn unit_choices(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
     egui::Grid::new("units").num_columns(2).spacing(vec2(t.space_12, t.space_8)).show(ui, |ui| {
-        ui.text(Style::Dim, "Length");
+        ui.text(Style::Dim, t!("Length"));
         choices(ui, out, "length", app.prefs.length, &[(Length::Millimetre, "mm", "mm"), (Length::Metre, "m", "m")], |u| {
             Action::Pref(Pref::Length(u))
         });
         ui.end_row();
-        ui.text(Style::Dim, "Frequency");
+        ui.text(Style::Dim, t!("Frequency"));
         let frequencies = [(Frequency::Gigahertz, "GHz", "GHz"), (Frequency::Megahertz, "MHz", "MHz"), (Frequency::Hertz, "Hz", "Hz")];
         choices(ui, out, "frequency", app.prefs.frequency, &frequencies, |u| Action::Pref(Pref::Frequency(u)));
         ui.end_row();
@@ -304,8 +306,10 @@ pub fn unit_choices(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 fn units(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     heading(
         ui,
-        "New projects",
-        "The units new projects start with: what dialogs, tables and pictures show and commands read. An open project changes its own with Units in step 1.",
+        t!("New projects"),
+        t!(
+            "The units new projects start with: what dialogs, tables and pictures show and commands read. An open project changes its own with Units in step 1."
+        ),
     );
     unit_choices(app, ui, out);
 }
@@ -313,35 +317,41 @@ fn units(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 fn view3d(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     // The mouse mappings, SolidCraft's: the same hands work in both apps.
     let nav = app.prefs.nav();
-    heading(ui, "Mouse", nav.help);
+    heading(ui, t!("Mouse"), nav.help);
     let mappings: Vec<(&str, &str, &str)> = crate::navigation::NAV_PRESETS
         .iter()
-        .map(|p| (p.id, if p.id == crate::navigation::TOUCHPAD { tr(p.label) } else { p.label }, p.id))
+        .map(|p| (p.id, if p.id == crate::navigation::TOUCHPAD { tr(t!("Touchpad")) } else { p.label }, p.id))
         .collect();
     choices(ui, out, "navigation", nav.id, &mappings, |id| Action::Pref(Pref::Navigation(id.to_owned())));
     ui.add_space(Tokens::get().space_6);
     ui.text(
         Style::SmallDim,
-        "Every mapping: Ctrl+left drag orbits, Shift snaps an orbit, the wheel zooms to the cursor, arrows turn, Ctrl+1–7 standard views.",
+        t!("Every mapping: Ctrl+left drag orbits, Shift snaps an orbit, the wheel zooms to the cursor, arrows turn, Ctrl+1–7 standard views."),
     );
     gap(ui);
-    heading(ui, "Orbit around", "");
+    heading(ui, t!("Orbit around"), Raw(""));
     use crate::navigation::{Navigator, OrbitAround};
     let around: Vec<(OrbitAround, &str, &str)> = OrbitAround::ALL.iter().map(|o| (*o, shown(*o), o.id())).collect();
     choices(ui, out, "orbit_around", app.prefs.orbit_around(), &around, |o| Action::Pref(Pref::OrbitAround(o)));
     gap(ui);
-    heading(ui, "Navigator", "");
+    heading(ui, t!("Navigator"), Raw(""));
     let navigators: Vec<(Navigator, &str, &str)> = Navigator::ALL.iter().map(|n| (*n, shown(*n), n.id())).collect();
     choices(ui, out, "navigator", app.prefs.navigator(), &navigators, |n| Action::Pref(Pref::Navigator(n)));
     gap(ui);
-    heading(ui, "Drawing", "What the 3D view adds to the plain picture, each its own switch.");
+    heading(ui, t!("Drawing"), t!("What the 3D view adds to the plain picture, each its own switch."));
     let l = app.prefs.gpu_look;
-    let switches: [(&str, &str, bool, fn(&mut crate::prefs::GpuLook) -> &mut bool, &str); 5] = [
-        ("Edges", "edges", l.edges, |l| &mut l.edges, "Lines where surfaces crease or end, found per pixel."),
-        ("Shadows", "ao", l.ao, |l| &mut l.ao, "Ambient occlusion: corners and creases darkened."),
-        ("Outline", "outline", l.outline, |l| &mut l.outline, "A ring round what is selected and what is under the pointer."),
-        ("GPU picking", "pick", l.pick, |l| &mut l.pick, "Clicks read what the GPU drew under the pointer."),
-        ("GPU field", "field", l.field, |l| &mut l.field, "The field's colour map drawn by the GPU: its phase plays without rebuilding the scene."),
+    let switches: [(Text, &str, bool, fn(&mut crate::prefs::GpuLook) -> &mut bool, Text); 5] = [
+        (t!("Edges"), "edges", l.edges, |l| &mut l.edges, t!("Lines where surfaces crease or end, found per pixel.")),
+        (t!("Shadows"), "ao", l.ao, |l| &mut l.ao, t!("Ambient occlusion: corners and creases darkened.")),
+        (t!("Outline"), "outline", l.outline, |l| &mut l.outline, t!("A ring round what is selected and what is under the pointer.")),
+        (t!("GPU picking"), "pick", l.pick, |l| &mut l.pick, t!("Clicks read what the GPU drew under the pointer.")),
+        (
+            t!("GPU field"),
+            "field",
+            l.field,
+            |l| &mut l.field,
+            t!("The field's colour map drawn by the GPU: its phase plays without rebuilding the scene."),
+        ),
     ];
     let t = &Tokens::get();
     egui::Grid::new("3d_gpu").num_columns(2).spacing(vec2(t.space_12, t.space_8)).show(ui, |ui| {
@@ -359,26 +369,26 @@ fn view3d(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 }
 
 fn dialogs(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    heading(ui, "Where dialogs open", "A command's dialog, opened from the ribbon, the browser or the search.");
+    heading(ui, t!("Where dialogs open"), t!("A command's dialog, opened from the ribbon, the browser or the search."));
     let place = [
-        (false, "Floating", "floating", "A card over the view, which you can move."),
-        (true, "Docked", "docked", "In the panel at the right, beside the view."),
+        (false, t!("Floating"), "floating", t!("A card over the view, which you can move.")),
+        (true, t!("Docked"), "docked", t!("In the panel at the right, beside the view.")),
     ];
     options(ui, out, "dialogs", app.dock_dialogs, &place, Action::SetDock);
 }
 
 fn files(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let n = app.prefs.recent.len();
-    let at_most = trf("The start page lists the projects you opened or saved last, at most {n}.", args!(n = crate::prefs::MAX_RECENT));
-    heading(ui, "Recent projects", at_most);
+    let at_most = trf(t!("The start page lists the projects you opened or saved last, at most {n}."), args!(n = crate::prefs::MAX_RECENT));
+    heading(ui, t!("Recent projects"), at_most);
     ui.horizontal(|ui| {
-        let clear = crate::ui_kit::styled("Clear the list", false);
+        let clear = crate::ui_kit::styled(t!("Clear the list"), false);
         ui.act(n > 0, clear, Fixed::SettingsClearRecent.into(), || Action::Pref(Pref::ClearRecent), out);
-        ui.text(Style::Dim, if n == 1 { tr("1 project").to_owned() } else { trf("{n} projects", args!(n = n)) });
+        ui.text(Style::Dim, if n == 1 { tr(t!("1 project")).to_owned() } else { trf(t!("{n} projects"), args!(n = n)) });
     });
 
     gap(ui);
-    heading(ui, "Preferences file", "Where these settings are kept between launches.");
+    heading(ui, t!("Preferences file"), t!("Where these settings are kept between launches."));
     path_label(ui, app.prefs_store.path.as_deref());
 }
 

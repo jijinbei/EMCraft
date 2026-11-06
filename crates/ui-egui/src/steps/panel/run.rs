@@ -18,7 +18,7 @@ fn refusal_band(ui: &mut egui::Ui, heading: &str, details: impl FnOnce(&mut egui
 
 /// A finding's way to its step; `true` when taken.
 fn go_to(ui: &mut egui::Ui, step: Step, handle: Handle, out: &mut Actions) -> bool {
-    let label = trf("Go to {step}", args!(step = shown(step)));
+    let label = trf(t!("Go to {step}"), args!(step = shown(step)));
     ui.act(true, egui::Button::new(label).small(), handle, || Action::OpenStep(Some(step)), out).clicked()
 }
 
@@ -29,10 +29,10 @@ pub(super) fn run_panel(app: &EmcraftApp, ui: &mut egui::Ui, states: &[StepState
     if running(app) {
         return;
     }
-    ui_kit::section(ui, "Preflight");
+    ui_kit::section(ui, t!("Preflight"));
     let pre = preflight(&app.session, states);
     if pre.blocking.is_empty() && pre.warnings.is_empty() {
-        ui_kit::small(ui, "Every step is ready.", t.success);
+        ui_kit::small(ui, t!("Every step is ready."), t.success);
     }
     let mut went = false;
     for (list, color, what) in [(&pre.blocking, t.error, "blocks"), (&pre.warnings, t.warning, "warning")] {
@@ -48,12 +48,12 @@ pub(super) fn run_panel(app: &EmcraftApp, ui: &mut egui::Ui, states: &[StepState
     }
     let solver = app.session.model().analysis();
     ui.add_space(6.0);
-    ui_kit::small(ui, trf("Solver: {solver}", args!(solver = shown(solver))), t.text);
+    ui_kit::small(ui, trf(t!("Solver: {solver}"), args!(solver = shown(solver))), t.text);
     let (nb, nw) = (pre.blocking.len(), pre.warnings.len());
     let label = match (nb, nw) {
-        (0, 0) => tr("Run").to_owned(),
-        (0, nw) => plural(nw, "Run, accepting {n} warning", "Run, accepting {n} warnings", args!(n = nw)),
-        (nb, _) => plural(nb, "Run — {n} problem to fix first", "Run — {n} problems to fix first", args!(n = nb)),
+        (0, 0) => tr(t!("Run")).to_owned(),
+        (0, nw) => plural(nw, t!("Run, accepting {n} warning"), t!("Run, accepting {n} warnings"), args!(n = nw)),
+        (nb, _) => plural(nb, t!("Run — {n} problem to fix first"), t!("Run — {n} problems to fix first"), args!(n = nb)),
     };
     let busy = app.busy();
     ui.act(!busy, ui_kit::styled(&label, true), Fixed::RunStart.into(), || Action::StartRun, out);
@@ -61,7 +61,7 @@ pub(super) fn run_panel(app: &EmcraftApp, ui: &mut egui::Ui, states: &[StepState
     // as long as it blocks.
     let mut went = false;
     if app.workflow.refusal.is_some() && !pre.blocking.is_empty() {
-        let heading = plural(nb, "Run refused: {n} problem to fix first", "Run refused: {n} problems to fix first", args!(n = nb));
+        let heading = plural(nb, t!("Run refused: {n} problem to fix first"), t!("Run refused: {n} problems to fix first"), args!(n = nb));
         refusal_band(ui, &heading, |ui| {
             for (i, (step, text)) in pre.blocking.iter().enumerate() {
                 ui.horizontal_wrapped(|ui| {
@@ -73,7 +73,7 @@ pub(super) fn run_panel(app: &EmcraftApp, ui: &mut egui::Ui, states: &[StepState
     }
     // A run that started and failed says why here too (the reason Run's mark is red).
     if let Some(crate::Failure { command, error: e }) = app.failure.as_ref().filter(|_| run_failure(app).is_some()) {
-        refusal_band(ui, &trf("{command} failed", args!(command = crate::label(command))), |ui| {
+        refusal_band(ui, &trf(t!("{command} failed"), args!(command = crate::label(command))), |ui| {
             ui_kit::small(ui, e, t.form_error);
         });
     }

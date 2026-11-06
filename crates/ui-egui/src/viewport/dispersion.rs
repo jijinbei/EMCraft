@@ -54,10 +54,10 @@ impl Table {
         let (fu, lu) = (app.session.display().frequency, app.session.display().length);
         let bands = d.points.iter().map(|p| p.frequencies.len()).max().unwrap_or(0);
         let period = format!("{:.4} {}", lu.from_si(d.period), lu.symbol());
-        let caption = trf("{n} unknowns after the periodic reduction; period {period}", args!(n = d.unknowns, period = period));
+        let caption = trf(t!("{n} unknowns after the periodic reduction; period {period}"), args!(n = d.unknowns, period = period));
         let headers = ["ψ (°)".to_owned(), format!("β (rad/{})", lu.symbol())]
             .into_iter()
-            .chain((0..bands).map(|b| trf("band {n} ({unit})", args!(n = (b + 1), unit = fu.symbol()))))
+            .chain((0..bands).map(|b| trf(t!("band {n} ({unit})"), args!(n = (b + 1), unit = fu.symbol()))))
             .collect();
         let rows = d
             .points

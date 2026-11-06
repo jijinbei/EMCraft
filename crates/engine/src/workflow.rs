@@ -111,9 +111,26 @@ emcraft_macros::named_enum! {
 /// What a step needs, and the command that sees to it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Check {
+    /// The text in English, its values filled in.
     pub text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    /// The text before its values (`{name}` placeholders) and the values, for a window to
+    /// translate it: every template is checked against the translations when the engine
+    /// compiles (`emcraft_i18n::text!`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub template: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<(String, String)>,
+}
+
+impl Check {
+    /// A check from its template and values.
+    pub fn new(template: &str, args: &[(&str, String)], command: Option<&str>) -> Check {
+        let text = args.iter().fold(template.to_owned(), |t, (k, v)| t.replace(&format!("{{{k}}}"), v));
+        let args = args.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect();
+        Check { text, command: command.map(str::to_owned), template: template.to_owned(), args }
+    }
 }
 
 /// One step's standing and what to do about it.
@@ -130,9 +147,14 @@ impl StepState {
     }
 
     /// Lowers the status to `status` with a message.
-    fn note(&mut self, status: Status, text: impl Into<String>, command: Option<&str>) {
+    fn note(&mut self, status: Status, text: &str, command: Option<&str>) {
+        self.note_with(status, text, &[], command);
+    }
+
+    /// A note from a template of [`NOTES`] and its values.
+    fn note_with(&mut self, status: Status, template: &str, args: &[(&str, String)], command: Option<&str>) {
         self.status = self.status.min(status);
-        self.messages.push(Check { text: text.into(), command: command.map(str::to_owned) });
+        self.messages.push(Check::new(template, args, command));
     }
 }
 
@@ -298,14 +320,18 @@ pub fn steps(s: &Session) -> [StepState; 9] {
     if s.model.analysis() == Analysis::Pcb {
         let mut states = Step::ALL.map(StepState::new);
         if s.model.pcb.is_none() {
-            states[Step::Geometry.index()].note(Status::Todo, "Import a PCB or open a PCB template.", Some("pcb.import"));
-            states[Step::Run.index()].note(Status::Waiting, "Import a PCB or open a PCB template.", Some("pcb.import"));
+            states[Step::Geometry.index()].note(Status::Todo, emcraft_i18n::text!("Import a PCB or open a PCB template."), Some("pcb.import"));
+            states[Step::Run.index()].note(Status::Waiting, emcraft_i18n::text!("Import a PCB or open a PCB template."), Some("pcb.import"));
         } else {
-            states[Step::Run.index()].note(Status::Todo, "Select a routed net in the PCB workspace and inspect it.", Some("pcb.inspect"));
+            states[Step::Run.index()].note(
+                Status::Todo,
+                emcraft_i18n::text!("Select a routed net in the PCB workspace and inspect it."),
+                Some("pcb.inspect"),
+            );
         }
         states[Step::Results.index()].note(
             Status::Waiting,
-            "PCB findings and ideal line estimates are shown in the PCB workspace.",
+            emcraft_i18n::text!("PCB findings and ideal line estimates are shown in the PCB workspace."),
             Some("pcb.inspect"),
         );
         return states;
@@ -362,7 +388,7 @@ fn intent(_: &Session) -> StepState {
 fn geometry(s: &Session) -> StepState {
     let mut st = StepState::new(Step::Geometry);
     if !has_geometry(s) {
-        st.note(Status::Todo, "no geometry yet: a waveguide, a solid or an imported surface", Some("geometry.waveguide"));
+        st.note(Status::Todo, emcraft_i18n::text!("no geometry yet: a waveguide, a solid or an imported surface"), Some("geometry.waveguide"));
     }
     st
 }
@@ -371,15 +397,13 @@ fn materials(s: &Session) -> StepState {
     let m = &s.model;
     let mut st = StepState::new(Step::Materials);
     if !has_geometry(s) {
-        st.note(Status::Waiting, "waits for the geometry: no bodies to give materials to yet", Some("geometry.solid"));
+        st.note(Status::Waiting, emcraft_i18n::text!("waits for the geometry: no bodies to give materials to yet"), Some("geometry.solid"));
     }
     if let Some(p) = m.ports.iter().find(|p| lossy_terminal_port(m, p)) {
-        st.note(
+        st.note_with(
             Status::Warning,
-            format!(
-                "port `{}`: several strips in a lossy or dispersive cross-section, where terminal ports are not supported yet (its lossy modes are not power-orthogonal): set the port's `terminals` modal",
-                p.name
-            ),
+            emcraft_i18n::text!("port `{port}`: several strips in a lossy or dispersive cross-section, where terminal ports are not supported yet (its lossy modes are not power-orthogonal): set the port's `terminals` modal"),
+            &[("port", p.name.clone())],
             Some("model.port.create"),
         );
     }
@@ -415,22 +439,26 @@ fn excitation(s: &Session) -> StepState {
     let resonator = s.results.eigen.is_some() || chosen == Some(Analysis::Eigenmodes);
     let driven = !(m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty());
     match (has_geometry(s), driven || bloch || resonator, chosen) {
-        (false, _, _) => st.note(Status::Waiting, "waits for the geometry", Some("geometry.waveguide")),
-        (true, false, Some(Analysis::Radiation)) => {
-            st.note(Status::Todo, "nothing drives the open problem yet: a lumped port, a dipole or a plane wave", Some("model.port.lumped"))
-        }
+        (false, _, _) => st.note(Status::Waiting, emcraft_i18n::text!("waits for the geometry"), Some("geometry.waveguide")),
+        (true, false, Some(Analysis::Radiation)) => st.note(
+            Status::Todo,
+            emcraft_i18n::text!("nothing drives the open problem yet: a lumped port, a dipole or a plane wave"),
+            Some("model.port.lumped"),
+        ),
         (true, false, _) => st.note(
             Status::Todo,
-            "nothing drives the model yet: a waveguide port, a lumped port or a source (a resonator needs none: Run finds its eigenmodes)",
+            emcraft_i18n::text!(
+                "nothing drives the model yet: a waveguide port, a lumped port or a source (a resonator needs none: Run finds its eigenmodes)"
+            ),
             Some("model.port.create"),
         ),
         (true, true, _) => {}
     }
     if chosen == Some(Analysis::Eigenmodes) && driven {
-        st.note(Status::Warning, "eigenmodes leave the ports and sources out (closed by walls)", Some("project.analysis"));
+        st.note(Status::Warning, emcraft_i18n::text!("eigenmodes leave the ports and sources out (closed by walls)"), Some("project.analysis"));
     }
     if chosen != Some(Analysis::Eigenmodes) && m.open.is_none() && m.ports.len() == 1 && m.sources.is_empty() && m.lumped.is_empty() {
-        st.note(Status::Warning, "one port: S11 only (a closed guide usually has two)", Some("model.port.create"));
+        st.note(Status::Warning, emcraft_i18n::text!("one port: S11 only (a closed guide usually has two)"), Some("model.port.create"));
     }
     // A closed-form port's first mode against the band's start: below its cut-off the wave
     // decays (an experiment may want just that), a note that leaves the step's standing.
@@ -439,14 +467,14 @@ fn excitation(s: &Session) -> StepState {
         let (Some((a, _)), Ok(mat)) = (m.port_shape_of(p).ok().and_then(|s| s.sides()), m.port_material(p.end)) else { continue };
         let cutoff = C0 / (2.0 * a * (mat.eps_r.get() * mat.mu_r.get()).sqrt());
         if start <= cutoff {
-            st.note(
+            st.note_with(
                 Status::Done,
-                format!(
-                    "port `{}`: below its TE10 cut-off ({:.4} {}) the wave decays (evanescent): S there shows the decay",
-                    p.name,
-                    s.show_frequency(cutoff),
-                    s.display.frequency.symbol()
-                ),
+                emcraft_i18n::text!("port `{port}`: below its TE10 cut-off ({cutoff} {unit}) the wave decays (evanescent): S there shows the decay"),
+                &[
+                    ("port", p.name.clone()),
+                    ("cutoff", format!("{:.4}", s.show_frequency(cutoff))),
+                    ("unit", s.display.frequency.symbol().to_owned()),
+                ],
                 None,
             );
         }
@@ -459,23 +487,27 @@ fn boundaries(s: &Session) -> StepState {
     let open = m.open.is_some();
     let mut st = StepState::new(Step::Boundaries);
     if !has_geometry(s) {
-        st.note(Status::Waiting, "waits for the geometry: its walls are the boundaries", Some("geometry.waveguide"));
+        st.note(Status::Waiting, emcraft_i18n::text!("waits for the geometry: its walls are the boundaries"), Some("geometry.waveguide"));
     } else if !open && m.job.chosen() == Some(Analysis::Radiation) {
-        st.note(Status::Todo, "radiation wants the open boundary (a perfectly matched layer) around the model", Some("model.open"));
+        st.note(
+            Status::Todo,
+            emcraft_i18n::text!("radiation wants the open boundary (a perfectly matched layer) around the model"),
+            Some("model.open"),
+        );
     }
     // An antenna's sources radiate into a closed box's walls; S-parameters between lumped ports
     // in a shielded box (a board's region) are what the box is for.
     if !open && m.analysis() != Analysis::Frequency && (!m.sources.is_empty() || !m.lumped.is_empty()) {
         st.note(
             Status::Warning,
-            "sources in a closed box: they radiate into its walls; line it with the open boundary for an antenna",
+            emcraft_i18n::text!("sources in a closed box: they radiate into its walls; line it with the open boundary for an antenna"),
             Some("model.open"),
         );
     }
     if open && m.ports.iter().any(|p| p.face.is_none()) {
         st.note(
             Status::Warning,
-            "a port on an end face of an open box: ports inside an open problem go on faces (`face`)",
+            emcraft_i18n::text!("a port on an end face of an open box: ports inside an open problem go on faces (`face`)"),
             Some("model.port.create"),
         );
     }
@@ -490,9 +522,9 @@ fn mesh(s: &Session) -> StepState {
             return st;
         }
         if has_geometry(s) {
-            st.note(Status::Todo, "no mesh yet", Some("mesh.generate"));
+            st.note(Status::Todo, emcraft_i18n::text!("no mesh yet"), Some("mesh.generate"));
         } else {
-            st.note(Status::Waiting, "waits for the geometry", Some("geometry.waveguide"));
+            st.note(Status::Waiting, emcraft_i18n::text!("waits for the geometry"), Some("geometry.waveguide"));
         }
         return st;
     };
@@ -505,13 +537,10 @@ fn mesh(s: &Session) -> StepState {
     let h = (6.0 * std::f64::consts::SQRT_2 * volume / me.tets.len().max(1) as f64).cbrt();
     if h > lambda / 4.0 {
         let unit = s.display.length.symbol();
-        st.note(
+        st.note_with(
             Status::Warning,
-            format!(
-                "elements of about {:.3} {unit} are coarse for the band's top (λ/4 = {:.3} {unit} in the densest material; second-order elements want about λ/6)",
-                s.show_length(h),
-                s.show_length(lambda / 4.0),
-            ),
+            emcraft_i18n::text!("elements of about {size} {unit} are coarse for the band's top (λ/4 = {quarter} {unit} in the densest material; second-order elements want about λ/6)"),
+            &[("size", format!("{:.3}", s.show_length(h))), ("quarter", format!("{:.3}", s.show_length(lambda / 4.0))), ("unit", unit.to_owned())],
             Some("mesh.generate"),
         );
     }
@@ -521,10 +550,10 @@ fn mesh(s: &Session) -> StepState {
 fn setup(s: &Session) -> StepState {
     let mut st = StepState::new(Step::Setup);
     if !has_geometry(s) {
-        st.note(Status::Waiting, "waits for the geometry", Some("geometry.waveguide"));
+        st.note(Status::Waiting, emcraft_i18n::text!("waits for the geometry"), Some("geometry.waveguide"));
     }
     if s.model.job.setup().is_none() {
-        st.note(Status::Todo, "the run's settings are not confirmed yet: check them and confirm", Some("project.setup"));
+        st.note(Status::Todo, emcraft_i18n::text!("the run's settings are not confirmed yet: check them and confirm"), Some("project.setup"));
     }
     st
 }
@@ -541,18 +570,18 @@ fn run_and_results(s: &Session, above: &[StepState]) -> (StepState, StepState) {
     let waiting = names(&|x| required.contains(&x.step) && matches!(x.status, Status::Todo | Status::Waiting));
     let command = run_command(s);
     if !wrong.is_empty() {
-        run.note(Status::Missing, format!("put {wrong} right first"), None);
+        run.note_with(Status::Missing, emcraft_i18n::text!("put {steps} right first"), &[("steps", wrong.clone())], None);
     } else if !waiting.is_empty() {
-        run.note(Status::Waiting, format!("waits for {waiting}"), None);
+        run.note_with(Status::Waiting, emcraft_i18n::text!("waits for {steps}"), &[("steps", waiting.clone())], None);
     }
     if !solved(s) {
         if wrong.is_empty() && waiting.is_empty() {
-            run.note(Status::Todo, "not run yet", Some(command));
+            run.note(Status::Todo, emcraft_i18n::text!("not run yet"), Some(command));
         }
-        results.note(Status::Waiting, "no results yet: Run (step 7) makes them", Some(command));
+        results.note(Status::Waiting, emcraft_i18n::text!("no results yet: Run (step 7) makes them"), Some(command));
     } else if s.results.any_stale() {
-        results.note(Status::Stale, "the model changed after this run: run again", Some(command));
-        run.note(Status::Stale, "the model changed since the last run", Some(command));
+        results.note(Status::Stale, emcraft_i18n::text!("the model changed after this run: run again"), Some(command));
+        run.note(Status::Stale, emcraft_i18n::text!("the model changed since the last run"), Some(command));
     }
     (run, results)
 }

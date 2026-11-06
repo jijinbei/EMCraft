@@ -16,7 +16,7 @@ pub fn setup_params(s: &emcraft_engine::Session, f: &mut Fields) -> Result<Value
             Some(v)
         }
         Err(e) => {
-            bad.push(format!("{}: {e}", tr(name)));
+            bad.push(format!("{}: {e}", crate::lang::lookup(name)));
             f.set_error(name, Some(e));
             None
         }
@@ -52,14 +52,14 @@ pub fn setup_params(s: &emcraft_engine::Session, f: &mut Fields) -> Result<Value
             put("frequency", take("frequency", number(&f.frequency.clone()), f));
             put("order", take("order", whole(&f.order.clone(), 2), f));
         }
-        Solver::Pcb => return Err(tr("the PCB diagnosis has no run settings").into()),
+        Solver::Pcb => return Err(tr(t!("the PCB diagnosis has no run settings")).into()),
     }
     if let (Ok(a), Ok(z)) = (positive(&f.start), positive(&f.stop))
         && matches!(solver, Solver::Frequency | Solver::TimeDomain)
         && z < a
     {
-        let e = tr("must not be below the start").to_owned();
-        bad.push(format!("{}: {e}", tr("stop")));
+        let e = tr(t!("must not be below the start")).to_owned();
+        bad.push(format!("{}: {e}", tr(t!("stop"))));
         f.set_error("stop", Some(e));
     }
     if bad.is_empty() { Ok(p) } else { Err(bad.join("; ")) }
@@ -104,7 +104,7 @@ pub fn preflight(s: &emcraft_engine::Session, states: &[StepState]) -> Preflight
             list.push((s.step, format!("{}: {}", shown(s.step), shown(s.status))));
         }
         for m in &s.messages {
-            list.push((s.step, m.text.clone()));
+            list.push((s.step, super::check_text(m)));
         }
     }
     out
@@ -135,7 +135,7 @@ pub fn start_run(app: &mut EmcraftApp) -> Result<Value, UiError> {
     app.workflow.refusal = None;
     let n = pre.warnings.len();
     if n > 0 {
-        app.info(plural(n, "Running with {n} accepted warning.", "Running with {n} accepted warnings.", args!(n = n)));
+        app.info(plural(n, t!("Running with {n} accepted warning."), t!("Running with {n} accepted warnings."), args!(n = n)));
     }
     app.run("solve.run", json!({}))
 }

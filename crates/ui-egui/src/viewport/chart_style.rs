@@ -18,13 +18,13 @@ const CARD: f32 = 340.0;
 const WIDTHS: [u8; 4] = [1, 2, 3, 5];
 
 /// The legend's places as the card offers them: an arrow toward the corner each names.
-const LEGENDS: [(LegendAt, &str, &str); 6] = [
-    (LegendAt::Below, "↓", "legend below the chart"),
-    (LegendAt::TopLeft, "↖", "legend top left"),
-    (LegendAt::TopRight, "↗", "legend top right"),
-    (LegendAt::BottomLeft, "↙", "legend bottom left"),
-    (LegendAt::BottomRight, "↘", "legend bottom right"),
-    (LegendAt::None, "–", "no legend"),
+const LEGENDS: [(LegendAt, &str, crate::lang::Text); 6] = [
+    (LegendAt::Below, "↓", t!("legend below the chart")),
+    (LegendAt::TopLeft, "↖", t!("legend top left")),
+    (LegendAt::TopRight, "↗", t!("legend top right")),
+    (LegendAt::BottomLeft, "↙", t!("legend bottom left")),
+    (LegendAt::BottomRight, "↘", t!("legend bottom right")),
+    (LegendAt::None, "–", t!("no legend")),
 ];
 
 /// A curve's label as plain text: TeX's marks taken out (`$|S_{21}|$` → `|S21|`).
@@ -52,7 +52,7 @@ pub(super) fn gear(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, chart: &
     };
     ui.painter().rect_filled(r, t.radius_sm, fill);
     paint(ui.painter(), r.shrink(3.0), Glyph::Settings, t.icon, t.accent);
-    let resp = resp.hint("Axes and looks");
+    let resp = resp.hint(t!("Axes and looks"));
     if resp.clicked() {
         st.views.style = StyleEdit { open: (!open).then_some(id), ..StyleEdit::default() };
     }
@@ -129,7 +129,7 @@ fn card(app: &EmcraftApp, st: &mut Parts, ui: &egui::Ui, at: Rect, id: ChartId, 
             header(ui, edit, id, out);
             // The title.
             let r = ui.named(
-                egui::TextEdit::singleline(&mut edit.title).hint_text(tr("title (automatic)")).desired_width(f32::INFINITY),
+                egui::TextEdit::singleline(&mut edit.title).hint_text(tr(t!("title (automatic)"))).desired_width(f32::INFINITY),
                 Fixed::ChartStyleTitle.into(),
             );
             if r.lost_focus() && Some(edit.title.trim()) != shown["title"].as_str().or(Some("")) {
@@ -152,14 +152,14 @@ fn card(app: &EmcraftApp, st: &mut Parts, ui: &egui::Ui, at: Rect, id: ChartId, 
 /// The card's name, Reset and its close button.
 fn header(ui: &mut egui::Ui, edit: &mut StyleEdit, id: ChartId, out: &mut Actions) {
     ui.horizontal(|ui| {
-        ui.text(Style::Strong, "Axes and looks");
+        ui.text(Style::Strong, t!("Axes and looks"));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let (r, _) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::hover());
-            if crate::ui_kit::icon_button(ui, r, crate::ui_kit::Mark::Close, "Close", Fixed::ChartStyleClose).clicked() {
+            if crate::ui_kit::icon_button(ui, r, crate::ui_kit::Mark::Close, t!("Close"), Fixed::ChartStyleClose).clicked() {
                 edit.open = None;
             }
-            ui.act(true, egui::Button::new(tr("Reset")).small(), Fixed::ChartStyleReset.into(), || style(id, json!({"reset": true})), out)
-                .hint("Everything automatic again");
+            ui.act(true, egui::Button::new(tr(t!("Reset"))).small(), Fixed::ChartStyleReset.into(), || style(id, json!({"reset": true})), out)
+                .hint(t!("Everything automatic again"));
         });
     });
 }
@@ -170,13 +170,15 @@ fn axis_row(ui: &mut egui::Ui, shown: &Value, fields: &mut AxisText, name: &'sta
     let t = &Tokens::get();
     let shown = &shown[name];
     ui.text(Style::Strong, Raw(name));
-    let r = ui.named(egui::TextEdit::singleline(&mut fields.label).hint_text(tr("label")).desired_width(84.0), Handle::StyleAxis(name, "label"));
+    let r = ui.named(egui::TextEdit::singleline(&mut fields.label).hint_text(tr(t!("label"))).desired_width(84.0), Handle::StyleAxis(name, "label"));
     if r.lost_focus() && Some(fields.label.trim()) != shown["label"].as_str().or(Some("")) {
         out.push(style(id, json!({format!("{name}_label"): fields.label.trim()})));
     }
-    for (part, text, hint) in [("min", &mut fields.min, "low end (empty: automatic)"), ("max", &mut fields.max, "high end (empty: automatic)")] {
+    for (part, text, hint) in
+        [("min", &mut fields.min, t!("low end (empty: automatic)")), ("max", &mut fields.max, t!("high end (empty: automatic)"))]
+    {
         let bad = end(text).is_none();
-        let mut edit_box = egui::TextEdit::singleline(text).hint_text(tr("auto")).desired_width(48.0);
+        let mut edit_box = egui::TextEdit::singleline(text).hint_text(tr(t!("auto"))).desired_width(48.0);
         if bad {
             edit_box = edit_box.text_color(t.form_error);
         }
@@ -189,7 +191,7 @@ fn axis_row(ui: &mut egui::Ui, shown: &Value, fields: &mut AxisText, name: &'sta
         }
     }
     let log = shown["log"].as_bool().unwrap_or(false);
-    let r = ui.named(egui::Button::selectable(log, "log"), Handle::StyleAxis(name, "log")).hint("Logarithmic scale");
+    let r = ui.named(egui::Button::selectable(log, "log"), Handle::StyleAxis(name, "log")).hint(t!("Logarithmic scale"));
     if r.clicked() {
         out.push(style(id, json!({format!("{name}_scale"): if log { "linear" } else { "log" }})));
     }
@@ -200,7 +202,7 @@ fn axis_row(ui: &mut egui::Ui, shown: &Value, fields: &mut AxisText, name: &'sta
 fn grid_and_legend(ui: &mut egui::Ui, shown: &Value, id: ChartId, out: &mut Actions) {
     ui.horizontal(|ui| {
         let grid = shown["grid"].as_bool().unwrap_or(true);
-        let r = ui.named(egui::Button::selectable(grid, tr("grid")), Fixed::ChartStyleGrid.into());
+        let r = ui.named(egui::Button::selectable(grid, tr(t!("grid"))), Fixed::ChartStyleGrid.into());
         if r.clicked() {
             out.push(style(id, json!({"grid": !grid})));
         }
@@ -223,11 +225,11 @@ fn added_rows(ui: &mut egui::Ui, shown: &Value, optional: &[(String, String)], i
     }
     let t = &Tokens::get();
     let added = names(shown, "added");
-    crate::ui_kit::small(ui, "Add", t.text_dim);
+    crate::ui_kit::small(ui, t!("Add"), t.text_dim);
     for (key, label) in optional {
         let on = added.contains(&key.as_str());
         ui.horizontal(|ui| {
-            let r = ui.named(egui::Checkbox::without_text(&mut on.clone()), Handle::CurveAdd(key)).hint("Draw it over the data");
+            let r = ui.named(egui::Checkbox::without_text(&mut on.clone()), Handle::CurveAdd(key)).hint(t!("Draw it over the data"));
             if r.clicked() {
                 out.push(style(id, json!({"added": with(&added, key, !on)})));
             }
@@ -249,7 +251,7 @@ fn curve_rows(ui: &mut egui::Ui, shown: &Value, curves: &[(String, String)], id:
         for (key, label) in curves {
             let on = !hidden.contains(&key.as_str());
             ui.horizontal(|ui| {
-                let r = ui.named(egui::Checkbox::without_text(&mut on.clone()), Handle::Curve(key)).hint("Show this curve");
+                let r = ui.named(egui::Checkbox::without_text(&mut on.clone()), Handle::Curve(key)).hint(t!("Show this curve"));
                 if r.clicked() {
                     out.push(style(id, json!({"hidden": with(&hidden, key, on)})));
                 }
@@ -277,7 +279,7 @@ fn curve_rows(ui: &mut egui::Ui, shown: &Value, curves: &[(String, String)], id:
                     if chosen {
                         ui.painter().circle_stroke(r.center(), 7.0, Stroke::new(1.5, t.accent));
                     }
-                    let resp = resp.hint(if c.is_none() { "the theme's colour" } else { "" });
+                    let resp = resp.hint(if c.is_none() { t!("the theme's colour") } else { t!("") });
                     if resp.clicked() && !chosen {
                         out.push(style(id, json!({"curve": key, "colour": c.map(|c| c.hex())})));
                     }
@@ -288,7 +290,7 @@ fn curve_rows(ui: &mut egui::Ui, shown: &Value, curves: &[(String, String)], id:
                     let on = width == Some(f64::from(w));
                     let r = ui
                         .named(egui::Button::selectable(on, format!("{w}")).small(), Handle::CurveWidth(key, w))
-                        .hint("line width (pixels); again: the usual");
+                        .hint(t!("line width (pixels); again: the usual"));
                     if r.clicked() {
                         out.push(style(id, json!({"curve": key, "width": if on { Value::Null } else { json!(w) }})));
                     }

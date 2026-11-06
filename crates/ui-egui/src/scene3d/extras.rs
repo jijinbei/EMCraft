@@ -202,7 +202,7 @@ pub(super) fn extras(m: &Model, driven: Option<usize>, overlay: Overlay, out: &m
         if strong {
             out.labels.push(Label {
                 at: midpoint(a, b),
-                text: crate::lang::trf("Lumped port {name}", args!(name = p.name)),
+                text: crate::lang::trf(t!("Lumped port {name}"), args!(name = p.name)),
                 color: sc().port,
                 facing: None,
                 anchor: None,
@@ -238,9 +238,9 @@ fn ports(m: &Model, driven: Option<usize>, overlay: Overlay, size: f64, out: &mu
         // the other way, into the model.
         let out_of = along(c, port_normal(p), -0.15 * size);
         let (text, color) = if driven == Some(i) {
-            (crate::lang::trf("Port {name} · in", args!(name = p.name)), sc().port_input)
+            (crate::lang::trf(t!("Port {name} · in"), args!(name = p.name)), sc().port_input)
         } else {
-            (crate::lang::trf("Port {name} · out", args!(name = p.name)), sc().port_output)
+            (crate::lang::trf(t!("Port {name} · out"), args!(name = p.name)), sc().port_output)
         };
         out.labels.push(Label { at: out_of, text, color, facing, anchor: Some(c) });
         if overlay == Overlay::Ports {
@@ -261,7 +261,7 @@ fn sources(s: &Source, strong: bool, size: f64, out: &mut Built) {
             let h = 0.08 * size;
             out.scene.line(along(a, d, -h), along(a, d, h), sc().source, 255);
             if strong {
-                out.labels.push(Label { at: a, text: crate::lang::tr("Dipole").into(), color: sc().source, facing: None, anchor: None });
+                out.labels.push(Label { at: a, text: crate::lang::tr(t!("Dipole")).into(), color: sc().source, facing: None, anchor: None });
             }
         }
         Source::PlaneWave { direction, .. } => {
@@ -272,7 +272,7 @@ fn sources(s: &Source, strong: bool, size: f64, out: &mut Built) {
                 let a = along(c, d, -h);
                 out.scene.line(a, [c[0] - d[0] * 0.3 * h, c[1] - d[1] * 0.3 * h, c[2] - d[2] * 0.3 * h], sc().source, 255);
                 if strong {
-                    out.labels.push(Label { at: a, text: crate::lang::tr("Plane wave").into(), color: sc().source, facing: None, anchor: None });
+                    out.labels.push(Label { at: a, text: crate::lang::tr(t!("Plane wave")).into(), color: sc().source, facing: None, anchor: None });
                 }
             }
         }

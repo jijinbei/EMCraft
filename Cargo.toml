@@ -10,6 +10,7 @@ license = "MIT OR Apache-2.0"
 [workspace.dependencies]
 # internal
 emcraft-macros = { path = "crates/macros" }
+emcraft-i18n = { path = "crates/i18n" }
 emcraft-model = { path = "crates/model" }
 emcraft-mesh = { path = "crates/mesh" }
 emcraft-tetmesh = { path = "crates/tetmesh" }

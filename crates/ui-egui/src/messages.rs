@@ -30,12 +30,12 @@ impl EmcraftApp {
     }
 
     /// Reports `template` in the current language, its placeholders filled with `args`.
-    pub fn info_with(&mut self, template: &str, args: &[(&str, &dyn std::fmt::Display)]) {
+    pub fn info_with(&mut self, template: crate::lang::Text, args: &[(&str, &dyn std::fmt::Display)]) {
         self.message(crate::lang::trf(template, args), false);
     }
 
     /// [`EmcraftApp::info_with`] as an error.
-    pub fn error_with(&mut self, template: &str, args: &[(&str, &dyn std::fmt::Display)]) {
+    pub fn error_with(&mut self, template: crate::lang::Text, args: &[(&str, &dyn std::fmt::Display)]) {
         self.message(crate::lang::trf(template, args), true);
     }
 
@@ -100,7 +100,7 @@ fn progress(app: &EmcraftApp, ui: &mut egui::Ui, t: &theme::Tokens, out: &mut Ac
     let Some(job) = &app.job else { return };
     ui.horizontal(|ui| {
         // Cancel first, where it stays put while the text beside it changes.
-        ui.act(true, ui_kit::styled("Cancel", false), Fixed::StatusCancel.into(), || Action::CancelJob, out);
+        ui.act(true, ui_kit::styled(t!("Cancel"), false), Fixed::StatusCancel.into(), || Action::CancelJob, out);
         ui.spinner();
         if let Some(w) = job.place() {
             device_chip(ui, &w, t);
@@ -115,12 +115,12 @@ pub(crate) fn place_text(w: &crate::worker::Where) -> String {
     use emcraft_engine::Device;
     let device = w.device.id();
     match (w.device, w.stepped) {
-        (Device::Cpu, _) => tr("CPU").to_owned(),
+        (Device::Cpu, _) => tr(t!("CPU")).to_owned(),
         // The GPU's kernels run on the CPU's SIMD there: no GPU at all.
-        (Device::CubeclCpu, _) => trf("CPU kernels ({device})", args!(device = device)),
-        (Device::Cuda, true) => trf("GPU {device}", args!(device = device)),
-        (Device::Cuda, false) if w.fronts > 0 => trf("GPU {device}: {n} fronts", args!(device = device, n = w.fronts)),
-        (Device::Cuda, false) => trf("CPU (no front large enough for {device})", args!(device = device)),
+        (Device::CubeclCpu, _) => trf(t!("CPU kernels ({device})"), args!(device = device)),
+        (Device::Cuda, true) => trf(t!("GPU {device}"), args!(device = device)),
+        (Device::Cuda, false) if w.fronts > 0 => trf(t!("GPU {device}: {n} fronts"), args!(device = device, n = w.fronts)),
+        (Device::Cuda, false) => trf(t!("CPU (no front large enough for {device})"), args!(device = device)),
     }
 }
 
@@ -130,9 +130,9 @@ fn device_chip(ui: &mut egui::Ui, w: &crate::worker::Where, t: &theme::Tokens) {
     let text = place_text(w);
     let (fill, ink) = if on { (t.accent, t.on_accent) } else { (t.panel_header, t.text_dim) };
     let hint = match (w.gpu(), w.stepped) {
-        (false, _) => "The CPU's threads (Setup › Compute picks a GPU)",
-        (true, true) => "The time domain's steps on the GPU",
-        (true, false) => "The factorization on the CPU, its large fronts on the GPU",
+        (false, _) => t!("The CPU's threads (Setup › Compute picks a GPU)"),
+        (true, true) => t!("The time domain's steps on the GPU"),
+        (true, false) => t!("The factorization on the CPU, its large fronts on the GPU"),
     };
     let r = egui::Frame::NONE.fill(fill).corner_radius(t.radius_sm).inner_margin(egui::Margin::symmetric(6, 2)).show(ui, |ui| {
         ui.label(egui::RichText::new(text).size(t.font_small).color(ink));
@@ -145,16 +145,16 @@ fn device_chip(ui: &mut egui::Ui, w: &crate::worker::Where, t: &theme::Tokens) {
 /// for how long — `Frequency sweep · 3/11 · 4 s`.
 pub(crate) fn job_text(job: &crate::worker::Job) -> String {
     let snap = job.snapshot();
-    let command = if job.command == "engine.script" { tr("Script") } else { label(&job.command) };
+    let command = if job.command == "engine.script" { tr(t!("Script")) } else { label(&job.command) };
     let secs = format!("{:.0}", job.elapsed());
     let (done, total) = (snap.done.min(snap.total) as usize, snap.total as usize);
     let what = match snap.stage.as_str() {
-        _ if total == 0 => tr("starting").to_owned(),
+        _ if total == 0 => tr(t!("starting")).to_owned(),
         // Its full solves are added until the residuals are small: how many so far, and the
         // worst residual of the last pass in the basis (falling to the tolerance, 1e-4).
         "fast sweep" => match snap.residual {
-            Some(r) => trf("fast: {n} in full, residual {r}", args!(n = done, r = format!("{r:.0e}"))),
-            None => trf("fast: {n} in full", args!(n = done)),
+            Some(r) => trf(t!("fast: {n} in full, residual {r}"), args!(n = done, r = format!("{r:.0e}"))),
+            None => trf(t!("fast: {n} in full"), args!(n = done)),
         },
         "frequency" | "phase" | "adaptive pass" => format!("{done}/{total}"),
         // A study's points (each a thousand parts) and a script's steps: the engine's stage.
@@ -163,10 +163,10 @@ pub(crate) fn job_text(job: &crate::worker::Job) -> String {
     };
     match job.remaining() {
         Some(left) => trf(
-            "{command} · {what} · {secs} s · {left} left",
+            t!("{command} · {what} · {secs} s · {left} left"),
             args!(command = command, what = what, secs = secs, left = crate::steps::duration(left)),
         ),
-        None => trf("{command} · {what} · {secs} s", args!(command = command, what = what, secs = secs)),
+        None => trf(t!("{command} · {what} · {secs} s"), args!(command = command, what = what, secs = secs)),
     }
 }
 
@@ -183,7 +183,7 @@ pub(crate) fn job_card(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         });
         ui_kit::progress(ui, job.snapshot().fraction(), ui.available_width());
         ui.add_space(2.0);
-        ui.act(true, ui_kit::styled("Cancel", false), Fixed::JobCancel.into(), || Action::CancelJob, out);
+        ui.act(true, ui_kit::styled(t!("Cancel"), false), Fixed::JobCancel.into(), || Action::CancelJob, out);
     });
     scenario::publish_rect(Fixed::Job, r.response.rect);
 }

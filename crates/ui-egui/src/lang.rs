@@ -1,5 +1,5 @@
 //! The window's languages (docs/languages.md): English, the source text and the default, and
-//! the translations compiled in (`crates/ui-egui/locales/<id>.json`, data in the spirit of the
+//! the translations compiled in (`locales/<id>.json`, data in the spirit of the
 //! built-in themes). Text is looked up by its English, as gettext does, where it leaves for the
 //! screen: the window's text helpers ([`crate::UiExt::text`], `act`'s hint, the `ui_kit`
 //! controls) take a [`Shown`] — a `&str` is English to look up, a `String` (or [`Raw`]) is data
@@ -19,14 +19,15 @@
 //!
 //! ```
 //! use emcraft_ui_egui::lang::{self, tr, trf};
+//! use emcraft_ui_egui::t;
 //!
 //! assert_eq!(lang::current(), "en");
-//! assert_eq!(tr("Settings"), "Settings");
+//! assert_eq!(tr(t!("Settings")), "Settings");
 //! assert!(lang::set("ja"));
-//! assert_eq!(tr("Settings"), "設定");
-//! assert_eq!(trf("{n} projects", &[("n", &3)]), "3 件のプロジェクト");
-//! // Text without a translation reads as its English; unknown languages are refused.
-//! assert_eq!(tr("no such text"), "no such text");
+//! assert_eq!(tr(t!("Settings")), "設定");
+//! assert_eq!(trf(t!("{n} projects"), &[("n", &3)]), "3 件のプロジェクト");
+//! // A text no complete language has does not compile (`t!("no such text")`); unknown
+//! // languages are refused.
 //! assert!(!lang::set("xx"));
 //! assert_eq!(lang::current(), "en");
 //! ```
@@ -42,7 +43,7 @@ use serde::Deserialize;
 pub const ENGLISH: &str = "en";
 
 /// The translations compiled in: each language's id and file.
-const BUILT_IN: &[(&str, &str)] = &[("ja", include_str!("../locales/ja.json"))];
+const BUILT_IN: &[(&str, &str)] = &[("ja", include_str!("../../../locales/ja.json"))];
 
 /// Longest language id read from preferences or requests.
 pub const MAX_ID: usize = 16;
@@ -53,6 +54,10 @@ pub const MAX_ID: usize = 16;
 #[serde(deny_unknown_fields)]
 struct File {
     name: String,
+    /// Every text translated: the build checks it has each one (`emcraft_i18n`).
+    #[serde(default)]
+    #[allow(dead_code)]
+    complete: bool,
     #[serde(default)]
     strings: HashMap<String, String>,
     #[serde(default)]
@@ -184,8 +189,33 @@ fn translation() -> Option<&'static Language> {
     }
 }
 
+/// A text the window shows, in English: made only by [`t!`](crate::t), which checks when the
+/// crate compiles that every complete translation has it with the same placeholders
+/// (`emcraft_i18n`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Text(&'static str);
+
+impl Text {
+    /// The text `t!` checked. Not for use elsewhere: an unchecked text would escape the checks.
+    #[doc(hidden)]
+    pub const fn checked(english: &'static str) -> Text {
+        Text(english)
+    }
+
+    /// Its English.
+    pub const fn en(self) -> &'static str {
+        self.0
+    }
+}
+
 /// The current language's text for `english`, or `english` when it has none.
-pub fn tr(english: &str) -> &str {
+pub fn tr(english: Text) -> &'static str {
+    lookup(english.0)
+}
+
+/// [`tr`] of a text known only at run time — a `named_enum!`'s label, a table's entry — whose
+/// translations a test checks instead of the compiler.
+pub(crate) fn lookup(english: &str) -> &str {
     let lang = translation();
     let found = lang.and_then(|l| l.strings.get(english));
     RECORD.with_borrow_mut(|r| {
@@ -203,19 +233,19 @@ pub fn tr(english: &str) -> &str {
 
 /// A `named_enum!`'s label in the current language.
 pub fn shown<T: emcraft_macros::Named>(x: T) -> &'static str {
-    tr(x.label())
+    lookup(x.label())
 }
 
-/// Text on its way to the screen: English to look up (`&str`), or data shown as it is (a
+/// Text on its way to the screen: English to look up ([`Text`]), or data shown as it is (a
 /// `String`, a `&String`, [`Raw`]).
 pub trait Shown {
     /// The text the current language shows.
     fn shown(&self) -> &str;
 }
 
-impl Shown for &str {
+impl Shown for Text {
     fn shown(&self) -> &str {
-        tr(self)
+        tr(*self)
     }
 }
 
@@ -251,7 +281,7 @@ macro_rules! args {
 pub(crate) use args;
 
 /// [`tr`] with its placeholders filled: each `{name}` by the value given for `name`.
-pub fn trf(english: &str, args: &[(&str, &dyn Display)]) -> String {
+pub fn trf(english: Text, args: &[(&str, &dyn Display)]) -> String {
     fill(tr(english), args)
 }
 
@@ -261,17 +291,18 @@ pub fn trf(english: &str, args: &[(&str, &dyn Display)]) -> String {
 ///
 /// ```
 /// use emcraft_ui_egui::lang::plural;
+/// use emcraft_ui_egui::t;
 ///
-/// assert_eq!(plural(1, "{n} source", "{n} sources", &[("n", &1)]), "1 source");
-/// assert_eq!(plural(3, "{n} source", "{n} sources", &[("n", &3)]), "3 sources");
+/// assert_eq!(plural(1, t!("{n} source"), t!("{n} sources"), &[("n", &1)]), "1 source");
+/// assert_eq!(plural(3, t!("{n} source"), t!("{n} sources"), &[("n", &3)]), "3 sources");
 /// ```
-pub fn plural(n: usize, one: &str, many: &str, args: &[(&str, &dyn Display)]) -> String {
+pub fn plural(n: usize, one: Text, many: Text, args: &[(&str, &dyn Display)]) -> String {
     trf(pick(n, one, many), args)
 }
 
 /// The English of `one` when `n` is 1, else of `many`, both looked up (see [`plural`]): for a
 /// text built by hand ([`both`]).
-pub fn pick<'a>(n: usize, one: &'a str, many: &'a str) -> &'a str {
+pub fn pick(n: usize, one: Text, many: Text) -> Text {
     let _ = (tr(one), tr(many));
     if n == 1 { one } else { many }
 }
@@ -285,8 +316,8 @@ pub struct Both {
 }
 
 /// [`trf`], with the English filled too.
-pub fn both(english: &str, args: &[(&str, &dyn Display)]) -> Both {
-    let en = fill(english, args);
+pub fn both(english: Text, args: &[(&str, &dyn Display)]) -> Both {
+    let en = fill(english.en(), args);
     let shown = match translation() {
         Some(_) => trf(english, args),
         None => en.clone(),

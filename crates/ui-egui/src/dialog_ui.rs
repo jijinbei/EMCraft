@@ -139,7 +139,7 @@ fn card(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32) -> Aske
             if id == crate::import_ui::ID {
                 d.widgets = crate::import_ui::body(app, d, ui, &mut asked);
             } else {
-                let help = ui_kit::button(ui, "Help", false, Fixed::DialogHelp);
+                let help = ui_kit::button(ui, t!("Help"), false, Fixed::DialogHelp);
                 let mut toggles = vec![(help.id, false)];
                 if help.clicked() {
                     d.help = !d.help;
@@ -149,20 +149,20 @@ fn card(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32) -> Aske
                 }
                 ui.add_space(t.space_6);
                 if id == "mesh.generate" {
-                    ui_kit::caption(ui, "Choose an element size, or set elements per wavelength. Smaller elements increase memory and solve time; check convergence before trusting a result.");
+                    ui_kit::caption(ui, t!("Choose an element size, or set elements per wavelength. Smaller elements increase memory and solve time; check convergence before trusting a result."));
                     let basic = |name: &str| matches!(name, "size" | "per_wavelength" | "frequency");
-                    d.widgets = fields(ui, d, session, &basic, &mesh_label);
-                    let options = ui_kit::button(ui, "Advanced settings", false, Fixed::DialogOptions);
+                    d.widgets = fields(ui, d, session, &basic, &|name| Raw(crate::lang::lookup(crate::param_labels::param_label(id, name))));
+                    let options = ui_kit::button(ui, t!("Advanced settings"), false, Fixed::DialogOptions);
                     toggles.push((options.id, false));
                     if options.clicked() {
                         d.options = !d.options;
                     }
                     if d.options {
-                        let drawn = fields(ui, d, session, &|name| !basic(name), &mesh_label);
+                        let drawn = fields(ui, d, session, &|name| !basic(name), &|name| Raw(crate::lang::lookup(crate::param_labels::param_label(id, name))));
                         d.widgets.extend(drawn);
                     }
                 } else {
-                    d.widgets = fields(ui, d, session, &|_| true, &|name| Raw(name));
+                    d.widgets = fields(ui, d, session, &|_| true, &|name| Raw(crate::lang::lookup(crate::param_labels::param_label(id, name))));
                 }
                 d.widgets.extend(toggles);
             }
@@ -183,32 +183,16 @@ fn card(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32) -> Aske
     let mut footer =
         ui.new_child(egui::UiBuilder::new().max_rect(r.shrink2(vec2(12.0, 10.0))).layout(egui::Layout::right_to_left(egui::Align::Center)));
     let ok = footer.named_enabled(!busy, ui_kit::styled(ok_label(id), true), Fixed::DialogOk.into());
-    let ok = ok.hint(if busy { "a job is running" } else { "" });
+    let ok = ok.hint(if busy { t!("a job is running") } else { t!("") });
     asked.ask(Asked::Ok, ok.clicked());
-    let cancel = ui_kit::button(&mut footer, "Cancel", false, Fixed::DialogCancel);
+    let cancel = ui_kit::button(&mut footer, t!("Cancel"), false, Fixed::DialogCancel);
     asked.ask(Asked::Cancel, cancel.clicked());
     d.widgets.extend([(ok.id, false), (cancel.id, false)]);
     if busy {
-        footer.text(Style::SmallDim, "busy…");
+        footer.text(Style::SmallDim, t!("busy…"));
     }
     keys(app, d, ui, busy, &mut asked);
     asked
-}
-
-/// Display labels leave command parameter ids and automation handles unchanged.
-fn mesh_label(name: &'static str) -> &'static str {
-    match name {
-        "size" => "Element size",
-        "per_wavelength" => "Wave divisions",
-        "frequency" => "Mesh frequency",
-        "edge" => "Step edge ratio",
-        "growth" => "Growth factor",
-        "strip_edge" => "Strip edge ratio",
-        "strip_end" => "Strip end ratio",
-        "size_y" => "Size across y",
-        "curved" => "Curved elements",
-        _ => name,
-    }
 }
 
 /// The dialog's keys: Enter is OK while one of its text fields has the keyboard (or nothing
@@ -234,17 +218,17 @@ fn keys(app: &EmcraftApp, d: &Dialog, ui: &mut egui::Ui, busy: bool, asked: &mut
 
 /// The primary button's label: what a long command does (Mesh, Solve, Sweep…), OK for the
 /// rest — never Run, which is the workflow's step 7.
-pub fn ok_label(id: &str) -> &'static str {
+pub fn ok_label(id: &str) -> crate::lang::Text {
     match id {
-        _ if id.starts_with("mesh.") => "Mesh",
-        "solve.device" => "OK",
-        _ if id.starts_with("solve.") => "Solve",
-        "study.sweep" => "Sweep",
-        "study.optimize" => "Optimize",
-        "geometry.import" => "Import",
-        "file.open" | "file.sample" => "Open",
-        "results.compare" | "results.field_error" => "Compare",
-        _ => "OK",
+        _ if id.starts_with("mesh.") => t!("Mesh"),
+        "solve.device" => t!("OK"),
+        _ if id.starts_with("solve.") => t!("Solve"),
+        "study.sweep" => t!("Sweep"),
+        "study.optimize" => t!("Optimize"),
+        "geometry.import" => t!("Import"),
+        "file.open" | "file.sample" => t!("Open"),
+        "results.compare" | "results.field_error" => t!("Compare"),
+        _ => t!("OK"),
     }
 }
 
@@ -289,11 +273,25 @@ pub(crate) fn fields<L: crate::lang::Shown>(
             }
             Kind::Vector(parts) => {
                 let parts = *parts;
+                // Words over each box (a face's plane, sides); single letters (x, y, z) as hints.
+                let worded = parts.iter().any(|p| p.len() > 2);
+                if worded {
+                    ui.horizontal(|ui| {
+                        ui.add_space(t.form_label_width);
+                        let w = ((ui.available_width() - 30.0) / parts.len() as f32 - 6.0).max(30.0);
+                        for p in parts {
+                            ui.add_sized(
+                                vec2(w, 12.0),
+                                egui::Label::new(egui::RichText::new(crate::lang::lookup(p)).size(t.font_small).color(t.text_dim)).truncate(),
+                            );
+                        }
+                    });
+                }
                 ui_kit::row(ui, label(name), f.required, |ui| {
                     let w = ((ui.available_width() - 30.0) / parts.len() as f32 - 6.0).max(30.0);
                     for (k, (label, v)) in parts.iter().zip(f.parts.iter_mut()).enumerate() {
-                        let r =
-                            ui.named(egui::TextEdit::singleline(v).desired_width(w).hint_text(*label).char_limit(64), Handle::DialogPart(name, k));
+                        let hint = if worded { "" } else { *label };
+                        let r = ui.named(egui::TextEdit::singleline(v).desired_width(w).hint_text(hint).char_limit(64), Handle::DialogPart(name, k));
                         if k == 0 {
                             scenario::publish_target(handle, r.rect);
                         }
@@ -318,7 +316,7 @@ pub(crate) fn fields<L: crate::lang::Shown>(
                     Kind::Json => "JSON",
                     Kind::Numbers => "a, b, c",
                     _ if f.required => "",
-                    _ => tr("default"),
+                    _ => tr(t!("default")),
                 };
                 ui_kit::row(ui, label(name), f.required, |ui| {
                     let w = ui.available_width() - if unit.is_empty() { 8.0 } else { 40.0 };
@@ -370,7 +368,7 @@ fn table(ui: &mut egui::Ui, f: &mut Field, cols: &'static [Column], doc: &str, s
                 scenario::publish_target(Handle::DialogCell(name, i, c.name), resp.rect);
                 drawn.push((resp.id, c.cell == Cell::Number));
             }
-            let x = ui.named(egui::Button::new("×").small(), Handle::DialogRemove(name, i)).hint("remove this row");
+            let x = ui.named(egui::Button::new("×").small(), Handle::DialogRemove(name, i)).hint(t!("remove this row"));
             if x.clicked() {
                 remove = Some(i);
             }
@@ -382,7 +380,7 @@ fn table(ui: &mut egui::Ui, f: &mut Field, cols: &'static [Column], doc: &str, s
     }
     let add = ui.named_enabled(
         f.rows.len() < MAX_ROWS,
-        egui::Button::new(trf("Add {row}", args!(row = name.trim_end_matches('s')))),
+        egui::Button::new(trf(t!("Add {row}"), args!(row = name.trim_end_matches('s')))),
         Handle::DialogAdd(name),
     );
     if add.clicked() {
@@ -394,13 +392,14 @@ fn table(ui: &mut egui::Ui, f: &mut Field, cols: &'static [Column], doc: &str, s
 
 /// A drop-down of `list` writing the chosen value into `text`; `optional` adds "default".
 fn choice(ui: &mut egui::Ui, id: (&str, usize, usize), text: &mut String, list: &[String], width: f32, optional: bool) -> egui::Response {
-    let shown = if text.is_empty() { tr("default").to_owned() } else { text.clone() };
+    let word = |v: &str| crate::param_labels::value_label(v).map_or_else(|| v.to_owned(), |l| crate::lang::lookup(l).to_owned());
+    let shown = if text.is_empty() { tr(t!("default")).to_owned() } else { word(text) };
     let r = egui::ComboBox::from_id_salt(("choice", id.0, id.1, id.2)).selected_text(shown).width(width).show_ui(ui, |ui| {
         if optional {
-            ui.selectable_value(text, String::new(), tr("default"));
+            ui.selectable_value(text, String::new(), tr(t!("default")));
         }
         for v in list {
-            let r = ui.selectable_value(text, v.clone(), v.as_str());
+            let r = ui.selectable_value(text, v.clone(), word(v));
             scenario::publish_target(Handle::Choice(id.0, v), r.rect);
         }
     });

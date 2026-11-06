@@ -32,12 +32,12 @@ pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 .iter()
                 .map(|s| {
                     let run_going = running && s.step == Step::Run;
-                    let status = if run_going { crate::lang::tr("running") } else { shown(s.status) };
-                    let mut checks: Vec<String> = s.messages.iter().map(|m| m.text.clone()).collect();
+                    let status = if run_going { crate::lang::tr(t!("running")) } else { shown(s.status) };
+                    let mut checks: Vec<String> = s.messages.iter().map(crate::steps::check_text).collect();
                     if let Some(e) = run_failure(app).filter(|_| s.step == Step::Run) {
                         checks.insert(
                             0,
-                            crate::lang::trf("the last run failed: {error}", crate::lang::args!(error = emcraft_engine::text::clip(e, 300))),
+                            crate::lang::trf(t!("the last run failed: {error}"), crate::lang::args!(error = emcraft_engine::text::clip(e, 300))),
                         );
                     }
                     let unneeded = not_needed(app, s.step);

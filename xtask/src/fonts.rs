@@ -34,7 +34,7 @@ pub fn run(root: &Path) -> Result<(), String> {
     let ui = root.join("crates/ui-egui/fonts");
     let mut jp = ranges(&[(0x20, 0x7E), (0xA0, 0xFF), (0x2000, 0x206F), (0x3000, 0x30FF), (0x31F0, 0x31FF), (0xFF00, 0xFFEF)]);
     jp.extend(jis_x_0208());
-    let ja = std::fs::read_to_string(root.join("crates/ui-egui/locales/ja.json")).map_err(|e| format!("ja.json: {e}"))?;
+    let ja = std::fs::read_to_string(root.join("locales/ja.json")).map_err(|e| format!("ja.json: {e}"))?;
     jp.extend(ja.chars().filter(|c| !c.is_control()));
     write(&ui.join("full/NotoSansJP-Regular.otf"), &ui.join("NotoSansJP-Regular-subset.otf"), jp, Kerning::Dropped)?;
 

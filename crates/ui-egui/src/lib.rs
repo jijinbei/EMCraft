@@ -36,6 +36,14 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+/// A text checked against the translations: `t!("Cancel")` (see [`Text`]).
+#[macro_export]
+macro_rules! t {
+    ($english:literal) => {
+        $crate::lang::Text::checked(::emcraft_i18n::text!($english))
+    };
+}
+
 pub mod action;
 mod after;
 mod app_dialogs;
@@ -60,6 +68,7 @@ pub mod math;
 mod messages;
 pub mod navigation;
 pub mod pack;
+mod param_labels;
 pub mod picture;
 pub mod prefs;
 pub mod raster;
@@ -251,7 +260,7 @@ impl EmcraftApp {
             failure: None,
             focus_last: None,
         };
-        app.info_with("Open a sample or a project (File) or build a model from the ribbon.", &[]);
+        app.info_with(t!("Open a sample or a project (File) or build a model from the ribbon."), &[]);
         app
     }
 

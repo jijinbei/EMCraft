@@ -54,7 +54,7 @@ impl EmcraftApp {
         let n = script.as_array().map(Vec::len).ok_or_else(|| UiError::Input("a script is a JSON array of {command, params}".into()))?;
         self.job =
             Some(worker::Job::spawn(&self.session, "engine.script", json!({}), self.ctx.clone(), move |s| s.run_script(&script).map(Value::Array)));
-        self.info_with("Running a script of {n} commands…", args!(n = n));
+        self.info_with(t!("Running a script of {n} commands…"), args!(n = n));
         Ok(json!({"started": "engine.script"}))
     }
 
@@ -164,7 +164,7 @@ impl EmcraftApp {
     pub fn cancel_job(&mut self) -> bool {
         let Some(job) = self.job.take() else { return false };
         job.cancel();
-        self.info_with("{command} cancelled.", args!(command = label(&job.command)));
+        self.info_with(t!("{command} cancelled."), args!(command = label(&job.command)));
 
         for w in job.waiting {
             let _ = w.send(json!({"ok": false, "error": emcraft_engine::progress::CANCELLED}));

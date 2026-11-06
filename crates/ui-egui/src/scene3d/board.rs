@@ -162,7 +162,7 @@ pub(super) fn build(board: &Board, route: &str, reference: &str, out: &mut Built
         out.legend.push((reference.to_owned(), colours.reference));
     }
     if stretch > 1.0 {
-        out.legend.push((trf("heights × {k}", args!(k = format!("{stretch:.0}"))), super::style::wire_rgb()));
+        out.legend.push((trf(t!("heights × {k}"), args!(k = format!("{stretch:.0}"))), super::style::wire_rgb()));
     }
     let (bottom, top) = board.region.map_or((0.0, thickness * stretch), |r| (-r.below, thickness * stretch + r.above));
     let (rlo, rhi) = board.region.map_or((lo, hi), |r| (r.lo, r.hi));

@@ -26,12 +26,13 @@ pub fn header(ui: &mut Ui, glyph: crate::glyphs::Glyph, title: impl Shown, docke
     let icon = Rect::from_center_size(pos2(rect.left() + t.space_12 + 10.0, rect.center().y), vec2(20.0, 20.0));
     crate::glyphs::paint(ui.painter(), icon, glyph, t.icon, accent);
     let close = Rect::from_center_size(pos2(rect.right() - t.space_8 - 13.0, rect.center().y), vec2(26.0, 26.0));
-    let close_r = icon_button(ui, close, Mark::Close, "Close", Fixed::DialogClose);
+    let close_r = icon_button(ui, close, Mark::Close, t!("Close"), Fixed::DialogClose);
     let mut right = close.left();
     let mut dock_clicked = false;
     if let Some(docked) = docked {
         let dock = Rect::from_center_size(pos2(close.left() - t.space_4 - 13.0, rect.center().y), vec2(26.0, 26.0));
-        let r = icon_button(ui, dock, if docked { Mark::Undock } else { Mark::Dock }, if docked { "Float" } else { "Dock" }, Fixed::DialogDock);
+        let r =
+            icon_button(ui, dock, if docked { Mark::Undock } else { Mark::Dock }, if docked { t!("Float") } else { t!("Dock") }, Fixed::DialogDock);
         dock_clicked = r.clicked();
         right = dock.left();
     }
@@ -58,7 +59,7 @@ pub enum Mark {
 }
 
 /// A small square button with a drawn mark, published as `handle`.
-pub fn icon_button(ui: &mut Ui, r: Rect, mark: Mark, label: &str, handle: Fixed) -> Response {
+pub fn icon_button(ui: &mut Ui, r: Rect, mark: Mark, label: crate::lang::Text, handle: Fixed) -> Response {
     let t = &Tokens::get();
     let label = tr(label);
     let resp = ui.hit(r, handle.into(), Sense::click());
@@ -291,7 +292,7 @@ fn player_parts(ui: &mut Ui, player: &mut Player, phase: &mut f64, handle: Fixed
         t.accent,
     );
     scenario::publish_target(Handle::Part(handle, Part::Play), r);
-    let tip = tr(if player.playing { "Pause" } else { "Play" });
+    let tip = tr(if player.playing { t!("Pause") } else { t!("Play") });
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
     if resp.on_hover_text(tip).clicked() {
         player.playing = !player.playing;
