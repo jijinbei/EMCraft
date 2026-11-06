@@ -583,24 +583,15 @@ fn search_field(search: &mut Search, ui: &mut egui::Ui, row: Rect, left: f32, ou
     search.field = Some(resp.rect);
     // Keys while the field has focus.
     if resp.has_focus() || resp.lost_focus() {
-        let (up, down, enter, esc) = ui.input(|i| {
-            (
-                i.key_pressed(egui::Key::ArrowUp),
-                i.key_pressed(egui::Key::ArrowDown),
-                i.key_pressed(egui::Key::Enter),
-                i.key_pressed(egui::Key::Escape),
-            )
-        });
+        // (Escape closes the search as the top layer: crate::layers.)
+        let (up, down, enter) =
+            ui.input(|i| (i.key_pressed(egui::Key::ArrowUp), i.key_pressed(egui::Key::ArrowDown), i.key_pressed(egui::Key::Enter)));
         let n = matches(&search.text).len();
         if down && n > 0 {
             search.selected = (search.selected + 1).min(n - 1);
         }
         if up {
             search.selected = search.selected.saturating_sub(1);
-        }
-        if esc {
-            search.open = false;
-            search.text.clear();
         }
         if enter && search.open {
             // The Enter is the search's: a dialog it opens must not take it as OK.

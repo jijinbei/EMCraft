@@ -54,6 +54,11 @@ fn scenario_section_view() {
 }
 
 #[test]
+fn scenario_escape_layers() {
+    scenario("escape_layers");
+}
+
+#[test]
 fn scenario_app_tabs() {
     scenario("app_tabs");
 }

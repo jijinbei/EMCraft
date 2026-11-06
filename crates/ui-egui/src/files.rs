@@ -414,7 +414,7 @@ fn path_prompt(ask: &mut Option<Ask>, ctx: &egui::Context, out: &mut Actions) {
                     Purpose::Import => t!("Choose"),
                 };
                 ok |= ui_kit::button(ui, label, true, Fixed::FileOk).clicked();
-                cancel = ui_kit::button(ui, t!("Cancel"), false, Fixed::FileCancel).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape));
+                cancel = ui_kit::button(ui, t!("Cancel"), false, Fixed::FileCancel).clicked();
             });
         });
     });
@@ -458,9 +458,6 @@ fn confirm(app: &EmcraftApp, ask: Option<&Ask>, ctx: &egui::Context, out: &mut A
             ui.horizontal(|ui| {
                 for &(label, primary, handle, a) in answers {
                     ui.act(true, ui_kit::styled(label, primary), handle.into(), || Action::File(FileAction::Confirm(a)), out);
-                }
-                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                    out.push(Action::File(FileAction::Confirm(Answer::Cancel)));
                 }
             });
         });

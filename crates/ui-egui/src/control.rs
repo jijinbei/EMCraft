@@ -211,6 +211,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
     }
     v["purpose"] = json!(app.home.purpose.map(emcraft_model::Analysis::id));
     v["page"] = json!(app.page.shown().id());
+    v["layers"] = json!(crate::layers::stack(app).iter().map(|l| l.id()).collect::<Vec<_>>());
     v["tabs"] = json!(app.page.tabs().iter().map(|t| t.id()).collect::<Vec<_>>());
     v["kept"] = json!(emcraft_engine::archive::rows(&app.session));
     v["compare"] = json!(app.views.compare);

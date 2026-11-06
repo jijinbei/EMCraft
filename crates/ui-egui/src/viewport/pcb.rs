@@ -329,8 +329,9 @@ fn draw(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, view: Rect, board: 
         };
     }
     let Some(pen) = state.drawing.as_mut() else { return };
-    // Escape or a right click ends the line being drawn, and with none, drawing.
-    if ui.input(|i| i.key_pressed(egui::Key::Escape) || i.pointer.secondary_clicked()) {
+    // A right click ends the line being drawn, and with none, drawing (Escape too, as the top
+    // layer: crate::layers).
+    if ui.input(|i| i.pointer.secondary_clicked()) {
         match pen.from {
             Some(_) => pen.from = None,
             None => state.drawing = None,

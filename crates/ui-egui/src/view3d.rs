@@ -236,6 +236,12 @@ impl View3d {
         self.generation.wrapping_mul(2).wrapping_add(u64::from(cut))
     }
 
+    /// Drops the selection box being dragged (its left drag ends with it).
+    pub(crate) fn cancel_box(&mut self) {
+        self.boxsel = None;
+        self.left = None;
+    }
+
     /// What lies under `pos` in the view drawn into `rect`.
     fn pick_at(&mut self, ctx: &egui::Context, rect: Rect, pos: egui::Pos2) -> Option<scene3d::Pick> {
         let at = pos - rect.min;
@@ -776,24 +782,6 @@ fn tools(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, rect: Rect, edit: &Ges
     crate::tools3d::hover(app, v, rect, ui.input(|i| i.pointer.hover_pos()));
     if edit.tool_click && !app.busy() {
         crate::tools3d::click(app, v, out);
-    }
-    escape(app, v, ui, out);
-}
-
-/// Escape drops a box being dragged, clears what a tool picked, then turns it off; with no tool
-/// on it clears the selection (while no dialog, menu or field takes the key).
-fn escape(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, out: &mut Actions) {
-    let idle = app.dialog.is_none() && app.page.settings_shown().is_none() && app.ask.is_none() && !ui.ctx().text_edit_focused();
-    if !idle || !ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-        return;
-    }
-    if v.boxsel.take().is_some() {
-        v.left = None;
-    } else if v.tools.tool.is_some() || v.tools.measured.is_some() {
-        v.tools.escape();
-    } else if (!v.selected.is_empty() || app.browser.selected.is_some()) && !egui::Popup::is_any_open(ui.ctx()) {
-        v.selected.clear();
-        out.push(Action::Select { row: None, picks: Vec::new() });
     }
 }
 

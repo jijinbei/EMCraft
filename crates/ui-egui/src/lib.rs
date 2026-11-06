@@ -65,6 +65,7 @@ pub mod home;
 mod import_ui;
 pub mod kinds;
 pub mod lang;
+pub mod layers;
 pub mod math;
 mod messages;
 pub mod navigation;
@@ -452,6 +453,8 @@ impl EmcraftApp {
         files::dropped(self, &ctx);
         self.prepare();
         let mut out = Actions::default();
+        // Escape closes the top layer, whatever is drawn after (crate::layers).
+        out.extend(layers::escape(self, &ctx));
         ribbon::app_bar(self, ui, &mut out);
         if let Some(section) = self.page.settings_shown() {
             settings::show(self, section, ui, &mut out);
@@ -530,10 +533,6 @@ impl EmcraftApp {
 fn shortcuts(app: &EmcraftApp, ctx: &egui::Context, out: &mut Actions) {
     if ctx.egui_wants_keyboard_input() {
         return;
-    }
-    // Escape leaves the settings page.
-    if app.page.settings_shown().is_some() && app.ask.is_none() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        out.push(Action::CloseSettings);
     }
     if app.busy() {
         return;

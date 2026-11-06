@@ -209,9 +209,7 @@ fn keys(app: &EmcraftApp, d: &Dialog, ui: &mut egui::Ui, busy: bool, asked: &mut
     let focus = app.focus_last;
     let ours = |text_only: bool| focus.is_none_or(|f| d.widgets.iter().any(|(id, text)| *id == f && (*text || !text_only)));
     let take = |ui: &mut egui::Ui, key: egui::Key| ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, key));
-    if ours(false) && take(ui, egui::Key::Escape) {
-        asked.ask(Asked::Cancel, true);
-    } else if ours(true) && !busy && take(ui, egui::Key::Enter) {
+    if ours(true) && !busy && take(ui, egui::Key::Enter) {
         asked.ask(Asked::Ok, true);
     }
 }

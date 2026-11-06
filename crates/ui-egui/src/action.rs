@@ -61,6 +61,8 @@ pub enum Action {
     Redo,
     /// Cancels the running job.
     CancelJob,
+    /// Closes a layer of the window (Escape closes the top one: `crate::layers`).
+    Close(crate::layers::Layer),
     /// Shows a page of the window (its tab).
     Show(crate::page::Tab),
     /// Opens a template's card (its parameters and preview), or closes it (`None`).
@@ -297,6 +299,11 @@ impl EmcraftApp {
             Action::Redo => return self.run("edit.redo", json!({})),
             Action::CancelJob => return Ok(json!({"cancelled": self.cancel_job()})),
             Action::Show(tab) => self.page.show(tab),
+            Action::Close(layer) => {
+                if let Some(then) = crate::layers::close(self, layer) {
+                    return self.apply(then);
+                }
+            }
             Action::Purpose(kind) => self.home.purpose = kind,
             Action::Template(name) => self.template = name.and_then(|n| crate::template_dialog::TemplateDialog::new(self, &n)),
             Action::OpenTemplate(name, values) => crate::template_dialog::open(self, name, values),
