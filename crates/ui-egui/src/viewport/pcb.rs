@@ -119,8 +119,8 @@ pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mu
     let stage = emcraft_engine::pcb::stage(&app.session);
     crate::view3d::show(app, st, ui, view, crate::scene3d::Overlay::Board, out);
     scenario::publish_target(Handle::Choice("pcb_control", "board3d"), view);
-    if stage != Stage::Board {
-        st.views.pcb.drawing = None;
+    if stage != Stage::Board && app.ui_state.drawing() {
+        out.push(Action::Pen(None));
     }
     match stage {
         Stage::Board => draw(app, st, ui, view, board, out),
@@ -162,7 +162,7 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
     match stage {
         Stage::Board => {
             board_sources(ui, out);
-            if state.drawing.is_some() {
+            if app.ui_state.drawing() {
                 pen(app, state, ui, board, out);
             }
         }
@@ -278,7 +278,7 @@ fn choose_net(ui: &mut egui::Ui, board: &emcraft_model::pcb::Board, selected: &s
 /// What the 3D view draws with (the pen): its net, layer and width, then that net's segments to
 /// change or delete.
 fn pen(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui, board: &emcraft_model::pcb::Board, out: &mut Actions) {
-    let Some(pen) = state.drawing.as_mut() else { return };
+    let pen = &mut state.pen;
     let l = app.session.display().length;
     ui.add_space(6.);
     ui.heading(tr(t!("Draw the route")));
@@ -320,21 +320,20 @@ const DRAW_SNAP: f64 = 0.4e-3;
 fn draw(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, view: Rect, board: &emcraft_model::pcb::Board, out: &mut Actions) {
     let (state, v) = (&mut st.views.pcb, &st.view3d);
     let toggle = Rect::from_min_size(pos2(view.right() - 140., view.top() + 8.), vec2(130., 28.));
-    let r = ui.new_child(egui::UiBuilder::new().max_rect(toggle)).selectable_label(state.drawing.is_some(), tr(t!("Draw the route")));
+    let r = ui.new_child(egui::UiBuilder::new().max_rect(toggle)).selectable_label(app.ui_state.drawing(), tr(t!("Draw the route")));
     scenario::publish_target(Handle::Choice("pcb_mode", "draw"), r.rect);
     if r.clicked() {
-        state.drawing = match state.drawing {
-            Some(_) => None,
-            None => Some(crate::state::Pen::for_board(board, app.session.views().pcb.net())),
-        };
+        out.push(Action::Pen((!app.ui_state.drawing()).then(|| crate::state::Pen::for_board(board, app.session.views().pcb.net()))));
     }
-    let Some(pen) = state.drawing.as_mut() else { return };
-    // A right click ends the line being drawn, and with none, drawing (Escape too, as the top
-    // layer: crate::layers).
+    if !app.ui_state.drawing() {
+        return;
+    }
+    let pen = &mut state.pen;
+    // A right click ends the line being drawn, and with none, drawing (as Escape closes the
+    // pen's layer: crate::layers).
     if ui.input(|i| i.pointer.secondary_clicked()) {
-        match pen.from {
-            Some(_) => pen.from = None,
-            None => state.drawing = None,
+        if pen.from.take().is_none() {
+            out.push(Action::Pen(None));
         }
         return;
     }

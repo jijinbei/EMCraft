@@ -126,6 +126,8 @@ pub enum Action {
     /// A tool of the 3D view on (the ports' with the Excitation step and the model in 3D), or
     /// none.
     Tool(Option<crate::tools3d::Tool>),
+    /// Starts drawing copper on the board with this pen, or stops (`None`).
+    Pen(Option<crate::state::Pen>),
     /// Measures between two picks (`geometry.measure`); the 3D view draws the reply.
     Measure([crate::tools3d::Snap; 2]),
     /// A message in the message area.
@@ -215,6 +217,7 @@ impl Action {
             | Action::StandardView(_)
             | Action::SetPlaying(_)
             | Action::Tool(_)
+            | Action::Pen(_)
             | Action::Message { .. } => false,
         }
     }
@@ -461,6 +464,11 @@ impl EmcraftApp {
                 if tool.is_some_and(crate::tools3d::Tool::ports) && self.place.step() != Some(crate::steps::Step::Excitation) {
                     crate::steps::open_step(self, Some(crate::steps::Step::Excitation));
                 }
+            }
+            Action::Pen(pen) => {
+                self.ui_state.set_drawing(pen.is_some());
+                // A line begun goes with the pen.
+                self.views.pcb.pen = pen.unwrap_or_else(|| crate::state::Pen { from: None, ..std::mem::take(&mut self.views.pcb.pen) });
             }
             Action::Measure(picks) => {
                 let params = crate::tools3d::measure_params(self.session.display().length, picks);

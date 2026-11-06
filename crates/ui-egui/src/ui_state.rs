@@ -69,6 +69,8 @@ pub enum Mode {
     #[default]
     Idle,
     Tool(Tool),
+    /// Drawing copper on the board (its pen: `state::PcbUi::pen`).
+    Pen,
 }
 
 /// Who has the keyboard when Escape is pressed: what decides whether the top layer takes it.
@@ -145,7 +147,7 @@ impl UiState {
     pub fn tool(&self) -> Option<Tool> {
         match self.mode {
             Mode::Tool(t) => Some(t),
-            Mode::Idle => None,
+            Mode::Idle | Mode::Pen => None,
         }
     }
 
@@ -154,9 +156,23 @@ impl UiState {
         &self.selection
     }
 
-    /// Turns `tool` on (or the tools off).
+    /// Whether copper is being drawn.
+    pub fn drawing(&self) -> bool {
+        self.mode == Mode::Pen
+    }
+
+    /// Turns `tool` on (or the tools off, the pen too).
     pub fn set_tool(&mut self, tool: Option<Tool>) {
         self.mode = tool.map_or(Mode::Idle, Mode::Tool);
+    }
+
+    /// Starts drawing copper (any tool off), or stops it.
+    pub fn set_drawing(&mut self, on: bool) {
+        if on {
+            self.mode = Mode::Pen;
+        } else if self.drawing() {
+            self.mode = Mode::Idle;
+        }
     }
 
     /// Selects `selection` in place of what was.
@@ -172,7 +188,9 @@ impl UiState {
             Layer::Dialog => self.dialog.is_some(),
             Layer::Settings => self.page.settings_shown().is_some(),
             Layer::Selection => !self.selection.is_clear(),
-            Layer::Pen | Layer::Box | Layer::Tool => view.contains(&l),
+            Layer::Pen => self.drawing(),
+            Layer::Tool => self.tool().is_some() || view.contains(&l),
+            Layer::Box => view.contains(&l),
         };
         Layer::ALL.into_iter().filter(|l| open(*l)).collect()
     }
@@ -388,6 +406,21 @@ mod tests {
         assert_eq!(&s.selection()[..], [Pick::Port(1), Pick::Guide]);
         s.update(&Action::SelectBox { picks: vec![Pick::Port(0)], add: false });
         assert_eq!(&s.selection()[..], [Pick::Port(0)]);
+    }
+
+    /// One mode at a time: a tool turned on stops the pen; the tools off leave Idle; stopping
+    /// the pen while a tool is on leaves the tool.
+    #[test]
+    fn one_mode_at_a_time() {
+        let mut s = UiState::default();
+        s.set_drawing(true);
+        assert_eq!(s.layers(&[]), [Layer::Pen]);
+        s.set_tool(Some(Tool::Measure));
+        assert_eq!((s.mode(), s.drawing()), (Mode::Tool(Tool::Measure), false));
+        s.set_drawing(false);
+        assert_eq!(s.tool(), Some(Tool::Measure));
+        s.set_tool(None);
+        assert_eq!(s.mode(), Mode::Idle);
     }
 
     fn asking() -> UiState {

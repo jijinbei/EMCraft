@@ -8,11 +8,7 @@ use crate::{Action, EmcraftApp};
 
 /// The 3D view's layers open, top first.
 fn view_layers(app: &EmcraftApp) -> Vec<Layer> {
-    let open = [
-        (Layer::Pen, app.views.pcb.drawing.is_some()),
-        (Layer::Box, app.view3d.boxsel.is_some()),
-        (Layer::Tool, app.ui_state.tool().is_some() || app.view3d.tools.measured.is_some()),
-    ];
+    let open = [(Layer::Box, app.view3d.boxsel.is_some()), (Layer::Tool, app.view3d.tools.measured.is_some())];
     open.into_iter().filter_map(|(l, on)| on.then_some(l)).collect()
 }
 
@@ -47,10 +43,8 @@ pub(crate) fn close(app: &mut EmcraftApp, layer: Layer) -> Option<Action> {
     match layer {
         // A line begun goes first, then the pen.
         Layer::Pen => {
-            let pen = &mut app.views.pcb.drawing;
-            match pen.as_mut() {
-                Some(p) if p.from.is_some() => p.from = None,
-                _ => *pen = None,
+            if app.views.pcb.pen.from.take().is_none() {
+                app.ui_state.set_drawing(false);
             }
         }
         Layer::Box => app.view3d.cancel_box(),

@@ -280,13 +280,13 @@ pub struct PcbUi {
     pub baseline: Option<emcraft_engine::pcb::Inspection>,
     /// The widths being edited of the route's segments (display units), by segment.
     pub widths: std::collections::BTreeMap<String, f64>,
-    /// Drawing copper in the 3D view, while it is on.
-    pub drawing: Option<Pen>,
+    /// What the 3D view draws copper with while drawing is on (`ui_state::Mode::Pen`).
+    pub pen: Pen,
 }
 
 /// What the board's 3D view draws with: a net's traces on a layer, `width` wide (m), from the
 /// last point clicked (m) once there is one.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Pen {
     pub net: String,
     pub layer: String,
@@ -317,7 +317,7 @@ impl Default for PcbUi {
             attempted: None,
             baseline: None,
             widths: Default::default(),
-            drawing: None,
+            pen: Pen::default(),
         }
     }
 }
