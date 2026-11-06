@@ -327,6 +327,8 @@ pub enum Handle<'a> {
     Corner(usize),
     /// An end of the model while the port tool is on: `view3d:end:start`.
     PortEnd(emcraft_model::End),
+    /// A grip of the selected body: `view3d:grip:size.x+`, `view3d:grip:radius`.
+    BodyGrip(&'a str),
     /// The S-parameter a study's chart shows: `study:parameter:s21`.
     StudyParameter(&'a str),
     /// The variable a grid study is charted along: `study:along:a`.
@@ -426,6 +428,7 @@ impl fmt::Display for Handle<'_> {
             Handle::RibbonTool(t) => write!(f, "toolbar:tool:{}", t.id()),
             Handle::Corner(i) => write!(f, "view3d:corner:{i}"),
             Handle::PortEnd(e) => write!(f, "view3d:end:{}", e.id()),
+            Handle::BodyGrip(g) => write!(f, "view3d:grip:{g}"),
             Handle::StudyParameter(p) => write!(f, "study:parameter:{p}"),
             Handle::StudyAlong(name) => write!(f, "study:along:{name}"),
             Handle::StudyAt(name, i) => write!(f, "study:at:{name}:{i}"),

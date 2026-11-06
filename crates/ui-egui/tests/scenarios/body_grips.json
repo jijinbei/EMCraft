@@ -1,0 +1,21 @@
+[
+  {"note": "A selected box shows a grip on each face (ADR 0005): dragging the +x one out grows the box along x, snapped to the grid, in one geometry.body.edit; the −x one moves its origin too"},
+  {"call": "engine.script", "params": {"commands": [
+    {"command": "geometry.body", "params": {"shape": "box", "size": [10, 10, 10], "material": "metal"}}
+  ]}},
+  {"until": {"busy": false}},
+  {"call": "ui.set", "params": {"step": "geometry"}},
+  {"call": "ui.set", "params": {"standard_view": "front"}},
+  {"frames": 2},
+  {"click": "row:body 1: metal box"},
+  {"frames": 2},
+  {"expect": {"handles": ["view3d:grip:size.x+", "view3d:grip:size.x-", "view3d:grip:size.z+"]}},
+  {"shot": "body-grips"},
+  {"drag": ["view3d:grip:size.x+", {"handle": "view3d:grip:size.x+", "offset": [80, 0]}]},
+  {"frames": 2},
+  {"expect": {"inspect": {"view3d.tools.grip": null}, "query": {"command": "project.values", "params": {"command": "geometry.body.edit", "body": "body 1"}, "path": "size.0", "value": {"min": 11, "max": 40}}}},
+  {"shot": "body-grips-dragged"},
+  {"drag": ["view3d:grip:size.x-", {"handle": "view3d:grip:size.x-", "offset": [-40, 0]}]},
+  {"frames": 2},
+  {"expect": {"query": {"command": "project.values", "params": {"command": "geometry.body.edit", "body": "body 1"}, "path": "at.0", "value": {"min": -30, "max": -0.5}}}}
+]

@@ -489,7 +489,7 @@ pub fn show(app: &EmcraftApp, st: &mut crate::viewport::Parts, ui: &mut egui::Ui
             ui.ctx().request_repaint();
         }
     }
-    let grip = crate::tools3d::grip(app, v, rect).filter(|_| !app.busy());
+    let grip = crate::grips::nearest(app, v, rect, ui.input(|i| i.pointer.hover_pos())).filter(|_| !app.busy());
     let edit = navigate(app, v, ui, rect, frame, grip);
     keys(app, v, ui, rect, now);
     if let Some(d) = edit.plane_drag {
@@ -764,11 +764,12 @@ fn tools(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, rect: Rect, edit: &Ges
     match edit.grip {
         GripDrag::Idle => {}
         GripDrag::Started(d) => {
-            crate::tools3d::start_drag(app, v);
-            crate::tools3d::drag(app, v, rect, d);
+            let pressed = ui.input(|i| i.pointer.hover_pos()).map(|p| p - d);
+            crate::grips::start_any(app, v, rect, pressed);
+            crate::grips::moved(app, v, rect, d);
         }
-        GripDrag::Moved(d) => crate::tools3d::drag(app, v, rect, d),
-        GripDrag::Released => crate::tools3d::end_drag(app, v, out),
+        GripDrag::Moved(d) => crate::grips::moved(app, v, rect, d),
+        GripDrag::Released => crate::grips::released(app, v, out),
     }
     crate::tools3d::hover(app, v, rect, ui.input(|i| i.pointer.hover_pos()));
     if edit.tool_click && !app.busy() {

@@ -50,6 +50,7 @@ pub mod files;
 mod fonts;
 pub mod glyphs;
 pub mod gpu3d;
+mod grips;
 pub mod handle;
 pub mod home;
 mod import_ui;

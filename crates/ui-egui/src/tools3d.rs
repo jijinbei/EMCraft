@@ -205,6 +205,8 @@ pub struct Tools {
     /// The last measurement.
     pub measured: Option<Measured>,
     pub drag: Option<RefDrag>,
+    /// A body's grip being dragged ([`crate::grips`]).
+    pub body_drag: Option<crate::grips::BodyDrag>,
     ref_text: Option<RefText>,
 }
 
@@ -240,6 +242,7 @@ impl Tools {
             "picks": self.picks.iter().map(|p| p.inspect(l)).collect::<Vec<_>>(),
             "measure": self.measured.as_ref().map(|m| m.reply.clone()),
             "drag": self.drag.as_ref().map(|d| json!({"port": d.name, "deembed": l.from_si(d.deembed)})),
+            "grip": self.body_drag.as_ref().map(|d| d.inspect(l)),
         })
     }
 }
@@ -576,6 +579,7 @@ pub fn draw(app: &EmcraftApp, v: &View3d, p: &egui::Painter, rect: Rect) {
     if let Some(r) = ref_plane(app, v) {
         reference(p, &r, cam, rect, l);
     }
+    crate::grips::draw(app, v, p, rect);
     if let (Some(tool), Some(h)) = (v.tools.tool, &v.tools.hover) {
         hovered(app, v, tool, h, p, rect);
     }

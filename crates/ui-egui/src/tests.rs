@@ -269,6 +269,11 @@ fn scenario_rotation_sector() {
 }
 
 #[test]
+fn scenario_body_grips() {
+    scenario("body_grips");
+}
+
+#[test]
 fn scenario_auto_region() {
     scenario("auto_region");
 }

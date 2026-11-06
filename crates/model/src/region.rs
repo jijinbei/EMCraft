@@ -5,7 +5,8 @@
 //! **The automatic region** holds the bodies (features and inclusions), the sources, the lumped
 //! ports and the port faces. Round their bounding box it adds a `margin` of background and a
 //! layer `thickness` thick, both a quarter of the wavelength at the band's top by default (a
-//! quarter of what it holds before there is a band, 10 mm round a lone point). It is the block those make
+//! quarter of what it holds before there is a band, 10 mm round a lone point), rounded up to
+//! two significant digits. It is the block those make
 //! ([`crate::Shape::block`]), lined by the box layer; it follows the model as it changes
 //! ([`crate::Model::refresh_region`]) and keeps the mesh while it stays the same.
 
@@ -82,8 +83,10 @@ impl crate::Model {
         // Before there is a band: a quarter of what it holds, 10 mm round a point.
         let provisional = if extent > 0.0 { 0.25 * extent } else { PROVISIONAL_MARGIN };
         let quarter = self.job.range().map_or(provisional, |b| crate::units::C0 / b.stop.get() / 4.0);
-        let m = margin.map_or(quarter, Metres::get);
-        let t = thickness.map_or(quarter, Metres::get);
+        // Given values as given; the defaults rounded up to two significant digits, so the box's
+        // sides read as numbers.
+        let m = margin.map_or_else(|| round_up(quarter), Metres::get);
+        let t = thickness.map_or_else(|| round_up(quarter), Metres::get);
         if !(m > 0.0 && t > 0.0 && m.is_finite() && t.is_finite()) {
             return Err(invalid("region", "its margin and layer need a size: give them, or a band (project.setup)"));
         }
@@ -120,4 +123,13 @@ impl crate::Model {
         self.open = Some(open);
         Ok(true)
     }
+}
+
+/// `x` (> 0) rounded up to two significant digits: 7.4948 mm → 7.5 mm, 0.0433 → 0.044.
+fn round_up(x: f64) -> f64 {
+    if !(x > 0.0 && x.is_finite()) {
+        return x;
+    }
+    let p = 10f64.powf(x.log10().floor() - 1.0);
+    (x / p - 1e-9).ceil() * p
 }
