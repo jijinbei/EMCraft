@@ -342,8 +342,12 @@ impl Model {
                 continue;
             }
             let walls: Vec<Option<SymmetryKind>> = self.ports.iter().map(|p| self.wall_for(p, axis)).collect();
+            // No port decides (none, or square and round ones, whose first modes the plane's
+            // wall chooses between): found, the wall left to choose. Ports asking for different
+            // walls: not this plane.
             let kind = match walls.first() {
                 None => None,
+                Some(_) if walls.iter().all(Option::is_none) => None,
                 Some(&first) if first.is_some() && walls.iter().all(|w| *w == first) => first,
                 Some(_) => continue,
             };
@@ -353,14 +357,13 @@ impl Model {
     }
 
     /// The wall a plane across `axis` needs to keep port `p`'s TE10: `None` when its face is not
-    /// a rectangle with a broad side (a square, a circle) or the plane does not cross it.
+    /// a rectangle (a circle) or the plane does not cross it. A square port's TE10 is the one
+    /// along its first side (u: its modes come in the order of its sides), as it excites it.
     fn wall_for(&self, p: &crate::Port, axis: Axis) -> Option<SymmetryKind> {
         let crate::PortShape::Rect { a, b, .. } = self.port_shape_of(p).ok()? else { return None };
-        if (a - b).abs() <= 1e-9 * a.max(b) {
-            return None;
-        }
         let (u, v, _) = p.frame().axes();
-        let (broad, narrow) = if a > b { (u, v) } else { (v, u) };
+        let square = (a - b).abs() <= 1e-9 * a.max(b);
+        let (broad, narrow) = if a > b || square { (u, v) } else { (v, u) };
         match axis.index() {
             d if d == broad => Some(SymmetryKind::Magnetic),
             d if d == narrow => Some(SymmetryKind::Electric),
@@ -452,6 +455,22 @@ mod tests {
         w.strips.push(Strip { y: 0.002, x0: 0.014, width: metres(0.004), z0: 0.0, z1: 0.01 });
         m.set_waveguide(w).unwrap();
         m.set_symmetry(vec![plane(Axis::X, 0.01, SymmetryKind::Electric)]).unwrap();
+    }
+
+    /// Regression: a square guide along y (5 × 5 mm, 100 mm long, ports on its ends) found no
+    /// plane: a square port was taken to decide no wall, and the plane was dropped. Its TE10 is
+    /// the one along its first side (x), E along z: a magnetic wall across x, an electric one
+    /// across z, a quarter of the model.
+    #[test]
+    fn a_square_ports_te10_decides_the_walls() {
+        let mut m = Model::new();
+        m.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(0.005, 0.1, 0.005)) }, material: "vacuum".into() }).unwrap();
+        for (name, at, end) in [("1", 0.0, crate::End::Start), ("2", 0.1, crate::End::End)] {
+            let face = crate::PortFace { axis: Axis::Y, at, u0: 0.0, v0: 0.0, a: metres(0.005), b: metres(0.005) };
+            m.add_port(crate::Port { face: Some(face), ..crate::Port::new(name, end) }).unwrap();
+        }
+        let found: Vec<(Axis, Option<SymmetryKind>)> = m.find_symmetry().iter().map(|f| (f.axis, f.kind)).collect();
+        assert_eq!(found, [(Axis::X, Some(SymmetryKind::Magnetic)), (Axis::Z, Some(SymmetryKind::Electric))]);
     }
 
     #[test]

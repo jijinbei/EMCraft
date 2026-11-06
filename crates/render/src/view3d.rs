@@ -305,6 +305,19 @@ pub fn hits_along(scene: &Scene, (origin, dir): ([f64; 3], [f64; 3])) -> Option<
     any.map(|a| (at(a), solid.map(at)))
 }
 
+/// The nearest triangle along the ray `(origin, dir)` whose tag `keep` takes (a scan of every
+/// triangle): what lies behind see-through parts a picker passes over.
+pub fn nearest_where(scene: &Scene, (origin, dir): ([f64; 3], [f64; 3]), keep: impl Fn(u32) -> bool) -> Option<Hit> {
+    let mut best: Option<(f64, usize)> = None;
+    for (i, t) in scene.tris.iter().enumerate().filter(|(_, t)| t.tag != 0 && keep(t.tag)) {
+        let Some(d) = hit(origin, dir, t) else { continue };
+        if best.is_none_or(|(b, _)| d < b) {
+            best = Some((d, i));
+        }
+    }
+    best.map(|(d, i)| Hit { index: i, at: [origin[0] + dir[0] * d, origin[1] + dir[1] * d, origin[2] + dir[2] * d], tag: scene.tris[i].tag })
+}
+
 /// The point of the scene under pixel (x, y), for zooming toward it or orbiting about it: where
 /// the ray through it meets the nearest solid triangle (opacity ≥ 200), else the nearest
 /// see-through one, whatever its tag; `None` over empty space.

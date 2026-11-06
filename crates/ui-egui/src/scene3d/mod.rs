@@ -71,6 +71,8 @@ pub enum Pick {
     Lumped(usize),
     /// A board's net's copper (an index into [`board::nets`]).
     Net(usize),
+    /// An imported part's body round the region (an index into `Model::imported`).
+    Part(usize),
 }
 
 impl Pick {
@@ -106,6 +108,7 @@ impl Pick {
             Pick::Via(i) => (10, i),
             Pick::Lumped(i) => (11, i),
             Pick::Net(i) => (13, i),
+            Pick::Part(i) => (14, i),
         };
         (kind << 16) | (i.min(0xFFFF) as u32)
     }
@@ -126,6 +129,7 @@ impl Pick {
             10 => Pick::Via(i),
             11 => Pick::Lumped(i),
             13 => Pick::Net(i),
+            14 => Pick::Part(i),
             _ => return None,
         })
     }
@@ -160,9 +164,19 @@ pub struct Built {
 impl Built {
     /// [`emcraft_render::view3d::hits`] on its scene, through its index once made.
     pub fn hits(&self, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> Option<(Hit, Option<Hit>)> {
-        match self.cache.index(&self.scene) {
+        let found = match self.cache.index(&self.scene) {
             Some(index) => camera.ray(x, y, w, h).and_then(|r| index.hits(&self.scene, r)),
             None => emcraft_render::view3d::hits(&self.scene, camera, x, y, w, h),
+        };
+        // An imported part's see-through metal round the region: what it holds is what the
+        // pointer means where the ray reaches it (the part itself where it does not).
+        let part = |tag: u32| matches!(Pick::from_tag(tag), Some(Pick::Part(_)));
+        match found {
+            Some((near, solid)) if part(near.tag) => {
+                let inside = camera.ray(x, y, w, h).and_then(|r| emcraft_render::view3d::nearest_where(&self.scene, r, |t| !part(t)));
+                Some((inside.unwrap_or(near), solid))
+            }
+            other => other,
         }
     }
 

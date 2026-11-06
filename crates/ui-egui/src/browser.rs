@@ -391,22 +391,29 @@ fn geometry(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
                 row(text, args!(x = mm(d.x), y = mm(d.y), z = mm(d.z), unit = lu, material = solid.material), Glyph::Box, Act::Edit("model.region"))
             }
             // An imported cavity: the air its part encloses.
-            emcraft_model::Shape::Surface { name, .. } if name == emcraft_model::CAVITY => {
-                row(t!("Region: the air the part encloses (imported), {material}"), args!(material = solid.material), Glyph::Box, edit)
-            }
-            emcraft_model::Shape::Surface { name, .. } => {
-                row(t!("Region: {name} (imported), {material}"), args!(name = name, material = solid.material), Glyph::Box, edit)
-            }
+            // An imported region: a double-click changes what fills it (its shape is its part's).
+            emcraft_model::Shape::Surface { name, .. } if name == emcraft_model::CAVITY => row(
+                t!("Region: the air the part encloses (imported), {material}"),
+                args!(material = solid.material),
+                Glyph::Box,
+                Act::Edit("model.background"),
+            ),
+            emcraft_model::Shape::Surface { name, .. } => row(
+                t!("Region: {name} (imported), {material}"),
+                args!(name = name, material = solid.material),
+                Glyph::Box,
+                Act::Edit("model.background"),
+            ),
             other => row(t!("Region: {shape}, {material}"), args!(shape = other.kind().to_lowercase(), material = solid.material), Glyph::Box, edit),
         };
         rows.push(r.picks(Pick::Solid));
     }
     // An imported part's walls and region body: a double-click gives them another material.
-    for b in &m.imported {
+    for (i, b) in m.imported.iter().enumerate() {
         let text =
             if b.material == emcraft_engine::bodies::METAL { t!("{name}: metal walls (imported)") } else { t!("{name}: the region (imported)") };
         let item = Item::new("geometry.body.material", "", "body", serde_json::json!(b.name));
-        rows.push(row(text, args!(name = b.name), Glyph::Feature, Act::None).sub().item(item));
+        rows.push(row(text, args!(name = b.name), Glyph::Feature, Act::None).sub().picks(Pick::Part(i)).item(item));
     }
     // Bodies by what they are made of; a double-click changes it.
     for b in emcraft_engine::bodies::bodies(m) {

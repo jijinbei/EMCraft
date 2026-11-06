@@ -212,7 +212,9 @@ fn inside(m: &Model) -> Option<Inside> {
 /// An imported part's metal round the air it encloses, before and after meshing: see-through,
 /// so the region inside shows and takes the clicks.
 pub(super) fn part_walls(m: &Model, out: &mut Built) {
-    for wall in m.imported.iter().filter_map(|b| b.shape.as_ref()) {
-        shape(&mut out.scene, wall, &|q| q, sc().metal_dark, 40);
+    for (i, b) in m.imported.iter().enumerate() {
+        if let Some(wall) = &b.shape {
+            out.scene.tagged(Pick::Part(i).tag(), |scene| shape(scene, wall, &|q| q, sc().metal_dark, 40));
+        }
     }
 }

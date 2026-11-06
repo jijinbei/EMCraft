@@ -240,8 +240,10 @@ impl View3d {
     fn pick_at(&mut self, ctx: &egui::Context, rect: Rect, pos: egui::Pos2) -> Option<scene3d::Pick> {
         let at = pos - rect.min;
         // The GPU's tags under the pointer, when the frame shown kept them; else the CPU's rays.
+        // (An imported part's see-through metal: the rays find what it holds behind it.)
         if let Some(key) = self.gpu_frame
             && let Some((any, solid)) = crate::gpu3d::pick(ctx, self.client, key, pixel(ctx, at))
+            && !matches!(scene3d::Pick::from_tag(if solid != 0 { solid } else { any }), Some(scene3d::Pick::Part(_)))
         {
             self.picked_by = "gpu";
             return scene3d::Pick::from_tag(if solid != 0 { solid } else { any });
