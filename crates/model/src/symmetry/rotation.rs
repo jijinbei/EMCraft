@@ -302,8 +302,8 @@ impl crate::Model {
     }
 
     /// Whether every inclusion turns onto one of the same filling, as [`Self::features_turn`]
-    /// checks features, and lies wholly inside or outside the sector (not yet across its cut
-    /// faces: an inclusion the sector keeps is meshed as it is, one outside it is its images').
+    /// checks features (one inside the sector is meshed as it is, one across its cut faces cut
+    /// with it, one outside it is its images').
     fn inclusions_turn(&self, r: &Rotation) -> std::result::Result<(), String> {
         const SIDE: usize = 9;
         let samples = |inc: &crate::Inclusion| -> Vec<Point3> {
@@ -326,12 +326,6 @@ impl crate::Model {
                     "inclusion {} does not turn onto an inclusion of its filling by 2π/{}: the model is not symmetric under the turn",
                     i + 1,
                     r.n
-                ));
-            }
-            if r.sector_side(&inc.shape, inc.at).is_none() {
-                return Err(format!(
-                    "not supported yet: inclusion {} lies across the sector's cut faces (one about the axis: solve.revolution)",
-                    i + 1
                 ));
             }
         }

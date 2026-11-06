@@ -155,11 +155,10 @@ fn the_rotation_a_model_has_is_found() {
     h.execute("model.rotation.find", &json!({"n": 3})).unwrap();
     assert!(h.execute("model.rotation.find", &json!({"n": 4})).is_err());
     assert_eq!(h.model.rotation.map(|r| r.n), Some(3));
-    // What a sector cannot carry is named.
+    // A sphere on the axis lies across every sector's cut faces: the pillbox keeps its rotation.
     let mut f = pillbox();
     f.execute("geometry.inclusion", &json!({"shape": "sphere", "radius": 2, "at": [0, 0, 7]})).unwrap();
-    let e = f.execute("model.rotation.find", &json!({})).unwrap_err();
-    assert!(e.to_string().contains("across the sector"), "{e}");
+    assert_eq!(f.execute("model.rotation.find", &json!({})).unwrap()["group"], "C∞");
 }
 
 /// A straight circular guide, radius 10 mm and 30 mm long, ports on both ends, on a quarter.
@@ -502,11 +501,10 @@ fn a_quarter_keeps_the_posts_inside_it() {
     let mesh = q.model.mesh.as_ref().unwrap();
     let ceramic = q.model.materials.iter().position(|m| m.name == "ceramic").unwrap();
     assert!(mesh.tet_material.iter().any(|&m| m as usize == ceramic));
-    // A post across the cut faces is refused.
+    // A post on the axis lies across the cut faces: the sector holds its part, cut with it.
     let mut x = pillbox();
     x.execute("geometry.inclusion", &json!({"shape": "cylinder", "radius": 1, "length": 13, "at": [0, 0, 1]})).unwrap();
-    let e = x.execute("model.rotation", &json!({"n": 4})).unwrap_err();
-    assert!(e.to_string().contains("across the sector"), "{e}");
+    x.execute("model.rotation", &json!({"n": 4})).unwrap();
 }
 
 #[test]
@@ -760,4 +758,52 @@ fn a_conical_horn_as_a_body_of_revolution_has_its_aperture_s_directivity() {
     let d = r["points"][0]["directivity"].as_f64().unwrap();
     assert!((d / estimate - 1.0).abs() < 0.05, "directivity {d} against {estimate}");
     assert!(r["s"]["s11"]["mag"].as_f64().unwrap() < 0.07);
+}
+
+/// The pillbox with a dielectric puck (εr 4, radius 4 mm, 5 mm thick from z = 5 mm) on its axis:
+/// an inclusion across every sector's cut faces.
+fn pucked() -> Session {
+    let mut s = pillbox();
+    s.execute("model.material.create", &json!({"name": "ceramic", "eps_r": 4})).unwrap();
+    s.execute("geometry.inclusion", &json!({"shape": "cylinder", "radius": 4, "length": 5, "at": [0, 0, 5], "material": "ceramic"})).unwrap();
+    s
+}
+
+/// [`pucked`] on a quarter (C4) at `size` mm in element `order`: its two lowest modes in
+/// harmonics 0 and 1 within `tol` of the body of revolution's (at `fine` mm), and the sector
+/// holding a quarter of the puck.
+fn puck_on_a_quarter(size: f64, order: u8, tol: f64, fine: f64) {
+    let mut s = pucked();
+    let bor: Vec<Vec<f64>> = [(0u32, 11.0), (1, 13.0)].iter().map(|&(m, near)| revolution_modes(&mut s, m, near, 2, fine)).collect();
+    s.execute("model.rotation", &json!({"n": 4})).unwrap();
+    s.execute("mesh.generate", &json!({"size": size})).unwrap();
+    let mesh = s.model.mesh.as_ref().unwrap();
+    let ceramic = s.model.materials.iter().position(|m| m.name == "ceramic").unwrap();
+    let held: f64 = mesh.tet_material.iter().zip(emcraft_mesh::volumes(mesh)).filter(|(m, _)| **m as usize == ceramic).map(|(_, v)| v).sum();
+    let quarter = std::f64::consts::PI * 0.004f64.powi(2) * 0.005 / 4.0;
+    assert!((held / quarter - 1.0).abs() < 0.03, "the sector holds {held} m³ of ceramic, a quarter of the puck is {quarter} m³");
+    let r = s.execute("solve.cyclic", &json!({"frequency": 13, "count": 2, "order": order})).unwrap();
+    for (m, want) in [0u64, 1].iter().zip(&bor) {
+        for (got, b) in modes(&r, *m).iter().zip(want) {
+            assert!((got / b - 1.0).abs() < tol, "m {m}: quarter {got} GHz, body of revolution {b} GHz");
+        }
+    }
+}
+
+/// **Setup**: [`pucked`] on a quarter: the puck lies across the cut faces, cut with the sector,
+/// its caps on the two faces each other's turn; order 1 at 4 mm (11 s, the inclusion's curved
+/// interface's meshing rounds most of it: as long as the whole's).
+/// **Cross-check** (no closed form): the same cavity as a body of revolution, itself checked
+/// against the closed forms (the pillbox's, the layered sphere's TE101); order 2 at 2.5 mm agrees
+/// to 1.1e-4, 1.8e-5 (m = 0) and 1.9e-4, 3.2e-4 (m = 1) in the heavy job.
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn a_puck_across_the_cut_faces_gives_the_body_of_revolution_s_modes() {
+    puck_on_a_quarter(4.0, 1, 0.03, 0.5);
+}
+
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn a_puck_across_the_cut_faces_converges_to_the_body_of_revolution_s_modes() {
+    puck_on_a_quarter(2.5, 2, 1e-3, 0.25);
 }

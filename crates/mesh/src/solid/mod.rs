@@ -167,19 +167,17 @@ fn spherical_layer(model: &Model) -> Result<Option<SphericalLayer>> {
 /// [`solid`] with its [`SolidOptions`]: sizes per material, curved edges or straight, local
 /// refinements.
 pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
-    // A sector keeps the inclusions inside it; those outside it are their images'.
+    // A sector keeps the inclusions inside it and those across its cut faces (cut with it);
+    // those outside it are their images'.
     let kept;
+    let mut across: Vec<usize> = Vec::new();
     let model = match &model.rotation {
         Some(rot) if !model.inclusions.is_empty() => {
             let mut m = model.clone();
-            let mut sides = Vec::with_capacity(m.inclusions.len());
-            for (i, inc) in m.inclusions.iter().enumerate() {
-                sides.push(rot.sector_side(&inc.shape, inc.at).ok_or_else(|| {
-                    MeshError::invalid("rotational symmetry", format!("not supported yet: inclusion {} lies across the sector's cut faces", i + 1))
-                })?);
-            }
-            let mut side = sides.into_iter();
-            m.inclusions.retain(|_| side.next().unwrap_or(false));
+            let sides: Vec<Option<bool>> = m.inclusions.iter().map(|inc| rot.sector_side(&inc.shape, inc.at)).collect();
+            let mut side = sides.iter();
+            m.inclusions.retain(|_| side.next().is_some_and(|s| *s != Some(false)));
+            across = sides.iter().filter(|s| **s != Some(false)).enumerate().filter(|(_, s)| s.is_none()).map(|(k, _)| k).collect();
             kept = m;
             &kept
         }
@@ -222,10 +220,20 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
     }
     // The sector a rotation keeps: cut by a wedge last, its two cut faces then matched.
     let mut frozen = Vec::new();
+    let mut cuts: Vec<(usize, sector::Cut)> = Vec::new();
     if let (Some(rot), Some(b)) = (&model.rotation, model.bounds()) {
-        let (matched, base) = sector::sector(main, rot, size, (b.max - b.min).norm())?;
+        let bodies: Vec<Tessellation> = across
+            .iter()
+            .map(|&i| {
+                let inc = &model.inclusions[i];
+                let h = inner_size.get(i).copied().unwrap_or(size);
+                placed(tessellate(&inc.shape, interface_size(&inc.shape, size.min(h), inc.material.is_none())), inc.at)
+            })
+            .collect();
+        let (matched, base, c) = sector::sector(main, rot, size, (b.max - b.min).norm(), &bodies)?;
         main = matched;
         frozen.push(base);
+        cuts = across.iter().copied().zip(c).collect();
     }
     // Gaps narrower than a tenth of the size filled with elements as small as they are.
     let (gaps, gap_tets) = narrow::gap_sizes(&main, size, combine::gaps(size).flush)?;
@@ -233,7 +241,7 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
         too_large(estimate + gap_tets)?;
         locals.extend(gaps);
     }
-    let body = Body { model, shape, material: material as u32, size, inner_size, locals, shell: layer.is_some(), frozen };
+    let body = Body { model, shape, material: material as u32, size, inner_size, locals, shell: layer.is_some(), frozen, cuts };
     let regions = body.regions(main)?;
     let mut mesh = body.join(&regions)?;
     tag_symmetry_planes(&mut mesh, model, size);
@@ -338,6 +346,8 @@ struct Body<'a> {
     shell: bool,
     /// A sector's cut faces: the first of their tags (theirs are the solid's last; frozen).
     frozen: Vec<u32>,
+    /// The inclusions across a sector's cut faces (by index): their surfaces in the sector and caps.
+    cuts: Vec<(usize, sector::Cut)>,
 }
 
 /// A range of face tags: `first..first + count`.
@@ -366,6 +376,9 @@ struct Regions {
     first_tag: u32,
     /// Each inclusion's interface tags in the outer region.
     interfaces: Vec<Tags>,
+    /// Per region, the first tag of its caps on a sector's cut faces (an inclusion across them):
+    /// walls tied by the solver, not an interface.
+    caps_from: Vec<Option<u32>>,
 }
 
 /// `seen` in place of `current` when its triangles differ (corners within 1e-9 of the size);
@@ -393,9 +406,23 @@ impl Body<'_> {
             .inclusions
             .iter()
             .zip(&self.inner_size)
-            .map(|(inc, h)| placed(tessellate(&inc.shape, interface_size(&inc.shape, size.min(*h), inc.material.is_none())), inc.at))
+            .enumerate()
+            .map(|(i, (inc, h))| match self.cuts.iter().find(|(k, _)| *k == i) {
+                Some((_, c)) => c.open.clone(),
+                None => placed(tessellate(&inc.shape, interface_size(&inc.shape, size.min(*h), inc.material.is_none())), inc.at),
+            })
             .collect();
-        let mut out = Regions { meshes: Vec::new(), start_face: main.start_face, end_face: main.end_face, first_tag: 0, interfaces: Vec::new() };
+        // Their caps on the cut faces, which only the inclusion's own region holds.
+        let mut caps: Vec<Option<Tessellation>> =
+            (0..model.inclusions.len()).map(|i| self.cuts.iter().find(|(k, _)| *k == i).map(|(_, c)| c.caps.clone())).collect();
+        let mut out = Regions {
+            meshes: Vec::new(),
+            start_face: main.start_face,
+            end_face: main.end_face,
+            first_tag: 0,
+            interfaces: Vec::new(),
+            caps_from: Vec::new(),
+        };
         // A sector's cut faces not yet each other's turn after the last round's meshing.
         let mut unmatched = false;
         for _ in 0..MAX_INTERFACE_ROUNDS {
@@ -421,8 +448,15 @@ impl Body<'_> {
             if let (Some(rot), Some(&base)) = (&model.rotation, self.frozen.first()) {
                 let scale = model.bounds().map_or(size, |bx| (bx.max - bx.min).norm());
                 unmatched = false;
-                if let Some(t) = sector::refreeze(&outer_mesh, &main, rot, base, scale)? {
+                let bodies: Vec<Tessellation> = self.cuts.iter().filter_map(|(k, _)| interfaces.get(*k).cloned()).collect();
+                if let Some((t, again)) = sector::refreeze(&outer_mesh, &main, rot, base, scale, &bodies)? {
                     main = t;
+                    for ((k, _), c) in self.cuts.iter().zip(again) {
+                        if let (Some(i), Some(cap)) = (interfaces.get_mut(*k), caps.get_mut(*k)) {
+                            *i = c.open;
+                            *cap = Some(c.caps);
+                        }
+                    }
                     unmatched = true;
                     continue;
                 }
@@ -445,13 +479,27 @@ impl Body<'_> {
             };
             out.meshes = vec![(outer_mesh, self.material)];
             out.meshes.extend(shell.map(|m| (m, self.material)));
-            for ((inc, t), h) in model.inclusions.iter().zip(&mut interfaces).zip(&self.inner_size) {
+            out.caps_from = vec![None; out.meshes.len()];
+            for (((inc, t), h), cap) in model.inclusions.iter().zip(&mut interfaces).zip(&self.inner_size).zip(&caps) {
                 let Some(name) = &inc.material else { continue };
                 let (m, _) = model.material(name)?;
                 let n = t.surface.triangles.len() as u32;
-                let inner = region(t, *h, (0..n).collect(), &self.locals)?;
+                // Across a sector's cut: its surface there closed by its caps.
+                let closed;
+                let whole = match cap {
+                    Some(c) => {
+                        let mut w = t.clone();
+                        append(&mut w, c, n, true);
+                        closed = w;
+                        &closed
+                    }
+                    None => &*t,
+                };
+                let all = whole.surface.triangles.len() as u32;
+                let inner = region(whole, *h, (0..all).collect(), &self.locals)?;
                 changed |= adopt(t, extract(&inner, 0, n, true), size);
                 out.meshes.push((inner, m as u32));
+                out.caps_from.push(cap.as_ref().map(|_| n));
             }
             if !changed {
                 break;
@@ -497,7 +545,8 @@ impl Body<'_> {
             tet_material.extend(std::iter::repeat_n(*mat, mesh.tets.len()));
             for &RegionFace { nodes, tet, tag: face } in &mesh.boundary {
                 let n = nodes.map(|v| map[v as usize]);
-                if self.on_dielectric(regions, r, face) {
+                let cap = regions.caps_from.get(r).copied().flatten().is_some_and(|from| face >= from);
+                if !cap && self.on_dielectric(regions, r, face) {
                     let mut key = n;
                     key.sort_unstable();
                     *interface_sides.entry(key).or_default() += 1;
@@ -508,6 +557,7 @@ impl Body<'_> {
                     0 if Some(face) == regions.end_face => Boundary::Port(1),
                     0 => Boundary::Pec,
                     r if Some(r) == shell => Boundary::Pec,
+                    _ if cap => Boundary::Pec,
                     _ => continue,
                 };
                 boundary.push(BoundaryFace { nodes: n, tet: first + tet, tag });
