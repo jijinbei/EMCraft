@@ -1,0 +1,6 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "sphere", "radius": 60}},
+ {"command": "model.open", "params": {"thickness": 20, "shape": "sphere"}},
+ {"command": "source.dipole", "params": {"at": [0, 0, 0], "direction": [0, 0, 1], "length": 1}},
+ {"command": "solve.revolution.radiation", "params": {"frequency": 3, "theta": [90], "size": 2}, "id": "far"}
+]

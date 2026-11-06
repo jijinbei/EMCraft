@@ -82,7 +82,7 @@ mod lumped;
 mod media;
 mod periodic;
 mod pmg;
-mod pml;
+pub(crate) mod pml;
 mod ports;
 mod solution;
 mod sparams;

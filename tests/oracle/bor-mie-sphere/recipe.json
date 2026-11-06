@@ -1,0 +1,8 @@
+[
+ {"command": "model.material.create", "params": {"name": "ceramic", "eps_r": 4}},
+ {"command": "geometry.solid", "params": {"shape": "sphere", "radius": 60}},
+ {"command": "model.open", "params": {"thickness": 20, "shape": "sphere"}},
+ {"command": "geometry.inclusion", "params": {"shape": "sphere", "radius": 15, "at": [0, 0, 0], "material": "ceramic"}},
+ {"command": "source.plane_wave", "params": {"direction": [0, 0, 1], "polarization": [1, 0, 0]}},
+ {"command": "solve.revolution.radiation", "params": {"frequency": 3, "theta": [0, 60, 120, 180], "size": 1}, "id": "rcs"}
+]

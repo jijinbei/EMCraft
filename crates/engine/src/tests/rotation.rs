@@ -592,3 +592,57 @@ fn an_imported_body_of_revolution_takes_its_section_as_its_profile() {
 fn k_on_axis(t: f64) -> bool {
     t == 0.0 || t == std::f64::consts::PI
 }
+
+/// `solve.revolution.radiation`'s reply.
+fn revolution_radiation(s: &mut Session, theta: &[f64], size: f64) -> Value {
+    s.execute("solve.revolution.radiation", &json!({"frequency": 3, "theta": theta, "size": size})).unwrap()
+}
+
+#[test]
+fn a_dipole_on_the_axis_of_an_open_body_of_revolution_radiates_its_closed_form() {
+    // A 1 mm current element at 3 GHz (λ = 100 mm): η (k I l)²/(12π) and directivity 3/2 at
+    // θ = 90°, in a sphere's shell and in a cylinder's lined wall and ends.
+    let want = emcraft_theory::radiation::dipole_power(1e-3, 3e9);
+    for (solid, layer, at) in [
+        (json!({"shape": "sphere", "radius": 60}), json!({"thickness": 20, "shape": "sphere"}), json!([0, 0, 0])),
+        (json!({"shape": "cylinder", "radius": 60, "length": 120}), json!({"thickness": 20, "shape": "box"}), json!([0, 0, 60])),
+    ] {
+        let mut s = Session::new();
+        s.execute("geometry.solid", &solid).unwrap();
+        s.execute("model.open", &layer).unwrap();
+        s.execute("source.dipole", &json!({"at": at, "direction": [0, 0, 1], "length": 1})).unwrap();
+        let r = revolution_radiation(&mut s, &[0.0, 90.0], 3.0);
+        let power = r["power"].as_f64().unwrap();
+        assert!((power / want - 1.0).abs() < 0.03, "{solid}: {power} W against {want} W");
+        let d = r["points"][1]["directivity"].as_f64().unwrap();
+        assert!((d - 1.5).abs() < 0.04, "{solid}: directivity {d}");
+        assert!(r["points"][0]["directivity"].as_f64().unwrap() < 0.02, "{solid}: no radiation along the axis");
+    }
+    // A dipole off the axis is no body of revolution's.
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "sphere", "radius": 60})).unwrap();
+    s.execute("model.open", &json!({"thickness": 20, "shape": "sphere"})).unwrap();
+    s.execute("source.dipole", &json!({"at": [5, 0, 0], "direction": [0, 0, 1], "length": 1})).unwrap();
+    assert!(s.execute("solve.revolution.radiation", &json!({"frequency": 3})).is_err());
+}
+
+#[test]
+fn a_dielectric_sphere_scatters_a_plane_wave_as_the_mie_series_has_it() {
+    // εr = 4, radius 15 mm at 3 GHz (k a = 0.94), the wave along +z with E along x: the bistatic
+    // radar cross-section in the E- and H-planes against Bohren and Huffman's series.
+    let mut s = Session::new();
+    s.execute("model.material.create", &json!({"name": "ceramic", "eps_r": 4})).unwrap();
+    s.execute("geometry.solid", &json!({"shape": "sphere", "radius": 60})).unwrap();
+    s.execute("model.open", &json!({"thickness": 20, "shape": "sphere"})).unwrap();
+    s.execute("geometry.inclusion", &json!({"shape": "sphere", "radius": 15, "at": [0, 0, 0], "material": "ceramic"})).unwrap();
+    s.execute("source.plane_wave", &json!({"direction": [0, 0, 1], "polarization": [1, 0, 0]})).unwrap();
+    let thetas = [0.0, 60.0, 120.0, 180.0];
+    let r = revolution_radiation(&mut s, &thetas, 2.0);
+    for (k, &deg) in thetas.iter().enumerate() {
+        for (key, e_plane) in [("rcs_e_plane", true), ("rcs_h_plane", false)] {
+            let got = r["points"][k][key].as_f64().unwrap() * 1e-6;
+            let want = emcraft_theory::radiation::sphere_rcs(0.015, 4.0, 3e9, deg.to_radians(), e_plane);
+            assert!((got / want - 1.0).abs() < 0.05, "θ = {deg}°, {key}: {got} m² against {want} m²");
+        }
+    }
+}

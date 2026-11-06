@@ -43,6 +43,7 @@ use crate::ldlt::Ldlt;
 use crate::sparse::Csr;
 
 mod field;
+pub mod open;
 mod ports;
 
 pub use field::{HalfPlaneField, MAX_FIELD_SIDE, field};
@@ -162,13 +163,44 @@ const RULE: [([f64; 3], f64); 7] = {
     ]
 };
 
-/// K and M of the profile in the unknowns, and the gradients G (columns: ψ).
-fn assemble(p: &Profile, m: u32, d: &Dofs) -> Result<(Csr, Csr, Vec<Vec<(usize, f64)>>)> {
-    assemble_with(p, m, d, &[])
+/// What fills a point of the half-plane, as the assembly takes it: ε on (E_r, E_z) and on E_φ, and
+/// μ⁻¹ on w = ∇v + m E_t (the curl's (r, z) components (−w_z, w_r)/r, so ν_w = J ν_t Jᵀ with J
+/// the quarter turn) and on the curl's φ component. An isotropic material is ε I, ε, I/μ, 1/μ; a
+/// perfectly matched layer is the anisotropic medium εΛ, μΛ ([`open::Layer::medium`]).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Medium {
+    pub eps_t: [[C; 2]; 2],
+    pub eps_phi: C,
+    pub nu_w: [[C; 2]; 2],
+    pub nu_phi: C,
 }
 
-/// [`assemble`] on a pattern that also couples each group of `extra` (a port's unknowns).
-fn assemble_with(p: &Profile, m: u32, d: &Dofs, extra: &[Vec<usize>]) -> Result<(Csr, Csr, Vec<Vec<(usize, f64)>>)> {
+impl Medium {
+    pub(crate) fn isotropic(eps: f64, mu: f64) -> Medium {
+        let (e, n, z) = (C::new(eps, 0.0), C::new(1.0 / mu, 0.0), C::new(0.0, 0.0));
+        Medium { eps_t: [[e, z], [z, e]], eps_phi: e, nu_w: [[n, z], [z, n]], nu_phi: n }
+    }
+}
+
+/// aᵀ T b for a 2 × 2 tensor.
+fn quad(a: [f64; 2], t: &[[C; 2]; 2], b: [f64; 2]) -> C {
+    t[0][0] * (a[0] * b[0]) + t[0][1] * (a[0] * b[1]) + t[1][0] * (a[1] * b[0]) + t[1][1] * (a[1] * b[1])
+}
+
+/// K and M of the profile in the unknowns, and the gradients G (columns: ψ).
+fn assemble(p: &Profile, m: u32, d: &Dofs) -> Result<(Csr, Csr, Vec<Vec<(usize, f64)>>)> {
+    assemble_with(p, m, d, &[], None)
+}
+
+/// [`assemble`] on a pattern that also couples each group of `extra` (a port's unknowns), with
+/// the perfectly matched `layer` at wavenumber k₀ where it reaches.
+fn assemble_with(
+    p: &Profile,
+    m: u32,
+    d: &Dofs,
+    extra: &[Vec<usize>],
+    layer: Option<(&open::Layer, f64)>,
+) -> Result<(Csr, Csr, Vec<Vec<(usize, f64)>>)> {
     let mf = f64::from(m);
     let mut groups: Vec<Vec<usize>> = Vec::with_capacity(p.triangles.len());
     // Per triangle: its unknowns with, per local function, (unknown, kind) for the element.
@@ -211,6 +243,11 @@ fn assemble_with(p: &Profile, m: u32, d: &Dofs, extra: &[Vec<usize>]) -> Result<
         let l = &locals[ti];
         for &(lam, w) in &RULE {
             let r = lam[0] * q[0][0] + lam[1] * q[1][0] + lam[2] * q[2][0];
+            let z = lam[0] * q[0][1] + lam[1] * q[1][1] + lam[2] * q[2][1];
+            let md = match layer {
+                Some((l, k0)) => l.medium(eps, mu, [r, z], k0),
+                None => Medium::isotropic(eps, mu),
+            };
             let wa = w * area;
             // Each local function's E_t, its curl (∂_z E_r − ∂_r E_z), its v, and its ∇v + m E_t.
             let fields: Vec<([f64; 2], f64, f64, [f64; 2])> = l
@@ -227,10 +264,10 @@ fn assemble_with(p: &Profile, m: u32, d: &Dofs, extra: &[Vec<usize>]) -> Result<
                 .collect();
             for (a, fa) in l.iter().zip(&fields) {
                 for (b, fb) in l.iter().zip(&fields) {
-                    let kv = (r * fa.1 * fb.1 + (fa.3[0] * fb.3[0] + fa.3[1] * fb.3[1]) / r) / mu;
-                    let mv = eps * (r * (fa.0[0] * fb.0[0] + fa.0[1] * fb.0[1]) + fa.2 * fb.2 / r);
-                    k.add(a.0, b.0, C::new(wa * kv, 0.0));
-                    mm.add(a.0, b.0, C::new(wa * mv, 0.0));
+                    let kv = md.nu_phi * (r * fa.1 * fb.1) + quad(fa.3, &md.nu_w, fb.3) / r;
+                    let mv = quad(fa.0, &md.eps_t, fb.0) * r + md.eps_phi * (fa.2 * fb.2 / r);
+                    k.add(a.0, b.0, kv * wa);
+                    mm.add(a.0, b.0, mv * wa);
                 }
             }
         }

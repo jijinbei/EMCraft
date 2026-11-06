@@ -185,6 +185,15 @@ impl Model {
                         ));
                     }
                 }
+                (OpenShape::Box, Some(Solid { shape: Shape::Cylinder { radius, length }, .. })) => {
+                    // A cylinder's wall and ends lined: a body of revolution's layer.
+                    if 2.0 * o.thickness.get() >= length.get() || o.thickness.get() >= radius.get() {
+                        return Err(invalid("layer thickness", "must leave room inside the cylinder (under its radius and half its length)"));
+                    }
+                    if self.ports.iter().any(|p| p.face.is_none()) {
+                        return Err(invalid("open boundary", "ports at the cylinder's ends would lie under the layer"));
+                    }
+                }
                 (OpenShape::Sphere, Some(Solid { shape: Shape::Sphere { radius }, .. })) => {
                     if o.thickness.get() >= 0.75 * radius.get() {
                         return Err(invalid("layer thickness", "must leave room inside the sphere (under three quarters of its radius)"));
@@ -205,7 +214,7 @@ impl Model {
                 (OpenShape::Box, _) => {
                     return Err(invalid(
                         "open boundary",
-                        "not supported yet: a perfectly matched layer needs a box solid (geometry.solid, shape box) to line, or shape sphere for a sphere solid",
+                        "not supported yet: a perfectly matched layer needs a box or cylinder solid (geometry.solid) to line, or shape sphere for a sphere solid",
                     ));
                 }
                 (OpenShape::Sphere, _) => {

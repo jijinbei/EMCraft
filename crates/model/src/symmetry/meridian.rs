@@ -63,8 +63,8 @@ impl crate::Model {
     /// ```
     pub fn meridian_profile(&self, size: f64) -> Result<MeridianProfile> {
         let solid = self.solid.as_ref().ok_or_else(|| invalid("body of revolution", "needs a solid (geometry.solid)"))?;
-        if self.waveguide.is_some() || self.open.is_some() {
-            return Err(invalid("body of revolution", "not supported yet: a waveguide or an open boundary"));
+        if self.waveguide.is_some() {
+            return Err(invalid("body of revolution", "not supported yet: a waveguide"));
         }
         let (_, mat) = self.material(&solid.material)?;
         let (eps_r, mu_r) = (mat.eps_r.get(), mat.mu_r.get());
@@ -90,6 +90,9 @@ impl crate::Model {
             return Err(invalid("body of revolution", "the profile holds nothing"));
         }
         lines.push(([[0.0, lo], [0.0, hi]], 0.0));
+        // An open boundary's layer: its inner surface a line the triangles keep to.
+        let layer = self.layer_lines(size);
+        lines.extend(layer.iter().map(|s| (*s, 0.0)));
         let tol = 1e-9 * extent;
         let (points, pieces) = arrangement(&lines, tol);
         // A piece is kept where the model's filling differs across it, looked at past the
@@ -106,7 +109,8 @@ impl crate::Model {
             for (e, u) in [left, right].into_iter().flatten() {
                 densest = densest.max(e * u);
             }
-            if left != right {
+            let on_layer = layer.iter().any(|s| distance(mid, s) <= 1e3 * tol);
+            if left != right || (on_layer && left.is_some() && right.is_some()) {
                 segments.push([a, b]);
             }
         }
@@ -121,6 +125,31 @@ impl crate::Model {
         let points = used.iter().map(|&v| points[v as usize]).collect();
         let segments = segments.iter().map(|s| s.map(|v| renumber[&v])).collect();
         Ok(MeridianProfile { points, segments, eps_r, mu_r, densest })
+    }
+}
+
+impl crate::Model {
+    /// The inner surface of the open boundary's layer on the half-plane (none when closed): a
+    /// cylinder's three lines r = R − d, z = d and z = L − d, a sphere's inner semicircle.
+    fn layer_lines(&self, size: f64) -> Vec<Segment> {
+        let (Some(o), Some(solid)) = (&self.open, &self.solid) else { return Vec::new() };
+        let d = o.thickness.get();
+        match solid.shape {
+            crate::Shape::Cylinder { radius, length } => {
+                let (r, l) = (radius.get(), length.get());
+                vec![[[r - d, 0.0], [r - d, l]], [[0.0, d], [r, d]], [[0.0, l - d], [r, l - d]]]
+            }
+            crate::Shape::Sphere { radius } => {
+                let r = radius.get() - d;
+                let n = ((std::f64::consts::PI * r / size).ceil() as usize).clamp(8, MAX_PROFILE_POINTS / 2);
+                let q = |k: usize| {
+                    let t = std::f64::consts::PI * k as f64 / n as f64;
+                    [if k == 0 || k == n { 0.0 } else { r * t.sin() }, -r * t.cos()]
+                };
+                (0..n).map(|k| [q(k), q(k + 1)]).collect()
+            }
+            _ => Vec::new(),
+        }
     }
 }
 

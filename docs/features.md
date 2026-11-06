@@ -570,6 +570,16 @@ The S-parameters of the model as a body of revolution about z (its profile as so
 | `m` | integer |  | no | the azimuthal order, 0 to 64 (default 1) |
 | `size` | number | length | no | the triangles' size |
 
+## `solve.revolution.radiation` — Body of revolution radiation
+
+The open model as a body of revolution about z at one frequency: its cylinder (layer shape box: the wall and both ends lined) or sphere (layer shape sphere: the outer shell) lined by the model's perfectly matched layer (model.open), driven by its one source — a dipole on the axis along z (order m = 0) or a plane wave along ±z (orders ±1, the field the dielectrics scatter) — solved on the meridian half-plane, and the far field by the near-to-far transform of a Huygens surface a third of the layer's thickness inside it, turned about the axis: the power out through it and, at polar angles `theta` (degrees, φ = 0 the dipole's or the wave's E-plane), r e^{jkr} E_θ and E_φ with the directivity (a dipole) or the bistatic radar cross-section in the E- and H-planes (a plane wave). Triangles of about `size` (default a twenty-fifth of the wavelength in the densest material). The model is left as it is.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `frequency` | number | frequency | no | the frequency (default the band's top) |
+| `theta` | array |  | no | polar angles, degrees (default 0 to 180 by 15) |
+| `size` | number | length | no | the triangles' size |
+
 ## `solve.cyclic` — Cyclic modes
 
 The cavity modes of a rotationally symmetric model (model.rotation) from its meshed sector, per harmonic m: the `count` lowest eigenfrequencies of each above the null space, by shift-invert subspace iteration on the phase-tied (Hermitian) eigenproblem. Without `m`, the harmonics 0 to n/2 (m and n − m have the same frequencies: the fields turning either way). Put `frequency` a little above the highest mode wanted. The model is left as it is.

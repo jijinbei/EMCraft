@@ -73,6 +73,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("model.symmetry", Some("Symmetry"), Some(Glyph::Symmetry), false),
     ui("solve.revolution", None, Some(Glyph::Cylinder), true),
     ui("solve.revolution.frequency", None, Some(Glyph::Cylinder), true),
+    ui("solve.revolution.radiation", None, Some(Glyph::Cylinder), true),
     ui("solve.cyclic", Some("Cyclic modes"), Some(Glyph::Eigen), true),
     ui("solve.harmonics", Some("Harmonics sweep"), Some(Glyph::Sweep), true),
     ui("model.symmetry.find", Some("Find symmetry"), Some(Glyph::Symmetry), false),

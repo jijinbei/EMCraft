@@ -277,6 +277,15 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   solved (TE_mp, TM_mp in closed form, N. Marcuvitz, *Waveguide Handbook*, 1951, §2.3), each
   projected through its counter-rotating twin, the reaction pairing a field with a test function
   (`emcraft-solver::bor::s_parameters`).
+- Open bodies of revolution: the perfectly matched layer as the anisotropic medium εΛ, μΛ of
+  cylindrical or spherical stretched coordinates (F. L. Teixeira, W. C. Chew, *Systematic
+  derivation of anisotropic PML absorbing media in cylindrical and spherical coordinates*, IEEE
+  Microwave Guided Wave Lett. 7(11):371–373, 1997), per quadrature point of the half-plane; an
+  axial current element in order 0 and a plane wave along the axis in orders ±1 (its m = −1 part
+  the m = 1 part's mirror); the far field by the 3D Huygens surface's transform (Balanis,
+  *Advanced Engineering Electromagnetics*, §6.8) on the contour turned about the axis, sampled
+  evenly in φ (`emcraft-solver::bor::open`). Checked against the dipole's closed form and the
+  Mie series (Bohren, Huffman 1983, §4.4).
 - The pillbox's and the coaxial cavity's closed forms that check it: D. M. Pozar, *Microwave
   Engineering*, 4th ed., Wiley 2012, §6.3; the Bessel zeros from M. Abramowitz, I. A. Stegun,
   *Handbook of Mathematical Functions*, 1964, Table 9.5.

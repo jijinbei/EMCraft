@@ -1,0 +1,9 @@
+{
+ "title": "Hertzian dipole (1 A × 1 mm) at 3 GHz in a sphere lined by a spherical layer, as a body of revolution: radiated power and broadside directivity",
+ "kind": "theory",
+ "source": "Hertzian dipole radiation P = η₀ (k I l)²/(12π), directivity 3/2 sin²θ (C. A. Balanis, Antenna Theory, 4th ed., Wiley 2016, §4.2), η₀ = μ₀c",
+ "quantities": [
+  {"id": "power", "quantity": "radiated power (W)", "measure": {"step": "far", "pointer": "/power"}, "value": 0.039505747965662814, "tolerance": {"relative": 0.015}, "reason": "edge and nodal elements of the lowest order on 2 mm triangles, the field on the Huygens surface from them: +0.55 % here, +0.18 % at 1 mm (second order)"},
+  {"id": "directivity", "quantity": "directivity at θ = 90°", "measure": {"step": "far", "pointer": "/points/0/directivity"}, "value": 1.5, "tolerance": {"absolute": 0.02}, "reason": "as the power: −1e-6 here"}
+ ]
+}

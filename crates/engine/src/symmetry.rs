@@ -127,6 +127,86 @@ pub(crate) fn revolution_setup(s: &Session, p: &Params, top: f64) -> Result<(emc
     Ok((profile_mesh(&s.model, &pr, size)?, ports))
 }
 
+/// `solve.revolution.radiation`: the open model as a body of revolution, its one source, the far
+/// field.
+pub fn revolution_radiation(s: &mut Session, p: &Params) -> Result<Value> {
+    use emcraft_solver::bor::open::{BorSource, Layer, LayerShape};
+    let frequency = args::frequency_or_band_top(s, p, "frequency", args::SET_THE_BAND)?;
+    let open = s.model.open.as_ref().ok_or_else(|| EngineError::failed("no open boundary: line the model with model.open"))?;
+    let shape = match (s.model.solid.as_ref().map(|x| &x.shape), open.shape) {
+        (Some(emcraft_model::Shape::Cylinder { radius, length }), emcraft_model::OpenShape::Box) => {
+            LayerShape::Cylinder { radius: radius.get(), z0: 0.0, z1: length.get() }
+        }
+        (Some(emcraft_model::Shape::Sphere { radius }), emcraft_model::OpenShape::Sphere) => LayerShape::Sphere { radius: radius.get() },
+        _ => return Err(EngineError::failed("a body of revolution's layer lines a cylinder (layer shape box) or a sphere (shape sphere)")),
+    };
+    let layer = Layer::new(shape, open.thickness.get(), open.reflection.unwrap_or(emcraft_solver::driven::PML_REFLECTION))?;
+    if !s.model.ports.is_empty() || !s.model.lumped.is_empty() {
+        return Err(EngineError::failed("not supported yet: ports on an open body of revolution (drive it by a source)"));
+    }
+    let tol = 1e-9 * layer.thickness;
+    // The source and the turn of the wave's polarization from x̂ (the far field's φ shifts by it).
+    let (source, turn) = match s.model.sources.as_slice() {
+        [emcraft_model::Source::Dipole { at, direction, length, current }] => {
+            if at.x.abs() > tol || at.y.abs() > tol || direction.x.abs() > 1e-12 || direction.y.abs() > 1e-12 {
+                return Err(EngineError::failed(
+                    "not supported yet: a dipole off the axis or across it (a body of revolution takes one on the axis along z)",
+                ));
+            }
+            (BorSource::AxialDipole { z: at.z, moment: current * length.get() * direction.z.signum() }, 0.0)
+        }
+        [emcraft_model::Source::PlaneWave { direction, polarization }] => {
+            if direction.x.abs() > 1e-12 || direction.y.abs() > 1e-12 {
+                return Err(EngineError::failed("not supported yet: a plane wave off the axis (a body of revolution takes one along ±z)"));
+            }
+            (BorSource::PlaneWave { up: direction.z > 0.0 }, polarization.y.atan2(polarization.x))
+        }
+        [] => return Err(EngineError::failed("no source: add one with model.source")),
+        _ => return Err(EngineError::failed("not supported yet: more than one source on a body of revolution")),
+    };
+    let first = s.model.meridian_profile(1e-3)?;
+    let span = first.points.iter().fold(0.0f64, |a, q| a.max(q[0]).max(q[1].abs()));
+    let wavelength = emcraft_model::units::C0 / (frequency * first.densest.sqrt());
+    let size = p.positive_length("size").optional()?.unwrap_or_else(|| (wavelength / 25.0).min(span / 20.0));
+    let pr = s.model.meridian_profile(size)?;
+    let profile = profile_mesh(&s.model, &pr, size)?;
+    let r = emcraft_solver::bor::open::radiate(&profile, &layer, &source, frequency)?;
+    let thetas: Vec<f64> = match p.list("theta", 721).optional()? {
+        Some(list) => list
+            .iter()
+            .map(|v| {
+                v.as_f64()
+                    .filter(|t| t.is_finite() && (0.0..=180.0).contains(t))
+                    .ok_or_else(|| p.error("theta", "must hold angles from 0 to 180 degrees"))
+            })
+            .collect::<Result<_>>()?,
+        None => (0..=12).map(|k| 15.0 * f64::from(k)).collect(),
+    };
+    let power = r.huygens.power();
+    let l = s.display.length.from_si(1.0);
+    let wave = matches!(source, BorSource::PlaneWave { .. });
+    let points: Vec<Value> = thetas
+        .iter()
+        .map(|&deg| {
+            let theta = deg.to_radians();
+            let (et, ep) = r.huygens.far_field(theta, -turn);
+            let mut v = json!({"theta": deg, "e_theta": complex(et), "e_phi": complex(ep)});
+            if wave {
+                for (key, phi) in [("rcs_e_plane", 0.0), ("rcs_h_plane", std::f64::consts::FRAC_PI_2)] {
+                    let (a, b) = r.huygens.far_field(theta, phi - turn);
+                    v[key] = json!(4.0 * std::f64::consts::PI * (a.norm_sqr() + b.norm_sqr()) * l * l);
+                }
+            } else {
+                v["directivity"] = json!(r.huygens.directivity(theta, 0.0));
+            }
+            v
+        })
+        .collect();
+    Ok(
+        json!({"frequency": s.show_frequency(frequency), "m": r.m, "power": power, "points": points, "triangles": profile.triangles.len(), "unknowns": r.unknowns}),
+    )
+}
+
 /// `solve.cyclic`: a rotationally symmetric cavity's modes per harmonic, from its sector.
 pub fn cyclic(s: &mut Session, p: &Params) -> Result<Value> {
     let rot = s.model.rotation.ok_or_else(|| EngineError::failed("no rotational symmetry: set it with model.rotation"))?;

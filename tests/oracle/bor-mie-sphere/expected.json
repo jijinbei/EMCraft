@@ -1,0 +1,85 @@
+{
+ "title": "Dielectric sphere (εr = 4, radius 15 mm) lit by a plane wave at 3 GHz, as a body of revolution (m = ±1): bistatic radar cross-section",
+ "kind": "theory",
+ "source": "Mie series: aₙ, bₙ from Riccati–Bessel functions, S₁, S₂ from πₙ, τₙ, σ = 4π|S₂|²/k² (E-plane), 4π|S₁|²/k² (H-plane) (C. F. Bohren, D. R. Huffman, Absorption and Scattering of Light by Small Particles, Wiley 1983, §4.4)",
+ "quantities": [
+  {
+   "id": "rcs_e_0",
+   "quantity": "bistatic RCS, E-plane, θ = 0° (mm²)",
+   "measure": {
+    "step": "rcs",
+    "pointer": "/points/0/rcs_e_plane"
+   },
+   "value": 1066.4813777607856,
+   "tolerance": {
+    "relative": 0.02
+   },
+   "reason": "lowest-order elements on 1 mm triangles, the arcs in 1 mm chords: −0.4 % to −0.7 % here, −1.5 % to −2.3 % at 2 mm (second order)"
+  },
+  {
+   "id": "rcs_e_60",
+   "quantity": "bistatic RCS, E-plane, θ = 60° (mm²)",
+   "measure": {
+    "step": "rcs",
+    "pointer": "/points/1/rcs_e_plane"
+   },
+   "value": 292.7028979272922,
+   "tolerance": {
+    "relative": 0.02
+   },
+   "reason": "lowest-order elements on 1 mm triangles, the arcs in 1 mm chords: −0.4 % to −0.7 % here, −1.5 % to −2.3 % at 2 mm (second order)"
+  },
+  {
+   "id": "rcs_h_60",
+   "quantity": "bistatic RCS, H-plane, θ = 60° (mm²)",
+   "measure": {
+    "step": "rcs",
+    "pointer": "/points/1/rcs_h_plane"
+   },
+   "value": 828.1150130935453,
+   "tolerance": {
+    "relative": 0.02
+   },
+   "reason": "lowest-order elements on 1 mm triangles, the arcs in 1 mm chords: −0.4 % to −0.7 % here, −1.5 % to −2.3 % at 2 mm (second order)"
+  },
+  {
+   "id": "rcs_e_120",
+   "quantity": "bistatic RCS, E-plane, θ = 120° (mm²)",
+   "measure": {
+    "step": "rcs",
+    "pointer": "/points/2/rcs_e_plane"
+   },
+   "value": 70.54900480910953,
+   "tolerance": {
+    "relative": 0.02
+   },
+   "reason": "lowest-order elements on 1 mm triangles, the arcs in 1 mm chords: −0.4 % to −0.7 % here, −1.5 % to −2.3 % at 2 mm (second order)"
+  },
+  {
+   "id": "rcs_h_120",
+   "quantity": "bistatic RCS, H-plane, θ = 120° (mm²)",
+   "measure": {
+    "step": "rcs",
+    "pointer": "/points/2/rcs_h_plane"
+   },
+   "value": 473.7026991467259,
+   "tolerance": {
+    "relative": 0.02
+   },
+   "reason": "lowest-order elements on 1 mm triangles, the arcs in 1 mm chords: −0.4 % to −0.7 % here, −1.5 % to −2.3 % at 2 mm (second order)"
+  },
+  {
+   "id": "rcs_e_180",
+   "quantity": "bistatic RCS, E-plane, θ = 180° (mm²)",
+   "measure": {
+    "step": "rcs",
+    "pointer": "/points/3/rcs_e_plane"
+   },
+   "value": 346.89646521064907,
+   "tolerance": {
+    "relative": 0.02
+   },
+   "reason": "lowest-order elements on 1 mm triangles, the arcs in 1 mm chords: −0.4 % to −0.7 % here, −1.5 % to −2.3 % at 2 mm (second order)"
+  }
+ ]
+}

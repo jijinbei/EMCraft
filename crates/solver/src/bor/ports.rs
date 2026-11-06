@@ -204,7 +204,7 @@ pub(super) fn solved(p: &Profile, m: u32, ports: &[BorPort], frequency: f64) -> 
         terms.push(list);
     }
     let support: Vec<Vec<usize>> = terms.iter().map(|l| l.iter().flat_map(|t| t.b.iter().map(|x| x.0)).collect()).collect();
-    let (k, mm, _) = assemble_with(p, m, &d, &support)?;
+    let (k, mm, _) = assemble_with(p, m, &d, &support, None)?;
     let mut a = k.clone();
     for (v, w) in a.val.iter_mut().zip(&mm.val) {
         *v -= w * (k0 * k0);
