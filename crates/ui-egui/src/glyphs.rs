@@ -82,9 +82,32 @@ emcraft_macros::named_enum! {
         KindAntenna = "kind_antenna",
         /// A wave packet running along a line: the time domain.
         KindPulse = "kind_pulse",
+        /// The region solved: a box drawn dashed, faintly filled with its air.
+        Region = "region",
+        /// A metal body: a box with its faces filled.
+        Metal = "metal",
+        /// A dielectric body: a box with its front hatched.
+        Dielectric = "dielectric",
+        /// An imported part: a metal box with an arrow coming in.
+        Part = "part",
+        /// A symmetry plane that is an electric wall: a dashed plane with E across it.
+        SymmetryElectric = "symmetry_electric",
+        /// A symmetry plane that is a magnetic wall: a dashed plane with H across it.
+        SymmetryMagnetic = "symmetry_magnetic",
+        /// Field lines: arrows bending round.
+        FieldLines = "field_lines",
     /// A plain rounded square: a command without a glyph of its own.
         Blank = "blank",
     }
+}
+
+/// A box's three faces seen from the front, the top and the right (a glyph's square).
+fn box_faces() -> ([(f32, f32); 4], [(f32, f32); 4], [(f32, f32); 4]) {
+    (
+        [(0.15, 0.35), (0.6, 0.35), (0.6, 0.85), (0.15, 0.85)],
+        [(0.15, 0.35), (0.4, 0.15), (0.85, 0.15), (0.6, 0.35)],
+        [(0.6, 0.35), (0.85, 0.15), (0.85, 0.65), (0.6, 0.85)],
+    )
 }
 
 /// Paints `glyph` in `r`.
@@ -132,6 +155,61 @@ pub fn paint(p: &Painter, r: Rect, glyph: Glyph, ink: Color32, accent: Color32) 
             pen.open(&[(0.2, 0.55), (0.2, 0.85), (0.8, 0.85), (0.8, 0.55)], line);
             pen.open(&[(0.5, 0.12), (0.5, 0.68)], bold);
             pen.open(&[(0.32, 0.5), (0.5, 0.68), (0.68, 0.5)], bold);
+        }
+        // The region: a dashed box, faintly filled.
+        Glyph::Region => {
+            let (front, top, side) = box_faces();
+            pen.fill(&front, accent.gamma_multiply(0.15), Stroke::NONE);
+            for face in [&front[..], &top[..], &side[..]] {
+                let pts = pen.points(face);
+                for k in 0..pts.len() {
+                    let (a, b) = (pts[k], pts[(k + 1) % pts.len()]);
+                    p.extend(Shape::dashed_line(&[a, b], Stroke::new(w, ink), 0.07 * s, 0.05 * s));
+                }
+            }
+        }
+        // A metal body: a box with its faces filled in the ink.
+        Glyph::Metal => {
+            let (front, top, side) = box_faces();
+            pen.fill(&front, ink.gamma_multiply(0.55), line);
+            pen.fill(&top, ink.gamma_multiply(0.3), line);
+            pen.fill(&side, ink.gamma_multiply(0.75), line);
+        }
+        // A dielectric body: a box, its front hatched in the accent.
+        Glyph::Dielectric => {
+            let (front, top, side) = box_faces();
+            pen.fill(&front, accent.gamma_multiply(0.25), line);
+            pen.closed(&top, line);
+            pen.closed(&side, line);
+            // Hatched across the front face, corner to corner.
+            for (a, b) in [((0.15, 0.6), (0.4, 0.85)), ((0.15, 0.35), (0.6, 0.8)), ((0.35, 0.35), (0.6, 0.6))] {
+                pen.open(&[a, b], Stroke::new(w * 0.8, accent));
+            }
+        }
+        // An imported part: a small metal box with an arrow coming down into it.
+        Glyph::Part => {
+            pen.fill(&[(0.3, 0.55), (0.75, 0.55), (0.75, 0.9), (0.3, 0.9)], ink.gamma_multiply(0.55), line);
+            pen.fill(&[(0.3, 0.55), (0.45, 0.42), (0.9, 0.42), (0.75, 0.55)], ink.gamma_multiply(0.3), line);
+            pen.open(&[(0.22, 0.08), (0.22, 0.45)], bold);
+            pen.open(&[(0.1, 0.33), (0.22, 0.45), (0.34, 0.33)], bold);
+        }
+        // A symmetry plane: dashed, edge on, with E or H beside it.
+        Glyph::SymmetryElectric | Glyph::SymmetryMagnetic => {
+            for k in 0..5 {
+                let y0 = 0.08 + 0.18 * k as f32;
+                pen.open(&[(0.32, y0), (0.32, y0 + 0.1)], bold);
+            }
+            let letter = if glyph == Glyph::SymmetryElectric { "E" } else { "H" };
+            p.text(pen.at(0.68, 0.5), egui::Align2::CENTER_CENTER, letter, egui::FontId::proportional(0.62 * s), ink);
+        }
+        // Field lines: three arrows bending round a source.
+        Glyph::FieldLines => {
+            for (k, y) in [0.25_f32, 0.5, 0.75].into_iter().enumerate() {
+                let bow = 0.12 * (1.0 - k as f32);
+                let ink = if k == 1 { accent } else { ink };
+                pen.open(&[(0.12, y + bow), (0.35, y), (0.6, y), (0.84, y + bow)], Stroke::new(w * 1.1, ink));
+                pen.open(&[(0.72, y + bow - 0.08), (0.84, y + bow), (0.72, y + bow + 0.08)], Stroke::new(w * 1.1, ink));
+            }
         }
         // A material swatch: a slab with dots (polarised molecules).
         Glyph::Material => {

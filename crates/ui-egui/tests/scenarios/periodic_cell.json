@@ -19,7 +19,7 @@
   {"click": "dialog:ok"},
   {"expect": {"dialog": null, "status_error": false}},
   {"frames": 2},
-  {"expect": {"handles": ["row:Periodic boundaries: x, y, θ = 30.0°, φ = 0.0°, TM"]}},
+  {"expect": {"handles": ["row:periodic"]}},
   {"call": "ui.set", "params": {"step": "boundaries"}},
   {"click": "view3d:std:iso"},
   {"frames": 2},

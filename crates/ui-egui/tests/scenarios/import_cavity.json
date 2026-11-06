@@ -47,8 +47,8 @@
   "expect": {
    "dialog": null,
    "handles": [
-    "row:Region: the air the part encloses (imported), vacuum",
-    "row:Block: metal walls (imported)"
+    "row:region",
+    "row:body:Block"
    ]
   }
  },
@@ -103,7 +103,7 @@
   "note": "The region's row edits what fills it (its shape is its part's), not a primitive's dimensions"
  },
  {
-  "click": "row:Region: the air the part encloses (imported), vacuum",
+  "click": "row:region",
   "double": true
  },
  {
@@ -124,7 +124,7 @@
   "note": "The walls given another material from their row: the part read again, the block itself the region (drawn as its air), the ports kept"
  },
  {
-  "click": "row:Block: metal walls (imported)",
+  "click": "row:body:Block",
   "double": true
  },
  {
@@ -158,8 +158,8 @@
   "expect": {
    "dialog": null,
    "handles": [
-    "row:Region: Block (imported), vacuum",
-    "row:Block: the region (imported)"
+    "row:region",
+    "row:body:Block"
    ],
    "inspect": {
     "model.ports.1.name": "2"

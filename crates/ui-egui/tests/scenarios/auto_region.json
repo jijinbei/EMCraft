@@ -8,9 +8,9 @@
   {"call": "ui.set", "params": {"step": "geometry"}},
   {"click": "view3d:std:iso"},
   {"frames": 2},
-  {"expect": {"handles": ["row:Region (automatic): 20 × 20 × 20 mm, vacuum", "row:body 1: metal sphere"]}},
+  {"expect": {"handles": ["row:region", "row:body:body 1"]}},
   {"shot": "auto-region"},
   {"call": "engine.execute", "params": {"command": "model.region", "params": {"mode": "pinned"}}},
   {"frames": 2},
-  {"expect": {"handles": ["row:Region: box 20 × 20 × 20 mm, vacuum"]}}
+  {"expect": {"handles": ["row:region"]}}
 ]

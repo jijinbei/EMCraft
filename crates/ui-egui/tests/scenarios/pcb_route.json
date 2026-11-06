@@ -39,7 +39,7 @@
       "handles": [
         "choice:pcb_segment:signal:0",
         "choice:pcb_step:inspect",
-        "row:Net: DATA"
+        "row:net:DATA"
       ]
     }
   },
@@ -212,7 +212,7 @@
     }
   },
   {
-    "click": "row:Net: DATA"
+    "click": "row:net:DATA"
   },
   {
     "call": "engine.execute",

@@ -19,7 +19,7 @@
   {"shot": "lumped-second-point"},
   {"click": "view3d:corner:3"},
   {"frames": 2},
-  {"expect": {"inspect": {"view3d.tools.picks": []}, "handles": ["row:Lumped port 1: 50 Ω"], "query": {"command": "project.values", "params": {"command": "model.port.lumped.edit", "name": "1"}, "path": "to", "value": [25.0, 24.0, 23.0]}}},
+  {"expect": {"inspect": {"view3d.tools.picks": []}, "handles": ["row:lumped:1"], "query": {"command": "project.values", "params": {"command": "model.port.lumped.edit", "name": "1"}, "path": "to", "value": [25.0, 24.0, 23.0]}}},
   {"note": "The tool off, a click on the port's marker selects it"},
   {"key": "Escape"},
   {"expect": {"inspect": {"view3d.tools.tool": null}}},
@@ -29,5 +29,5 @@
   {"shot": "lumped-selected"},
   {"click": "view3d:selected:delete"},
   {"frames": 2},
-  {"expect": {"inspect": {"view3d.selected": null}, "hidden": ["row:Lumped port 1: 50 Ω", "view3d:selected"]}}
+  {"expect": {"inspect": {"view3d.selected": null}, "hidden": ["row:lumped:1", "view3d:selected"]}}
 ]

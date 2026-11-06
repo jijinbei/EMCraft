@@ -23,7 +23,7 @@
   {"until": {"busy": false, "view": "sparameters"}, "timeout": 120},
   {"expect": {"status": "Solved 3 frequencies", "status_error": false, "inspect": {"model.results.frequencies": 3, "model.results.order": 1}}},
   {"frames": 3},
-  {"expect": {"inspect": {"chart": "*"}, "handles": ["chart:sparameters", "row:Sweep: 3 frequencies, 3297 unknowns"]}},
+  {"expect": {"inspect": {"chart": "*"}, "handles": ["chart:sparameters", "row:result:sweep"]}},
   {"shot": "sparameters"},
   {"note": "Clicking the chart opens the fields at the nearest solved frequency"},
   {"click": "chart:sparameters"},

@@ -496,7 +496,7 @@ mod tests {
             (Handle::View(View::PortModes), "view:port_modes"),
             (Fixed::FieldSaveVideo.into(), "field:save:video"),
             (Handle::Part(Fixed::FieldPhase, Part::Speed), "field:phase:speed"),
-            (Handle::Row("Port 1 (start): 4 modes"), "row:Port 1 (start): 4 modes"),
+            (Handle::Row("port:1"), "row:port:1"),
             (Handle::Step(Step::Mesh), "step:mesh"),
             (Handle::DialogCell("sections", 0, "length"), "dialog:cell:sections:0:length"),
             (Handle::Kind(Solver::Eigenmodes), "intent:kind:eigenmodes"),

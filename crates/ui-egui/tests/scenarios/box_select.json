@@ -41,10 +41,10 @@
   {"note": "Delete removes both through model.port.delete; two undos bring them back"},
   {"key": "Delete"},
   {"frames": 2},
-  {"expect": {"inspect": {"view3d.selection": [], "model.ports": []}, "hidden": ["row:Port 1 (start): 4 modes", "row:Port 2 (end): 4 modes"]}},
+  {"expect": {"inspect": {"view3d.selection": [], "model.ports": []}, "hidden": ["row:port:1", "row:port:2"]}},
   {"shot": "deleted"},
   {"key": "Z", "cmd": true},
   {"key": "Z", "cmd": true},
   {"frames": 2},
-  {"expect": {"inspect": {"model.ports.0.name": "1", "model.ports.1.name": "2"}, "handles": ["row:Port 1 (start): 4 modes", "row:Port 2 (end): 4 modes"]}}
+  {"expect": {"inspect": {"model.ports.0.name": "1", "model.ports.1.name": "2"}, "handles": ["row:port:1", "row:port:2"]}}
 ]

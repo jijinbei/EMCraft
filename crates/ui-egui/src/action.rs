@@ -530,10 +530,10 @@ mod tests {
         let before = app.messages.len();
         frame(
             &mut app,
-            [Action::dialog("geometry.waveguide"), Action::SetDock(true), Action::Fold("Geometry".into()), Action::SetTab(RibbonTab::Mesh)],
+            [Action::dialog("geometry.waveguide"), Action::SetDock(true), Action::Fold("Bodies".into()), Action::SetTab(RibbonTab::Mesh)],
         );
         assert_eq!(app.ui_state.dialog().map(|d| (d.command.id, d.docked)), Some(("geometry.waveguide", true)));
-        assert_eq!((app.dock_dialogs, app.tab, app.browser.folded.clone()), (true, RibbonTab::Mesh, vec!["Geometry".to_owned()]));
+        assert_eq!((app.dock_dialogs, app.tab, app.browser.folded.clone()), (true, RibbonTab::Mesh, vec!["Bodies".to_owned()]));
         // A refused OK shows under the dialog's fields, not in the messages.
         if let Some(d) = app.ui_state.dialog_mut() {
             let _ = d.set("width", &json!("wide"));
@@ -542,7 +542,7 @@ mod tests {
         assert!(app.ui_state.dialog().is_some_and(|d| d.fields.iter().any(|f| f.error.is_some())));
         assert_eq!(app.messages.len(), before);
         // A dialog that cannot open says why; the next action still runs.
-        frame(&mut app, [Action::dialog("no.such"), Action::Fold("Geometry".into())]);
+        frame(&mut app, [Action::dialog("no.such"), Action::Fold("Bodies".into())]);
         assert_eq!(app.messages.len(), before + 1);
         assert!(app.status().is_some_and(|m| m.error && m.text.contains("no.such")));
         assert!(app.browser.folded.is_empty());

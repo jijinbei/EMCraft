@@ -25,7 +25,7 @@
     }
   },
   {
-    "click": "row:vacuum: εr 1, μr 1"
+    "click": "row:material:vacuum"
   },
   {
     "frames": 2

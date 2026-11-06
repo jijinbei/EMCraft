@@ -1,5 +1,7 @@
-//! The browser: the session's model and results as a tree (Geometry, Materials, Ports, Sources,
-//! Boundaries, Mesh, Results) on a floating card at the left, after SolidCraft's browser. Rows
+//! The browser: the session's model and results as a tree on a floating card at the left, as
+//! the model is made: its bodies and what each is made of, the materials (and what uses each),
+//! the region solved and what bounds it (its outer boundary, its symmetry planes), what drives
+//! it, its mesh and its results. Rows
 //! are read from the session every frame; clicking a result shows it, double-clicking a
 //! geometry, mesh or boundary row opens its command's dialog on the model's values. A row that
 //! names an item of the model (a material, a port, a body, a source) edits and deletes it: its
@@ -79,19 +81,28 @@ impl Item {
     }
 }
 
-/// A row: its text (in English: its handle and key) as shown, glyph and action.
+/// A row: what it names (its name, then the detail in a dimmer ink), its glyph, depth and
+/// action. Its `id` names it for good (its handle `row:<id>`, its key in the selection): it does
+/// not change with the words or the language.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Row {
+    /// What it is, for good: `port:1`, `body:Block`, `section:2`, `region`.
+    pub id: String,
+    /// Its name and detail in English (its tooltip in English, tests).
     pub text: String,
-    /// The text in the current language.
+    /// Its name in the current language.
     pub shown: String,
+    /// Its detail in the current language (empty: none), drawn dimmer after the name.
+    pub detail: String,
     pub glyph: Glyph,
     pub act: Act,
+    /// How deep it sits under the section (0) or under the row above (1).
+    pub depth: u8,
     /// What the row is in the 3D view (selecting one selects the other).
     pub pick: Option<Pick>,
     /// The item of the model it names, which it edits and deletes.
     pub item: Option<Item>,
-    /// What it shows, as TeX ([`crate::math`]), when not its text's symbols set as mathematics.
+    /// Its detail as TeX ([`crate::math`]), when not its text's symbols set as mathematics.
     pub rich: Option<String>,
     /// A waveguide port's part in the S-parameters.
     pub role: Option<PortRole>,
@@ -183,9 +194,23 @@ pub fn role_mark(p: &egui::Painter, r: Rect, input: bool, ink: egui::Color32) {
 }
 
 /// A row of `template` (looked up in the current language) with its values.
-fn row(template: crate::lang::Text, args: &[(&str, &dyn Display)], glyph: Glyph, act: Act) -> Row {
-    let Both { en, shown } = lang::both(template, args);
-    Row { text: en, shown, glyph, act, pick: None, item: None, rich: None, role: None }
+/// A row `id` named `name`, its detail `detail` (none: `None`), with `glyph` and `act`.
+fn node(id: impl Into<String>, name: Both, detail: Option<Both>, glyph: Glyph, act: Act) -> Row {
+    let (en, shown) = match &detail {
+        Some(d) => (format!("{}: {}", name.en, d.en), d.shown.clone()),
+        None => (name.en.clone(), String::new()),
+    };
+    Row { id: id.into(), text: en, shown: name.shown, detail: shown, glyph, act, depth: 0, pick: None, item: None, rich: None, role: None }
+}
+
+/// Text in both languages from a template and its arguments.
+fn words(template: crate::lang::Text, args: &[(&str, &dyn Display)]) -> Both {
+    lang::both(template, args)
+}
+
+/// A name that is the model's own (a body's, a material's): the same in every language.
+fn own(name: &str) -> Both {
+    Both { en: name.to_owned(), shown: name.to_owned() }
 }
 
 impl Row {
@@ -195,6 +220,11 @@ impl Row {
 
     fn item(self, item: Item) -> Row {
         Row { item: Some(item), ..self }
+    }
+
+    /// The row one step under the one above it.
+    fn under(self) -> Row {
+        Row { depth: 1, ..self }
     }
 
     /// Whether a double-click edits it.
@@ -210,35 +240,38 @@ impl Row {
         }
     }
 
-    /// What it shows as TeX: its own, else its text's symbols set as mathematics.
-    pub fn tex(&self) -> String {
-        self.rich.clone().unwrap_or_else(|| crate::math::texify(self.shown.trim_start()).into_owned())
+    /// Its detail as TeX: its own, else its text's symbols set as mathematics.
+    fn detail_tex(&self) -> String {
+        self.rich.clone().unwrap_or_else(|| crate::math::texify(&self.detail).into_owned())
     }
 
-    /// Its text and, for a port, its role: what its tooltip says.
-    pub fn tip(&self) -> String {
-        match &self.role {
-            Some(role) => format!("{}\n{}", self.shown.trim_start(), role.tip()),
-            None => self.shown.trim_start().to_owned(),
+    /// Its name and detail as TeX (a card in the 3D view).
+    pub fn tex(&self) -> String {
+        match self.detail.is_empty() {
+            true => crate::math::texify(&self.shown).into_owned(),
+            false => format!("{}  ·  {}", crate::math::texify(&self.shown), self.detail_tex()),
         }
     }
 
-    /// The row indented under the one before.
-    fn sub(self) -> Row {
-        Row { text: format!("  {}", self.text), shown: format!("  {}", self.shown), ..self }
+    /// Its name and detail and, for a port, its role: what its tooltip says.
+    pub fn tip(&self) -> String {
+        let whole = if self.detail.is_empty() { self.shown.clone() } else { format!("{}  ·  {}", self.shown, self.detail) };
+        match &self.role {
+            Some(role) => format!("{whole}\n{}", role.tip()),
+            None => whole,
+        }
     }
 }
 
-/// The row of what `pick` is: its key (`section/text`) and action.
+/// The row of what `pick` is: its key (its id) and itself.
 pub fn row_of(app: &EmcraftApp, pick: Pick) -> Option<(String, Row)> {
     rows_of(app, &[pick]).pop()
 }
 
 /// The rows of what `picks` are, in their order (those without a row left out).
 pub fn rows_of(app: &EmcraftApp, picks: &[Pick]) -> Vec<(String, Row)> {
-    let all: Vec<(String, Row)> =
-        tree(app).into_iter().flat_map(|(section, rows)| rows.into_iter().map(move |r| (format!("{section}/{}", r.text), r))).collect();
-    picks.iter().filter_map(|p| all.iter().find(|(_, r)| r.pick == Some(*p)).cloned()).collect()
+    let all: Vec<Row> = tree(app).into_iter().flat_map(|(_, rows)| rows).collect();
+    picks.iter().filter_map(|p| all.iter().find(|r| r.pick == Some(*p)).map(|r| (r.id.clone(), r.clone()))).collect()
 }
 
 /// The items of the model the selected parts in 3D name, in their order.
@@ -248,53 +281,40 @@ pub fn selected_items(app: &EmcraftApp) -> Vec<Item> {
 
 /// Whether a row shows selected: one of the parts selected in 3D, or (a row with no part) the
 /// row clicked.
-fn row_selected(app: &EmcraftApp, key: &str, r: &Row) -> bool {
+fn row_selected(app: &EmcraftApp, r: &Row) -> bool {
     match r.pick {
         Some(p) => app.ui_state.selection().contains(&p),
-        None => app.ui_state.selection().row() == Some(key),
+        None => app.ui_state.selection().row() == Some(r.id.as_str()),
     }
 }
 
-/// The tree's sections and rows for a session.
+/// The tree's sections and rows for a session: what the model is made of (its bodies and their
+/// materials), the region it is solved in and what bounds it, what drives it, its mesh and its
+/// results.
 pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
     let f = Fmt::new(&app.session);
     let m = app.session.model();
     let mut sections = Vec::new();
     if let Some(board) = m.pcb.as_ref().filter(|_| m.analysis() == crate::steps::Solver::Pcb) {
-        let mut rows = vec![row(t!("PCB: {name}"), args!(name = board.name), Glyph::Box, Act::Show(View::Pcb))];
+        let mut rows = vec![node("pcb", words(t!("PCB"), &[]), Some(own(&board.name)), Glyph::Box, Act::Show(View::Pcb))];
         let nets: std::collections::BTreeSet<_> = board.segments.iter().map(|s| s.net.as_str()).collect();
         for net in nets.into_iter().take(128) {
-            rows.push(row(t!("Net: {name}"), args!(name = net), Glyph::Chart, Act::Run("view.pcb", serde_json::json!({"net":net,"stage":"net"}))));
+            let act = Act::Run("view.pcb", serde_json::json!({"net":net,"stage":"net"}));
+            rows.push(node(format!("net:{net}"), words(t!("Net"), &[]), Some(own(net)), Glyph::Chart, act).under());
         }
         return vec![(t!("PCB").en(), rows)];
     }
     // The variables the job defined (a study's), not a template's own dimensions: double-click
     // to change one.
-    let own = variables(&app.session);
-    if !own.is_empty() {
-        sections.push((t!("Variables").en(), own));
+    let own_variables = variables(&app.session);
+    if !own_variables.is_empty() {
+        sections.push((t!("Variables").en(), own_variables));
     }
     sections.extend([
-        (t!("Geometry").en(), geometry(m, &f)),
-        (
-            t!("Materials").en(),
-            m.materials
-                .iter()
-                .enumerate()
-                .map(|(i, mat)| {
-                    let r = row(t!("{name}: {summary}"), args!(name = mat.name, summary = mat.summary()), Glyph::Material, Act::None)
-                        .item(Item::new("model.material.edit", "model.material.delete", "name", serde_json::json!(mat.name)));
-                    Row {
-                        pick: Some(Pick::Material(i)),
-                        rich: Some(format!("{}:  {}", mat.name.replace('$', "\\$"), crate::math::material(mat))),
-                        ..r
-                    }
-                })
-                .collect(),
-        ),
-        (t!("Ports").en(), ports(&app.session)),
-        (t!("Sources").en(), sources(m, &f)),
-        (t!("Boundaries").en(), boundaries(m, &f)),
+        (t!("Bodies").en(), bodies(m, &f)),
+        (t!("Materials").en(), materials(m)),
+        (t!("Domain").en(), domain(m, &f)),
+        (t!("Excitation").en(), excitation(&app.session, &f)),
         (t!("Mesh").en(), mesh(m)),
         (t!("Results").en(), results(app)),
     ]);
@@ -310,12 +330,8 @@ fn variables(s: &emcraft_engine::Session) -> Vec<Row> {
             let given = s.history().iter().rev().find(|st| st.defines(name)).and_then(|st| st.param("value").cloned());
             let expression = given.as_ref().and_then(serde_json::Value::as_str).map(|e| format!(" ({e})")).unwrap_or_default();
             let edit = serde_json::json!({"name": name, "value": given.unwrap_or_else(|| serde_json::json!(value))});
-            row(
-                t!("{name} = {value}{expression}"),
-                args!(name = name, value = value, expression = expression),
-                Glyph::Variable,
-                Act::EditWith("project.variable", edit),
-            )
+            let detail = Both { en: format!("= {value}{expression}"), shown: format!("= {value}{expression}") };
+            node(format!("variable:{name}"), own(name), Some(detail), Glyph::Variable, Act::EditWith("project.variable", edit))
         })
         .collect()
 }
@@ -339,122 +355,306 @@ impl Fmt {
     }
 }
 
-fn geometry(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
+/// A material's name as the window says it: the region's own material (`metal` is the perfect
+/// conductor) by its name.
+fn material_name(name: &str) -> Both {
+    if name == emcraft_engine::bodies::METAL { words(t!("metal"), &[]) } else { own(name) }
+}
+
+/// The glyph of a body made of `material`: metal filled, the region's air dashed, another
+/// material hatched.
+fn body_glyph(material: &str, region: &str) -> Glyph {
+    match material {
+        emcraft_engine::bodies::METAL => Glyph::Metal,
+        m if m == region => Glyph::Region,
+        "clip" => Glyph::Feature,
+        _ => Glyph::Dielectric,
+    }
+}
+
+/// What the model is made of: the waveguide (its sections, layers, strips and vias under it),
+/// an imported part's walls and region, and the bodies placed, each with its material.
+fn bodies(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
     let (mm, lu) = (|x| f.len(x), f.unit());
+    let region = m.domain.solid.as_ref().map_or("vacuum", |s| s.material.as_str());
     let mut rows = Vec::new();
     if let Some(w) = &m.waveguide {
         let edit = || Act::Edit("geometry.waveguide");
-        rows.push(
-            row(
-                t!("Waveguide {w} × {h} × {l} {unit}"),
-                args!(w = mm(w.width.get()), h = mm(w.height.get()), l = mm(w.length()), unit = lu),
-                Glyph::Waveguide,
-                edit(),
-            )
-            .picks(Pick::Guide),
-        );
+        let size = words(t!("{w} × {h} × {l} {unit}"), args!(w = mm(w.width.get()), h = mm(w.height.get()), l = mm(w.length()), unit = lu));
+        rows.push(node("waveguide", words(t!("Waveguide"), &[]), Some(size), Glyph::Waveguide, edit()).picks(Pick::Guide));
         for (i, sec) in w.sections.iter().enumerate() {
-            let text = match sec.width {
-                Some(_) => t!("Section {n}: {length} {unit}, {material}, aperture {aperture}"),
-                None => t!("Section {n}: {length} {unit}, {material}"),
+            let material = material_name(&sec.material);
+            let detail = match sec.width {
+                Some(a) => words(
+                    t!("{length} {unit} · {material} · aperture {aperture}"),
+                    args!(length = mm(sec.length.get()), unit = lu, material = material.shown, aperture = mm(a.get())),
+                ),
+                None => words(t!("{length} {unit} · {material}"), args!(length = mm(sec.length.get()), unit = lu, material = material.shown)),
             };
-            let aperture = sec.width.map(|a| mm(a.get())).unwrap_or_default();
-            let args = args!(n = i + 1, length = mm(sec.length.get()), unit = lu, material = sec.material, aperture = aperture);
-            rows.push(row(text, args, Glyph::Box, edit()).sub().picks(Pick::Section(i)));
+            let name = words(t!("Section {n}"), args!(n = i + 1));
+            rows.push(
+                node(format!("section:{}", i + 1), name, Some(detail), body_glyph(&sec.material, "vacuum"), edit()).under().picks(Pick::Section(i)),
+            );
         }
         for (i, layer) in w.layers.iter().enumerate() {
-            let args = args!(n = i + 1, thickness = mm(layer.thickness.get()), unit = lu, material = layer.material);
-            rows.push(row(t!("Layer {n}: {thickness} {unit}, {material}"), args, Glyph::Material, edit()).sub().picks(Pick::Layer(i)));
+            let detail = words(
+                t!("{length} {unit} · {material}"),
+                args!(length = mm(layer.thickness.get()), unit = lu, material = material_name(&layer.material).shown),
+            );
+            rows.push(
+                node(format!("layer:{}", i + 1), words(t!("Layer {n}"), args!(n = i + 1)), Some(detail), Glyph::Dielectric, edit())
+                    .under()
+                    .picks(Pick::Layer(i)),
+            );
         }
         for (i, st) in w.strips.iter().enumerate() {
-            let args = args!(n = i + 1, y = mm(st.y), width = mm(st.width.get()));
-            rows.push(row(t!("Strip {n}: y {y}, width {width}"), args, Glyph::PortModes, edit()).sub().picks(Pick::Strip(i)));
+            let detail = words(t!("metal · y {y} · width {width}"), args!(y = mm(st.y), width = mm(st.width.get())));
+            rows.push(
+                node(format!("strip:{}", i + 1), words(t!("Strip {n}"), args!(n = i + 1)), Some(detail), Glyph::Metal, edit())
+                    .under()
+                    .picks(Pick::Strip(i)),
+            );
         }
         for (i, v) in w.vias.iter().enumerate() {
-            let args = args!(n = i + 1, wx = mm(v.wx.get()), wz = mm(v.wz.get()), unit = lu, y0 = mm(v.y0), y1 = mm(v.y1));
-            rows.push(row(t!("Via {n}: {wx} × {wz} {unit}, y {y0} to {y1}"), args, Glyph::Box, edit()).sub().picks(Pick::Via(i)));
+            let detail = words(
+                t!("metal · {wx} × {wz} {unit} · y {y0} to {y1}"),
+                args!(wx = mm(v.wx.get()), wz = mm(v.wz.get()), unit = lu, y0 = mm(v.y0), y1 = mm(v.y1)),
+            );
+            rows.push(
+                node(format!("via:{}", i + 1), words(t!("Via {n}"), args!(n = i + 1)), Some(detail), Glyph::Metal, edit())
+                    .under()
+                    .picks(Pick::Via(i)),
+            );
         }
-    }
-    if let Some(solid) = &m.domain.solid {
-        let edit = Act::Edit("geometry.solid");
-        let block = solid.shape.box_bounds().filter(|_| !matches!(solid.shape, emcraft_model::Shape::Box { .. }));
-        let r = match &solid.shape {
-            // An automatic region, or a box off the origin: its sides (ADR 0005).
-            _ if let Some(b) = block => {
-                let d = b.max - b.min;
-                let text = if matches!(m.domain.region, emcraft_model::Region::Auto { .. }) {
-                    t!("Region (automatic): {x} × {y} × {z} {unit}, {material}")
-                } else {
-                    t!("Region: box {x} × {y} × {z} {unit}, {material}")
-                };
-                row(text, args!(x = mm(d.x), y = mm(d.y), z = mm(d.z), unit = lu, material = solid.material), Glyph::Box, Act::Edit("model.region"))
-            }
-            // An imported cavity: the air its part encloses.
-            // An imported region: a double-click changes what fills it (its shape is its part's).
-            emcraft_model::Shape::Surface { name, .. } if name == emcraft_model::CAVITY => row(
-                t!("Region: the air the part encloses (imported), {material}"),
-                args!(material = solid.material),
-                Glyph::Box,
-                Act::Edit("model.background"),
-            ),
-            emcraft_model::Shape::Surface { name, .. } => row(
-                t!("Region: {name} (imported), {material}"),
-                args!(name = name, material = solid.material),
-                Glyph::Box,
-                Act::Edit("model.background"),
-            ),
-            other => row(t!("Region: {shape}, {material}"), args!(shape = other.kind().to_lowercase(), material = solid.material), Glyph::Box, edit),
-        };
-        rows.push(r.picks(Pick::Solid));
     }
     // An imported part's walls and region body: a double-click gives them another material.
     for (i, b) in emcraft_engine::bodies::parts(m).into_iter().enumerate() {
-        let text =
-            if b.material == emcraft_engine::bodies::METAL { t!("{name}: metal walls (imported)") } else { t!("{name}: the region (imported)") };
+        let (detail, glyph) = if b.material == emcraft_engine::bodies::METAL {
+            (words(t!("metal · imported"), &[]), Glyph::Part)
+        } else {
+            (words(t!("the region · imported"), &[]), Glyph::Region)
+        };
         let item = Item::new("geometry.body.material", "", "body", serde_json::json!(b.name));
-        rows.push(row(text, args!(name = b.name), Glyph::Feature, Act::None).sub().picks(Pick::Part(i)).item(item));
+        rows.push(node(format!("body:{}", b.name), own(&b.name), Some(detail), glyph, Act::None).picks(Pick::Part(i)).item(item));
     }
-    // Bodies by what they are made of; a double-click changes it.
+    // The bodies placed, by what they are made of; a double-click changes it.
     for b in emcraft_engine::bodies::bodies(m) {
         let pick = match b.at {
             emcraft_engine::bodies::BodyRef::Feature(i) => Pick::Feature(i),
             emcraft_engine::bodies::BodyRef::Inclusion(i) => Pick::Inclusion(i),
         };
-        let glyph = if b.material == emcraft_engine::bodies::METAL { Glyph::Feature } else { Glyph::Inclusion };
         let item = Item::new("geometry.body.edit", "geometry.body.delete", "body", serde_json::json!(b.name));
-        rows.push(
-            row(t!("{name}: {material} {shape}"), args!(name = b.name, material = b.material, shape = b.shape.to_lowercase()), glyph, Act::None)
-                .sub()
-                .picks(pick)
-                .item(item),
-        );
+        let detail = words(t!("{material} · {shape}"), args!(material = material_name(&b.material).shown, shape = b.shape.to_lowercase()));
+        let glyph = body_glyph(&b.material, region);
+        rows.push(node(format!("body:{}", b.name), own(&b.name), Some(detail), glyph, Act::None).picks(pick).item(item));
     }
     rows
 }
 
-fn ports(s: &emcraft_engine::Session) -> Vec<Row> {
-    let m = s.model();
-    let roles = port_roles(s);
-    let waveguide = m.ports.iter().enumerate().map(|(i, p)| {
-        let Both { en, shown } = port_text(p, s.display().length);
-        let item = Item::new("model.port.edit", "model.port.delete", "name", serde_json::json!(p.name));
-        let role = roles.get(i).cloned();
-        Row { text: en, shown, glyph: Glyph::Port, act: Act::Show(View::PortModes), pick: None, item: None, rich: None, role }
-            .picks(Pick::Port(i))
-            .item(item)
-    });
-    let lumped = m.lumped.iter().enumerate().map(|(i, p)| {
-        let item = Item::new("model.port.lumped.edit", "model.port.lumped.delete", "name", serde_json::json!(p.name));
-        row(t!("Lumped port {name}: {impedance} Ω"), args!(name = p.name, impedance = p.impedance), Glyph::Lumped, Act::None)
-            .picks(Pick::Lumped(i))
-            .item(item)
-    });
-    waveguide.chain(lumped).collect()
+/// The materials, each with its properties and what is made of it; the perfect conductor too
+/// while something is.
+fn materials(m: &emcraft_model::Model) -> Vec<Row> {
+    let names = emcraft_engine::bodies::bodies(m);
+    let users = |name: &str| -> Vec<String> {
+        let mut out: Vec<String> = m
+            .material_uses(name)
+            .into_iter()
+            .map(|u| match u {
+                emcraft_model::MaterialUse::Section(k) => lang::trf(t!("Section {n}"), args!(n = k + 1)),
+                emcraft_model::MaterialUse::Layer(k) => lang::trf(t!("Layer {n}"), args!(n = k + 1)),
+                emcraft_model::MaterialUse::Region => lang::tr(t!("region")).to_owned(),
+                emcraft_model::MaterialUse::Inclusion(i) => {
+                    names.iter().find(|b| b.at == emcraft_engine::bodies::BodyRef::Inclusion(i)).map_or_else(String::new, |b| b.name.clone())
+                }
+            })
+            .collect();
+        out.retain(|s| !s.is_empty());
+        out
+    };
+    let mut rows: Vec<Row> = m
+        .materials
+        .iter()
+        .enumerate()
+        .map(|(i, mat)| {
+            let used = users(&mat.name);
+            let tail = if used.is_empty() { String::new() } else { format!("  ·  {}", used.join(", ")) };
+            let props = crate::math::material(mat);
+            let detail = Both { en: format!("{}{tail}", mat.summary()), shown: format!("{}{tail}", mat.summary()) };
+            Row {
+                rich: Some(format!("{props}{}", tail.replace('$', "\\$"))),
+                ..node(format!("material:{}", mat.name), own(&mat.name), Some(detail), Glyph::Material, Act::None)
+                    .picks(Pick::Material(i))
+                    .item(Item::new("model.material.edit", "model.material.delete", "name", serde_json::json!(mat.name)))
+            }
+        })
+        .collect();
+    // The perfect conductor, while a body or the walls are made of it.
+    let mut metal: Vec<String> =
+        emcraft_engine::bodies::parts(m).into_iter().filter(|b| b.material == emcraft_engine::bodies::METAL).map(|b| b.name).collect();
+    metal.extend(names.iter().filter(|b| b.material == emcraft_engine::bodies::METAL).map(|b| b.name.clone()));
+    if let Some(w) = &m.waveguide {
+        metal.extend((0..w.strips.len()).map(|k| lang::trf(t!("Strip {n}"), args!(n = k + 1))));
+        metal.extend((0..w.vias.len()).map(|k| lang::trf(t!("Via {n}"), args!(n = k + 1))));
+    }
+    if !metal.is_empty() {
+        let detail = Both {
+            en: format!("perfect conductor  ·  {}", metal.join(", ")),
+            shown: format!("{}  ·  {}", lang::tr(t!("perfect conductor")), metal.join(", ")),
+        };
+        rows.push(node("material:metal", words(t!("metal"), &[]), Some(detail), Glyph::Metal, Act::None));
+    }
+    rows
 }
 
-/// A waveguide port as the window names it everywhere (the browser, the Excitation step, the
-/// 3D view's legend says `Port 1 (start)`): `Port 1 (start): 4 modes, 50 Ω`; a port on a face
-/// by its plane, in display units `l`: `Port 1 (y = 100 mm): 4 modes`.
+/// The region solved and what bounds it: its shape and filling, then its outer boundary and
+/// the planes that cut it.
+fn domain(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
+    let (mm, lu) = (|x| f.len(x), f.unit());
+    let mut rows = Vec::new();
+    let d = &m.domain;
+    if let Some(solid) = &d.solid {
+        let material = material_name(&solid.material).shown;
+        let block = solid.shape.box_bounds().filter(|_| !matches!(solid.shape, emcraft_model::Shape::Box { .. }));
+        let (detail, act) = match &solid.shape {
+            // An automatic region, or a box off the origin: its sides (ADR 0005).
+            _ if let Some(b) = block => {
+                let size = b.max - b.min;
+                let args = args!(x = mm(size.x), y = mm(size.y), z = mm(size.z), unit = lu, material = material);
+                let detail = if matches!(d.region, emcraft_model::Region::Auto { .. }) {
+                    words(t!("automatic · {x} × {y} × {z} {unit} · {material}"), args)
+                } else {
+                    words(t!("box {x} × {y} × {z} {unit} · {material}"), args)
+                };
+                (detail, Act::Edit("model.region"))
+            }
+            // An imported region: a double-click changes what fills it (its shape is its part's).
+            emcraft_model::Shape::Surface { name, .. } if name == emcraft_model::CAVITY => {
+                (words(t!("the air the part encloses · {material}"), args!(material = material)), Act::Edit("model.background"))
+            }
+            emcraft_model::Shape::Surface { name, .. } => {
+                (words(t!("inside {name} · {material}"), args!(name = name, material = material)), Act::Edit("model.background"))
+            }
+            other => {
+                (words(t!("{shape} · {material}"), args!(shape = other.kind().to_lowercase(), material = material)), Act::Edit("geometry.solid"))
+            }
+        };
+        rows.push(node("region", words(t!("Region"), &[]), Some(detail), Glyph::Region, act).picks(Pick::Solid));
+    } else if m.waveguide.is_some() {
+        rows.push(node(
+            "region",
+            words(t!("Region"), &[]),
+            Some(words(t!("inside the waveguide"), &[])),
+            Glyph::Region,
+            Act::Edit("geometry.waveguide"),
+        ));
+    }
+    if rows.is_empty() {
+        return rows;
+    }
+    // The outer boundary: open through a layer, else conducting walls.
+    let outer = match &d.open {
+        Some(open) => {
+            let detail = if open.shape == emcraft_model::OpenShape::Sphere {
+                words(t!("open · spherical PML {thickness} {unit}"), args!(thickness = mm(open.thickness.get()), unit = lu))
+            } else {
+                words(t!("open · PML {thickness} {unit}"), args!(thickness = mm(open.thickness.get()), unit = lu))
+            };
+            node("outer", words(t!("Outer boundary"), &[]), Some(detail), Glyph::Open, Act::Edit("model.open"))
+        }
+        None => {
+            let wall = match d.wall_conductivity {
+                Some(sigma) => words(t!("σ = {sigma} S/m"), args!(sigma = format!("{sigma:.3e}"))),
+                None => words(t!("perfect conductor"), &[]),
+            };
+            let detail = match d.wall_thickness {
+                Some(t) => {
+                    let thick = words(t!("{thickness} {unit} thick"), args!(thickness = mm(t.get()), unit = lu));
+                    Both { en: format!("{} · {}", wall.en, thick.en), shown: format!("{} · {}", wall.shown, thick.shown) }
+                }
+                None => wall,
+            };
+            node("outer", words(t!("Outer boundary"), &[]), Some(detail), Glyph::Walls, Act::Edit("model.walls"))
+        }
+    };
+    rows.push(outer.under());
+    for plane in &d.symmetry {
+        let axis = plane.axis.id();
+        let (detail, glyph) = if plane.kind == emcraft_model::SymmetryKind::Electric {
+            (words(t!("{at} {unit} · electric wall"), args!(at = mm(plane.at), unit = lu)), Glyph::SymmetryElectric)
+        } else {
+            (words(t!("{at} {unit} · magnetic wall"), args!(at = mm(plane.at), unit = lu)), Glyph::SymmetryMagnetic)
+        };
+        // Its own plane's values, not the first one's.
+        let edit = Act::EditWith("model.symmetry", serde_json::json!({"axis": axis}));
+        let name = words(t!("Symmetry plane {axis}"), args!(axis = axis));
+        rows.push(node(format!("symmetry:{axis}"), name, Some(detail), glyph, edit).under());
+    }
+    if let Some(p) = &d.periodic {
+        let detail = Both { en: periodic_text(p), shown: periodic_text(p) };
+        rows.push(node("periodic", words(t!("Periodic boundaries"), &[]), Some(detail), Glyph::Periodic, Act::Edit("model.periodic")).under());
+    }
+    rows
+}
+
+/// What drives the model: its waveguide ports, lumped ports and sources.
+fn excitation(s: &emcraft_engine::Session, f: &Fmt) -> Vec<Row> {
+    let m = s.model();
+    let roles = port_roles(s);
+    let l = s.display().length;
+    let mut rows: Vec<Row> = m
+        .ports
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let item = Item::new("model.port.edit", "model.port.delete", "name", serde_json::json!(p.name));
+            let name = words(t!("Port {name}"), args!(name = p.name));
+            let detail = port_detail(p, l);
+            Row { role: roles.get(i).cloned(), ..node(format!("port:{}", p.name), name, Some(detail), Glyph::Port, Act::Show(View::PortModes)) }
+                .picks(Pick::Port(i))
+                .item(item)
+        })
+        .collect();
+    rows.extend(m.lumped.iter().enumerate().map(|(i, p)| {
+        let item = Item::new("model.port.lumped.edit", "model.port.lumped.delete", "name", serde_json::json!(p.name));
+        let detail = words(t!("{impedance} Ω"), args!(impedance = p.impedance));
+        node(format!("lumped:{}", p.name), words(t!("Lumped port {name}"), args!(name = p.name)), Some(detail), Glyph::Lumped, Act::None)
+            .picks(Pick::Lumped(i))
+            .item(item)
+    }));
+    rows.extend(m.sources.iter().enumerate().map(|(i, src)| {
+        let item = Item::new("source.edit", "source.delete", "index", serde_json::json!(i + 1));
+        let id = format!("source:{}", i + 1);
+        match src {
+            emcraft_model::Source::Dipole { length, current, .. } => {
+                let detail = words(t!("{length} {unit} · {current} A"), args!(length = f.len(length.get()), unit = f.unit(), current = current));
+                node(id, words(t!("Dipole"), &[]), Some(detail), Glyph::Dipole, Act::None).item(item)
+            }
+            emcraft_model::Source::PlaneWave { direction: emcraft_model::Vec3 { x, y, z }, .. } => {
+                let detail = words(t!("along {direction}"), args!(direction = format!("[{x:.2}, {y:.2}, {z:.2}]")));
+                node(id, words(t!("Plane wave"), &[]), Some(detail), Glyph::PlaneWave, Act::None).item(item)
+            }
+        }
+    }));
+    rows
+}
+
+/// A waveguide port's detail: where it lies and its modes (`y = 0 mm · 4 modes · 50 Ω`).
+fn port_detail(p: &emcraft_model::Port, l: emcraft_model::units::Length) -> Both {
+    let z = p.reference.map(|z| format!(" · {z} Ω")).unwrap_or_default();
+    let template = match (p.face.is_some(), p.end) {
+        (true, _) => {
+            lang::pick(p.modes as usize, t!("{axis} = {at} {unit} · {n} mode{impedance}"), t!("{axis} = {at} {unit} · {n} modes{impedance}"))
+        }
+        (false, emcraft_model::End::Start) => lang::pick(p.modes as usize, t!("start · {n} mode{impedance}"), t!("start · {n} modes{impedance}")),
+        (false, emcraft_model::End::End) => lang::pick(p.modes as usize, t!("end · {n} mode{impedance}"), t!("end · {n} modes{impedance}")),
+    };
+    let (axis, at) = face_place(p, l);
+    lang::both(template, args!(n = p.modes, impedance = z, axis = axis, at = at, unit = l.symbol()))
+}
+
+/// A waveguide port as the window names it everywhere (the Excitation step, the 3D view's
+/// legend says `Port 1 (start)`): `Port 1 (start): 4 modes, 50 Ω`; a port on a face by its
+/// plane, in display units `l`: `Port 1 (y = 100 mm): 4 modes`.
 pub fn port_text(p: &emcraft_model::Port, l: emcraft_model::units::Length) -> Both {
     let z = p.reference.map(|z| format!(", {z} Ω")).unwrap_or_default();
     let template = match (p.face.is_some(), p.end) {
@@ -483,66 +683,6 @@ pub fn face_place(p: &emcraft_model::Port, l: emcraft_model::units::Length) -> (
     }
 }
 
-fn sources(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
-    m.sources
-        .iter()
-        .enumerate()
-        .map(|(i, src)| (Item::new("source.edit", "source.delete", "index", serde_json::json!(i + 1)), src))
-        .map(|(item, src)| match src {
-            emcraft_model::Source::Dipole { length, current, .. } => row(
-                t!("Dipole: {length} {unit}, {current} A"),
-                args!(length = f.len(length.get()), unit = f.unit(), current = current),
-                Glyph::Dipole,
-                Act::None,
-            )
-            .item(item),
-            emcraft_model::Source::PlaneWave { direction: emcraft_model::Vec3 { x, y, z }, .. } => {
-                row(t!("Plane wave along {direction}"), args!(direction = format!("[{x:.2}, {y:.2}, {z:.2}]")), Glyph::PlaneWave, Act::None)
-                    .item(item)
-            }
-        })
-        .collect()
-}
-
-fn boundaries(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
-    let walls = match m.domain.wall_conductivity {
-        Some(sigma) => row(t!("Walls: σ = {sigma} S/m"), args!(sigma = format!("{sigma:.3e}")), Glyph::Walls, Act::Edit("model.walls")),
-        None => row(t!("Walls: perfect conductor"), &[], Glyph::Walls, Act::Edit("model.walls")),
-    };
-    let mut rows = vec![walls];
-    if let Some(t) = m.domain.wall_thickness {
-        rows.push(row(
-            t!("Wall thickness: {thickness} {unit}"),
-            args!(thickness = f.len(t.get()), unit = f.unit()),
-            Glyph::Walls,
-            Act::Edit("model.walls"),
-        ));
-    }
-    if let Some(open) = &m.domain.open {
-        let template = if open.shape == emcraft_model::OpenShape::Sphere {
-            t!("Open: spherical PML {thickness} {unit}")
-        } else {
-            t!("Open: PML {thickness} {unit}")
-        };
-        rows.push(row(template, args!(thickness = f.len(open.thickness.get()), unit = f.unit()), Glyph::Open, Act::Edit("model.open")));
-    }
-    for plane in &m.domain.symmetry {
-        let axis = plane.axis.id();
-        let template = if plane.kind == emcraft_model::SymmetryKind::Electric {
-            t!("Symmetry: {axis} = {at} {unit}, electric wall")
-        } else {
-            t!("Symmetry: {axis} = {at} {unit}, magnetic wall")
-        };
-        // Its own plane's values, not the first one's.
-        let edit = Act::EditWith("model.symmetry", serde_json::json!({"axis": axis}));
-        rows.push(row(template, args!(axis = axis, at = f.len(plane.at), unit = f.unit()), Glyph::Walls, edit));
-    }
-    if let Some(p) = &m.domain.periodic {
-        rows.push(row(t!("Periodic boundaries: {cell}"), args!(cell = periodic_text(p)), Glyph::Periodic, Act::Edit("model.periodic")));
-    }
-    rows
-}
-
 /// The periodic boundaries in brief: the axes tied and, across x or y, the incident wave.
 pub(crate) fn periodic_text(p: &emcraft_model::Periodic) -> String {
     let axes: Vec<&str> = p.axes().into_iter().map(|d| ["x", "y", "z"][d.min(2)]).collect();
@@ -554,59 +694,61 @@ pub(crate) fn periodic_text(p: &emcraft_model::Periodic) -> String {
 }
 
 fn mesh(m: &emcraft_model::Model) -> Vec<Row> {
-    let r = match &m.mesh {
-        Some(mesh) => row(
-            t!("{nodes} nodes, {tets} tetrahedra"),
-            args!(nodes = mesh.nodes.len(), tets = mesh.tets.len()),
-            Glyph::Mesh,
-            Act::Edit("mesh.generate"),
-        ),
-        None => row(t!("Not meshed"), &[], Glyph::Mesh, Act::Edit("mesh.generate")),
+    let detail = match &m.mesh {
+        Some(mesh) => words(t!("{nodes} nodes · {tets} tetrahedra"), args!(nodes = mesh.nodes.len(), tets = mesh.tets.len())),
+        None => words(t!("not meshed"), &[]),
     };
-    vec![r]
+    vec![node("mesh", words(t!("Mesh"), &[]), Some(detail), Glyph::Mesh, Act::Edit("mesh.generate"))]
 }
 
 fn results(app: &EmcraftApp) -> Vec<Row> {
     let r = app.session.results();
     let fu = app.session.display().frequency;
     let mut rows = Vec::new();
+    let name = |t: crate::lang::Text| words(t, &[]);
     if let Some(sw) = &r.sweep {
-        rows.push(row(
-            t!("Sweep: {n} frequencies, {unknowns} unknowns"),
-            args!(n = sw.results.len(), unknowns = sw.driven.dofs.unknowns),
-            Glyph::Chart,
-            Act::Show(View::SParameters),
-        ));
-        rows.push(row(t!("Fields"), &[], Glyph::Field, Act::Show(View::Field)));
+        let detail = words(t!("{n} frequencies · {unknowns} unknowns"), args!(n = sw.results.len(), unknowns = sw.driven.dofs.unknowns));
+        rows.push(node("result:sweep", name(t!("Sweep")), Some(detail), Glyph::Chart, Act::Show(View::SParameters)));
+        rows.push(node("result:fields", name(t!("Fields")), None, Glyph::FieldLines, Act::Show(View::Field)).under());
     }
     if let Some(e) = &r.eigen {
-        rows.push(row(t!("Eigenmodes: {n}"), args!(n = e.modes.len()), Glyph::Eigen, Act::Show(View::Eigenmodes)));
+        let detail = words(t!("{n} modes"), args!(n = e.modes.len()));
+        rows.push(node("result:eigenmodes", name(t!("Eigenmodes")), Some(detail), Glyph::Eigen, Act::Show(View::Eigenmodes)));
     }
     if let Some(d) = &r.dispersion {
-        rows.push(row(t!("Dispersion: {n} phases"), args!(n = d.points.len()), Glyph::Dispersion, Act::Show(View::Dispersion)));
+        let detail = words(t!("{n} phases"), args!(n = d.points.len()));
+        rows.push(node("result:dispersion", name(t!("Dispersion")), Some(detail), Glyph::Dispersion, Act::Show(View::Dispersion)));
     }
     if let Some(td) = &r.time_domain {
-        rows.push(row(t!("Time domain: {n} frequencies"), args!(n = td.frequencies.len()), Glyph::Time, Act::Show(View::SParameters)));
+        let detail = words(t!("{n} frequencies"), args!(n = td.frequencies.len()));
+        rows.push(node("result:time_domain", name(t!("Time domain")), Some(detail), Glyph::Time, Act::Show(View::SParameters)));
     }
     if let Some(rad) = &r.radiation {
         let at = format!("{:.4} {}", fu.from_si(rad.result.frequency), fu.symbol());
-        rows.push(row(t!("Radiation at {frequency}"), args!(frequency = at), Glyph::Radiation, Act::Show(View::FarField)));
+        rows.push(node(
+            "result:radiation",
+            name(t!("Radiation")),
+            Some(words(t!("at {frequency}"), args!(frequency = at))),
+            Glyph::Radiation,
+            Act::Show(View::FarField),
+        ));
     }
     if r.td_radiation.is_some() {
-        rows.push(row(t!("Time-domain radiation"), &[], Glyph::Radiation, Act::Show(View::FarField)));
+        rows.push(node("result:td_radiation", name(t!("Time-domain radiation")), None, Glyph::Radiation, Act::Show(View::FarField)));
     }
     // Port modes open from the Excitation step's table; no row of their own.
     if app.replies.compare.is_some() {
-        rows.push(row(t!("Comparison with theory"), &[], Glyph::Compare, Act::Show(View::Compare)));
+        rows.push(node("result:compare", name(t!("Comparison with theory")), None, Glyph::Compare, Act::Show(View::Compare)));
     }
     if let Some(study) = &r.study {
-        let template = match study.kind {
-            emcraft_engine::study::Kind::Sweep if study.is_grid() => t!("Sweep of {names}: {n} points"),
-            emcraft_engine::study::Kind::Sweep => t!("Sweep of {names}: {n} values"),
-            emcraft_engine::study::Kind::Optimize => t!("Optimization of {names}: {n} solves"),
+        let (title, detail) = match study.kind {
+            emcraft_engine::study::Kind::Sweep if study.is_grid() => (t!("Parameter sweep"), t!("{names} · {n} points")),
+            emcraft_engine::study::Kind::Sweep => (t!("Parameter sweep"), t!("{names} · {n} values")),
+            emcraft_engine::study::Kind::Optimize => (t!("Optimization"), t!("{names} · {n} solves")),
         };
         let glyph = if study.kind == emcraft_engine::study::Kind::Sweep { Glyph::ParamSweep } else { Glyph::Optimize };
-        rows.push(row(template, args!(names = study.variables.join(", "), n = study.rows.len()), glyph, Act::Show(View::Study)));
+        let detail = words(detail, args!(names = study.variables.join(", "), n = study.rows.len()));
+        rows.push(node("result:study", name(title), Some(detail), glyph, Act::Show(View::Study)));
     }
     rows
 }
@@ -631,19 +773,14 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 let stale = crate::steps::results_stale(app);
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     for (section, rows) in &tree {
-                        let folded = app.browser.folded.iter().any(|f| f == section);
+                        // An empty section stays folded, its heading dim.
+                        let folded = rows.is_empty() || app.browser.folded.iter().any(|f| f == section);
                         section_header(ui, section, rows.len(), folded, out);
                         if folded {
                             continue;
                         }
-                        if rows.is_empty() {
-                            ui.horizontal(|ui| {
-                                ui.add_space(26.0);
-                                ui.text(Style::SmallDim, t!("none"));
-                            });
-                        }
                         for r in rows {
-                            browser_row(app, ui, section, r, stale && *section == "Results", out);
+                            browser_row(app, ui, r, stale && *section == "Results", out);
                         }
                     }
                 });
@@ -660,7 +797,9 @@ fn section_header(ui: &mut egui::Ui, section: &'static str, count: usize, folded
         ui.painter().rect_filled(r, t.radius_sm, t.hover);
     }
     chevron(ui, pos2(r.left() + 9.0, r.center().y), !folded, t.text_dim);
-    ui.painter().text(pos2(r.left() + 20.0, r.center().y), Align2::LEFT_CENTER, lang::lookup(section), FontId::proportional(t.font_label), t.text);
+    // An empty section's heading is dim.
+    let ink = if count == 0 { t.text_dim } else { t.text };
+    ui.painter().text(pos2(r.left() + 20.0, r.center().y), Align2::LEFT_CENTER, lang::lookup(section), FontId::proportional(t.font_label), ink);
     ui.painter().text(pos2(r.right() - 6.0, r.center().y), Align2::RIGHT_CENTER, count.to_string(), FontId::proportional(t.font_small), t.text_dim);
     scenario::publish_target(Handle::Fold(section), r);
     if resp.clicked() {
@@ -668,18 +807,16 @@ fn section_header(ui: &mut egui::Ui, section: &'static str, count: usize, folded
     }
 }
 
-/// A row of `section`: its mark, its text in one line, the eye of a displayed object, the
-/// out-of-date mark; a click selects it (or toggles it in the selection), a double click
-/// edits it.
-fn browser_row(app: &EmcraftApp, ui: &mut egui::Ui, section: &str, r: &Row, out_of_date: bool, out: &mut Actions) {
+/// A row: its glyph, its name and, dimmer, its detail in one line (the detail cut short first),
+/// the eye of a displayed object, a port's role, the out-of-date mark; a click selects it (or
+/// toggles it in the selection), a double click edits it.
+fn browser_row(app: &EmcraftApp, ui: &mut egui::Ui, r: &Row, out_of_date: bool, out: &mut Actions) {
     let t = &Tokens::get();
-    let key = format!("{section}/{}", r.text);
-    let selected = row_selected(app, &key, r);
+    let key = r.id.clone();
+    let selected = row_selected(app, r);
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click());
-    let text = r.text.trim_start();
-    let shown = r.shown.trim_start();
-    let indent = 20.0 + 12.0 * (r.text.len() - text.len()) as f32 / 2.0;
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, shown));
+    let indent = 20.0 + 16.0 * f32::from(r.depth);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, r.tip()));
     if selected {
         ui.painter().rect_filled(rect, t.radius_sm, t.selected_bg);
     } else if resp.hovered() {
@@ -710,17 +847,29 @@ fn browser_row(app: &EmcraftApp, ui: &mut egui::Ui, section: &str, r: &Row, out_
     if let Some(role) = &r.role {
         clip.max.x = role_pill(ui, rect, role).left() - 4.0;
     }
-    // One line, ending in an ellipsis where it meets the pill or the edge.
+    // The name whole, then the detail dimmer, cut short with an ellipsis where it meets the
+    // pill, the eye or the edge.
     let left = rect.left() + indent + 19.0;
-    let mut job = crate::math::job(&r.tex(), t.font_body, ink);
-    job.wrap =
-        egui::text::TextWrapping { max_width: (clip.right() - left).max(8.0), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
-    let galley = ui.painter().layout_job(job);
-    let at = pos2(left, rect.center().y - galley.size().y / 2.0);
-    ui.painter().with_clip_rect(clip).galley(at, galley, ink);
-    scenario::publish_target(Handle::Row(text), rect);
+    let painter = ui.painter().with_clip_rect(clip);
+    let name = ui.painter().layout_job(crate::math::job(&crate::math::texify(&r.shown), t.font_body, ink));
+    let name_width = name.size().x.min((clip.right() - left).max(8.0));
+    painter.galley(pos2(left, rect.center().y - name.size().y / 2.0), name, ink);
+    if !r.detail.is_empty() {
+        let from = left + name_width + 8.0;
+        let dim = if selected { t.selected_ink.gamma_multiply(0.75) } else { t.text_dim };
+        let mut job = crate::math::job(&r.detail_tex(), t.font_small, dim);
+        job.wrap =
+            egui::text::TextWrapping {
+                max_width: (clip.right() - from).max(1.0), max_rows: 1, break_anywhere: true, overflow_character: Some('…')
+            };
+        let detail = ui.painter().layout_job(job);
+        if from < clip.right() - 12.0 {
+            painter.galley(pos2(from, rect.center().y - detail.size().y / 2.0), detail, dim);
+        }
+    }
+    scenario::publish_target(Handle::Row(&r.id), rect);
     let resp = if out_of_date {
-        let tip = lang::trf(t!("{row} — out of date"), args!(row = shown));
+        let tip = lang::trf(t!("{row} — out of date"), args!(row = r.tip()));
         crate::math::tip(resp, &tip)
     } else {
         crate::math::tip(resp, &r.tip())
@@ -850,8 +999,8 @@ fn delete_key(app: &EmcraftApp, ui: &egui::Ui, tree: &[(&'static str, Vec<Row>)]
         return;
     }
     let Some(selected) = app.ui_state.selection().row() else { return };
-    let item = tree.iter().flat_map(|(s, rows)| rows.iter().map(move |r| (s, r))).find(|(s, r)| format!("{s}/{}", r.text) == *selected);
-    if let Some(item) = item.and_then(|(_, r)| r.item.clone()) {
+    let item = tree.iter().flat_map(|(_, rows)| rows.iter()).find(|r| r.id == selected);
+    if let Some(item) = item.and_then(|r| r.item.clone()) {
         out.push(Action::DeleteItems(vec![item]));
     }
 }

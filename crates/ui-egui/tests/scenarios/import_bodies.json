@@ -31,9 +31,9 @@
  {
   "expect": {
    "handles": [
-    "row:Region: box, vacuum",
-    "row:Post: metal surface",
-    "row:Puck: metal surface"
+    "row:region",
+    "row:body:Post",
+    "row:body:Puck"
    ]
   }
  },
@@ -41,7 +41,7 @@
   "shot": "import-bodies-metal"
  },
  {
-  "click": "row:Puck: metal surface",
+  "click": "row:body:Puck",
   "double": true
  },
  {
@@ -81,7 +81,7 @@
   "expect": {
    "dialog": null,
    "handles": [
-    "row:Puck: ceramic surface"
+    "row:body:Puck"
    ]
   }
  },

@@ -23,9 +23,9 @@ pub(super) fn geometry(app: &EmcraftApp, ui: &mut egui::Ui, has_dialog: bool, ou
     }
     ui_kit::section(ui, t!("Bodies"));
     let tree = crate::browser::tree(app);
-    for (_, rows) in tree.iter().filter(|(s, _)| *s == "Geometry") {
+    for (_, rows) in tree.iter().filter(|(s, _)| *s == "Bodies") {
         for r in rows {
-            ui_kit::small(ui, &r.shown, t.text);
+            ui_kit::small(ui, crate::lang::Raw(&r.tip()), t.text);
         }
     }
     if let Some(emcraft_model::Aabb { min: lo, max: hi }) = app.session.model().bounds() {

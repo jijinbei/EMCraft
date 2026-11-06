@@ -7,7 +7,7 @@
   {"call": "ui.set", "params": {"step": "geometry"}},
   {"call": "ui.set", "params": {"standard_view": "front"}},
   {"frames": 2},
-  {"click": "row:body 1: metal box"},
+  {"click": "row:body:body 1"},
   {"frames": 2},
   {"expect": {"handles": ["view3d:grip:size.x+", "view3d:grip:size.x-", "view3d:grip:size.z+"]}},
   {"shot": "body-grips"},
