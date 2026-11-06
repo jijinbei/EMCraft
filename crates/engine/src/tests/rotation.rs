@@ -521,3 +521,74 @@ fn a_body_of_revolution_s_field_is_drawn() {
     assert!(s.execute("view.revolution_field", &json!({"path": path.to_str().unwrap(), "frequency": 12, "port": "9"})).is_err());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The TE101 resonance (Hz) of a spherical cavity of radius `a` with a concentric dielectric
+/// sphere of radius `b` and `eps_r` inside: E_φ ∝ R(r), R = j₁(k₁r) inside, R = j₁(k₀r) y₁(k₀a) −
+/// y₁(k₀r) j₁(k₀a) outside (R(a) = 0), R and (rR)′ continuous at b (Harrington §6.10), the
+/// root found by bisection between the filled and the empty cavity's.
+fn layered_sphere_te101(a: f64, b: f64, eps_r: f64) -> f64 {
+    let j1 = |x: f64| x.sin() / (x * x) - x.cos() / x;
+    let y1 = |x: f64| -x.cos() / (x * x) - x.sin() / x;
+    let d = |f: &dyn Fn(f64) -> f64, r: f64| {
+        let h = 1e-7 * r;
+        ((r + h) * f(r + h) - (r - h) * f(r - h)) / (2.0 * h)
+    };
+    let mismatch = |k0: f64| {
+        let k1 = k0 * eps_r.sqrt();
+        let inside = |r: f64| j1(k1 * r);
+        let outside = |r: f64| j1(k0 * r) * y1(k0 * a) - y1(k0 * r) * j1(k0 * a);
+        inside(b) * d(&outside, b) - outside(b) * d(&inside, b)
+    };
+    let x = 4.493_409_457_909_064;
+    let (mut lo, mut hi) = (x / (a * eps_r.sqrt()) * 1.0001, x / a * 0.9999);
+    for _ in 0..200 {
+        let mid = 0.5 * (lo + hi);
+        if (mismatch(lo) < 0.0) == (mismatch(mid) < 0.0) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    0.5 * (lo + hi) * emcraft_model::units::C0 / (2.0 * std::f64::consts::PI)
+}
+
+#[test]
+fn a_dielectric_sphere_in_a_spherical_cavity_as_a_body_of_revolution() {
+    // εr = 2.2 to 5 mm in a 10 mm cavity: TE101 (m = 0, E_φ only) against the two-layer root.
+    let want = layered_sphere_te101(0.01, 0.005, 2.2) / 1e9;
+    let empty = 4.493_409_457_909_064 / 0.01 * emcraft_model::units::C0 / (2.0 * std::f64::consts::PI) / 1e9;
+    assert!(want < 0.97 * empty, "the dielectric pulls TE101 down: {want} against {empty} GHz");
+    let mut s = Session::new();
+    s.execute("model.material.create", &json!({"name": "ptfe", "eps_r": 2.2})).unwrap();
+    s.execute("geometry.solid", &json!({"shape": "sphere", "radius": 10})).unwrap();
+    s.execute("geometry.inclusion", &json!({"shape": "sphere", "radius": 5, "at": [0, 0, 0], "material": "ptfe"})).unwrap();
+    let f = revolution_modes(&mut s, 0, want, 4, 0.1);
+    let got = f.iter().copied().min_by(|x, y| (x - want).abs().total_cmp(&(y - want).abs())).unwrap();
+    assert!((got / want - 1.0).abs() < 3e-3, "{got} GHz against {want} ({f:?})");
+}
+
+#[test]
+fn an_imported_body_of_revolution_takes_its_section_as_its_profile() {
+    // A sphere of radius 10 mm as an imported surface (its meridian in 32 chords, turned in 64
+    // sides): TM101 as the primitive sphere's.
+    let meridian: Vec<[f64; 2]> = (0..=32)
+        .map(|k| std::f64::consts::PI * k as f64 / 32.0)
+        .map(|t| [if k_on_axis(t) { 0.0 } else { 0.01 * t.sin() }, -0.01 * t.cos()])
+        .collect();
+    let mut s = Session::new();
+    let shape = emcraft_model::Shape::revolved("ball", &meridian, 64).unwrap();
+    s.model.set_solid(emcraft_model::Solid { shape, material: "vacuum".into() }).unwrap();
+    let f = revolution_modes(&mut s, 1, 12.0, 1, 0.5);
+    let want = emcraft_theory::bessel::sphere_cavity_resonances(0.01, 1.0, 1)[0].0 / 1e9;
+    assert!((f[0] / want - 1.0).abs() < 5e-3, "{} GHz against {want}", f[0]);
+    // A box imported is no body of revolution.
+    let cube = emcraft_model::Shape::revolved("cube", &[[0.0, 0.0], [0.01, 0.0], [0.01, 0.01], [0.0, 0.01]], 4).unwrap();
+    s.model.set_solid(emcraft_model::Solid { shape: cube, material: "vacuum".into() }).unwrap();
+    let e = s.execute("solve.revolution", &json!({"frequency": 12})).unwrap_err().to_string();
+    assert!(e.contains("not turned about the z axis"), "{e}");
+}
+
+/// Whether the meridian's angle `t` is one of its ends (on the axis).
+fn k_on_axis(t: f64) -> bool {
+    t == 0.0 || t == std::f64::consts::PI
+}

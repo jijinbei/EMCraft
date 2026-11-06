@@ -261,6 +261,59 @@ fn corner(positions: &[Point3], v: u32) -> Point3 {
 }
 
 impl Shape {
+    /// The most sides a [`Shape::revolved`] surface is turned in.
+    pub const MAX_REVOLVED_SIDES: usize = 1024;
+
+    /// A closed surface turned about the z axis: the polyline `profile` of (r, z) points (m), its
+    /// first and last on the axis (r = 0) and the others off it, turned in `sides` steps from
+    /// φ = 0, the triangles facing out for a profile running up the axis' far side.
+    ///
+    /// ```
+    /// use emcraft_model::{Point3, Shape};
+    ///
+    /// // A cone 8 mm across its top and 10 mm high, its tip at the origin.
+    /// let cone = Shape::revolved("cone", &[[0.0, 0.0], [0.004, 0.01], [0.0, 0.01]], 32)?;
+    /// assert!(cone.contains(Point3::new(0.0, 0.0, 0.009)) && !cone.contains(Point3::new(0.003, 0.0, 0.001)));
+    /// assert!(Shape::revolved("bad", &[[0.001, 0.0], [0.0, 0.01]], 32).is_err()); // not closed on the axis
+    /// # Ok::<(), emcraft_model::ModelError>(())
+    /// ```
+    pub fn revolved(name: &str, profile: &[[f64; 2]], sides: usize) -> Result<Shape> {
+        let n = profile.len();
+        if !(3..=Self::MAX_REVOLVED_SIDES).contains(&sides) {
+            return Err(invalid("revolved sides", format!("3 to {}", Self::MAX_REVOLVED_SIDES)));
+        }
+        let inner = profile.get(1..n.saturating_sub(1)).unwrap_or(&[]);
+        let ends_on_axis = n >= 3 && profile[0][0] == 0.0 && profile[n - 1][0] == 0.0;
+        if !ends_on_axis || profile.iter().any(|q| !(q[0].is_finite() && q[1].is_finite())) || inner.iter().any(|q| q[0] <= 0.0) {
+            return Err(invalid("revolved profile", "finite (r, z) points, the first and last on the axis (r = 0), the others off it"));
+        }
+        if inner.len().saturating_mul(sides) > 4_000_000 {
+            return Err(invalid("revolved profile", "too many points"));
+        }
+        let mut positions = vec![Point3::new(0.0, 0.0, profile[0][1])];
+        for q in inner {
+            for k in 0..sides {
+                let a = 2.0 * PI * k as f64 / sides as f64;
+                positions.push(Point3::new(q[0] * a.cos(), q[0] * a.sin(), q[1]));
+            }
+        }
+        positions.push(Point3::new(0.0, 0.0, profile[n - 1][1]));
+        let rings = inner.len();
+        let ring = |i: usize, k: usize| (1 + i * sides + k % sides) as u32;
+        let last = positions.len() as u32 - 1;
+        let mut triangles = Vec::with_capacity(2 * rings * sides);
+        for k in 0..sides {
+            triangles.push([0, ring(0, k + 1), ring(0, k)]);
+            for i in 0..rings - 1 {
+                triangles.push([ring(i, k), ring(i, k + 1), ring(i + 1, k + 1)]);
+                triangles.push([ring(i, k), ring(i + 1, k + 1), ring(i + 1, k)]);
+            }
+            triangles.push([last, ring(rings - 1, k), ring(rings - 1, k + 1)]);
+        }
+        let tags = vec![0; triangles.len()];
+        Ok(Shape::Surface { name: name.into(), positions, triangles, tags, surfaces: Vec::new() })
+    }
+
     /// The kind of primitive, for display.
     pub fn kind(&self) -> &'static str {
         match self {

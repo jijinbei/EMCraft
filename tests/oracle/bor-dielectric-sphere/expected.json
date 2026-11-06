@@ -1,0 +1,8 @@
+{
+ "title": "Spherical cavity, radius 10 mm, with a concentric dielectric sphere (εr = 2.2, radius 5 mm), as a body of revolution: TE101 (m = 0)",
+ "kind": "theory",
+ "source": "Spherical cavity TE_mn modes, E_φ ∝ the spherical Bessel functions j₁ and y₁ in each layer, tangential E and H continuous at the interface and E_φ = 0 on the wall (R. F. Harrington, Time-Harmonic Electromagnetic Fields, McGraw-Hill 1961, §6.10); the root k₀ of j₁(k₁b)[(r F)′](b) − F(b)[(r j₁(k₁r))′](b) = 0, F(r) = j₁(k₀r) y₁(k₀a) − y₁(k₀r) j₁(k₀a), found by bisection in double precision with the derivatives in closed form ((x j₁)′ = x j₀ − j₁)",
+ "quantities": [
+  {"id": "te101", "quantity": "TE101 resonance (GHz)", "measure": {"step": "m0", "pointer": "/modes/2/frequency"}, "value": 17.959956215864754, "tolerance": {"relative": 3e-3}, "reason": "lowest-order edge and nodal elements on 0.2 mm triangles, the arcs in chords of that size: second order in the size (+5.7e-3 at 0.4 mm, +1.7e-3 at 0.2, +4.9e-4 at 0.1); the modes below it are TM101 and TM201"}
+ ]
+}

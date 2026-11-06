@@ -30,7 +30,7 @@ pub fn revolution(s: &mut Session, p: &Params) -> Result<Value> {
             if p.has("eps_r") || p.has("mu_r") {
                 return Err(p.error("eps_r", "is the model's material's when the profile is the model's"));
             }
-            (densest(pr), 1.0)
+            (pr.densest, 1.0)
         }
         None => (positive("eps_r", 1.0)?, positive("mu_r", 1.0)?),
     };
@@ -46,7 +46,7 @@ pub fn revolution(s: &mut Session, p: &Params) -> Result<Value> {
             let (points, triangles) = emcraft_mesh::planar::polygon(ring, size)?;
             emcraft_solver::bor::Profile { material: vec![(eps, mu); triangles.len()], points, triangles }
         }
-        (None, Some(pr)) => profile_mesh(pr, size)?,
+        (None, Some(_)) => profile_mesh(&s.model, &s.model.meridian_profile(size)?, size)?,
         (None, None) => return Err(p.error("points", "is required without a model to take the profile of")),
     };
     let modes = emcraft_solver::bor::eigenmodes(&profile, m, count, near)?;
@@ -54,27 +54,22 @@ pub fn revolution(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"modes": shown, "triangles": profile.triangles.len(), "points": profile.points.len()}))
 }
 
-/// The model's meridian profile in triangles of about `size`, each with its material (the
-/// inclusions' where they are).
-fn profile_mesh(pr: &emcraft_model::symmetry::meridian::MeridianProfile, size: f64) -> Result<emcraft_solver::bor::Profile> {
-    let (points, triangles) = match pr.cells {
-        Some(_) => emcraft_mesh::planar::pslg_keep(&pr.points, &pr.segments, size, &|c| pr.material_at(c).is_some())?,
-        None => emcraft_mesh::planar::pslg(&pr.points, &pr.segments, size)?,
-    };
+/// The model's meridian profile in triangles of about `size`, each with what fills it there
+/// (the inclusions' materials where they are).
+fn profile_mesh(
+    model: &emcraft_model::Model,
+    pr: &emcraft_model::symmetry::meridian::MeridianProfile,
+    size: f64,
+) -> Result<emcraft_solver::bor::Profile> {
+    let (points, triangles) = emcraft_mesh::planar::pslg_keep(&pr.points, &pr.segments, size, &|c| model.revolution_fill(c).is_some())?;
     let material = triangles
         .iter()
         .map(|t| {
             let q = t.map(|v| points.get(v as usize).copied().unwrap_or_default());
-            pr.material_at([(q[0][0] + q[1][0] + q[2][0]) / 3.0, (q[0][1] + q[1][1] + q[2][1]) / 3.0]).unwrap_or((pr.eps_r, pr.mu_r))
+            model.revolution_fill([(q[0][0] + q[1][0] + q[2][0]) / 3.0, (q[0][1] + q[1][1] + q[2][1]) / 3.0]).unwrap_or((pr.eps_r, pr.mu_r))
         })
         .collect();
     Ok(emcraft_solver::bor::Profile { points, triangles, material })
-}
-
-/// The largest εr μr of a profile's materials (its shortest wavelength).
-fn densest(pr: &emcraft_model::symmetry::meridian::MeridianProfile) -> f64 {
-    let own = pr.eps_r * pr.mu_r;
-    pr.cells.as_ref().map_or(own, |(_, _, c)| c.iter().flatten().map(|(e, u)| e * u).fold(own, f64::max))
 }
 
 /// `solve.revolution.frequency`: the model as a body of revolution with its ports on its ends,
@@ -104,33 +99,32 @@ pub fn revolution_frequency(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"m": m, "modes": names, "points": rows, "triangles": profile.triangles.len(), "unknowns": unknowns}))
 }
 
-/// The model as a body of revolution with its ports on its cylinder's ends: its profile in
+/// The model as a body of revolution with its ports on its lowest and highest ends: its profile in
 /// triangles of `size` (default a fortieth of the wavelength at `top` Hz in its densest
 /// material, at most a twentieth of the profile) and its ports.
 pub(crate) fn revolution_setup(s: &Session, p: &Params, top: f64) -> Result<(emcraft_solver::bor::Profile, Vec<emcraft_solver::bor::BorPort>)> {
-    let length = match s.model.solid.as_ref().map(|x| &x.shape) {
-        Some(emcraft_model::Shape::Cylinder { length, .. }) => length.get(),
-        _ => return Err(EngineError::failed("not supported yet: ports on a body of revolution other than a cylinder's ends")),
-    };
     if s.model.ports.is_empty() {
-        return Err(EngineError::failed("no ports: create them on the cylinder's ends with model.port.create"));
+        return Err(EngineError::failed("no ports: create them on the body's ends with model.port.create"));
     }
+    let first = s.model.meridian_profile(1e-3)?;
+    let span = first.points.iter().fold(0.0f64, |a, q| a.max(q[0]).max(q[1].abs()));
+    let wavelength = emcraft_model::units::C0 / (top * first.densest.sqrt());
+    let size = p.positive_length("size").optional()?.unwrap_or_else(|| (wavelength / 40.0).min(span / 20.0));
+    // The outline's curves in chords of the triangles' size.
+    let pr = s.model.meridian_profile(size)?;
+    let [lo, hi] = pr.points.iter().fold([f64::INFINITY, f64::NEG_INFINITY], |b, q| [b[0].min(q[1]), b[1].max(q[1])]);
     let ports = s
         .model
         .ports
         .iter()
         .map(|x| match x.face {
-            None => Ok(emcraft_solver::bor::BorPort { z: if x.end == emcraft_model::End::Start { 0.0 } else { length }, modes: x.modes as usize }),
+            None => Ok(emcraft_solver::bor::BorPort { z: if x.end == emcraft_model::End::Start { lo } else { hi }, modes: x.modes as usize }),
             Some(_) => {
                 Err(EngineError::failed(format!("not supported yet: port {} on a face (a body of revolution's ports lie on its ends)", x.name)))
             }
         })
         .collect::<Result<Vec<_>>>()?;
-    let pr = s.model.meridian_profile(1e-3)?;
-    let span = pr.points.iter().fold(0.0f64, |a, q| a.max(q[0]).max(q[1].abs()));
-    let wavelength = emcraft_model::units::C0 / (top * densest(&pr).sqrt());
-    let size = p.positive_length("size").optional()?.unwrap_or_else(|| (wavelength / 40.0).min(span / 20.0));
-    Ok((profile_mesh(&pr, size)?, ports))
+    Ok((profile_mesh(&s.model, &pr, size)?, ports))
 }
 
 /// `solve.cyclic`: a rotationally symmetric cavity's modes per harmonic, from its sector.

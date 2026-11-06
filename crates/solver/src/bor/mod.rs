@@ -321,24 +321,32 @@ pub fn eigenmodes(p: &Profile, m: u32, count: usize, near: f64) -> Result<Vec<Bo
         *v -= w * sigma;
     }
     let factor = Ldlt::factor(&shifted, &xyz)?;
-    // GᵀMG, factored for the projection.
-    let mg: Vec<Vec<f64>> = gradients
-        .iter()
-        .map(|col| {
-            let mut x = vec![0.0; d.count];
-            for &(i, v) in col {
-                x[i] = v;
+    // GᵀMG, factored for the projection, column by column in sparse form: (M g_c)'s entries
+    // reach only the unknowns next to g_c's, and Gᵀ of them only the gradients there.
+    let mut by_unknown: Vec<Vec<(usize, f64)>> = vec![Vec::new(); d.count];
+    for (j, col) in gradients.iter().enumerate() {
+        for &(i, g) in col {
+            if let Some(r) = by_unknown.get_mut(i) {
+                r.push((j, g));
             }
-            mul(&mm, &x)
-        })
-        .collect();
+        }
+    }
     let gtmg = {
         let mut b = Csr::builder(d.psis);
-        for c in &mg {
-            b.row(gradients.iter().enumerate().filter_map(|(j, col)| {
-                let v: f64 = col.iter().map(|&(i, g)| g * c[i]).sum();
-                (v != 0.0).then_some((j, C::new(v, 0.0)))
-            }));
+        for col in &gradients {
+            let mut mg: BTreeMap<usize, f64> = BTreeMap::new();
+            for &(i, g) in col {
+                for e in mm.row(i) {
+                    *mg.entry(mm.col[e]).or_insert(0.0) += mm.val[e].re * g;
+                }
+            }
+            let mut row: BTreeMap<usize, f64> = BTreeMap::new();
+            for (k, v) in mg {
+                for &(j, g) in by_unknown.get(k).into_iter().flatten() {
+                    *row.entry(j).or_insert(0.0) += g * v;
+                }
+            }
+            b.row(row.into_iter().filter(|(_, v)| *v != 0.0).map(|(j, v)| (j, C::new(v, 0.0))));
         }
         b.finish()
     };

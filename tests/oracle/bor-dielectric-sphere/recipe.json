@@ -1,0 +1,6 @@
+[
+ {"command": "model.material.create", "params": {"name": "ptfe", "eps_r": 2.2}},
+ {"command": "geometry.solid", "params": {"shape": "sphere", "radius": 10}},
+ {"command": "geometry.inclusion", "params": {"shape": "sphere", "radius": 5, "at": [0, 0, 0], "material": "ptfe"}},
+ {"command": "solve.revolution", "params": {"frequency": 17.96, "m": 0, "count": 4, "size": 0.2}, "id": "m0"}
+]

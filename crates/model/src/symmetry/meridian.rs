@@ -9,39 +9,45 @@ pub const MAX_PROFILE_POINTS: usize = 4096;
 /// A body of revolution's meridian profile ([`crate::Model::meridian_profile`]): its outline on
 /// the half-plane r ≥ 0 as points (r, z) in metres and segments between them (a hole's outline
 /// among them; segments on r = 0 are the axis; with inclusions, the interfaces between
-/// materials too), its filling's εr and μr, and for a profile of cells the material of each.
+/// materials too), its filling's εr and μr, and the largest εr μr in it (its shortest
+/// wavelength). What fills a point is [`crate::Model::revolution_fill`]'s.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MeridianProfile {
     pub points: Vec<[f64; 2]>,
     pub segments: Vec<[u32; 2]>,
     pub eps_r: f64,
     pub mu_r: f64,
-    /// The grid's radii and ends and, per cell (r index fastest), its (εr, μr) or none outside.
-    pub cells: Option<(Vec<f64>, Vec<f64>, Vec<Option<(f64, f64)>>)>,
+    pub densest: f64,
 }
 
-impl MeridianProfile {
-    /// The (εr, μr) at (r, z), `None` outside the body (in a conductor). A sphere's profile is
-    /// one material inside its outline.
-    pub fn material_at(&self, q: [f64; 2]) -> Option<(f64, f64)> {
-        let Some((rs, zs, cells)) = &self.cells else { return Some((self.eps_r, self.mu_r)) };
-        let find = |v: &[f64], x: f64| v.windows(2).position(|w| x >= w[0] && x <= w[1]);
-        let (i, j) = (find(rs, q[0])?, find(zs, q[1])?);
-        cells.get(j * (rs.len() - 1) + i).copied().flatten()
-    }
+/// The most triangles of an imported surface a profile takes the section of.
+pub const MAX_SECTION_TRIANGLES: usize = 400_000;
 
-    /// Whether the profile has regions of other materials (its triangles then take theirs).
-    pub fn is_layered(&self) -> bool {
-        self.cells.as_ref().is_some_and(|(_, _, c)| c.iter().flatten().any(|m| *m != (self.eps_r, self.mu_r)))
-    }
-}
+/// A segment of the half-plane, (r, z) to (r, z).
+type Segment = [[f64; 2]; 2];
+
+/// An outline's segment and how far the body's true boundary bulges off it (a sphere's chord's
+/// sagitta; nothing for a straight side or an imported surface's facet, its own boundary).
+type Line = (Segment, f64);
 
 impl crate::Model {
-    /// The model as a body of revolution about the z axis: a cylinder's or a sphere's solid (a
-    /// sphere's semicircle in chords of about `size`), and features that are cylinders along z
-    /// centred on the axis, added, subtracted or intersected in order. The profile of a cylinder
-    /// and its features is the union of the cells of the grid their radii and ends make, those
-    /// whose middle the model holds; its outline the cells' sides between inside and out.
+    /// What fills the point (r, z) of the half-plane φ = 0: (εr, μr), `None` outside the body,
+    /// in a conductor or at r < 0.
+    pub fn revolution_fill(&self, q: [f64; 2]) -> Option<(f64, f64)> {
+        if q[0] < 0.0 {
+            return None;
+        }
+        let i = self.material_at(crate::Point3::new(q[0], 0.0, q[1]))?;
+        self.materials.get(i).map(|m| (m.eps_r.get(), m.mu_r.get()))
+    }
+
+    /// The model as a body of revolution about the z axis: its solid, features and inclusions
+    /// each a body of revolution about it — a cylinder along z on the axis, a sphere centred on
+    /// it (its semicircle in chords of about `size`) or an imported surface turned about it (its
+    /// section by the half-plane φ = 0, its vertices within a hundredth of its extent of that
+    /// section) — combined as the model combines them. The outline is the arrangement of their
+    /// outlines and the axis, split where they cross; a piece is kept where what fills the model
+    /// ([`crate::Model::revolution_fill`]) differs on its two sides.
     ///
     /// ```
     /// use emcraft_model::{Metres, Model, Shape, Solid};
@@ -52,6 +58,7 @@ impl crate::Model {
     /// let p = m.meridian_profile(0.001)?;
     /// assert_eq!(p.segments.len(), 4); // the rectangle 0 ≤ r ≤ 10 mm, 0 ≤ z ≤ 15 mm
     /// assert!(p.points.iter().all(|q| q[0] >= 0.0));
+    /// assert!(m.meridian_profile(f64::NAN).is_err());
     /// # Ok::<(), emcraft_model::ModelError>(())
     /// ```
     pub fn meridian_profile(&self, size: f64) -> Result<MeridianProfile> {
@@ -64,117 +71,337 @@ impl crate::Model {
         if !(size.is_finite() && size > 0.0) {
             return Err(invalid("body of revolution", "the size must be finite and > 0"));
         }
-        let on_axis = |at: crate::Point3| at.x.abs() <= 1e-12 && at.y.abs() <= 1e-12;
-        let mut radii = vec![0.0];
-        let mut ends = Vec::new();
-        match &solid.shape {
-            crate::Shape::Sphere { radius } => {
-                if !self.features.is_empty() || !self.inclusions.is_empty() {
-                    return Err(invalid("body of revolution", "not supported yet: features or inclusions in a sphere"));
-                }
-                let r = radius.get();
-                let n = ((std::f64::consts::PI * r / size).ceil() as usize).clamp(8, MAX_PROFILE_POINTS - 1);
-                let points: Vec<[f64; 2]> =
-                    (0..=n).map(|k| std::f64::consts::PI * k as f64 / n as f64).map(|t| [r * t.sin(), -r * t.cos()]).collect();
-                let segments = (0..=n as u32).map(|k| [k, (k + 1) % (n as u32 + 1)]).collect();
-                return Ok(MeridianProfile { points, segments, eps_r, mu_r, cells: None });
-            }
-            crate::Shape::Cylinder { radius, length } => {
-                radii.push(radius.get());
-                ends.extend([0.0, length.get()]);
-            }
-            _ => return Err(invalid("body of revolution", "needs a cylinder or a sphere about the z axis")),
-        }
+        let mut lines: Vec<Line> = Vec::new();
+        outline(&solid.shape, crate::Point3::ORIGIN, crate::Axis::Z, size, &mut lines)
+            .map_err(|why| invalid("body of revolution", format!("the solid {why}")))?;
         for (i, f) in self.features.iter().enumerate() {
-            let crate::Shape::Cylinder { radius, length } = f.shape else {
-                return Err(invalid("body of revolution", format!("feature {} is not a cylinder about the axis", i + 1)));
-            };
-            if f.axis != crate::Axis::Z || !on_axis(f.at) {
-                return Err(invalid("body of revolution", format!("feature {} is not a cylinder about the axis", i + 1)));
-            }
-            radii.push(radius.get());
-            ends.extend([f.at.z, f.at.z + length.get()]);
+            outline(&f.shape, f.at, f.axis, size, &mut lines).map_err(|why| invalid("body of revolution", format!("feature {} {why}", i + 1)))?;
         }
-        // Inclusions: cylinders along z about the axis, dielectric or conducting.
-        let mut fillings = Vec::with_capacity(self.inclusions.len());
         for (i, inc) in self.inclusions.iter().enumerate() {
-            let crate::Shape::Cylinder { radius, length } = inc.shape else {
-                return Err(invalid("body of revolution", format!("inclusion {} is not a cylinder about the axis", i + 1)));
-            };
-            if !on_axis(inc.at) {
-                return Err(invalid("body of revolution", format!("inclusion {} is not a cylinder about the axis", i + 1)));
-            }
-            radii.push(radius.get());
-            ends.extend([inc.at.z, inc.at.z + length.get()]);
-            fillings.push(match &inc.material {
-                Some(name) => {
-                    let (_, mt) = self.material(name)?;
-                    Some((mt.eps_r.get(), mt.mu_r.get()))
-                }
-                None => None,
-            });
+            outline(&inc.shape, inc.at, crate::Axis::Z, size, &mut lines)
+                .map_err(|why| invalid("body of revolution", format!("inclusion {} {why}", i + 1)))?;
         }
-        let sorted = |mut v: Vec<f64>| {
-            v.sort_by(f64::total_cmp);
-            v.dedup_by(|a, b| (*a - *b).abs() <= 1e-12);
-            v
-        };
-        let (rs, zs) = (sorted(radii), sorted(ends));
-        if rs.len() * zs.len() > MAX_PROFILE_POINTS {
-            return Err(invalid("body of revolution", "too many features"));
+        if lines.len() >= MAX_PROFILE_POINTS {
+            return Err(invalid("body of revolution", format!("its outline takes more than {MAX_PROFILE_POINTS} segments: a larger size")));
         }
-        let inside = |r: f64, z: f64| {
-            let p = crate::Point3::new(r, 0.0, z);
-            self.features.iter().fold(solid.shape.contains(p), |v, f| match f.combine {
-                crate::Combine::Add => v || f.contains(p),
-                crate::Combine::Subtract => v && !f.contains(p),
-                crate::Combine::Intersect => v && f.contains(p),
-            })
-        };
-        let (nr, nz) = (rs.len() - 1, zs.len() - 1);
-        // Each cell's filling: the body's, an inclusion's (the first holding it), or none.
-        let filling = |r: f64, z: f64| -> Option<(f64, f64)> {
-            if !inside(r, z) {
-                return None;
-            }
-            let p = crate::Point3::new(r, 0.0, z);
-            match self.inclusions.iter().position(|inc| inc.contains(p)) {
-                Some(k) => fillings.get(k).copied().flatten(),
-                None => Some((eps_r, mu_r)),
-            }
-        };
-        let materials: Vec<Option<(f64, f64)>> =
-            (0..nr * nz).map(|c| filling(0.5 * (rs[c % nr] + rs[c % nr + 1]), 0.5 * (zs[c / nr] + zs[c / nr + 1]))).collect();
-        let cell = |i: usize, j: usize| if i < nr && j < nz { materials[j * nr + i] } else { None };
-        let id = |i: usize, j: usize| (j * rs.len() + i) as u32;
+        let [lo, hi] = lines.iter().flat_map(|l| l.0).fold([f64::INFINITY, f64::NEG_INFINITY], |b, q| [b[0].min(q[1]), b[1].max(q[1])]);
+        let extent = lines.iter().flat_map(|l| l.0).fold(hi - lo, |e, q| e.max(q[0]));
+        if !(extent.is_finite() && extent > 0.0) {
+            return Err(invalid("body of revolution", "the profile holds nothing"));
+        }
+        lines.push(([[0.0, lo], [0.0, hi]], 0.0));
+        let tol = 1e-9 * extent;
+        let (points, pieces) = arrangement(&lines, tol);
+        // A piece is kept where the model's filling differs across it, looked at past the
+        // boundary's bulge off it.
         let mut segments = Vec::new();
-        for j in 0..nz {
-            for i in 0..=nr {
-                // The side at r = rs[i] between cells i − 1 and i: an outline or an interface.
-                let left = if i > 0 { cell(i - 1, j) } else { None };
-                if left != cell(i, j) {
-                    segments.push([id(i, j), id(i, j + 1)]);
-                }
+        let mut densest = eps_r * mu_r;
+        for ([a, b], bulge) in pieces {
+            let (pa, pb) = (points[a as usize], points[b as usize]);
+            let (dr, dz) = (pb[0] - pa[0], pb[1] - pa[1]);
+            let len = dr.hypot(dz);
+            let d = ((1e-4 * len).max(1e3 * tol) + 2.0 * bulge) / len;
+            let mid = [0.5 * (pa[0] + pb[0]), 0.5 * (pa[1] + pb[1])];
+            let (left, right) = (self.revolution_fill([mid[0] - dz * d, mid[1] + dr * d]), self.revolution_fill([mid[0] + dz * d, mid[1] - dr * d]));
+            for (e, u) in [left, right].into_iter().flatten() {
+                densest = densest.max(e * u);
             }
-        }
-        for i in 0..nr {
-            for j in 0..=nz {
-                let below = if j > 0 { cell(i, j - 1) } else { None };
-                if below != cell(i, j) {
-                    segments.push([id(i, j), id(i + 1, j)]);
-                }
+            if left != right {
+                segments.push([a, b]);
             }
         }
         if segments.is_empty() {
             return Err(invalid("body of revolution", "the profile holds nothing"));
         }
-        // Only the grid's points the outline uses, renumbered in order.
+        // Only the points the outline uses, renumbered in order.
         let mut used: Vec<u32> = segments.iter().flatten().copied().collect();
         used.sort_unstable();
         used.dedup();
         let renumber: std::collections::BTreeMap<u32, u32> = used.iter().enumerate().map(|(k, &v)| (v, k as u32)).collect();
-        let points = used.iter().map(|&v| [rs[v as usize % rs.len()], zs[v as usize / rs.len()]]).collect();
+        let points = used.iter().map(|&v| points[v as usize]).collect();
         let segments = segments.iter().map(|s| s.map(|v| renumber[&v])).collect();
-        Ok(MeridianProfile { points, segments, eps_r, mu_r, cells: Some((rs, zs, materials)) })
+        Ok(MeridianProfile { points, segments, eps_r, mu_r, densest })
+    }
+}
+
+/// A body's outline on the half-plane φ = 0, its frame placed at `at` with its own z along
+/// `axis`, appended to `lines`; why it is not a body of revolution about the z axis.
+fn outline(shape: &crate::Shape, at: crate::Point3, axis: crate::Axis, size: f64, lines: &mut Vec<Line>) -> std::result::Result<(), String> {
+    let near_axis = |x: f64, y: f64| x.abs() <= 1e-12 && y.abs() <= 1e-12;
+    match shape {
+        crate::Shape::Cylinder { radius, length } => {
+            if axis != crate::Axis::Z || !near_axis(at.x, at.y) {
+                return Err("is a cylinder off the z axis".into());
+            }
+            let (r, z0, z1) = (radius.get(), at.z, at.z + length.get());
+            lines.extend([[[0.0, z0], [r, z0]], [[r, z0], [r, z1]], [[r, z1], [0.0, z1]]].map(|s| (s, 0.0)));
+        }
+        crate::Shape::Sphere { radius } => {
+            if !near_axis(at.x, at.y) {
+                return Err("is a sphere off the z axis".into());
+            }
+            let r = radius.get();
+            let n = ((std::f64::consts::PI * r / size).ceil() as usize).clamp(8, MAX_PROFILE_POINTS);
+            let q = |k: usize| {
+                let t = std::f64::consts::PI * k as f64 / n as f64;
+                [r * t.sin(), at.z - r * t.cos()]
+            };
+            let sagitta = r * (1.0 - (std::f64::consts::PI / (2 * n) as f64).cos());
+            lines.extend((0..n).map(|k| ([q(k), q(k + 1)], sagitta)));
+        }
+        crate::Shape::Box { .. } => return Err("is a box, not a body of revolution".into()),
+        crate::Shape::Surface { positions, triangles, .. } => {
+            if triangles.len() > MAX_SECTION_TRIANGLES {
+                return Err(format!("has more than {MAX_SECTION_TRIANGLES} triangles"));
+            }
+            let place = |p: crate::Point3| at + axis.turn(p.to_vec());
+            let points: Vec<crate::Point3> = positions.iter().copied().map(place).collect();
+            let mut own = Vec::new();
+            section(&points, triangles, &mut own);
+            if own.is_empty() {
+                return Err("does not meet the half-plane φ = 0".into());
+            }
+            // Turned about the axis: its sections by other half-planes near the one at φ = 0.
+            let b = crate::geom::Aabb::around(points.iter().copied()).unwrap_or_default();
+            let tol = 1e-2 * (0..3).map(|d| b.max[d] - b.min[d]).fold(0.0, f64::max);
+            for phi in [1.0f64, 2.3, 4.1] {
+                let (c, s) = (phi.cos(), phi.sin());
+                let turned: Vec<crate::Point3> = points.iter().map(|p| crate::Point3::new(p.x * c + p.y * s, p.y * c - p.x * s, p.z)).collect();
+                let mut other = Vec::new();
+                section(&turned, triangles, &mut other);
+                let off = other.iter().flatten().find(|q| own.iter().all(|s| distance(**q, s) > tol));
+                if let Some(q) = off {
+                    return Err(format!(
+                        "is not turned about the z axis (at φ = {phi} rad its section reaches (r, z) = ({:.4}, {:.4}) m, off its section at φ = 0)",
+                        q[0], q[1]
+                    ));
+                }
+            }
+            lines.extend(own.into_iter().map(|s| (s, 0.0)));
+        }
+    }
+    Ok(())
+}
+
+/// The section of a closed surface by the half-plane y = 0, x ≥ 0: per triangle crossing the
+/// plane, the segment between its two crossing edges (a vertex on the plane counted above it,
+/// so neighbours agree), clipped to x ≥ 0, as (r, z) = (x, z).
+fn section(points: &[crate::Point3], triangles: &[[u32; 3]], lines: &mut Vec<Segment>) {
+    let above = |p: &crate::Point3| p.y >= 0.0;
+    for t in triangles {
+        let Some(v) = t.iter().map(|&i| points.get(i as usize)).collect::<Option<Vec<_>>>() else { continue };
+        let mut cut = Vec::with_capacity(2);
+        for k in 0..3 {
+            let (a, b) = (v[k], v[(k + 1) % 3]);
+            if above(a) != above(b) {
+                let s = a.y / (a.y - b.y);
+                cut.push([a.x + s * (b.x - a.x), a.z + s * (b.z - a.z)]);
+            }
+        }
+        let [p, q] = match cut.as_slice() {
+            [p, q] => [*p, *q],
+            _ => continue,
+        };
+        // Clipped to x ≥ 0.
+        let clipped = match (p[0] >= 0.0, q[0] >= 0.0) {
+            (true, true) => [p, q],
+            (false, false) => continue,
+            (inside, _) => {
+                let s = p[0] / (p[0] - q[0]);
+                let on = [0.0, p[1] + s * (q[1] - p[1])];
+                if inside { [p, on] } else { [on, q] }
+            }
+        };
+        if clipped[0] != clipped[1] {
+            lines.push(clipped);
+        }
+    }
+}
+
+/// The distance from `q` to the segment `s`.
+fn distance(q: [f64; 2], s: &Segment) -> f64 {
+    let (d, w) = ([s[1][0] - s[0][0], s[1][1] - s[0][1]], [q[0] - s[0][0], q[1] - s[0][1]]);
+    let l = d[0] * d[0] + d[1] * d[1];
+    let t = if l > 0.0 { ((w[0] * d[0] + w[1] * d[1]) / l).clamp(0.0, 1.0) } else { 0.0 };
+    (w[0] - t * d[0]).hypot(w[1] - t * d[1])
+}
+
+/// Points within `tol` of one another taken as one, found through a grid of cells `tol` wide.
+struct Points {
+    tol: f64,
+    cells: std::collections::BTreeMap<(i64, i64), Vec<u32>>,
+    all: Vec<[f64; 2]>,
+}
+
+impl Points {
+    /// The index of `q`, a point near it if there is one.
+    fn at(&mut self, mut q: [f64; 2]) -> u32 {
+        if q[0].abs() <= self.tol {
+            q[0] = 0.0;
+        }
+        let key = |v: f64| (v / self.tol).floor() as i64;
+        let (i, j) = (key(q[0]), key(q[1]));
+        for di in -1..=1 {
+            for dj in -1..=1 {
+                for &k in self.cells.get(&(i + di, j + dj)).into_iter().flatten() {
+                    let p = self.all[k as usize];
+                    if (p[0] - q[0]).hypot(p[1] - q[1]) <= self.tol {
+                        return k;
+                    }
+                }
+            }
+        }
+        let k = self.all.len() as u32;
+        self.all.push(q);
+        self.cells.entry((i, j)).or_default().push(k);
+        k
+    }
+}
+
+/// The arrangement of `lines`: their points (those within `tol` merged) and the pieces they
+/// split into where they cross one another or another's end lies on them, each piece once (with
+/// the largest bulge of the lines it lies on).
+fn arrangement(lines: &[Line], tol: f64) -> (Vec<[f64; 2]>, Vec<([u32; 2], f64)>) {
+    let mut cuts: Vec<Vec<f64>> = vec![vec![0.0, 1.0]; lines.len()];
+    for (i, (a, _)) in lines.iter().enumerate() {
+        let da = [a[1][0] - a[0][0], a[1][1] - a[0][1]];
+        let la = da[0].hypot(da[1]);
+        if la <= tol {
+            continue;
+        }
+        for (j, (b, _)) in lines.iter().enumerate().skip(i + 1) {
+            let db = [b[1][0] - b[0][0], b[1][1] - b[0][1]];
+            // Boxes apart: nothing to split.
+            if a[0][0].min(a[1][0]) > b[0][0].max(b[1][0]) + tol
+                || b[0][0].min(b[1][0]) > a[0][0].max(a[1][0]) + tol
+                || a[0][1].min(a[1][1]) > b[0][1].max(b[1][1]) + tol
+                || b[0][1].min(b[1][1]) > a[0][1].max(a[1][1]) + tol
+            {
+                continue;
+            }
+            // Ends on the other.
+            let along = |s: &Segment, d: [f64; 2], l: f64, q: [f64; 2]| ((q[0] - s[0][0]) * d[0] + (q[1] - s[0][1]) * d[1]) / (l * l);
+            for q in *b {
+                if distance(q, a) <= tol {
+                    cuts[i].push(along(a, da, la, q));
+                }
+            }
+            let lb = db[0].hypot(db[1]);
+            if lb > tol {
+                for q in *a {
+                    if distance(q, b) <= tol {
+                        cuts[j].push(along(b, db, lb, q));
+                    }
+                }
+            }
+            // A proper crossing.
+            let den = da[0] * db[1] - da[1] * db[0];
+            if den.abs() > 1e-12 * la * lb {
+                let w = [b[0][0] - a[0][0], b[0][1] - a[0][1]];
+                let (s, t) = ((w[0] * db[1] - w[1] * db[0]) / den, (w[0] * da[1] - w[1] * da[0]) / den);
+                if (0.0..=1.0).contains(&s) && (0.0..=1.0).contains(&t) {
+                    cuts[i].push(s);
+                    cuts[j].push(t);
+                }
+            }
+        }
+    }
+    let mut points = Points { tol, cells: std::collections::BTreeMap::new(), all: Vec::new() };
+    let mut pieces: std::collections::BTreeMap<[u32; 2], f64> = std::collections::BTreeMap::new();
+    for ((a, bulge), mut ts) in lines.iter().zip(cuts) {
+        ts.retain(|t| t.is_finite());
+        ts.sort_by(f64::total_cmp);
+        let ids: Vec<u32> = ts
+            .iter()
+            .map(|&t| points.at([a[0][0] + t.clamp(0.0, 1.0) * (a[1][0] - a[0][0]), a[0][1] + t.clamp(0.0, 1.0) * (a[1][1] - a[0][1])]))
+            .collect();
+        for w in ids.windows(2) {
+            if w[0] != w[1] {
+                let b = pieces.entry([w[0].min(w[1]), w[0].max(w[1])]).or_insert(0.0);
+                *b = b.max(*bulge);
+            }
+        }
+    }
+    (points.all, pieces.into_iter().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Combine, Feature, Inclusion, Metres, Model, Point3, Shape, Solid};
+
+    fn cylinder(r: f64, l: f64) -> Shape {
+        Shape::Cylinder { radius: Metres::new(r).unwrap(), length: Metres::new(l).unwrap() }
+    }
+
+    fn sphere(r: f64) -> Shape {
+        Shape::Sphere { radius: Metres::new(r).unwrap() }
+    }
+
+    fn model(shape: Shape) -> Model {
+        let mut m = Model::new();
+        m.set_solid(Solid { shape, material: "vacuum".into() }).unwrap();
+        m
+    }
+
+    fn turned(profile: &[[f64; 2]], sides: usize) -> Shape {
+        Shape::revolved("turned", profile, sides).unwrap()
+    }
+
+    /// A cylinder with a sphere taken out of its top: the axis, the bottom, the wall, the top's
+    /// ring and the sphere's arc inside the cylinder (the arc's part above the top dropped).
+    #[test]
+    fn a_sphere_cut_out_of_a_cylinder_leaves_its_arc_in_the_outline() {
+        let mut m = model(cylinder(0.01, 0.02));
+        m.features.push(Feature { combine: Combine::Subtract, shape: sphere(0.005), at: Point3::new(0.0, 0.0, 0.02), axis: crate::Axis::Z });
+        let p = m.meridian_profile(0.0005).unwrap();
+        assert!(p.points.iter().all(|q| q[0] >= 0.0 && q[1] >= -1e-12 && q[1] <= 0.02 + 1e-12));
+        // Every point on the arc is 5 mm from the top's centre or on the cylinder's sides.
+        let on = |q: &[f64; 2]| {
+            ((q[0].hypot(q[1] - 0.02) - 0.005).abs() < 1e-9 && q[1] <= 0.02 + 1e-12)
+                || q[0] == 0.0
+                || (q[0] - 0.01).abs() < 1e-12
+                || q[1].abs() < 1e-12
+                || ((q[1] - 0.02).abs() < 1e-12 && q[0] >= 0.005 - 1e-9)
+        };
+        assert!(p.points.iter().all(on), "{:?}", p.points);
+        // The axis runs from the bottom to the sphere's lowest point only.
+        let axis_top = p.points.iter().filter(|q| q[0] == 0.0).map(|q| q[1]).fold(f64::NEG_INFINITY, f64::max);
+        assert!((axis_top - 0.015).abs() < 1e-9, "{axis_top}");
+    }
+
+    /// An imported body turned about z gives the section of its facets; a cone's is its slant
+    /// line and its ends.
+    #[test]
+    fn an_imported_body_of_revolution_gives_its_section() {
+        let cone = [[0.0, 0.0], [0.004, 0.0], [0.008, 0.01], [0.0, 0.01]];
+        let mut m = model(turned(&cone, 48));
+        let p = m.meridian_profile(0.001).unwrap();
+        assert_eq!(p.segments.len(), 4, "{:?}", p.points);
+        let rim = p.points.iter().map(|q| q[0]).fold(0.0, f64::max);
+        assert!((rim - 0.008).abs() < 1e-9, "{rim}");
+        // A sphere inclusion inside it: an interface the model's filling changes across.
+        m.add_material(crate::Material::new("ptfe", 2.1, 1.0).unwrap()).unwrap();
+        m.inclusions.push(Inclusion { shape: sphere(0.002), at: Point3::new(0.0, 0.0, 0.005), material: Some("ptfe".into()) });
+        let p = m.meridian_profile(0.0005).unwrap();
+        assert!(p.segments.len() > 8, "{:?} {:?}", p.points, p.segments);
+        assert!((p.densest - 2.1).abs() < 1e-12);
+        assert_eq!(m.revolution_fill([0.0005, 0.005]), Some((2.1, 1.0)));
+        assert_eq!(m.revolution_fill([0.0035, 0.005]), Some((1.0, 1.0)));
+        assert_eq!(m.revolution_fill([0.0075, 0.001]), None);
+    }
+
+    /// Bodies that are not turned about the z axis are refused, each named.
+    #[test]
+    fn bodies_not_turned_about_the_axis_are_refused() {
+        let square = turned(&[[0.0, 0.0], [0.004, 0.0], [0.004, 0.01], [0.0, 0.01]], 4);
+        let e = model(square).meridian_profile(0.001).unwrap_err().to_string();
+        assert!(e.contains("the solid is not turned about the z axis"), "{e}");
+        let mut m = model(cylinder(0.01, 0.02));
+        m.features.push(Feature { combine: Combine::Add, shape: sphere(0.002), at: Point3::new(0.005, 0.0, 0.02), axis: crate::Axis::Z });
+        let e = m.meridian_profile(0.001).unwrap_err().to_string();
+        assert!(e.contains("feature 1 is a sphere off the z axis"), "{e}");
+        let e =
+            model(Shape::Box { size: crate::shape::BoxSize::new(crate::Vec3::new(0.01, 0.01, 0.01)).unwrap() }).meridian_profile(0.001).unwrap_err();
+        assert!(e.to_string().contains("a box"), "{e}");
     }
 }

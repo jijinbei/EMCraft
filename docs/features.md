@@ -545,7 +545,7 @@ Cuts a model symmetric about its middle on that plane: only the side below it is
 
 ## `solve.revolution` — Body of revolution
 
-The eigenmodes of a closed cavity invariant under rotation about the z axis, from its meridian profile: the polygon `points` [[r, z], …] (r ≥ 0; an edge on r = 0 is the axis, every other edge a perfect conductor) filled with one material, or without `points` the model's own (its cylinder or sphere about z, the cylinders along z about the axis its features add, subtract or intersect, and its inclusions that are such cylinders, dielectric or conducting), meshed in triangles of about `size` and solved per azimuthal order `m` on the half-plane — a 2D problem in place of the 3D one (hybrid edge/nodal elements, Lee–Wilkins–Mittra). The `count` modes of order `m` nearest `frequency`, lowest first. The model is left as it is.
+The eigenmodes of a closed cavity invariant under rotation about the z axis, from its meridian profile: the polygon `points` [[r, z], …] (r ≥ 0; an edge on r = 0 is the axis, every other edge a perfect conductor) filled with one material, or without `points` the model's own (its solid, features and inclusions each a body of revolution about z — a cylinder along z on the axis, a sphere centred on it or an imported surface turned about it — combined as the model combines them, inclusions dielectric or conducting; the curves in chords of `size`), meshed in triangles of about `size` and solved per azimuthal order `m` on the half-plane — a 2D problem in place of the 3D one (hybrid edge/nodal elements, Lee–Wilkins–Mittra). The `count` modes of order `m` nearest `frequency`, lowest first. The model is left as it is.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -559,7 +559,7 @@ The eigenmodes of a closed cavity invariant under rotation about the z axis, fro
 
 ## `solve.revolution.frequency` — Body of revolution S
 
-The S-parameters of the model as a body of revolution about z (its cylinder and the features about the axis, as solve.revolution takes them) between its ports on the cylinder's ends, in one azimuthal order `m` on the meridian half-plane: each port's modes of that order (TE_mp, TM_mp of its circle, in closed form) in its condition, S between their first modes (m = 1: TE11, the whole's dominant mode in either polarization; m = 0: TM01). Triangles of about `size` (default a fortieth of the wavelength at the top frequency, at most a twentieth of the profile). The model is left as it is.
+The S-parameters of the model as a body of revolution about z (its profile as solve.revolution takes it) between its ports on its lowest and highest ends, in one azimuthal order `m` on the meridian half-plane: each port's modes of that order (TE_mp, TM_mp of its circle, in closed form) in its condition, S between their first modes (m = 1: TE11, the whole's dominant mode in either polarization; m = 0: TM01). Triangles of about `size` (default a fortieth of the wavelength at the top frequency, at most a twentieth of the profile). The model is left as it is.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
