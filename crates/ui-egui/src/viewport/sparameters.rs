@@ -138,9 +138,14 @@ fn frequency_marker(field: &mut FieldState, ui: &egui::Ui, r: &egui::Response, m
         if r.rect.x_range().contains(x) {
             let painter = ui.painter_at(r.rect);
             painter.vline(x, map.rows(), Stroke::new(1.5, t.accent));
-            let (at, align) =
-                if x + 60.0 > r.rect.right() { (pos2(x - 4.0, top), Align2::RIGHT_TOP) } else { (pos2(x + 4.0, top), Align2::LEFT_TOP) };
-            painter.text(at, align, tr(t!("fields shown")), FontId::proportional(t.font_small), t.accent);
+            // Read over the curves (0 dB runs along the plot's top): on a backing beside the
+            // line, a little below the top (the title is above it).
+            let galley = painter.layout_no_wrap(tr(t!("fields shown")).to_owned(), FontId::proportional(t.font_small), t.accent);
+            let size = galley.size();
+            let left = if x + 8.0 + size.x > r.rect.right() { x - 6.0 - size.x } else { x + 6.0 };
+            let at = pos2(left, top + 6.0);
+            painter.rect_filled(egui::Rect::from_min_size(at, size).expand(2.0), 3.0, t.panel.gamma_multiply(0.9));
+            painter.galley(at, galley, t.accent);
         }
     }
     if r.clicked()

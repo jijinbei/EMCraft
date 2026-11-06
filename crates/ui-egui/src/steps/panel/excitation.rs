@@ -54,7 +54,7 @@ fn port_roles(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         ui.horizontal(|ui| {
             let (r, _) = ui.allocate_exact_size(vec2(16.0, 14.0), Sense::hover());
             crate::browser::role_mark(ui.painter(), r, role.input, role.colour());
-            let text = crate::browser::port_text(p).shown;
+            let text = crate::browser::port_text(p, app.session.display().length).shown;
             crate::math::label(ui, &format!("{text}  ·  {}", role.tip()), t.font_small, t.text);
             if !role.input {
                 let b = egui::Button::new(egui::RichText::new(tr(t!("Make the input"))).size(t.font_small)).small();

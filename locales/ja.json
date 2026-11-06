@@ -345,9 +345,6 @@
     "Port {name} (end)": "ポート {name}（終端）",
     "Port {name} (end): {n} modes{impedance}": "ポート {name}（終端）：{n} モード{impedance}",
     "Port {name} (end): {n} mode{impedance}": "ポート {name}（終端）：{n} モード{impedance}",
-    "Port {name} (on a face)": "ポート {name}（面上）",
-    "Port {name} (on a face): {n} modes{impedance}": "ポート {name}（面上）：{n} モード{impedance}",
-    "Port {name} (on a face): {n} mode{impedance}": "ポート {name}（面上）：{n} モード{impedance}",
     "Port {name} (start)": "ポート {name}（始端）",
     "Port {name} (start): {n} modes{impedance}": "ポート {name}（始端）：{n} モード{impedance}",
     "Port {name} (start): {n} mode{impedance}": "ポート {name}（始端）：{n} モード{impedance}",
@@ -1033,7 +1030,11 @@
     "{mode} port {ports}": "{mode} ポート {ports}",
     "{mode} section {n}": "{mode} 区間 {n}",
     "{mode} sections {n}": "{mode} 区間 {n}",
-    "The run's time is estimated once the model is meshed (step 6).": "計算時間はメッシュ後に見積もります（ステップ 6）。"
+    "The run's time is estimated once the model is meshed (step 6).": "計算時間はメッシュ後に見積もります（ステップ 6）。",
+    "Port {name} ({axis} = {at} {unit})": "ポート {name}（{axis} = {at} {unit}）",
+    "Port {name} ({axis} = {at} {unit}): {n} modes{impedance}": "ポート {name}（{axis} = {at} {unit}）：{n} モード{impedance}",
+    "Port {name} ({axis} = {at} {unit}): {n} mode{impedance}": "ポート {name}（{axis} = {at} {unit}）：{n} モード{impedance}",
+    "Region: the air the part encloses (imported), {material}": "領域：部品が囲む空気（読み込み）、{material}"
   },
   "commands": {
     "project.setup": {

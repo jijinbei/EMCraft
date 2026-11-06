@@ -8,7 +8,7 @@
   {"until": {"busy": false}, "timeout": 60},
   {"click": "step:geometry"},
   {"frames": 3},
-  {"expect": {"dialog": null, "handles": ["row:Region: cavity (imported), vacuum", "row:Block: metal walls (imported)"]}},
+  {"expect": {"dialog": null, "handles": ["row:Region: the air the part encloses (imported), vacuum", "row:Block: metal walls (imported)"]}},
   {"call": "engine.execute", "params": {"command": "model.port.create", "params": {"name": "1", "end": "start"}}},
   {"call": "engine.execute", "params": {"command": "model.port.create", "params": {"name": "2", "end": "end"}}},
   {"call": "engine.execute", "params": {"command": "mesh.generate", "params": {"size": 4}}},

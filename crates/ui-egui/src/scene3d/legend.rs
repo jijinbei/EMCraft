@@ -23,12 +23,14 @@ pub(super) fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
             let driven = session.driven_port();
             for (i, p) in m.ports.iter().enumerate() {
                 let template = match (p.face.is_some(), p.end) {
-                    (true, _) => t!("Port {name} (on a face)"),
+                    (true, _) => t!("Port {name} ({axis} = {at} {unit})"),
                     (false, End::Start) => t!("Port {name} (start)"),
                     (false, End::End) => t!("Port {name} (end)"),
                 };
                 let colour = if driven == Some(i) { sc().port_input } else { sc().port_output };
-                out.legend.push((trf(template, args!(name = p.name)), colour));
+                let l = session.display().length;
+                let (axis, at) = crate::browser::face_place(p, l);
+                out.legend.push((trf(template, args!(name = p.name, axis = axis, at = at, unit = l.symbol())), colour));
             }
             for p in &m.lumped {
                 out.legend.push((trf(t!("Lumped port {name}"), args!(name = p.name)), sc().port));

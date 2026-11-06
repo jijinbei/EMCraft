@@ -390,6 +390,10 @@ fn geometry(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
                 };
                 row(text, args!(x = mm(d.x), y = mm(d.y), z = mm(d.z), unit = lu, material = solid.material), Glyph::Box, Act::Edit("model.region"))
             }
+            // An imported cavity: the air its part encloses.
+            emcraft_model::Shape::Surface { name, .. } if name == emcraft_model::CAVITY => {
+                row(t!("Region: the air the part encloses (imported), {material}"), args!(material = solid.material), Glyph::Box, edit)
+            }
             emcraft_model::Shape::Surface { name, .. } => {
                 row(t!("Region: {name} (imported), {material}"), args!(name = name, material = solid.material), Glyph::Box, edit)
             }
@@ -426,7 +430,7 @@ fn ports(s: &emcraft_engine::Session) -> Vec<Row> {
     let m = s.model();
     let roles = port_roles(s);
     let waveguide = m.ports.iter().enumerate().map(|(i, p)| {
-        let Both { en, shown } = port_text(p);
+        let Both { en, shown } = port_text(p, s.display().length);
         let item = Item::new("model.port.edit", "model.port.delete", "name", serde_json::json!(p.name));
         let role = roles.get(i).cloned();
         Row { text: en, shown, glyph: Glyph::Port, act: Act::Show(View::PortModes), pick: None, item: None, rich: None, role }
@@ -443,13 +447,16 @@ fn ports(s: &emcraft_engine::Session) -> Vec<Row> {
 }
 
 /// A waveguide port as the window names it everywhere (the browser, the Excitation step, the
-/// 3D view's legend says `Port 1 (start)`): `Port 1 (start): 4 modes, 50 Ω`.
-pub fn port_text(p: &emcraft_model::Port) -> Both {
+/// 3D view's legend says `Port 1 (start)`): `Port 1 (start): 4 modes, 50 Ω`; a port on a face
+/// by its plane, in display units `l`: `Port 1 (y = 100 mm): 4 modes`.
+pub fn port_text(p: &emcraft_model::Port, l: emcraft_model::units::Length) -> Both {
     let z = p.reference.map(|z| format!(", {z} Ω")).unwrap_or_default();
     let template = match (p.face.is_some(), p.end) {
-        (true, _) => {
-            lang::pick(p.modes as usize, t!("Port {name} (on a face): {n} mode{impedance}"), t!("Port {name} (on a face): {n} modes{impedance}"))
-        }
+        (true, _) => lang::pick(
+            p.modes as usize,
+            t!("Port {name} ({axis} = {at} {unit}): {n} mode{impedance}"),
+            t!("Port {name} ({axis} = {at} {unit}): {n} modes{impedance}"),
+        ),
         (false, emcraft_model::End::Start) => {
             lang::pick(p.modes as usize, t!("Port {name} (start): {n} mode{impedance}"), t!("Port {name} (start): {n} modes{impedance}"))
         }
@@ -457,7 +464,17 @@ pub fn port_text(p: &emcraft_model::Port) -> Both {
             lang::pick(p.modes as usize, t!("Port {name} (end): {n} mode{impedance}"), t!("Port {name} (end): {n} modes{impedance}"))
         }
     };
-    lang::both(template, args!(name = p.name, n = p.modes, impedance = z))
+    let (axis, at) = face_place(p, l);
+    lang::both(template, args!(name = p.name, n = p.modes, impedance = z, axis = axis, at = at, unit = l.symbol()))
+}
+
+/// A face port's plane: its axis and where it lies across it, in display units `l`, to a
+/// thousandth (none for an end port).
+pub fn face_place(p: &emcraft_model::Port, l: emcraft_model::units::Length) -> (&'static str, String) {
+    match p.face {
+        Some(f) => (f.axis.id(), format!("{}", (l.from_si(f.at) * 1e3).round() / 1e3 + 0.0)),
+        None => ("", String::new()),
+    }
 }
 
 fn sources(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
