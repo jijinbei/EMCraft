@@ -46,9 +46,9 @@ pub(super) fn side(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, 
     heading(ui, t!("SAVE"));
     ui.horizontal(|ui| {
         let s = &app.session;
-        let picture = || Action::dialog_with("view.field", FieldParams::picture(field, s, "field.png").to_params());
+        let picture = Action::dialog_with("view.field", FieldParams::picture(field, s, "field.png").to_params());
         ui.action_button(Fixed::FieldSavePicture.into(), t!("Picture…"), t!("This picture as a PNG (view.field)"), picture, out);
-        let video = || Action::dialog_with("view.animation", FieldParams::animation(field, s, "field-animation.png").to_params());
+        let video = Action::dialog_with("view.animation", FieldParams::animation(field, s, "field-animation.png").to_params());
         ui.action_button(
             Fixed::FieldSaveVideo.into(),
             t!("Animation…"),
@@ -298,16 +298,9 @@ fn probes(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut
             Some(s.model_point(q, unit).to_array().map(|v| unit.from_si(v)))
         });
         let hint = t!("A probe at the pinned point (the plane's middle without one)");
-        let busy = app.busy();
         if let Some(at) = at {
-            ui.act(
-                !busy,
-                egui::Button::new("+").small(),
-                Fixed::ProbeAdd.into(),
-                || Action::run("view.probe.add", serde_json::json!({"at": at})),
-                out,
-            )
-            .hint(hint);
+            ui.act(true, egui::Button::new("+").small(), Fixed::ProbeAdd.into(), Action::run("view.probe.add", serde_json::json!({"at": at})), out)
+                .hint(hint);
         }
     });
     if probes.is_empty() {

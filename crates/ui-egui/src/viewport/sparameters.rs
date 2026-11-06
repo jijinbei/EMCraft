@@ -191,11 +191,9 @@ fn refine_band(app: &EmcraftApp, refine: &mut crate::state::Refine, ui: &mut egu
         let r = ui.named(egui::DragValue::new(&mut refine.points).range(2..=MAX_REFINE).suffix(" pts"), Fixed::RefinePoints.into());
         r.hint(t!("frequencies in the band"));
         let params = json!({"start": fu.from_si(a), "stop": fu.from_si(b), "points": refine.points});
-        let busy = app.busy();
-        let hint = if busy { t!("a job is running") } else { t!("Solve these frequencies and merge them into the sweep (solve.refine)") };
-        let r = ui
-            .act(!busy, crate::ui_kit::styled(t!("Refine"), true), Fixed::RefineStart.into(), || Action::run("solve.refine", params), out)
-            .hint(hint);
+        let hint = t!("Solve these frequencies and merge them into the sweep (solve.refine)");
+        let r =
+            ui.act(true, crate::ui_kit::styled(t!("Refine"), true), Fixed::RefineStart.into(), Action::run("solve.refine", params), out).hint(hint);
         let (x, _) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::hover());
         if crate::ui_kit::icon_button(ui, x, crate::ui_kit::Mark::Close, t!("Clear the band"), Fixed::RefineClear).clicked() || r.clicked() {
             refine.band = None;
@@ -215,7 +213,8 @@ fn reference_planes(app: &EmcraftApp, edits: &mut Vec<f64>, ui: &mut egui::Ui, o
     let l = s.display().length;
     edits.resize(ports.len(), 0.0);
     let instant = !sw.driven.has_terminals() && sw.driven.periodic.is_none();
-    let busy = app.busy();
+    // The field edits in place: greyed out as its command would be.
+    let enabled = out.allows(&Action::run("model.port.deembed", json!({})));
     ui.horizontal_wrapped(|ui| {
         ui.text(Style::SmallDim, t!("Ref. plane")).on_hover_text(tr(t!("Each port's reference plane: its distance inside the model (de-embedding)")));
         for (i, port) in ports.iter().enumerate() {
@@ -223,7 +222,7 @@ fn reference_planes(app: &EmcraftApp, edits: &mut Vec<f64>, ui: &mut egui::Ui, o
             let now = l.from_si(port.deembed);
             ui.text(Style::Small, port.name.clone());
             let drag = egui::DragValue::new(value).speed(0.1).suffix(format!(" {}", l.symbol())).max_decimals(4);
-            let r = ui.named_enabled(!busy, drag, Handle::Deembed(&port.name));
+            let r = ui.named_enabled(enabled, drag, Handle::Deembed(&port.name));
             let r =
                 if instant { r.hint(t!("S follows at once (a phase shift of the port's mode)")) } else { r.hint(t!("terminal ports: solved again")) };
             if (r.drag_stopped() || r.lost_focus()) && (*value - now).abs() > 1e-12 {
@@ -382,7 +381,6 @@ fn history(app: &EmcraftApp, compare: &mut Vec<u32>, ui: &mut egui::Ui, out: &mu
     let t = &Tokens::get();
     let rows = emcraft_engine::archive::rows(&app.session);
     crate::ui_kit::section(ui, t!("History"));
-    let busy = app.busy();
     let palette = crate::theme::palette();
     let font = FontId::proportional(t.font_small);
     for r in rows.iter().rev() {
@@ -419,7 +417,7 @@ fn history(app: &EmcraftApp, compare: &mut Vec<u32>, ui: &mut egui::Ui, out: &mu
                 None => compare.push(id),
             }
         }
-        resp.context_menu(|ui| history_menu(ui, id, pinned, !busy, out));
+        resp.context_menu(|ui| history_menu(ui, id, pinned, out));
     }
     crate::ui_kit::caption(ui, t!("Click: draw it over the chart · right-click: restore, pin, delete"));
 }
@@ -469,15 +467,14 @@ fn history_tip(app: &EmcraftApp, r: &emcraft_engine::archive::HistoryRow, stored
 }
 
 /// A kept solve's menu: restore, pin or unpin, delete.
-fn history_menu(ui: &mut egui::Ui, id: u32, pinned: bool, enabled: bool, out: &mut Actions) {
+fn history_menu(ui: &mut egui::Ui, id: u32, pinned: bool, out: &mut Actions) {
     let items = [
         (t!("Restore"), Fixed::HistoryRestore, "results.history.restore", json!({"id": id})),
         (if pinned { t!("Unpin") } else { t!("Pin") }, Fixed::HistoryPin, "results.history.pin", json!({"id": id, "pinned": !pinned})),
         (t!("Delete"), Fixed::HistoryDelete, "results.history.delete", json!({"id": id})),
     ];
     for (label, handle, command, params) in items {
-        if ui.named_enabled(enabled, egui::Button::new(tr(label)), handle.into()).clicked() {
-            out.push(Action::run(command, params));
+        if ui.act(true, egui::Button::new(tr(label)), handle.into(), Action::run(command, params), out).clicked() {
             ui.close();
         }
     }

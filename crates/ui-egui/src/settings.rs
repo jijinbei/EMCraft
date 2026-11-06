@@ -44,7 +44,7 @@ pub fn show(app: &EmcraftApp, section: Section, ui: &mut egui::Ui, out: &mut Act
             ui.text(Style::Title, t!("Settings"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let done = crate::ui_kit::styled(t!("Done"), true);
-                ui.act(true, done, Fixed::SettingsClose.into(), || Action::CloseSettings, out).hint(t!("Back (Escape)"));
+                ui.act(true, done, Fixed::SettingsClose.into(), Action::CloseSettings, out).hint(t!("Back (Escape)"));
             });
         });
         ui.add_space(t.space_16);
@@ -54,7 +54,7 @@ pub fn show(app: &EmcraftApp, section: Section, ui: &mut egui::Ui, out: &mut Act
                 for s in Section::ALL {
                     let button = egui::Button::selectable(s == section, egui::RichText::new(shown(s)).size(t.font_button))
                         .min_size(vec2(NAV, t.control_height));
-                    ui.act(true, button, Handle::SettingsSection(s), || Action::OpenSettings(Some(s)), out);
+                    ui.act(true, button, Handle::SettingsSection(s), Action::OpenSettings(Some(s)), out);
                 }
             });
             ui.add_space(32.0);
@@ -109,7 +109,7 @@ fn choices<T: Copy + PartialEq>(
             let b = egui::Button::selectable(current == value, egui::RichText::new(label).size(t.font_button))
                 .min_size(vec2(64.0, t.control_height))
                 .frame_when_inactive(true);
-            ui.act(true, b, Handle::Setting(group, id), || action(value), out);
+            ui.act(true, b, Handle::Setting(group, id), action(value), out);
         }
     });
 }
@@ -130,7 +130,7 @@ fn options<T: Copy + PartialEq>(
             let b = egui::Button::selectable(current == value, egui::RichText::new(tr(label)).size(t.font_button))
                 .min_size(vec2(96.0, t.control_height))
                 .frame_when_inactive(true);
-            ui.act(true, b, Handle::Setting(group, id), || action(value), out);
+            ui.act(true, b, Handle::Setting(group, id), action(value), out);
             ui.text(Style::Dim, about);
             ui.end_row();
         }
@@ -167,7 +167,7 @@ fn appearance(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     }
     ui.horizontal(|ui| {
         let reload = crate::ui_kit::styled(t!("Read the themes again"), false);
-        ui.act(true, reload, Fixed::SettingsReloadThemes.into(), || Action::Pref(Pref::ReloadThemes), out);
+        ui.act(true, reload, Fixed::SettingsReloadThemes.into(), Action::Pref(Pref::ReloadThemes), out);
         path_label(ui, app.themes.dir.as_deref());
     });
     for problem in &app.themes.problems {
@@ -207,7 +207,7 @@ fn font(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             let file = Some(path.trim().to_owned()).filter(|p| !p.is_empty());
             out.push(Action::Pref(Pref::FontFile(file)));
         }
-        ui.act(true, egui::Button::new(tr(t!("Look again"))), Fixed::FontSearch.into(), || Action::Pref(Pref::SearchFonts), out);
+        ui.act(true, egui::Button::new(tr(t!("Look again"))), Fixed::FontSearch.into(), Action::Pref(Pref::SearchFonts), out);
     });
 }
 
@@ -392,7 +392,7 @@ fn view3d(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 .frame_when_inactive(true);
             let mut next = l;
             *field(&mut next) = !on;
-            ui.act(true, b, Handle::Setting("3d", id), || Action::Pref(Pref::GpuLook(next)), out);
+            ui.act(true, b, Handle::Setting("3d", id), Action::Pref(Pref::GpuLook(next)), out);
             ui.text(Style::Dim, about);
             ui.end_row();
         }
@@ -414,7 +414,7 @@ fn files(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     heading(ui, t!("Recent projects"), at_most);
     ui.horizontal(|ui| {
         let clear = crate::ui_kit::styled(t!("Clear the list"), false);
-        ui.act(n > 0, clear, Fixed::SettingsClearRecent.into(), || Action::Pref(Pref::ClearRecent), out);
+        ui.act(n > 0, clear, Fixed::SettingsClearRecent.into(), Action::Pref(Pref::ClearRecent), out);
         ui.text(Style::Dim, if n == 1 { tr(t!("1 project")).to_owned() } else { trf(t!("{n} projects"), args!(n = n)) });
     });
 

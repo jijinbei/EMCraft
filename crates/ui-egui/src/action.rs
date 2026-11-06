@@ -149,6 +149,58 @@ pub enum Pref {
 }
 
 impl Action {
+    /// Whether it waits while a job runs: what changes the project or runs a command (one at a
+    /// time), not what only looks, moves the view, selects, or opens and closes. Every kind is
+    /// named, so a new one is decided here when it is added.
+    pub fn waits_for_job(&self) -> bool {
+        match self {
+            Action::RunAll(_)
+            | Action::Run { .. }
+            | Action::DialogOk
+            | Action::Undo
+            | Action::Redo
+            | Action::OpenTemplate(..)
+            | Action::EditItem(_)
+            | Action::DeleteItems(_)
+            | Action::ExportHistory(..)
+            | Action::ConfirmSetup
+            | Action::StartRun
+            | Action::PreviewPortModes
+            | Action::CheckResults
+            | Action::ExportTouchstone
+            | Action::SetDevice { .. }
+            | Action::Measure(_) => true,
+            Action::File(f) => f.waits_for_job(),
+            Action::OpenDialog { .. }
+            | Action::DialogCancel
+            | Action::SetDock(_)
+            | Action::SetView(_)
+            | Action::ShowView(_)
+            | Action::SetTab(_)
+            | Action::OpenStep(_)
+            | Action::Fix(_)
+            | Action::Select { .. }
+            | Action::Fold(_)
+            | Action::Hover(_)
+            | Action::FocusMode(_)
+            | Action::CancelJob
+            | Action::Close(_)
+            | Action::Show(_)
+            | Action::Template(_)
+            | Action::Purpose(_)
+            | Action::OpenSettings(_)
+            | Action::CloseSettings
+            | Action::Pref(_)
+            | Action::DismissRecovery(_)
+            | Action::AskExport
+            | Action::ProposeSetup(_)
+            | Action::StandardView(_)
+            | Action::SetPlaying(_)
+            | Action::Tool(_)
+            | Action::Message { .. } => false,
+        }
+    }
+
     /// Runs command `id` with `params`.
     pub fn run(id: &str, params: Value) -> Action {
         Action::Run { id: id.to_owned(), params }
@@ -189,11 +241,22 @@ impl Action {
     }
 }
 
-/// The actions a frame asked for, in order.
+/// The actions a frame asked for, in order, and whether a job ran while it was drawn (what
+/// waits for it is drawn greyed out, [`Action::waits_for_job`]).
 #[derive(Debug, Default)]
-pub struct Actions(Vec<Action>);
+pub struct Actions(Vec<Action>, bool);
 
 impl Actions {
+    /// A frame's actions, drawn while a job runs or not.
+    pub fn during(busy: bool) -> Actions {
+        Actions(Vec::new(), busy)
+    }
+
+    /// Whether `action` may be asked for now (it does not wait for a running job).
+    pub fn allows(&self, action: &Action) -> bool {
+        !(self.1 && action.waits_for_job())
+    }
+
     pub fn push(&mut self, a: Action) {
         self.0.push(a);
     }
@@ -242,8 +305,9 @@ impl EmcraftApp {
         self.view3d.hover = None;
         for a in actions {
             let report = a.reports_errors();
+            // A refusal while a job runs is said, whatever asked for it.
             if let Err(e) = self.apply(a)
-                && report
+                && (report || matches!(e, UiError::Busy(_)))
                 && !e.reported()
             {
                 self.error(e);
@@ -254,6 +318,11 @@ impl EmcraftApp {
     /// Performs one action: the reply of a command it runs (`{"started": id}` for a long one),
     /// else what it changed.
     pub fn apply(&mut self, action: Action) -> Result<Value, UiError> {
+        // One rule for a running job: what waits for it is refused here, and greyed out where
+        // it is drawn (`UiExt::act`).
+        if action.waits_for_job() {
+            self.idle()?;
+        }
         match action {
             Action::Run { id, params } => return self.run(&id, params),
             Action::RunAll(list) => return self.run_all(list),
@@ -435,6 +504,36 @@ impl EmcraftApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The rule while a job runs: what changes the project (or runs a command, one at a time)
+    /// waits; looking, moving about, closing and cancelling do not. Closing the window asks
+    /// about the job instead of waiting for it, and an answer to that question goes through.
+    #[test]
+    fn a_running_job_holds_back_what_changes_the_project() {
+        use crate::files::{Answer, FileAction, Then};
+        let busy = Actions::during(true);
+        for waits in [
+            Action::Undo,
+            Action::run("mesh.generate", json!({})),
+            Action::DialogOk,
+            Action::File(FileAction::Save),
+            Action::File(FileAction::Request(Then::New)),
+            Action::DeleteItems(vec![]),
+        ] {
+            assert!(waits.waits_for_job() && !busy.allows(&waits), "{waits:?} goes through a job");
+            assert!(Actions::during(false).allows(&waits), "{waits:?} held back with no job");
+        }
+        for free in [
+            Action::CancelJob,
+            Action::Close(crate::layers::Layer::Dialog),
+            Action::Show(crate::page::Tab::Start),
+            Action::Tool(None),
+            Action::File(FileAction::Request(Then::Quit)),
+            Action::File(FileAction::Confirm(Answer::StopJob)),
+        ] {
+            assert!(busy.allows(&free), "{free:?} waits for a job");
+        }
+    }
 
     fn frame(app: &mut EmcraftApp, actions: impl IntoIterator<Item = Action>) {
         let mut out = Actions::default();

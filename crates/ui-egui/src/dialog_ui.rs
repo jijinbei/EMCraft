@@ -50,7 +50,7 @@ pub fn floating(app: &EmcraftApp, d: &mut Dialog, ctx: &egui::Context, out: &mut
         .show(ctx, |ui| {
             t.card(t.dialog_body).corner_radius(t.radius_xl).show(ui, |ui| {
                 ui.set_width(t.form_card_width);
-                asked = card(app, d, ui, max_h);
+                asked = card(app, d, ui, max_h, !out.allows(&Action::DialogOk));
             });
         });
     scenario::publish_rect(Fixed::Dialog, resp.response.rect);
@@ -71,7 +71,7 @@ pub fn docked(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, out: &mut Act
                 ui.set_width(ui.available_width());
                 ui.set_min_height(h - 2.0);
                 scenario::publish_rect(Fixed::Dialog, ui.max_rect());
-                asked = card(app, d, ui, h - 4.0);
+                asked = card(app, d, ui, h - 4.0, !out.allows(&Action::DialogOk));
             });
         });
     act(app, asked, out);
@@ -105,7 +105,7 @@ pub fn docked_running(app: &EmcraftApp, d: &Dialog, ui: &mut egui::Ui, out: &mut
 /// The dialog inside a step's panel.
 pub fn embedded(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32, out: &mut Actions) {
     scenario::publish_rect(Fixed::Dialog, ui.max_rect());
-    let asked = card(app, d, ui, max_h);
+    let asked = card(app, d, ui, max_h, !out.allows(&Action::DialogOk));
     act(app, asked, out);
 }
 
@@ -120,9 +120,9 @@ fn act(app: &EmcraftApp, asked: Asked, out: &mut Actions) {
     }
 }
 
-fn card(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32) -> Asked {
+/// `busy`: OK waits for a running job.
+fn card(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32, busy: bool) -> Asked {
     let t = &Tokens::get();
-    let busy = app.busy();
     let accent = t.tab(app.tab)[0];
     let session = &app.session;
     let mut asked = Asked::default();

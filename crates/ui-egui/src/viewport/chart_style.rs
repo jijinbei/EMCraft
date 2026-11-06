@@ -158,7 +158,7 @@ fn header(ui: &mut egui::Ui, edit: &mut StyleEdit, id: ChartId, out: &mut Action
             if crate::ui_kit::icon_button(ui, r, crate::ui_kit::Mark::Close, t!("Close"), Fixed::ChartStyleClose).clicked() {
                 edit.open = None;
             }
-            ui.act(true, egui::Button::new(tr(t!("Reset"))).small(), Fixed::ChartStyleReset.into(), || style(id, json!({"reset": true})), out)
+            ui.act(true, egui::Button::new(tr(t!("Reset"))).small(), Fixed::ChartStyleReset.into(), style(id, json!({"reset": true})), out)
                 .hint(t!("Everything automatic again"));
         });
     });

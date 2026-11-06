@@ -134,7 +134,7 @@ fn checks(ui: &mut egui::Ui, s: &StepState, out: &mut Actions) {
             let here = m.command.as_deref().is_some_and(|c| (is_solve(c) || c == "project.setup") && Step::of_command(c) == Some(s.step));
             if let Some(c) = m.command.as_ref().filter(|_| !here) {
                 let hint = format!("{c}: {}", crate::label(c));
-                ui.act(true, egui::Button::new(fix_label(c)).small(), Handle::StepFix(i), || Action::Fix(c.clone()), out).hint(&hint);
+                ui.act(true, egui::Button::new(fix_label(c)).small(), Handle::StepFix(i), Action::Fix(c.clone()), out).hint(&hint);
             }
         });
     }

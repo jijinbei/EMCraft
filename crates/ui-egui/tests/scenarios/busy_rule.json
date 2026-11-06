@@ -1,0 +1,22 @@
+[
+  {"note": "While a job runs, what changes the project or runs a command waits (one rule, Action::waits_for_job): a shortcut asking for it is refused and said, its button greyed out; looking, the tabs and Cancel stay free"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"note": "A fine mesh: the sweep lasts far longer than the steps below, under any load"},
+  {"call": "engine.execute", "params": {"command": "mesh.generate", "params": {"size": 1.5}}},
+  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 6, "stop": 9, "points": 2001, "order": 2}, "wait": false}},
+  {"frames": 3},
+  {"expect": {"busy": true}},
+  {"note": "Undo waits: Ctrl+Z is refused with the reason, the history kept"},
+  {"key": "Z", "cmd": true},
+  {"expect": {"busy": true, "status_error": true, "inspect": {"history": 13}}},
+  {"note": "The tabs do not wait"},
+  {"click": "tab:start"},
+  {"expect": {"busy": true, "inspect": {"page": "start"}}},
+  {"click": "tab:project"},
+  {"expect": {"busy": true, "inspect": {"page": "project"}}},
+  {"click": "status:cancel"},
+  {"expect": {"busy": false}},
+  {"note": "The job gone, Undo goes through: the mesh undone"},
+  {"key": "Z", "cmd": true},
+  {"expect": {"busy": false, "inspect": {"history": 12}}}
+]

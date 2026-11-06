@@ -173,7 +173,6 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 *x = br.right() + 4.0;
                 resp
             };
-            let busy = app.busy();
             let file = bar_button(ui, &mut x, t!("File"), Fixed::MenuFile);
             egui::Popup::menu(&file).show(|ui| crate::files::menu(app, ui, out));
             let edit = bar_button(ui, &mut x, t!("Edit"), Fixed::MenuEdit);
@@ -181,9 +180,9 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 ui.set_min_width(200.0);
                 let (u, r) = (app.session.undo().len(), app.session.redo().len());
                 let undo = egui::Button::new(trf(t!("Undo  ({n})"), args!(n = u))).shortcut_text("Ctrl+Z");
-                ui.act(u > 0 && !busy, undo, Fixed::EditUndo.into(), || Action::Undo, out);
+                ui.act(u > 0, undo, Fixed::EditUndo.into(), Action::Undo, out);
                 let redo = egui::Button::new(trf(t!("Redo  ({n})"), args!(n = r))).shortcut_text("Ctrl+Y");
-                ui.act(r > 0 && !busy, redo, Fixed::EditRedo.into(), || Action::Redo, out);
+                ui.act(r > 0, redo, Fixed::EditRedo.into(), Action::Redo, out);
             });
             // The pages as tabs in the middle (crate::page): the start page, the project (its name,
             // a dot while unsaved), the settings while open (×: closed); the one shown lit.
@@ -249,7 +248,6 @@ fn panels(app: &EmcraftApp, ui: &mut egui::Ui, card: Rect, right: f32, top: f32,
         .filter(|(name, _)| shown.contains(name))
         .flat_map(|&(tab, listed)| ordered(app, listed).into_iter().map(move |p| (tab, p.name, p.items(app, tab))))
         .collect();
-    let enabled = !app.busy();
     let mut x = card.left() + 6.0;
     let all: f32 = panels.iter().map(|(_, _, items)| items.iter().map(|i| button_width(ui, i.text()) + 3.0).sum::<f32>() + 13.0).sum();
     let limit = if x + all > right - 4.0 { right - 6.0 - MORE_WIDTH } else { f32::INFINITY };
@@ -264,6 +262,7 @@ fn panels(app: &EmcraftApp, ui: &mut egui::Ui, card: Rect, right: f32, top: f32,
                 continue;
             }
             let active = item.active(app);
+            let enabled = out.allows(&item.action(active));
             let b = Button { text: item.text(), glyph: item.glyph(), handle: item.handle(), enabled, active };
             let (resp, w) = button(ui, b, pos2(x, top), accent);
             if item.hint(resp).clicked() {
@@ -287,9 +286,8 @@ fn panels(app: &EmcraftApp, ui: &mut egui::Ui, card: Rect, right: f32, top: f32,
         egui::Popup::menu(&resp).show(|ui| {
             for item in more {
                 let active = item.active(app);
-                let r = ui.named_enabled(enabled, egui::Button::selectable(active, item.text()), item.handle());
+                let r = ui.act(true, egui::Button::selectable(active, item.text()), item.handle(), item.action(active), out);
                 if item.hint(r).clicked() {
-                    out.push(item.action(active));
                     ui.close();
                 }
             }

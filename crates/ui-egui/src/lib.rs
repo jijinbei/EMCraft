@@ -450,9 +450,9 @@ impl EmcraftApp {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         scenario::clear_handles();
         let ctx = ui.ctx().clone();
-        files::dropped(self, &ctx);
         self.prepare();
-        let mut out = Actions::default();
+        let mut out = Actions::during(self.busy());
+        out.extend(files::dropped(&ctx));
         // Escape closes the top layer, whatever is drawn after (crate::layers).
         out.extend(layers::escape(self, &ctx));
         ribbon::app_bar(self, ui, &mut out);
@@ -464,7 +464,7 @@ impl EmcraftApp {
             self.workspace(ui, &ctx, &mut out);
         }
         self.lend(|a| &mut a.ask, |app, ask| files::show(app, ask, &ctx, &mut out));
-        self.lend(|a| &mut a.template, |app, d| d.as_mut().map(|d| template_dialog::show(app, d, &ctx, &mut out)));
+        self.lend(|a| &mut a.template, |_, d| d.as_mut().map(|d| template_dialog::show(d, &ctx, &mut out)));
         shortcuts(self, &ctx, &mut out);
         self.apply_all(out);
         self.collect_screenshots(&ctx);
@@ -529,12 +529,10 @@ impl EmcraftApp {
     }
 }
 
-/// Undo, redo and the File menu's keys (when no field has the keyboard).
+/// Undo, redo and the File menu's keys (when no field has the keyboard); while a job runs,
+/// what waits for it is refused as its button is ([`Action::waits_for_job`]).
 fn shortcuts(app: &EmcraftApp, ctx: &egui::Context, out: &mut Actions) {
     if ctx.egui_wants_keyboard_input() {
-        return;
-    }
-    if app.busy() {
         return;
     }
     let (undo, redo) = ctx.input(|i| {

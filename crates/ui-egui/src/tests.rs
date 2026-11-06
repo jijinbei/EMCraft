@@ -59,6 +59,11 @@ fn scenario_tool_mode() {
 }
 
 #[test]
+fn scenario_busy_rule() {
+    scenario("busy_rule");
+}
+
+#[test]
 fn scenario_escape_layers() {
     scenario("escape_layers");
 }

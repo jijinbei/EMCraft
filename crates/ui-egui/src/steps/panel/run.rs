@@ -19,7 +19,7 @@ fn refusal_band(ui: &mut egui::Ui, heading: &str, details: impl FnOnce(&mut egui
 /// A finding's way to its step; `true` when taken.
 fn go_to(ui: &mut egui::Ui, step: Step, handle: Handle, out: &mut Actions) -> bool {
     let label = trf(t!("Go to {step}"), args!(step = shown(step)));
-    ui.act(true, egui::Button::new(label).small(), handle, || Action::OpenStep(Some(step)), out).clicked()
+    ui.act(true, egui::Button::new(label).small(), handle, Action::OpenStep(Some(step)), out).clicked()
 }
 
 /// Run: the preflight's findings and the button that starts the solve.
@@ -55,8 +55,7 @@ pub(super) fn run_panel(app: &EmcraftApp, ui: &mut egui::Ui, states: &[StepState
         (0, nw) => plural(nw, t!("Run, accepting {n} warning"), t!("Run, accepting {n} warnings"), args!(n = nw)),
         (nb, _) => plural(nb, t!("Run — {n} problem to fix first"), t!("Run — {n} problems to fix first"), args!(n = nb)),
     };
-    let busy = app.busy();
-    ui.act(!busy, ui_kit::styled(&label, true), Fixed::RunStart.into(), || Action::StartRun, out);
+    ui.act(true, ui_kit::styled(&label, true), Fixed::RunStart.into(), Action::StartRun, out);
     // Why Run was refused, under the button: each blocking problem with the way to its step,
     // as long as it blocks.
     let mut went = false;

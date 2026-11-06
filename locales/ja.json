@@ -588,7 +588,6 @@
     "best": "最良",
     "best {at} (goal {goal})": "最良 {at}（目的関数 {goal}）",
     "boundary faces": "境界面",
-    "busy: wait for the running job or cancel it first": "実行中：ジョブの終了を待つか、先にキャンセルしてください",
     "busy…": "実行中…",
     "click the picture to pin a point (right click lets it go)": "画像をクリックして点を固定（右クリックで解除）",
     "closed (no PML)": "閉じている（PML なし）",

@@ -109,10 +109,9 @@ impl TemplateDialog {
 }
 
 /// The template's card: its parameters, its preview and Open, Cancel and Reset.
-pub fn show(app: &EmcraftApp, dlg: &mut TemplateDialog, ctx: &egui::Context, out: &mut Actions) {
+pub fn show(dlg: &mut TemplateDialog, ctx: &egui::Context, out: &mut Actions) {
     dlg.refresh();
     let t = &Tokens::get();
-    let busy = app.busy();
     let modal = egui::Modal::new(egui::Id::new("emcraft_template")).frame(t.card(t.dialog_body).inner_margin(16)).show(ctx, |ui| {
         ui.horizontal(|ui| {
             ui.text(Style::Heading, Raw(&dlg.name));
@@ -129,11 +128,11 @@ pub fn show(app: &EmcraftApp, dlg: &mut TemplateDialog, ctx: &egui::Context, out
         }
         ui.add_space(10.0);
         ui.horizontal(|ui| {
-            let ready = dlg.error.is_none() && !busy;
+            let ready = dlg.error.is_none();
             let values = dlg.values().unwrap_or(Value::Null);
             let name = dlg.name.clone();
-            ui.act(ready, ui_kit::styled(t!("Open"), true), Fixed::TemplateOpen.into(), || Action::OpenTemplate(name, values), out);
-            ui.act(true, ui_kit::styled(t!("Cancel"), false), Fixed::TemplateCancel.into(), || Action::Template(None), out);
+            ui.act(ready, ui_kit::styled(t!("Open"), true), Fixed::TemplateOpen.into(), Action::OpenTemplate(name, values), out);
+            ui.act(true, ui_kit::styled(t!("Cancel"), false), Fixed::TemplateCancel.into(), Action::Template(None), out);
             if ui.named(egui::Button::new(crate::lang::tr(t!("Reset"))).frame(false), Fixed::TemplateReset.into()).clicked() {
                 for f in &mut dlg.fields {
                     f.text = crate::steps::fmt(f.default);

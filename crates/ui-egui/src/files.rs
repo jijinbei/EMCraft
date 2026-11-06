@@ -117,6 +117,21 @@ pub enum FileAction {
     Confirm(Answer),
     /// The import dialog's file, chosen in the file dialog (or the path prompt without one).
     PickPart,
+    /// A file dropped on the window: a part to import, anything else a project to open.
+    Dropped(String),
+}
+
+impl FileAction {
+    /// Whether it waits while a job runs ([`crate::Action::waits_for_job`]): what opens,
+    /// begins or saves a project. Closing asks about the job instead, an answer or a path
+    /// chosen goes on (the commands it runs refuse themselves).
+    pub fn waits_for_job(&self) -> bool {
+        match self {
+            FileAction::Request(then) => *then != Then::Quit,
+            FileAction::Save | FileAction::SaveAs | FileAction::PickPart | FileAction::Dropped(_) => true,
+            FileAction::Chosen(..) | FileAction::Confirm(_) => false,
+        }
+    }
 }
 
 /// An answer to "save the changes?".
@@ -138,6 +153,8 @@ pub(crate) fn apply(app: &mut EmcraftApp, a: FileAction) {
         FileAction::Chosen(purpose, path) => chosen(app, purpose, path),
         FileAction::Confirm(answer) => answered(app, answer),
         FileAction::PickPart => pick(app, Purpose::Import),
+        FileAction::Dropped(path) if is_part(&path) => import_part(app, &path),
+        FileAction::Dropped(path) => request(app, Then::OpenPath(path)),
     }
 }
 
@@ -145,10 +162,6 @@ fn request(app: &mut EmcraftApp, then: Then) {
     // Closing asks about a running job first, then about the changes.
     if then == Then::Quit && (app.busy() || app.session.is_dirty()) {
         app.ask = Some(Ask::Save(then));
-        return;
-    }
-    if app.busy() {
-        app.error_with(t!("busy: wait for the running job or cancel it first"), &[]);
         return;
     }
     if app.session.is_dirty() {
@@ -307,19 +320,10 @@ impl egui::DroppedFile for Dropped {
     }
 }
 
-/// Files dropped on the window: a part opens the import dialog on it, anything else is opened
-/// as a project.
-pub(crate) fn dropped(app: &mut EmcraftApp, ctx: &egui::Context) {
-    let paths: Vec<String> =
-        ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_string_lossy().into_owned()).filter(|p| !p.is_empty()).collect());
-    let Some(path) = paths.into_iter().next() else { return };
-    if app.busy() {
-        app.error_with(t!("busy: wait for the running job or cancel it first"), &[]);
-    } else if is_part(&path) {
-        import_part(app, &path);
-    } else {
-        request(app, Then::OpenPath(path));
-    }
+/// A file dropped on the window ([`FileAction::Dropped`]).
+pub(crate) fn dropped(ctx: &egui::Context) -> Option<Action> {
+    let path = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_string_lossy().into_owned()).find(|p| !p.is_empty()))?;
+    Some(Action::File(FileAction::Dropped(path)))
 }
 
 /// A path chosen.
@@ -457,7 +461,7 @@ fn confirm(app: &EmcraftApp, ask: Option<&Ask>, ctx: &egui::Context, out: &mut A
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 for &(label, primary, handle, a) in answers {
-                    ui.act(true, ui_kit::styled(label, primary), handle.into(), || Action::File(FileAction::Confirm(a)), out);
+                    ui.act(true, ui_kit::styled(label, primary), handle.into(), Action::File(FileAction::Confirm(a)), out);
                 }
             });
         });
@@ -514,15 +518,14 @@ pub fn title(app: &EmcraftApp) -> String {
 /// The File menu's items.
 pub fn menu(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     ui.set_min_width(240.0);
-    let busy = app.busy();
     let item = |ui: &mut egui::Ui, out: &mut Actions, text: crate::lang::Text, keys: &str, handle: Fixed, enabled: bool, action: Action| {
-        ui.act(enabled, egui::Button::new(tr(text)).shortcut_text(keys), handle.into(), || action, out);
+        ui.act(enabled, egui::Button::new(tr(text)).shortcut_text(keys), handle.into(), action, out);
     };
     let file = Action::File;
-    item(ui, out, t!("New project"), "Ctrl+N", Fixed::FileNew, !busy, file(FileAction::Request(Then::New)));
-    item(ui, out, t!("Open…"), "Ctrl+O", Fixed::FileOpen, !busy, file(FileAction::Request(Then::Open)));
+    item(ui, out, t!("New project"), "Ctrl+N", Fixed::FileNew, true, file(FileAction::Request(Then::New)));
+    item(ui, out, t!("Open…"), "Ctrl+O", Fixed::FileOpen, true, file(FileAction::Request(Then::Open)));
     let recent = &app.prefs.recent;
-    ui.add_enabled_ui(!busy && !recent.is_empty(), |ui| {
+    ui.add_enabled_ui(out.allows(&file(FileAction::Request(Then::Open))) && !recent.is_empty(), |ui| {
         ui.menu_button(tr(t!("Open recent")), |ui| {
             for path in recent {
                 if ui.button(path).clicked() {
@@ -537,14 +540,14 @@ pub fn menu(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     });
     ui.menu_button(tr(t!("Samples")), |ui| {
         for s in emcraft_engine::templates::TEMPLATES {
-            if ui.add_enabled(!busy, egui::Button::new(s.name)).hint(Raw(sample_label(s.name))).clicked() {
+            if ui.button(s.name).hint(Raw(sample_label(s.name))).clicked() {
                 out.push(Action::Template(Some(s.name.to_owned())));
             }
         }
     });
     ui.separator();
-    item(ui, out, t!("Save"), "Ctrl+S", Fixed::FileSave, !busy, file(FileAction::Save));
-    item(ui, out, t!("Save as…"), "Ctrl+Shift+S", Fixed::FileSaveAs, !busy, file(FileAction::SaveAs));
+    item(ui, out, t!("Save"), "Ctrl+S", Fixed::FileSave, true, file(FileAction::Save));
+    item(ui, out, t!("Save as…"), "Ctrl+Shift+S", Fixed::FileSaveAs, true, file(FileAction::SaveAs));
     ui.separator();
     item(ui, out, t!("Export history as script…"), "", Fixed::FileExport, !app.session.history().is_empty(), Action::AskExport);
     item(ui, out, t!("Start page"), "", Fixed::FileStart, true, Action::Show(crate::page::Tab::Start));

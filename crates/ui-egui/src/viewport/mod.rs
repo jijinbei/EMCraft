@@ -107,7 +107,7 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
             // Results of a model changed after their run say so over the view, which is dimmed.
             let stale = app.place.view().is_result() && app.place.view().stale(app);
             if stale {
-                stale_band(app, &mut inner, out);
+                stale_band(&mut inner, out);
                 inner.add_space(4.0);
             }
             inner.ctx().data_mut(|d| d.insert_temp(egui::Id::new(STALE), stale));
@@ -149,7 +149,7 @@ pub(super) fn view_tabs(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) 
         };
         let any = View::ALL.into_iter().any(result);
         for v in View::ALL.into_iter().filter(|v| if *v == View::Model { any } else { result(*v) }) {
-            ui.act(true, pill(shown(v), app.place.view() == v, 12, PillSize::Body), Handle::View(v), || Action::ShowView(v), out);
+            ui.act(true, pill(shown(v), app.place.view() == v, 12, PillSize::Body), Handle::View(v), Action::ShowView(v), out);
         }
     });
 }
@@ -365,7 +365,7 @@ const STALE: &str = "emcraft_view_stale";
 
 /// The band over a result view whose model changed after its run: its mark, "Out of date" (why
 /// on hover) and Re-run — the run the Setup step sets up, as step 7's Run starts it.
-pub(crate) fn stale_band(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
+pub(crate) fn stale_band(ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
     let r = egui::Frame::NONE.fill(t.accent_soft).corner_radius(t.radius_sm).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
         ui.set_width(ui.available_width());
@@ -373,9 +373,8 @@ pub(crate) fn stale_band(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions)
             let (m, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
             crate::steps::stale_mark(ui.painter(), m.center());
             ui.label(egui::RichText::new(tr(t!("Out of date"))).color(t.selected_ink)).hint(t!("The model changed after this run."));
-            let busy = app.busy();
-            let hint = if busy { t!("a job is running") } else { t!("Solve again (the Setup step's run)") };
-            ui.act(!busy, crate::ui_kit::styled(t!("Re-run"), true), Fixed::StaleRerun.into(), || Action::StartRun, out).hint(hint);
+            let hint = t!("Solve again (the Setup step's run)");
+            ui.act(true, crate::ui_kit::styled(t!("Re-run"), true), Fixed::StaleRerun.into(), Action::StartRun, out).hint(hint);
         });
     });
     scenario::publish_rect(Fixed::Stale, r.response.rect);
