@@ -11,7 +11,7 @@ impl EmcraftApp {
         }
         let (init, current) = self.initial(id, &json!({}));
         let d = dialogs::Dialog::new(spec, &self.session, &init, self.dock_dialogs);
-        self.dialog = Some(if current && dialogs::skips_unchanged(id) { d.on_model() } else { d });
+        self.ui_state.open_dialog(if current && dialogs::skips_unchanged(id) { d.on_model() } else { d });
         Ok(())
     }
 
@@ -37,7 +37,7 @@ impl EmcraftApp {
         let mut ask = item.params();
         ask["command"] = json!(item.edit);
         let values = self.session.execute("project.values", &ask)?;
-        self.dialog = Some(dialogs::Dialog::new(spec, &self.session, &values, self.dock_dialogs).on_model());
+        self.ui_state.open_dialog(dialogs::Dialog::new(spec, &self.session, &values, self.dock_dialogs).on_model());
         Ok(())
     }
 
@@ -52,14 +52,14 @@ impl EmcraftApp {
             init = values;
         }
         let d = dialogs::Dialog::new(spec, &self.session, &init, self.dock_dialogs);
-        self.dialog = Some(if current && dialogs::skips_unchanged(id) { d.on_model() } else { d });
+        self.ui_state.open_dialog(if current && dialogs::skips_unchanged(id) { d.on_model() } else { d });
         Ok(())
     }
 
     /// OK on the open dialog: runs its command with its parameters; the dialog stays open with
     /// the error when they are refused.
     pub fn dialog_ok(&mut self) -> Result<Value, UiError> {
-        let Some(d) = self.dialog.as_mut() else { return Err(UiError::NoDialog) };
+        let Some(d) = self.ui_state.dialog_mut() else { return Err(UiError::NoDialog) };
         let id = d.command.id;
         let params = match d.params() {
             Ok(p) => p,
@@ -70,20 +70,20 @@ impl EmcraftApp {
         };
         // The model's own values, unchanged: nothing to run.
         if d.unchanged.as_ref() == Some(&params) {
-            self.dialog = None;
+            self.ui_state.take_dialog();
             return Ok(json!({"unchanged": true}));
         }
         match self.run(id, params) {
             Ok(v) => {
                 // A long command's dialog comes back with the error if its job fails.
-                let d = self.dialog.take().filter(|_| commands::is_long(id));
+                let d = self.ui_state.take_dialog().filter(|_| commands::is_long(id));
                 if let Some(job) = self.job.as_mut() {
                     job.dialog = d;
                 }
                 Ok(v)
             }
             Err(e) => {
-                if let Some(d) = self.dialog.as_mut() {
+                if let Some(d) = self.ui_state.dialog_mut() {
                     d.refused(&e.to_string());
                 }
                 Err(e)

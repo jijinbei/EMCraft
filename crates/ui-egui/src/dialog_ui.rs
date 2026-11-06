@@ -200,7 +200,7 @@ fn card(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32, busy: b
 /// neither while something over it is open (the search, a drop-down, a prompt, the question
 /// before changes are lost), which takes them itself. A key the dialog takes is used up.
 fn keys(app: &EmcraftApp, d: &Dialog, ui: &mut egui::Ui, busy: bool, asked: &mut Asked) {
-    let over = app.search.open || app.ask.is_some() || ui.ctx().any_popup_open();
+    let over = app.ui_state.searching() || app.ui_state.ask().is_some() || ui.ctx().any_popup_open();
     if over {
         return;
     }

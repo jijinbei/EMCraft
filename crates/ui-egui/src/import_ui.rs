@@ -55,7 +55,7 @@ fn key(d: &Dialog) -> String {
 
 /// Reads what the open import dialog's file holds when the file (or its unit) changed.
 pub(crate) fn prepare(app: &mut EmcraftApp) {
-    let Some(d) = app.dialog.as_ref().filter(|d| d.command.id == ID) else {
+    let Some(d) = app.ui_state.dialog().filter(|d| d.command.id == ID) else {
         app.replies.import = None;
         return;
     };

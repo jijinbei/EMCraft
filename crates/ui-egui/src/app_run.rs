@@ -122,9 +122,9 @@ impl EmcraftApp {
             Err(e) => {
                 self.failed(&job.command, e);
                 // The dialog that started it opens again, the error under its field.
-                if let Some(mut d) = job.dialog.filter(|d| d.command.id == job.command && self.dialog.is_none()) {
+                if let Some(mut d) = job.dialog.filter(|d| d.command.id == job.command && self.ui_state.dialog().is_none()) {
                     d.refused(&e.to_string());
-                    self.dialog = Some(d);
+                    self.ui_state.open_dialog(d);
                 }
             }
         }

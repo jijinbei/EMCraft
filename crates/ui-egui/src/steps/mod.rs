@@ -341,8 +341,8 @@ pub fn prepare(app: &mut EmcraftApp) {
     }
     // The open dialog's run, when it starts one.
     let dialog = app
-        .dialog
-        .as_ref()
+        .ui_state
+        .dialog()
         .filter(|d| ESTIMATED.contains(&d.command.id))
         .and_then(|d| Some(json!({"command": d.command.id, "params": d.quiet_params()?})));
     match dialog {
@@ -576,8 +576,8 @@ pub fn open_step(app: &mut EmcraftApp, step: Option<Step>) {
         _ => View::Model,
     });
     // A dialog of another step closes.
-    if app.dialog.as_ref().is_some_and(|d| Step::of_command(d.command.id) != Some(step)) {
-        app.dialog = None;
+    if app.ui_state.dialog().is_some_and(|d| Step::of_command(d.command.id) != Some(step)) {
+        app.ui_state.take_dialog();
     }
 }
 

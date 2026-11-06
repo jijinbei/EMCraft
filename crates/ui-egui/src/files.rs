@@ -161,11 +161,11 @@ pub(crate) fn apply(app: &mut EmcraftApp, a: FileAction) {
 fn request(app: &mut EmcraftApp, then: Then) {
     // Closing asks about a running job first, then about the changes.
     if then == Then::Quit && (app.busy() || app.session.is_dirty()) {
-        app.ask = Some(Ask::Save(then));
+        app.ui_state.set_ask(Ask::Save(then));
         return;
     }
     if app.session.is_dirty() {
-        app.ask = Some(Ask::Save(then));
+        app.ui_state.set_ask(Ask::Save(then));
     } else {
         go(app, then);
     }
@@ -208,7 +208,7 @@ fn go(app: &mut EmcraftApp, then: Then) {
         }
         Then::Import => {
             new_project(app);
-            app.page.leave_start();
+            app.ui_state.page.leave_start();
             if app.session.model().analysis() == crate::steps::Solver::Pcb {
                 apply(app, FileAction::PickPart);
             } else if let Err(e) = crate::steps::fix(app, "geometry.import") {
@@ -238,7 +238,7 @@ fn new_project(app: &mut EmcraftApp) {
         let _ = app.run("units.set", units);
     }
     // Begun from the start page for a purpose: the project is for it.
-    let purpose = app.home.purpose.filter(|_| app.page.start());
+    let purpose = app.home.purpose.filter(|_| app.ui_state.page.start());
     let _ = app.run("file.new", json!({}));
     if let Some(kind) = purpose {
         let _ = app.run("project.analysis", json!({"kind": kind.id()}));
@@ -268,7 +268,7 @@ fn pick(app: &mut EmcraftApp, purpose: Purpose) {
             Purpose::SaveAs => app.session.path().filter(|_| has_file(app)).map_or(suggested, str::to_owned),
             Purpose::Import => String::new(),
         };
-        app.ask = Some(Ask::Path(Prompt { purpose, text }));
+        app.ui_state.set_ask(Ask::Path(Prompt { purpose, text }));
         return;
     };
     let (tx, ctx) = (app.files.tx.clone(), app.ctx.clone());
@@ -288,7 +288,7 @@ fn pick(app: &mut EmcraftApp, purpose: Purpose) {
 
 /// `path` for import: into the open import dialog, else the dialog opened on it in step 1.
 pub(crate) fn import_part(app: &mut EmcraftApp, path: &str) {
-    app.page.show(crate::page::Tab::Project);
+    app.ui_state.page.show(crate::page::Tab::Project);
     if std::path::Path::new(path).extension().and_then(|s| s.to_str()).is_some_and(|s| s.eq_ignore_ascii_case("kicad_pcb")) {
         app.place = app.place.show(crate::View::Pcb);
         if let Err(e) = app.open_dialog_with("pcb.import", json!({"path":path})) {
@@ -296,7 +296,7 @@ pub(crate) fn import_part(app: &mut EmcraftApp, path: &str) {
         }
         return;
     }
-    if let Some(d) = app.dialog.as_mut().filter(|d| d.command.id == "geometry.import") {
+    if let Some(d) = app.ui_state.dialog_mut().filter(|d| d.command.id == "geometry.import") {
         let _ = d.set("path", &json!(path));
         return;
     }
@@ -329,6 +329,10 @@ pub(crate) fn dropped(ctx: &egui::Context) -> Option<Action> {
 /// A path chosen.
 fn chosen(app: &mut EmcraftApp, purpose: Purpose, path: Option<String>) {
     app.files.picking = false;
+    // The prompt answered closes.
+    if let Some(Ask::Path(_)) = app.ui_state.ask() {
+        app.ui_state.take_ask();
+    }
     let Some(path) = path.filter(|p| !p.trim().is_empty()) else {
         app.files.after_save = None;
         return;
@@ -362,14 +366,16 @@ pub(crate) fn poll(app: &mut EmcraftApp) {
 
 /// The windows of this module: the path prompt and the question before changes are lost, as
 /// `ask` asks them.
-pub fn show(app: &EmcraftApp, ask: &mut Option<Ask>, ctx: &egui::Context, out: &mut Actions) {
-    path_prompt(ask, ctx, out);
-    confirm(app, ask.as_ref(), ctx, out);
-    drop_hint(ctx);
+pub fn show(app: &EmcraftApp, ask: &mut Ask, ctx: &egui::Context, out: &mut Actions) {
+    match ask {
+        Ask::Path(p) => path_prompt(p, ctx, out),
+        Ask::Save(then) => confirm(app, then, ctx, out),
+        Ask::Export(path) => crate::ribbon::export_prompt(app, path, ctx, out),
+    }
 }
 
 /// While a file is dragged over the window: what a drop does, over everything.
-fn drop_hint(ctx: &egui::Context) {
+pub(crate) fn drop_hint(ctx: &egui::Context) {
     if ctx.input(|i| i.raw.hovered_files.is_empty()) {
         return;
     }
@@ -391,8 +397,7 @@ fn drop_hint(ctx: &egui::Context) {
 }
 
 /// The path field, when there is no file dialog.
-fn path_prompt(ask: &mut Option<Ask>, ctx: &egui::Context, out: &mut Actions) {
-    let Some(Ask::Path(p)) = ask.as_mut() else { return };
+fn path_prompt(p: &mut Prompt, ctx: &egui::Context, out: &mut Actions) {
     let t = &Tokens::get();
     let (mut ok, mut cancel) = (false, false);
     let (title, what) = match p.purpose {
@@ -425,16 +430,13 @@ fn path_prompt(ask: &mut Option<Ask>, ctx: &egui::Context, out: &mut Actions) {
     if !(ok || cancel) {
         return;
     }
-    if let Some(Ask::Path(p)) = ask.take() {
-        let path = (!cancel).then(|| p.text.trim().to_owned());
-        out.push(Action::File(FileAction::Chosen(p.purpose, path)));
-    }
+    let path = (!cancel).then(|| p.text.trim().to_owned());
+    out.push(Action::File(FileAction::Chosen(p.purpose, path)));
 }
 
 /// "Save the changes to … first?": Save, Don't save, Cancel. Closing while a job runs asks
 /// first whether to stop it.
-fn confirm(app: &EmcraftApp, ask: Option<&Ask>, ctx: &egui::Context, out: &mut Actions) {
-    let Some(Ask::Save(then)) = ask else { return };
+fn confirm(app: &EmcraftApp, then: &Then, ctx: &egui::Context, out: &mut Actions) {
     let t = &Tokens::get();
     let job = app.job.as_ref().filter(|_| *then == Then::Quit);
     let at = ctx.content_rect().center_top() + vec2(-200.0, 120.0);
@@ -470,13 +472,8 @@ fn confirm(app: &EmcraftApp, ask: Option<&Ask>, ctx: &egui::Context, out: &mut A
 
 /// Carries on after "save the changes?".
 fn answered(app: &mut EmcraftApp, answer: Answer) {
-    let then = match app.ask.take() {
-        Some(Ask::Save(then)) => then,
-        other => {
-            app.ask = other;
-            return;
-        }
-    };
+    let Some(Ask::Save(_)) = app.ui_state.ask() else { return };
+    let Some(Ask::Save(then)) = app.ui_state.take_ask() else { return };
     match answer {
         Answer::Cancel => {}
         Answer::StopJob => {
@@ -507,7 +504,7 @@ pub fn opened(app: &mut EmcraftApp, path: &str) {
     if !crate::autosave::inside(app.autosave.dir.as_deref(), path) {
         app.prefs.add_recent(path);
     }
-    app.page.show(crate::page::Tab::Project);
+    app.ui_state.page.show(crate::page::Tab::Project);
 }
 
 /// The window's title: the project's name, with a dot while it has unsaved changes.

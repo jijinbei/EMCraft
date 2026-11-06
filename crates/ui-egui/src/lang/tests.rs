@@ -283,7 +283,7 @@ fn tour() -> Record {
     h.app.info_with(t!("Open a sample or a project (File) or build a model from the ribbon."), &[]);
     // The start page, empty and with a project missing from the recent list, the settings
     // (Files with no recent project too), the prompts.
-    h.app.page = crate::page::Pages::at(crate::page::Tab::Start);
+    h.app.ui_state.page = crate::page::Pages::at(crate::page::Tab::Start);
     call(&mut h, "ui.set", json!({"settings": "files"}));
     h.frames(2);
     call(&mut h, "ui.set", json!({"settings": "none"}));
@@ -296,13 +296,13 @@ fn tour() -> Record {
     }
     call(&mut h, "ui.set", json!({"settings": "none"}));
     for purpose in [Purpose::Open, Purpose::SaveAs, Purpose::Import] {
-        h.app.ask = Some(crate::files::Ask::Path(Prompt { purpose, text: String::new() }));
+        h.app.ui_state.set_ask(crate::files::Ask::Path(Prompt { purpose, text: String::new() }));
         h.frames(2);
     }
-    h.app.ask = None;
-    h.app.ask = Some(crate::files::Ask::Save(Then::New));
+    h.app.ui_state.take_ask();
+    h.app.ui_state.set_ask(crate::files::Ask::Save(Then::New));
     h.frames(2);
-    h.app.ask = None;
+    h.app.ui_state.take_ask();
     // Autosaved copies to recover, of every age, of a saved project and of one never saved.
     let now = std::time::SystemTime::now();
     h.app.autosave.found = [0, 300, 7200, 200_000]
@@ -317,7 +317,7 @@ fn tour() -> Record {
         .collect();
     h.frames(2);
     h.app.autosave.found.clear();
-    h.app.page = crate::page::Pages::at(crate::page::Tab::Project);
+    h.app.ui_state.page = crate::page::Pages::at(crate::page::Tab::Project);
     // Each model: its views, its steps (each solver in Setup), the menus, the search.
     for (i, &(script, then, steps)) in MODELS.iter().enumerate() {
         if script.len() > 2 {
@@ -403,9 +403,9 @@ fn tour() -> Record {
             h.frames(1);
             assert!(h.app.busy(), "the job ended before the tour saw it run");
             // Closing while it runs.
-            h.app.ask = Some(crate::files::Ask::Save(Then::Quit));
+            h.app.ui_state.set_ask(crate::files::Ask::Save(Then::Quit));
             h.frames(2);
-            h.app.ask = None;
+            h.app.ui_state.take_ask();
             apply(&mut h, [Action::File(FileAction::Request(Then::New))]);
             call(&mut h, "ui.cancel", json!({}));
             let _ = release.send(());
@@ -498,11 +498,11 @@ fn tour() -> Record {
     // The command search.
     for text in ["zzzz", "mesh.generate {}", "mesh"] {
         h.app.search.text = text.into();
-        h.app.search.open = true;
+        h.app.ui_state.open_search();
         h.app.search.field = Some(egui::Rect::from_min_size(egui::pos2(900.0, 40.0), egui::vec2(290.0, 22.0)));
         h.frames(2);
     }
-    h.app.search.open = false;
+    h.app.ui_state.close(crate::ui_state::Layer::Search);
     // PCB diagnostics use the same command path as the workspace, in both valid and blocked cases.
     for split in [true, false] {
         call(&mut h, "engine.execute", json!({"command":"pcb.sample","params":{"split":split}}));
@@ -580,7 +580,7 @@ fn tour() -> Record {
     for c in emcraft_engine::COMMANDS.iter().filter(|c| !c.params.is_empty()) {
         call(&mut h, "ui.start", json!({"command": c.id}));
         h.frames(2);
-        if let Some(d) = h.app.dialog.as_mut() {
+        if let Some(d) = h.app.ui_state.dialog_mut() {
             d.help = true;
             d.options = true;
         }
@@ -595,7 +595,7 @@ fn tour() -> Record {
     std::fs::write(&stl, text).unwrap_or_else(|e| panic!("{}: {e}", stl.display()));
     call(&mut h, "ui.start", json!({"command": "geometry.import", "params": {"path": "../../tests/oracle/design-post/post.solidcraft"}}));
     h.frames(2);
-    if let Some(d) = h.app.dialog.as_mut() {
+    if let Some(d) = h.app.ui_state.dialog_mut() {
         (d.options, d.help) = (true, true);
     }
     for set in [
@@ -666,7 +666,7 @@ fn tour() -> Record {
     let _ = h.call("engine.execute", json!({"command": "model.material.create", "params": {"name": "tour", "eps_r": 3}}));
     assert!(h.app.autosave_now().is_err());
     h.app.autosave.dir = None;
-    h.app.ask = Some(crate::files::Ask::Export("history.json".into()));
+    h.app.ui_state.set_ask(crate::files::Ask::Export("history.json".into()));
     h.frames(2);
     let written = std::env::temp_dir().join(format!("emcraft-tour-{}.json", std::process::id()));
     apply(&mut h, [Action::ExportHistory(written.display().to_string()), Action::ExportHistory("/no/such/dir/history.json".into())]);

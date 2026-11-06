@@ -1,100 +1,51 @@
-//! The window's layers, top first: what is open over what. Escape closes the top one, one at a
-//! time — a question before work is lost, a template's card, the search, the dialog, the
-//! settings, the route being drawn, the selection box, the 3D view's tool, the selection — and
-//! nothing else does: every layer's way out is written once ([`close`]), and which one Escape
-//! reaches follows from the window's state ([`stack`]).
-//!
-//! A menu or a drop-down open takes Escape itself (egui closes it); a text field outside the
-//! top layer gives up the keyboard and closes nothing.
+//! Escape on the window: the frame's key, given to the top layer ([`crate::ui_state`] decides
+//! which) before anything is drawn, so no widget sees it too. The 3D view's layers (the pen,
+//! the selection box, the tool, the selection) are the app's: their presence and their way out
+//! are here until they join the window's state.
 
-use crate::files::{Answer, Ask, FileAction};
+use crate::ui_state::{Keyboard, Layer};
 use crate::{Action, EmcraftApp};
 
-emcraft_macros::named_enum! {
-    /// A layer of the window, top first.
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    pub enum Layer {
-        /// A question before work is lost, or a prompt for a path or a file's name.
-        Ask = "ask",
-        /// A template's card.
-        Template = "template",
-        /// The command search, open.
-        Search = "search",
-        /// The open dialog (floating or docked).
-        Dialog = "dialog",
-        /// The settings page, shown.
-        Settings = "settings",
-        /// A route being drawn on the board (the pen).
-        Pen = "pen",
-        /// The 3D view's selection box, being dragged.
-        Box = "box",
-        /// The 3D view's tool, with what it picked.
-        Tool = "tool",
-        /// What is selected (in the 3D view and the browser).
-        Selection = "selection",
-    }
+/// The 3D view's layers open, top first.
+fn view_layers(app: &EmcraftApp) -> Vec<Layer> {
+    let open = [
+        (Layer::Pen, app.views.pcb.drawing.is_some()),
+        (Layer::Box, app.view3d.boxsel.is_some()),
+        (Layer::Tool, app.view3d.tools.tool.is_some() || app.view3d.tools.measured.is_some()),
+        (Layer::Selection, !app.view3d.selected.is_clear()),
+    ];
+    open.into_iter().filter_map(|(l, on)| on.then_some(l)).collect()
 }
 
 /// The layers open now, top first.
 pub fn stack(app: &EmcraftApp) -> Vec<Layer> {
-    let open = |l: Layer| match l {
-        Layer::Ask => app.ask.is_some(),
-        Layer::Template => app.template.is_some(),
-        Layer::Search => app.search.open,
-        Layer::Dialog => app.dialog.is_some(),
-        Layer::Settings => app.page.settings_shown().is_some(),
-        Layer::Pen => app.views.pcb.drawing.is_some(),
-        Layer::Box => app.view3d.boxsel.is_some(),
-        Layer::Tool => app.view3d.tools.tool.is_some() || app.view3d.tools.measured.is_some(),
-        Layer::Selection => !app.view3d.selected.is_clear(),
-    };
-    Layer::ALL.into_iter().filter(|l| open(*l)).collect()
+    app.ui_state.layers().chain(view_layers(app)).collect()
 }
 
-/// The layer Escape closes now: the top one, unless a menu or a drop-down is open (it takes
-/// Escape) or a text field the top layer does not own has the keyboard (it lets go of it).
+/// The layer Escape closes now: none while a menu or a drop-down is open (it takes Escape).
 pub fn escape_target(app: &EmcraftApp, ctx: &egui::Context) -> Option<Layer> {
     if egui::Popup::is_any_open(ctx) {
         return None;
     }
-    let top = stack(app).into_iter().next()?;
     // Who had the keyboard: egui lets go of it on Escape before the frame, so the end of the
     // last frame says.
-    let focus = app.focus_last;
-    let owned = match top {
-        // Their own fields: Escape is theirs while one has the keyboard.
-        Layer::Ask | Layer::Search => true,
-        Layer::Dialog => focus.is_none_or(|f| app.dialog.as_ref().is_some_and(|d| d.widgets.iter().any(|(id, _)| *id == f))),
-        _ => focus.is_none() && !ctx.egui_wants_keyboard_input(),
+    let keyboard = match app.focus_last {
+        None if !ctx.egui_wants_keyboard_input() => Keyboard::Free,
+        Some(f) if app.ui_state.dialog().is_some_and(|d| d.widgets.iter().any(|(id, _)| *id == f)) => Keyboard::Dialog,
+        _ => Keyboard::Elsewhere,
     };
-    owned.then_some(top)
+    app.ui_state.escape_target(&view_layers(app), keyboard)
 }
 
-/// Takes the frame's Escape for the layer it closes, if any (before anything is drawn, so no
-/// widget sees it too).
+/// Takes the frame's Escape for the layer it closes, if any.
 pub fn escape(app: &EmcraftApp, ctx: &egui::Context) -> Option<Action> {
     let layer = escape_target(app, ctx)?;
     ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)).then_some(Action::Close(layer))
 }
 
-/// Closes `layer`: each layer's way out, written once.
+/// Closes one of the 3D view's layers (the window's are [`crate::ui_state::UiState::close`]).
 pub(crate) fn close(app: &mut EmcraftApp, layer: Layer) -> Option<Action> {
     match layer {
-        Layer::Ask => match app.ask.take() {
-            Some(Ask::Path(p)) => return Some(Action::File(FileAction::Chosen(p.purpose, None))),
-            Some(Ask::Save(then)) => {
-                app.ask = Some(Ask::Save(then));
-                return Some(Action::File(FileAction::Confirm(Answer::Cancel)));
-            }
-            Some(Ask::Export(_)) | None => {}
-        },
-        Layer::Template => app.template = None,
-        Layer::Search => {
-            app.search.open = false;
-            app.search.text.clear();
-        }
-        Layer::Dialog => return Some(Action::DialogCancel),
-        Layer::Settings => app.page.close_settings(),
         // A line begun goes first, then the pen.
         Layer::Pen => {
             let pen = &mut app.views.pcb.drawing;
@@ -106,9 +57,8 @@ pub(crate) fn close(app: &mut EmcraftApp, layer: Layer) -> Option<Action> {
         Layer::Box => app.view3d.cancel_box(),
         // What the tool picked goes first, then the tool.
         Layer::Tool => app.view3d.tools.escape(),
-        Layer::Selection => {
-            app.view3d.selected.clear();
-        }
+        Layer::Selection => app.view3d.selected.clear(),
+        Layer::Ask | Layer::Template | Layer::Search | Layer::Dialog | Layer::Settings => return app.ui_state.close(layer),
     }
     None
 }

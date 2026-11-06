@@ -61,8 +61,10 @@ pub enum Action {
     Redo,
     /// Cancels the running job.
     CancelJob,
-    /// Closes a layer of the window (Escape closes the top one: `crate::layers`).
-    Close(crate::layers::Layer),
+    /// Closes a layer of the window (Escape closes the top one: `crate::ui_state`).
+    Close(crate::ui_state::Layer),
+    /// Opens the command search's list (its field typed in or focused).
+    OpenSearch,
     /// Shows a page of the window (its tab).
     Show(crate::page::Tab),
     /// Opens a template's card (its parameters and preview), or closes it (`None`).
@@ -185,6 +187,7 @@ impl Action {
             | Action::FocusMode(_)
             | Action::CancelJob
             | Action::Close(_)
+            | Action::OpenSearch
             | Action::Show(_)
             | Action::Template(_)
             | Action::Purpose(_)
@@ -323,6 +326,13 @@ impl EmcraftApp {
         if action.waits_for_job() {
             self.idle()?;
         }
+        // The window's own transitions (crate::ui_state), and what follows from them.
+        if let Some(then) = self.ui_state.update(&action) {
+            for a in then {
+                self.apply(a)?;
+            }
+            return Ok(json!({}));
+        }
         match action {
             Action::Run { id, params } => return self.run(&id, params),
             Action::RunAll(list) => return self.run_all(list),
@@ -331,12 +341,9 @@ impl EmcraftApp {
                 None => self.open_dialog(&id)?,
             },
             Action::DialogOk => return self.dialog_ok(),
-            Action::DialogCancel => {
-                return Ok(json!({"closed": self.dialog.take().is_some()}));
-            }
             Action::SetDock(on) => {
                 self.dock_dialogs = on;
-                if let Some(d) = self.dialog.as_mut() {
+                if let Some(d) = self.ui_state.dialog_mut() {
                     d.docked = on;
                 }
             }
@@ -366,17 +373,20 @@ impl EmcraftApp {
             Action::Undo => return self.run("edit.undo", json!({})),
             Action::Redo => return self.run("edit.redo", json!({})),
             Action::CancelJob => return Ok(json!({"cancelled": self.cancel_job()})),
-            Action::Show(tab) => self.page.show(tab),
+            // The window's own transitions, made above (crate::ui_state).
+            Action::DialogCancel | Action::OpenSearch | Action::Show(_) | Action::OpenSettings(_) | Action::CloseSettings => {}
             Action::Close(layer) => {
                 if let Some(then) = crate::layers::close(self, layer) {
                     return self.apply(then);
                 }
             }
             Action::Purpose(kind) => self.home.purpose = kind,
-            Action::Template(name) => self.template = name.and_then(|n| crate::template_dialog::TemplateDialog::new(self, &n)),
+            Action::Template(name) => {
+                if let Some(card) = name.and_then(|n| crate::template_dialog::TemplateDialog::new(self, &n)) {
+                    self.ui_state.open_template(card);
+                }
+            }
             Action::OpenTemplate(name, values) => crate::template_dialog::open(self, name, values),
-            Action::OpenSettings(section) => self.page.open_settings(section),
-            Action::CloseSettings => self.page.close_settings(),
             Action::Pref(p) => self.set_pref(p),
             Action::File(f) => crate::files::apply(self, f),
             Action::EditItem(item) => self.open_item_dialog(&item)?,
@@ -391,7 +401,7 @@ impl EmcraftApp {
                 return Ok(if replies.len() == 1 { replies.swap_remove(0) } else { Value::Array(replies) });
             }
             Action::DismissRecovery(i) => self.dismiss_recovery(i),
-            Action::AskExport => self.ask = Some(crate::files::Ask::Export("emcraft-history.json".into())),
+            Action::AskExport => self.ui_state.set_ask(crate::files::Ask::Export("emcraft-history.json".into())),
             Action::ExportHistory(path) => self.export_history(path),
             Action::ConfirmSetup => return crate::steps::confirm_setup(self),
             Action::ProposeSetup(v) => self.workflow.fields.load(&v),
@@ -419,7 +429,7 @@ impl EmcraftApp {
                 self.view3d.tools.set(tool);
                 if tool.is_some() {
                     self.place = self.place.show(View::Model);
-                    self.page.show(crate::page::Tab::Project);
+                    self.ui_state.page.show(crate::page::Tab::Project);
                 }
                 if tool.is_some_and(crate::tools3d::Tool::ports) && self.place.step() != Some(crate::steps::Step::Excitation) {
                     crate::steps::open_step(self, Some(crate::steps::Step::Excitation));
@@ -486,6 +496,8 @@ impl EmcraftApp {
     /// Writes the history as a script (the session's model-changing commands, which rebuild the
     /// model: `cargo run -p emcraft-cli -- run FILE`); asks again on failure.
     fn export_history(&mut self, path: String) {
+        // The prompt answered closes (open again on a failure, with the path).
+        self.ui_state.take_ask();
         let text = serde_json::to_string_pretty(self.session.history()).unwrap_or_else(|_| "[]".into());
         match std::fs::write(path.trim(), text) {
             Ok(()) => {
@@ -495,7 +507,7 @@ impl EmcraftApp {
             Err(e) => {
                 self.error_with(t!("Cannot write {path}: {error}"), args!(path = path.trim(), error = e));
 
-                self.ask = Some(crate::files::Ask::Export(path));
+                self.ui_state.set_ask(crate::files::Ask::Export(path));
             }
         }
     }
@@ -525,7 +537,7 @@ mod tests {
         }
         for free in [
             Action::CancelJob,
-            Action::Close(crate::layers::Layer::Dialog),
+            Action::Close(crate::ui_state::Layer::Dialog),
             Action::Show(crate::page::Tab::Start),
             Action::Tool(None),
             Action::File(FileAction::Request(Then::Quit)),
@@ -549,14 +561,14 @@ mod tests {
             &mut app,
             [Action::dialog("geometry.waveguide"), Action::SetDock(true), Action::Fold("Geometry".into()), Action::SetTab(RibbonTab::Mesh)],
         );
-        assert_eq!(app.dialog.as_ref().map(|d| (d.command.id, d.docked)), Some(("geometry.waveguide", true)));
+        assert_eq!(app.ui_state.dialog().map(|d| (d.command.id, d.docked)), Some(("geometry.waveguide", true)));
         assert_eq!((app.dock_dialogs, app.tab, app.browser.folded.clone()), (true, RibbonTab::Mesh, vec!["Geometry".to_owned()]));
         // A refused OK shows under the dialog's fields, not in the messages.
-        if let Some(d) = app.dialog.as_mut() {
+        if let Some(d) = app.ui_state.dialog_mut() {
             let _ = d.set("width", &json!("wide"));
         }
         frame(&mut app, [Action::DialogOk]);
-        assert!(app.dialog.as_ref().is_some_and(|d| d.fields.iter().any(|f| f.error.is_some())));
+        assert!(app.ui_state.dialog().is_some_and(|d| d.fields.iter().any(|f| f.error.is_some())));
         assert_eq!(app.messages.len(), before);
         // A dialog that cannot open says why; the next action still runs.
         frame(&mut app, [Action::dialog("no.such"), Action::Fold("Geometry".into())]);

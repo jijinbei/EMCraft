@@ -838,7 +838,7 @@ fn delete_key(app: &EmcraftApp, ui: &egui::Ui, tree: &[(&'static str, Vec<Row>)]
     if app.view3d.selected.is_clear() {
         return;
     }
-    if app.busy() || app.dialog.is_some() || app.ask.is_some() || ui.ctx().text_edit_focused() {
+    if app.busy() || app.ui_state.dialog().is_some() || app.ui_state.ask().is_some() || ui.ctx().text_edit_focused() {
         return;
     }
     if !ui.input(|i| i.key_pressed(egui::Key::Delete)) {

@@ -121,7 +121,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         let s = j.snapshot();
         json!({"command": j.command, "done": s.done, "total": s.total, "stage": s.stage, "open": s.open, "residual": s.residual, "fraction": s.fraction(), "elapsed": j.elapsed(), "estimate": j.estimate, "remaining": j.remaining(), "text": crate::messages::job_text(j), "device": j.place().map(|w| json!({"device": w.device.id(), "gpu": w.gpu(), "fronts": w.fronts}))})
     });
-    let dialog = app.dialog.as_ref().map(|d| {
+    let dialog = app.ui_state.dialog().map(|d| {
         let fields: serde_json::Map<String, Value> = d
             .fields
             .iter()
@@ -156,11 +156,11 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "language": app.prefs.language(),
         "font": app.fonts.in_use(app.language),
         "languages": crate::lang::ids(),
-        "home": app.page.start(),
-        "template": app.template.as_ref().map(super::template_dialog::TemplateDialog::inspect),
-        "settings": app.page.settings_shown().map(super::settings::Section::id),
+        "home": app.ui_state.page.start(),
+        "template": app.ui_state.template().map(super::template_dialog::TemplateDialog::inspect),
+        "settings": app.ui_state.page.settings_shown().map(super::settings::Section::id),
         "project": {"name": app.session.name(), "path": app.session.path(), "dirty": app.session.is_dirty(), "title": crate::files::title(app)},
-        "files": {"prompt": match &app.ask { Some(crate::files::Ask::Path(p)) => Some(p.text.clone()), _ => None }, "confirm": matches!(app.ask, Some(crate::files::Ask::Save(_))), "then": match &app.ask { Some(crate::files::Ask::Save(t)) => Some(format!("{t:?}")), _ => None }},
+        "files": {"prompt": match app.ui_state.ask() { Some(crate::files::Ask::Path(p)) => Some(p.text.clone()), _ => None }, "confirm": matches!(app.ui_state.ask(), Some(crate::files::Ask::Save(_))), "then": match app.ui_state.ask() { Some(crate::files::Ask::Save(t)) => Some(format!("{t:?}")), _ => None }},
         "quitting": app.quit_requested,
         "autosave": app.autosave_inspect(),
         "recent": app.prefs.recent,
@@ -170,7 +170,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "progress": progress,
         "status": app.status().map(|m| json!({"text": m.text, "error": m.error})),
         "messages": app.messages.len(),
-        "search": {"open": app.search.open, "text": app.search.text},
+        "search": {"open": app.ui_state.searching(), "text": app.search.text},
         "viewport": app.viewport_rect.map(|r| json!([r.left(), r.top(), r.width(), r.height()])),
         "field": {"frequency": app.field.view.frequency, "plane": app.field.view.plane.id(), "component": app.field.view.component.id(), "phase": app.field.view.phase, "mode": app.field.view.mode, "animate": app.field.player.playing, "speed": app.field.player.speed, "shown": app.field.picture.is_some() || (app.field.beside_3d && app.field.samples.is_some()), "arrows": [app.field.view.show_e, app.field.view.show_h], "hover": app.field.hover.map(|p| json!({"at": p.at, "e": [p.e.x.norm(), p.e.y.norm(), p.e.z.norm()]})), "pinned": app.field.pinned, "at": app.field.at, "beside_3d": app.field.beside_3d, "plot_zoom": app.field.plot_zoom, "excitation": app.session.sparameter_entries().get(app.field.view.excitation).map(|e| e.name.clone())},
         "chart": app.views.chart.key().map(|k| format!("{k:?}")),
@@ -192,7 +192,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "undo": app.session.undo().len(),
         "redo": app.session.redo().len(),
         "history": app.session.history().len(),
-        "export": match &app.ask { Some(crate::files::Ask::Export(p)) => Some(p.clone()), _ => None },
+        "export": match app.ui_state.ask() { Some(crate::files::Ask::Export(p)) => Some(p.clone()), _ => None },
         "model": app.session.summary(),
     });
     // How results are looked at: the chart's style, the band to refine, the reference planes,
@@ -210,9 +210,9 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         v["study"]["predicted"] = json!(study.rows.iter().filter(|r| r.is_predicted()).count());
     }
     v["purpose"] = json!(app.home.purpose.map(emcraft_model::Analysis::id));
-    v["page"] = json!(app.page.shown().id());
+    v["page"] = json!(app.ui_state.page.shown().id());
     v["layers"] = json!(crate::layers::stack(app).iter().map(|l| l.id()).collect::<Vec<_>>());
-    v["tabs"] = json!(app.page.tabs().iter().map(|t| t.id()).collect::<Vec<_>>());
+    v["tabs"] = json!(app.ui_state.page.tabs().iter().map(|t| t.id()).collect::<Vec<_>>());
     v["kept"] = json!(emcraft_engine::archive::rows(&app.session));
     v["compare"] = json!(app.views.compare);
     v["chart_style"] = chart_style(app);
@@ -391,7 +391,7 @@ pub fn handle(app: &mut EmcraftApp, ctx: &egui::Context, req: &ControlRequest) -
             if app.quit_requested {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
-            Ok(ok(json!({"quitting": app.quit_requested, "asking": matches!(app.ask, Some(crate::files::Ask::Save(_)))})))
+            Ok(ok(json!({"quitting": app.quit_requested, "asking": matches!(app.ui_state.ask(), Some(crate::files::Ask::Save(_)))})))
         }
         "app.autosave" => autosave(app, a),
         other => Err(format!("unknown method `{}`", clip(other, 64))),
@@ -593,10 +593,10 @@ fn cut_of(app: &EmcraftApp, s: Args) -> Result<crate::view3d::Cut, String> {
 fn ui_start(app: &mut EmcraftApp, a: Args) -> Handled {
     let id = a.str("command").ok_or("missing `command`")?;
     app.apply(Action::dialog(id)).map_err(|e| e.to_string())?;
-    if let (Some(d), Some(Value::Object(o))) = (app.dialog.as_mut(), a.get("params")) {
+    if let (Some(d), Some(Value::Object(o))) = (app.ui_state.dialog_mut(), a.get("params")) {
         for (k, v) in o {
             if let Err(e) = d.set(k, v) {
-                app.dialog = None;
+                app.ui_state.take_dialog();
                 return Err(e);
             }
         }
@@ -606,7 +606,7 @@ fn ui_start(app: &mut EmcraftApp, a: Args) -> Handled {
 
 /// Sets the open dialog's fields, then OK or Cancel.
 fn ui_dialog(app: &mut EmcraftApp, a: Args) -> Handled {
-    let d = app.dialog.as_mut().ok_or("no dialog is open")?;
+    let d = app.ui_state.dialog_mut().ok_or("no dialog is open")?;
     if let Some(Value::Object(o)) = a.get("set") {
         for (k, v) in o {
             d.set(k, v)?;

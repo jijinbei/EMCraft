@@ -27,6 +27,7 @@ fontdb = "0.24"
 
 [dev-dependencies]
 approx = { workspace = true }
+rstest = { workspace = true }
 # Validates the 3D view's WGSL shaders without a GPU (gpu3d's tests; the same naga wgpu compiles
 # them with, docs/adr/0004-gpu-viewport.md).
 naga = { version = "30", default-features = false, features = ["wgsl-in"] }

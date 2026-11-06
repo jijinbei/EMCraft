@@ -90,6 +90,7 @@ pub mod theme;
 pub mod tools3d;
 pub mod ui_ext;
 pub mod ui_kit;
+pub mod ui_state;
 pub mod view;
 pub mod view3d;
 pub mod view_cube;
@@ -124,7 +125,6 @@ pub struct EmcraftApp {
     pub language: &'static str,
     pub job: Option<worker::Job>,
     pub tab: ribbon::RibbonTab,
-    pub dialog: Option<dialogs::Dialog>,
     /// Dialogs open docked at the right instead of floating.
     pub dock_dialogs: bool,
     /// Where the window is: the PCB diagnosis' window, or a view with the step panel.
@@ -156,8 +156,6 @@ pub struct EmcraftApp {
     pub view3d: view3d::View3d,
     /// The workflow: the active step, the steps' statuses, the step panels' fields.
     pub workflow: steps::Workflow,
-    /// The one question over the window (a path, "save the changes?", the history's export).
-    pub ask: Option<files::Ask>,
     /// The preferences, and where and as what they were last written.
     pub prefs: prefs::Prefs,
     prefs_store: PrefsStore,
@@ -165,10 +163,8 @@ pub struct EmcraftApp {
     pub files: files::Files,
     /// The start page.
     pub home: home::Home,
-    /// The template being set up before it is opened (start page, File ▸ Samples).
-    pub template: Option<template_dialog::TemplateDialog>,
-    /// What fills the window: the start page, the settings or the workspace.
-    pub page: page::Pages,
+    /// The window's state: the page, what is open over it, the dialog (crate::ui_state).
+    pub ui_state: ui_state::UiState,
     /// The command that failed and why, until a command succeeds: the panel that asked for it
     /// shows it there (the message log keeps every one).
     pub failure: Option<Failure>,
@@ -236,7 +232,6 @@ impl EmcraftApp {
             fonts: Default::default(),
             job: None,
             tab: ribbon::RibbonTab::Model,
-            dialog: None,
             dock_dialogs: prefs::Prefs::default().dock_dialogs,
             place: view::Place::default(),
             field: FieldState::default(),
@@ -256,13 +251,11 @@ impl EmcraftApp {
             ctx: None,
             view3d: view3d::View3d::default(),
             workflow: steps::Workflow::default(),
-            ask: None,
             prefs: prefs::Prefs::default(),
             prefs_store: PrefsStore::default(),
             files: files::Files::default(),
             home: home::Home::default(),
-            template: None,
-            page: page::Pages::default(),
+            ui_state: ui_state::UiState::default(),
             failure: None,
             focus_last: None,
             language: lang::ENGLISH,
@@ -294,7 +287,7 @@ impl EmcraftApp {
             app.autosave.dir = Some(dir);
         }
         // The start page shows on launch, and whenever there is work to recover.
-        app.page = page::Pages::at(if (sample.is_none() && host.open.is_none()) || !app.autosave.found.is_empty() {
+        app.ui_state.page = page::Pages::at(if (sample.is_none() && host.open.is_none()) || !app.autosave.found.is_empty() {
             page::Tab::Start
         } else {
             page::Tab::Project
@@ -456,15 +449,20 @@ impl EmcraftApp {
         // Escape closes the top layer, whatever is drawn after (crate::layers).
         out.extend(layers::escape(self, &ctx));
         ribbon::app_bar(self, ui, &mut out);
-        if let Some(section) = self.page.settings_shown() {
+        if let Some(section) = self.ui_state.page.settings_shown() {
             settings::show(self, section, ui, &mut out);
-        } else if self.page.start() {
+        } else if self.ui_state.page.start() {
             self.lend(|a| &mut a.home.thumbs, |app, thumbs| home::show(app, thumbs, ui, &mut out));
         } else {
             self.workspace(ui, &ctx, &mut out);
         }
-        self.lend(|a| &mut a.ask, |app, ask| files::show(app, ask, &ctx, &mut out));
-        self.lend(|a| &mut a.template, |_, d| d.as_mut().map(|d| template_dialog::show(d, &ctx, &mut out)));
+        // What is open over the window, over everything drawn before.
+        self.lend_overlay(|app, over| match over {
+            ui_state::Overlay::Ask(ask) => files::show(app, ask, &ctx, &mut out),
+            ui_state::Overlay::Template(card) => template_dialog::show(card, &ctx, &mut out),
+            ui_state::Overlay::Search => {}
+        });
+        files::drop_hint(&ctx);
         shortcuts(self, &ctx, &mut out);
         self.apply_all(out);
         self.collect_screenshots(&ctx);
@@ -509,10 +507,10 @@ impl EmcraftApp {
         let in_step = self.place.step().is_some();
         if in_step {
             let mut fields = std::mem::take(&mut self.workflow.fields);
-            self.lend(|a| &mut a.dialog, |app, dialog| steps::panel(app, &mut fields, dialog.as_mut(), ui, out));
+            self.lend_dialog(|app, dialog| steps::panel(app, &mut fields, dialog, ui, out));
             self.workflow.fields = fields;
-        } else if self.dialog.as_ref().is_some_and(|d| d.docked) {
-            self.lend(|a| &mut a.dialog, |app, dialog| dialog.as_mut().map(|d| dialog_ui::docked(app, d, ui, out)));
+        } else if self.ui_state.dialog().is_some_and(|d| d.docked) {
+            self.lend_dialog(|app, dialog| dialog.map(|d| dialog_ui::docked(app, d, ui, out)));
         } else if let Some(d) = self.job.as_ref().and_then(|j| j.dialog.as_ref()).filter(|d| d.docked) {
             // The docked dialog that started the running job keeps its place with its progress.
             dialog_ui::docked_running(self, d, ui, out);
@@ -521,11 +519,11 @@ impl EmcraftApp {
         let rect = viewport::show(self, &mut parts, ui, out);
         parts.put_back(self);
         self.viewport_rect = rect;
-        if !in_step && self.dialog.as_ref().is_some_and(|d| !d.docked) {
-            self.lend(|a| &mut a.dialog, |app, dialog| dialog.as_mut().map(|d| dialog_ui::floating(app, d, ctx, out)));
+        if !in_step && self.ui_state.dialog().is_some_and(|d| !d.docked) {
+            self.lend_dialog(|app, dialog| dialog.map(|d| dialog_ui::floating(app, d, ctx, out)));
         }
-        ribbon::search_popup(&mut self.search, ctx, out);
-        self.lend(|a| &mut a.ask, |app, ask| ribbon::export_prompt(app, ask, ctx, out));
+        let open = self.ui_state.searching();
+        ribbon::search_popup(&mut self.search, open, ctx, out);
     }
 }
 
@@ -546,7 +544,7 @@ fn shortcuts(app: &EmcraftApp, ctx: &egui::Context, out: &mut Actions) {
         out.push(Action::Undo);
     } else if redo {
         out.push(Action::Redo);
-    } else if app.dialog.is_none() && app.ask.is_none() {
+    } else if app.ui_state.dialog().is_none() && app.ui_state.ask().is_none() {
         files::shortcuts(ctx, out);
     }
 }

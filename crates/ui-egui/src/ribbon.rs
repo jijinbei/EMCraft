@@ -101,6 +101,7 @@ fn tabs(app: &EmcraftApp, ui: &mut egui::Ui, r: Rect, left: f32, out: &mut Actio
     let t = &Tokens::get();
     let font = FontId::proportional(t.font_body);
     let list: Vec<(Tab, String)> = app
+        .ui_state
         .page
         .tabs()
         .into_iter()
@@ -117,7 +118,7 @@ fn tabs(app: &EmcraftApp, ui: &mut egui::Ui, r: Rect, left: f32, out: &mut Actio
     let mut x = (r.center().x - total / 2.0).max(left + 16.0);
     for ((tab, text), g) in list.iter().zip(galleys) {
         let rect = Rect::from_min_size(pos2(x, r.top() + 4.0), vec2(width(*tab, &g), r.height() - 4.0));
-        let on = app.page.shown() == *tab;
+        let on = app.ui_state.page.shown() == *tab;
         let resp = ui.hit(rect, Handle::Tab(*tab), Sense::click());
         resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, text));
         let corners = egui::CornerRadius { nw: t.radius_sm, ne: t.radius_sm, sw: 0, se: 0 };
@@ -231,7 +232,7 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
             scenario::publish_rect(Fixed::Ribbon, card);
             let row = Rect::from_min_size(card.min, vec2(card.width(), TAB_ROW_HEIGHT));
             let search_left = (card.right() - SEARCH_WIDTH).max(card.left() + card.width() * 0.5);
-            search_field(search, ui, row, search_left, out);
+            search_field(search, app.ui_state.searching(), ui, row, search_left, out);
             panels(app, ui, card, search_left - 8.0, card.top() + 6.0, out);
         });
 }
@@ -397,7 +398,7 @@ impl Item {
     /// Whether what it opens is open: the command's dialog, the tool.
     fn active(self, app: &EmcraftApp) -> bool {
         match self {
-            Item::Command(id) => app.dialog.as_ref().is_some_and(|d| d.command.id == id),
+            Item::Command(id) => app.ui_state.dialog().is_some_and(|d| d.command.id == id),
             Item::Tool(tool) => app.view3d.tools.tool == Some(tool),
         }
     }
@@ -495,7 +496,6 @@ fn more_button(ui: &mut egui::Ui, r: Rect, handle: Fixed, hint: crate::lang::Tex
 #[derive(Clone, Debug, Default)]
 pub struct Search {
     pub text: String,
-    pub open: bool,
     pub selected: usize,
     /// The field's rectangle last frame (the popup hangs under it).
     pub field: Option<Rect>,
@@ -550,7 +550,11 @@ pub fn direct(query: &str) -> Option<Result<(String, Value), String>> {
 
 /// The search field at the tab row's right, narrower where the tabs (ending at `tabs_end`)
 /// leave less room.
-fn search_field(search: &mut Search, ui: &mut egui::Ui, row: Rect, left: f32, out: &mut Actions) {
+fn search_field(search: &mut Search, open: bool, ui: &mut egui::Ui, row: Rect, left: f32, out: &mut Actions) {
+    // The query is the open search's: the list closed, it goes.
+    if !open && !search.focus && !ui.memory(|m| m.has_focus(egui::Id::new("emcraft_search"))) {
+        search.text.clear();
+    }
     // Too little room: a small field showing only its key, wide over the tabs while in use.
     let id = egui::Id::new("emcraft_search");
     let room = row.right() - 8.0 - left - 12.0;
@@ -572,11 +576,10 @@ fn search_field(search: &mut Search, ui: &mut egui::Ui, row: Rect, left: f32, ou
         search.focus = false;
     }
     if resp.changed() || resp.gained_focus() {
-        search.open = true;
         search.selected = 0;
     }
-    if resp.has_focus() {
-        search.open = true;
+    if (resp.changed() || resp.has_focus()) && !open {
+        out.push(Action::OpenSearch);
     }
     search.field = Some(resp.rect);
     // Keys while the field has focus.
@@ -591,10 +594,10 @@ fn search_field(search: &mut Search, ui: &mut egui::Ui, row: Rect, left: f32, ou
         if up {
             search.selected = search.selected.saturating_sub(1);
         }
-        if enter && search.open {
+        if enter && open {
             // The Enter is the search's: a dialog it opens must not take it as OK.
             ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
-            out.extend(choose(search, None));
+            choose(search, None, out);
         }
     }
     // `/` opens search from anywhere.
@@ -605,24 +608,25 @@ fn search_field(search: &mut Search, ui: &mut egui::Ui, row: Rect, left: f32, ou
 
 /// The search's choice, the search closed: the `command {json}` typed, or the dialog of the
 /// highlighted (or `pick`ed) command.
-pub fn choose(search: &mut Search, pick: Option<&str>) -> Option<Action> {
+pub fn choose(search: &mut Search, pick: Option<&str>, out: &mut Actions) {
     let query = std::mem::take(&mut search.text);
-    search.open = false;
+    out.push(Action::Close(crate::ui_state::Layer::Search));
     if pick.is_none() {
         match direct(&query) {
-            Some(Ok((id, params))) => return Some(Action::Run { id, params }),
-            Some(Err(e)) => return Some(Action::error(e)),
+            Some(Ok((id, params))) => return out.push(Action::Run { id, params }),
+            Some(Err(e)) => return out.push(Action::error(e)),
             None => {}
         }
     }
     let list = matches(&query);
-    let id = pick.or_else(|| list.get(search.selected.min(list.len().saturating_sub(1))).map(|c| c.id))?;
-    Some(Action::dialog(id))
+    if let Some(id) = pick.or_else(|| list.get(search.selected.min(list.len().saturating_sub(1))).map(|c| c.id)) {
+        out.push(Action::dialog(id));
+    }
 }
 
 /// The search results under the field.
-pub fn search_popup(search: &mut Search, ctx: &egui::Context, out: &mut Actions) {
-    let (true, Some(field)) = (search.open, search.field) else { return };
+pub fn search_popup(search: &mut Search, open: bool, ctx: &egui::Context, out: &mut Actions) {
+    let (true, Some(field)) = (open, search.field) else { return };
     let t = &Tokens::get();
     let list = matches(&search.text);
     let direct = direct(&search.text);
@@ -669,17 +673,16 @@ pub fn search_popup(search: &mut Search, ctx: &egui::Context, out: &mut Actions)
     });
     scenario::publish_rect(Fixed::SearchPopup, resp.response.rect);
     if let Some(id) = pick {
-        out.extend(choose(search, Some(id)));
+        choose(search, Some(id), out);
     } else if resp.response.clicked_elsewhere() && !ctx.memory(|m| m.has_focus(egui::Id::new("emcraft_search"))) {
-        search.open = false;
+        out.push(Action::Close(crate::ui_state::Layer::Search));
     }
 }
 
 /// The history's export: where to write it (the session's model-changing commands as a script
 /// that rebuilds the model, `cargo run -p emcraft-cli -- run FILE`). `export` is the path
 /// field's text while the prompt is open.
-pub fn export_prompt(app: &EmcraftApp, ask: &mut Option<crate::files::Ask>, ctx: &egui::Context, out: &mut Actions) {
-    let Some(crate::files::Ask::Export(path)) = ask.as_mut() else { return };
+pub fn export_prompt(app: &EmcraftApp, path: &mut String, ctx: &egui::Context, out: &mut Actions) {
     let t = &Tokens::get();
     let (mut ok, mut cancel) = (false, false);
     let at = app.viewport_rect.map_or(pos2(200.0, 200.0), |r| r.center_top() + vec2(-200.0, 40.0));
@@ -696,11 +699,10 @@ pub fn export_prompt(app: &EmcraftApp, ask: &mut Option<crate::files::Ask>, ctx:
             });
         });
     });
-    if cancel || ok {
-        let path = ask.take();
-        if let (true, Some(crate::files::Ask::Export(path))) = (ok && !cancel, path) {
-            out.push(Action::ExportHistory(path));
-        }
+    if cancel {
+        out.push(Action::Close(crate::ui_state::Layer::Ask));
+    } else if ok {
+        out.push(Action::ExportHistory(path.clone()));
     }
 }
 

@@ -403,9 +403,9 @@ pub(super) fn paint_box(p: &egui::Painter, b: BoxSel) {
 /// Whether the keys are the 3D view's: no field, menu, dialog card's field, search or page
 /// has them.
 pub(super) fn keys_free(app: &EmcraftApp, ui: &egui::Ui) -> bool {
-    app.page.settings_shown().is_none()
-        && app.ask.is_none()
-        && !app.search.open
+    app.ui_state.page.settings_shown().is_none()
+        && app.ui_state.ask().is_none()
+        && !app.ui_state.searching()
         && ui.ctx().memory(|m| m.focused().is_none())
         && !ui.ctx().egui_wants_keyboard_input()
         && !egui::Popup::is_any_open(ui.ctx())
