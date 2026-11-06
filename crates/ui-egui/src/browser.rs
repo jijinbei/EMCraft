@@ -358,7 +358,12 @@ impl Fmt {
 /// A material's name as the window says it: the region's own material (`metal` is the perfect
 /// conductor) by its name.
 fn material_name(name: &str) -> Both {
-    if name == emcraft_engine::bodies::METAL { words(t!("metal"), &[]) } else { own(name) }
+    match name {
+        emcraft_engine::bodies::METAL => words(t!("metal"), &[]),
+        // The built-in one, said in the window's language.
+        emcraft_model::region::BACKGROUND => words(t!("vacuum"), &[]),
+        _ => own(name),
+    }
 }
 
 /// The glyph of a body made of `material`: metal filled, the region's air dashed, another
@@ -482,7 +487,7 @@ fn materials(m: &emcraft_model::Model) -> Vec<Row> {
             let detail = Both { en: format!("{}{tail}", mat.summary()), shown: format!("{}{tail}", mat.summary()) };
             Row {
                 rich: Some(format!("{props}{}", tail.replace('$', "\\$"))),
-                ..node(format!("material:{}", mat.name), own(&mat.name), Some(detail), Glyph::Material, Act::None)
+                ..node(format!("material:{}", mat.name), material_name(&mat.name), Some(detail), Glyph::Material, Act::None)
                     .picks(Pick::Material(i))
                     .item(Item::new("model.material.edit", "model.material.delete", "name", serde_json::json!(mat.name)))
             }
