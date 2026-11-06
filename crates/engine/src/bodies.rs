@@ -194,7 +194,8 @@ pub fn body_material(s: &mut Session, p: &Params) -> Result<Value> {
 /// An imported part's wall or region body given another material: the part read again as
 /// geometry.import read it, the body's material changed and the region chosen anew (the body
 /// `interior` the region, else the air the metal encloses, else a box of air round them). The
-/// ports stay; bodies placed since are dropped with the old geometry.
+/// ports stay; the bodies drawn since are placed again after it, in their order (`dropped`
+/// counts those the new region cannot hold, from 1).
 fn part_body_material(s: &mut Session, name: &str, material: &str) -> Result<Value> {
     let step = s
         .history
@@ -210,10 +211,24 @@ fn part_body_material(s: &mut Session, name: &str, material: &str) -> Result<Val
     let materials = o.entry("materials").or_insert_with(|| json!({}));
     let Some(m) = materials.as_object_mut() else { return Err(EngineError::failed("the import's `materials` are not an object")) };
     m.insert(name.to_owned(), json!(material));
+    // The bodies drawn since (not the part's own, which carry their names) are placed again
+    // after it, in their order; one the new region cannot hold is left out and named.
+    let drawn: Vec<emcraft_model::Body> = s.model.bodies().iter().filter(|b| !b.is_part() && b.name.is_none()).cloned().collect();
     let vars = s.variables().clone();
     let reader = Params::new(&params, s.display).with_variables(&vars);
     let reply = crate::geometry::import(s, &reader)?;
-    Ok(json!({"body": name, "material": material, "region": reply["region"], "import": params}))
+    let mut dropped = Vec::new();
+    for (k, b) in drawn.into_iter().enumerate() {
+        let placed = match (b.feature(), b.inclusion()) {
+            (Some(f), _) => s.model.add_feature(f),
+            (None, Some(inc)) => s.model.add_inclusion(inc),
+            (None, None) => Ok(()),
+        };
+        if placed.is_err() {
+            dropped.push(k + 1);
+        }
+    }
+    Ok(json!({"body": name, "material": material, "region": reply["region"], "import": params, "dropped": dropped}))
 }
 
 /// The body parameter `body` names.

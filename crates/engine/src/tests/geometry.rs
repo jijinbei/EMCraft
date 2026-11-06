@@ -618,6 +618,24 @@ fn an_imported_part_is_metal_and_its_material_changes_the_region() {
     assert!(s.execute("geometry.import", &json!({"path": block_3mf(), "materials": {"Block": "interior"}, "region": "box"})).is_err());
 }
 
+/// A body drawn in an imported part's channel stays when the part's material changes (the part
+/// read again): a metal ball in the middle of the channel is placed again after it, the region
+/// then the block itself (it holds the ball too), and back in the channel again.
+#[test]
+fn a_body_drawn_in_an_imported_part_stays_when_its_material_changes() {
+    let mut s = Session::new();
+    s.execute("geometry.import", &json!({"path": block_3mf()})).unwrap();
+    let b = s.model.domain.solid.as_ref().unwrap().shape.bounds();
+    let c = (b.min.to_vec() + b.max.to_vec()) * 0.5e3;
+    s.execute("geometry.body", &json!({"shape": "sphere", "radius": 1, "at": [c.x, c.y, c.z], "material": "metal"})).unwrap();
+    assert_eq!(s.model.features().len(), 1);
+    let r = s.execute("geometry.body.material", &json!({"body": "Block", "material": "interior"})).unwrap();
+    assert_eq!((r["region"].as_str(), r["dropped"].as_array().map(Vec::len)), (Some("Block"), Some(0)), "{r}");
+    assert_eq!(s.model.features().len(), 1);
+    s.execute("geometry.body.material", &json!({"body": "Block", "material": "metal"})).unwrap();
+    assert_eq!((s.model.features().len(), crate::bodies::parts(&s.model)[0].material), (1, "metal"));
+}
+
 /// Regression: a part drawn lying down — a 10 × 100 × 10 mm block, a 5 × 5 mm channel through it
 /// along y — read as a cavity (its channel's axis found, y), the ports given on its ends at the
 /// drawn numbers. The cavity's walls lie a few nanometres off them (its general-position moves),
