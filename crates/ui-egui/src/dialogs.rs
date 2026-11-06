@@ -528,7 +528,7 @@ pub fn initial(command: &str, s: &Session) -> Value {
         // in its substrate at the band's top, at most an eighth of the route); with a band, it
         // follows it (elements per wavelength at its top).
         "mesh.generate" if route_size(s).is_some() => json!({"size": route_size(s).unwrap_or(1.0)}),
-        "mesh.generate" if band.is_some() => json!({"per_wavelength": 10, "curved": true}),
+        "mesh.generate" if band.is_some() => json!({"per_wavelength": 6, "curved": true}),
         "mesh.generate" => json!({"size": 3, "curved": true}),
         "mesh.adapt" if band.is_some() => json!({"per_wavelength": 6, "passes": 6, "tolerance": 0.02, "fraction": 0.3}),
         "mesh.adapt" => json!({"size": 6, "passes": 6, "tolerance": 0.02, "fraction": 0.3}),
@@ -673,6 +673,17 @@ mod tests {
 
     fn spec(id: &str) -> &'static CommandSpec {
         emcraft_engine::find_command(id).unwrap()
+    }
+
+    /// With a band, the mesh dialog starts at six second-order elements per wavelength at its
+    /// top (the step's own advice, λ/6), not ten: ten meshed a straight 100 mm guide at 55 GHz
+    /// into 96 000 tetrahedra, a 17-minute sweep, six into 21 000 and under a minute with
+    /// |S11| below −55 dB.
+    #[test]
+    fn the_mesh_dialog_starts_at_six_per_wavelength() {
+        let mut s = Session::new();
+        s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+        assert_eq!(initial("mesh.generate", &s)["per_wavelength"], 6, "{}", initial("mesh.generate", &s));
     }
 
     /// Every command's dialog opens on its initial values and gives back parameters the engine
