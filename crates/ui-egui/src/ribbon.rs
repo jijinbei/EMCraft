@@ -56,16 +56,7 @@ pub const TABS: &[(RibbonTab, &[(&str, &[&str])])] = &[
         RibbonTab::Boundaries,
         &[(
             "BOUNDARIES",
-            &[
-                "model.region",
-                "model.walls",
-                "model.open",
-                "model.symmetry",
-                "model.symmetry.find",
-                "model.rotation",
-                "model.rotation.find",
-                "model.periodic",
-            ],
+            &["model.region", "model.walls", "model.open", "model.symmetry.auto", "model.symmetry", "model.rotation", "model.periodic"],
         )],
     ),
     (RibbonTab::Mesh, &[(t!("MESH").en(), &["mesh.generate", "mesh.adapt"])]),

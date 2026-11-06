@@ -60,6 +60,25 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             }
         }
         "file.new" => tr(t!("New project.")).to_owned(),
+        // What was set, and what was found but left out (each said once, by kind).
+        "model.symmetry.auto" => {
+            let planes: Vec<&str> = r.list("planes").iter().filter_map(|q| q.get("axis").and_then(Value::as_str)).collect();
+            let left: Vec<String> =
+                r.list("skipped").iter().filter_map(|q| q.get("symmetry").and_then(Value::as_str)).map(crate::chart_words::translate).collect();
+            let set = if planes.is_empty() {
+                tr(t!("No symmetry set: the whole model is solved.")).to_owned()
+            } else {
+                trf(
+                    t!("Symmetry planes across {axes}: {share} of the model is solved."),
+                    args!(axes = planes.join(", "), share = format!("1/{}", (1.0 / r.num("fraction")).round())),
+                )
+            };
+            if left.is_empty() {
+                set
+            } else {
+                format!("{set} {}", trf(t!("Found but left to choose (they keep one family of modes): {list}."), args!(list = left.join(", "))))
+            }
+        }
         "project.analysis" => {
             let kind = emcraft_engine::workflow::Analysis::parse(r.text("kind")).map_or("", crate::lang::shown);
             trf(t!("Analysis: {kind}."), args!(kind = kind))

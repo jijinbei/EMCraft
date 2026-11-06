@@ -1034,7 +1034,13 @@
     "Port {name} ({axis} = {at} {unit})": "ポート {name}（{axis} = {at} {unit}）",
     "Port {name} ({axis} = {at} {unit}): {n} modes{impedance}": "ポート {name}（{axis} = {at} {unit}）：{n} モード{impedance}",
     "Port {name} ({axis} = {at} {unit}): {n} mode{impedance}": "ポート {name}（{axis} = {at} {unit}）：{n} モード{impedance}",
-    "Region: the air the part encloses (imported), {material}": "領域：部品が囲む空気（読み込み）、{material}"
+    "Region: the air the part encloses (imported), {material}": "領域：部品が囲む空気（読み込み）、{material}",
+    "No symmetry set: the whole model is solved.": "対称性は設定していません：モデル全体を解きます。",
+    "Symmetry planes across {axes}: {share} of the model is solved.": "{axes} の対称面を設定しました：モデルの {share} を解きます。",
+    "Found but left to choose (they keep one family of modes): {list}.": "見つかったが選択に残したもの（モードの系列をひとつに絞るため）：{list}。",
+    "Find symmetries": "対称性を探す",
+    "plane across {axis}": "{axis} の対称面",
+    "rotation about z ({group})": "z 軸まわりの回転（{group}）"
   },
   "commands": {
     "project.setup": {
@@ -2281,6 +2287,11 @@
         "mode": "3D 表示で図示する仕組み：`electric`、`magnetic`、`return`（説明用の模式図）",
         "playing": "説明のための動き。物理的な時間ではない"
       }
+    },
+    "model.symmetry.auto": {
+      "label": "対称性を探す",
+      "doc": "モデルのすべての対称性を一度に探し、答えを変えないものを設定する：ポートが壁を決める各軸の中央の鏡映面（TE10 の向きから、広い辺を横切る面は磁気壁、狭い辺を横切る面は電気壁。2 面まで）。前の対称面と回転は先に消す。返答は設定したもの（`planes`）、解くモデルの割合（`fraction`）、見つかったが残したものとその理由（`skipped`：壁をポートが決めない面と z 軸まわりの回転は、それぞれモードの系列をひとつに絞る。model.symmetry、model.rotation で設定する）。何も見つからなくてもエラーにしない。並進（無限配列の単位セル）は有限のモデルの対称性ではない：model.periodic で設定する。",
+      "params": {}
     }
   },
   "samples": {

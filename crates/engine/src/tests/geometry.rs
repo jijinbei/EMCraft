@@ -647,3 +647,26 @@ fn a_cavity_along_y_takes_ports_at_its_drawn_numbers() {
     let s21 = r["points"][0]["s21"]["mag"].as_f64().unwrap();
     assert!((s21 - 1.0).abs() < 0.01, "{r}");
 }
+
+/// `model.symmetry.auto`, one click: a square guide along y with its ports takes the planes its
+/// ports' TE10 decides (a quarter); a round cavity with no port takes none, its planes and
+/// rotation found and left to choose, each with why; its former symmetry cleared first.
+#[test]
+fn one_search_sets_the_symmetries_that_change_no_answer() {
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "box", "size": [5, 100, 5]})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "axis": "y", "face": [0, 0, 0, 5, 5]})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "axis": "y", "face": [100, 0, 0, 5, 5]})).unwrap();
+    let r = s.execute("model.symmetry.auto", &json!({})).unwrap();
+    assert_eq!(r["fraction"], 0.25, "{r}");
+    assert_eq!((r["planes"][0]["axis"].as_str(), r["planes"][0]["kind"].as_str()), (Some("x"), Some("magnetic")));
+    assert_eq!((r["planes"][1]["axis"].as_str(), r["planes"][1]["kind"].as_str()), (Some("z"), Some("electric")));
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 15})).unwrap();
+    s.execute("model.symmetry", &json!({"axis": "x", "kind": "electric"})).unwrap();
+    let r = s.execute("model.symmetry.auto", &json!({})).unwrap();
+    assert_eq!(r["fraction"], 1.0, "{r}");
+    assert!(s.model.symmetry.is_empty() && s.model.rotation.is_none());
+    let left: Vec<&str> = r["skipped"].as_array().unwrap().iter().filter_map(|q| q["symmetry"].as_str()).collect();
+    assert!(left.contains(&"plane across x") && left.iter().any(|q| q.starts_with("rotation about z")), "{left:?}");
+}

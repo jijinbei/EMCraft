@@ -878,6 +878,15 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::symmetry::harmonics,
     },
     CommandSpec {
+        id: "model.symmetry.auto",
+        label: "Find symmetries",
+        doc: "Searches every symmetry of the model in one go and sets those that change no answer: the mirror planes about each axis' middle whose walls the ports decide (their TE10: magnetic across a broad side, electric across a narrow one; two at most). The former planes and rotation are cleared first. The reply says what was set (`planes`), the share of the model solved (`fraction`) and what was found but left out, with why (`skipped`): a plane no port decides the wall of and the rotation about z would each keep one family of modes (model.symmetry, model.rotation set them). Finding nothing is not an error. Translation (an infinite array's cell) is not a symmetry of a finite model: model.periodic sets it.",
+        params: &[],
+        effect: Effect::Record,
+        invalidates: Some(Change::Geometry),
+        run: crate::geometry::auto_symmetry,
+    },
+    CommandSpec {
         id: "model.symmetry.find",
         label: "Find symmetry",
         doc: "Finds the planes the model is symmetric about (its geometry, materials and ports; each axis' middle) and sets them, at most two: each wall from what its ports' TE10 asks for (magnetic across a broad side, electric across a narrow one). Without ports (an eigenmode search) either wall keeps a family of modes: `kind` chooses it. Refused when no plane is found.",

@@ -41,6 +41,8 @@ pub const TEMPLATES: &[&str] = &[
     t!("Hertzian dipole").en(),
     t!("{along} (degrees)").en(),
     t!("{label} (dB)").en(),
+    t!("plane across {axis}").en(),
+    t!("rotation about z ({group})").en(),
     t!("{mode} port {ports}").en(),
     t!("{mode} section {n}").en(),
     t!("{mode} sections {n}").en(),

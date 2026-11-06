@@ -701,6 +701,35 @@ pub fn symmetry(s: &mut Session, p: &Params) -> Result<Value> {
 }
 
 /// `model.symmetry.find`.
+/// `model.symmetry.auto`: every symmetry the model has, searched in one go and set where doing
+/// so changes no answer — the mirror planes whose walls the ports decide (two at most). What is
+/// found but would choose among the answers is said with why, not set: a plane no port decides
+/// (either wall keeps one family of modes), the rotation about z (a sector keeps one harmonic of
+/// the whole). The former planes and rotation are cleared first; finding nothing is no error.
+pub fn auto_symmetry(s: &mut Session, _: &Params) -> Result<Value> {
+    s.model.set_symmetry(Vec::new())?;
+    s.model.set_rotation(None)?;
+    let mut skipped: Vec<Value> = Vec::new();
+    let found = s.model.find_symmetry();
+    let mut planes: Vec<Symmetry> = found.iter().filter_map(|f| f.kind.map(|k| Symmetry { axis: f.axis, at: f.at, kind: k })).collect();
+    for f in found.iter().filter(|f| f.kind.is_none()) {
+        skipped.push(json!({"symmetry": format!("plane across {}", f.axis.id()), "why": "no port decides its wall: either wall keeps one family of modes (model.symmetry sets it)"}));
+    }
+    for extra in planes.iter().skip(2) {
+        skipped.push(json!({"symmetry": format!("plane across {}", extra.axis.id()), "why": "two planes at most"}));
+    }
+    planes.truncate(2);
+    planes.sort_by_key(|q| q.axis.index());
+    if let Some(r) = s.model.find_rotation() {
+        skipped.push(json!({"symmetry": format!("rotation about z ({})", r.group()), "why": "a sector keeps one harmonic of the whole (model.rotation sets it)"}));
+    }
+    if !planes.is_empty() {
+        s.model.set_symmetry(planes)?;
+    }
+    let shown: Vec<Value> = s.model.symmetry.iter().map(|q| json!({"axis": q.axis.id(), "at": s.show_length(q.at), "kind": q.kind})).collect();
+    Ok(json!({"planes": shown, "fraction": s.model.symmetry_fraction(), "skipped": skipped}))
+}
+
 pub fn find_symmetry(s: &mut Session, p: &Params) -> Result<Value> {
     let kind: Option<SymmetryKind> = p.choice("kind").optional()?;
     let found = s.model.find_symmetry();

@@ -79,6 +79,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("solve.revolution.time_domain", None, Some(Glyph::Cylinder), true),
     ui("solve.cyclic", Some(t!("Cyclic modes").en()), Some(Glyph::Eigen), true),
     ui("solve.harmonics", Some(t!("Harmonics sweep").en()), Some(Glyph::Sweep), true),
+    ui("model.symmetry.auto", Some(t!("Find symmetries").en()), Some(Glyph::Symmetry), false),
     ui("model.symmetry.find", Some(t!("Find symmetry").en()), Some(Glyph::Symmetry), false),
     ui("model.rotation", Some(t!("Rotation").en()), Some(Glyph::Symmetry), false),
     ui("model.rotation.find", Some(t!("Find rotation").en()), Some(Glyph::Symmetry), false),
