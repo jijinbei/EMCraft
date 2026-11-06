@@ -387,6 +387,8 @@
     "Region": "領域",
     "Region: {name} (imported), {material}": "領域：{name}（読み込み）、{material}",
     "Region: {shape}, {material}": "領域：{shape}、{material}",
+    "Region (automatic): {x} × {y} × {z} {unit}, {material}": "領域（自動）：{x} × {y} × {z} {unit}、{material}",
+    "Region: box {x} × {y} × {z} {unit}, {material}": "領域：箱 {x} × {y} × {z} {unit}、{material}",
     "Remove from the 3D view": "3D ビューから外す",
     "Remove from the list": "一覧から削除",
     "Remove this probe": "このプローブを削除",

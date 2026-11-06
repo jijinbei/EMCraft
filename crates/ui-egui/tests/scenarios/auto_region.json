@@ -1,0 +1,16 @@
+[
+  {"note": "A metal sphere placed with no region: the region is automatic round it (ADR 0005), listed with its sides; pinned, it says so"},
+  {"call": "engine.script", "params": {"commands": [
+    {"command": "geometry.body", "params": {"shape": "sphere", "radius": 5, "at": [10, 0, 0], "material": "metal"}},
+    {"command": "model.region", "params": {"mode": "auto", "margin": 2.5, "thickness": 2.5}}
+  ]}},
+  {"until": {"busy": false}},
+  {"call": "ui.set", "params": {"step": "geometry"}},
+  {"click": "view3d:std:iso"},
+  {"frames": 2},
+  {"expect": {"handles": ["row:Region (automatic): 20 × 20 × 20 mm, vacuum", "row:body 1: metal sphere"]}},
+  {"shot": "auto-region"},
+  {"call": "engine.execute", "params": {"command": "model.region", "params": {"mode": "pinned"}}},
+  {"frames": 2},
+  {"expect": {"handles": ["row:Region: box 20 × 20 × 20 mm, vacuum"]}}
+]

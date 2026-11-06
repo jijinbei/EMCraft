@@ -382,7 +382,18 @@ fn geometry(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
     }
     if let Some(solid) = &m.solid {
         let edit = Act::Edit("geometry.solid");
+        let block = solid.shape.box_bounds().filter(|_| !matches!(solid.shape, emcraft_model::Shape::Box { .. }));
         let r = match &solid.shape {
+            // An automatic region, or a box off the origin: its sides (ADR 0005).
+            _ if let Some(b) = block => {
+                let d = b.max - b.min;
+                let text = if matches!(m.region, emcraft_model::Region::Auto { .. }) {
+                    "Region (automatic): {x} × {y} × {z} {unit}, {material}"
+                } else {
+                    "Region: box {x} × {y} × {z} {unit}, {material}"
+                };
+                row(text, args!(x = mm(d.x), y = mm(d.y), z = mm(d.z), unit = lu, material = solid.material), Glyph::Box, Act::Edit("model.region"))
+            }
             emcraft_model::Shape::Surface { name, .. } => {
                 row("Region: {name} (imported), {material}", args!(name = name, material = solid.material), Glyph::Box, edit)
             }

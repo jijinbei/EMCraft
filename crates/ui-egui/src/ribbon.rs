@@ -37,7 +37,7 @@ pub const TABS: &[(RibbonTab, &[(&str, &[&str])])] = &[
     (
         RibbonTab::Model,
         &[
-            ("GEOMETRY", &["geometry.import", "geometry.waveguide", "geometry.solid", "geometry.body", "geometry.inclusion"]),
+            ("GEOMETRY", &["geometry.import", "geometry.waveguide", "geometry.body", "model.region", "model.background"]),
             ("SETTINGS", &["units.set"]),
             ("PCB", &["pcb.import", "pcb.sample", "pcb.segment", "pcb.via", "pcb.pour", "pcb.element"]),
         ],
@@ -721,8 +721,12 @@ mod tests {
         let mut h = crate::scenario::Harness::new();
         let all = |app: &EmcraftApp| -> Vec<&str> { TABS.iter().flat_map(|(_, p)| ordered(app, p)).flat_map(|p| p.commands).collect() };
         let listed = all(&h.app);
-        // The lumped element and the inclusion have buttons of their own.
-        assert!(listed.contains(&"model.element.create") && listed.contains(&"geometry.inclusion"), "{listed:?}");
+        // The lumped element and the region have buttons of their own; an inclusion is a body
+        // (ADR 0005).
+        assert!(
+            listed.contains(&"model.element.create") && listed.contains(&"model.region") && !listed.contains(&"geometry.inclusion"),
+            "{listed:?}"
+        );
         assert!(
             listed.iter().all(|id| !matches!(
                 *id,

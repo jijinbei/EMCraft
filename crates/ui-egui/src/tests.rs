@@ -269,6 +269,11 @@ fn scenario_rotation_sector() {
 }
 
 #[test]
+fn scenario_auto_region() {
+    scenario("auto_region");
+}
+
+#[test]
 fn scenario_stub_and_via() {
     scenario("stub_and_via");
 }

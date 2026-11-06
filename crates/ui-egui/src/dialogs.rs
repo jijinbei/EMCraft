@@ -498,6 +498,8 @@ pub fn initial(command: &str, s: &Session) -> Value {
         "geometry.waveguide" => waveguide(s),
         "model.material.create" => json!({"name": format!("material{}", s.model().materials.len()), "eps_r": 2.2}),
         "geometry.solid" => json!({"shape": "box", "size": [22.86, 10.16, 30]}),
+        "model.region" => json!({"mode": "auto"}),
+        "model.background" => json!({"material": s.model().solid.as_ref().map_or("vacuum", |x| x.material.as_str())}),
         "geometry.inclusion" => json!({"shape": "sphere", "radius": 2, "at": [11.43, 5.08, 15]}),
         "geometry.feature" => json!({"combine": "subtract", "shape": "cylinder", "radius": 1.5, "length": 10.16, "at": [11.43, 0, 15], "axis": "y"}),
         "geometry.import" => json!({"angle": 30, "open": false}),

@@ -236,6 +236,14 @@ const MODELS: &[Model] = &[
         "[]",
         &["boundaries", "run"],
     ),
+    // A body placed with no region: the region automatic round it (ADR 0005).
+    (r#"[{"command": "geometry.body", "params": {"shape": "sphere", "radius": 5, "material": "metal"}}]"#, "[]", &["geometry"]),
+    // The same pinned: a box off the origin.
+    (
+        r#"[{"command": "geometry.body", "params": {"shape": "sphere", "radius": 5, "material": "metal"}}, {"command": "model.region", "params": {"mode": "pinned"}}]"#,
+        "[]",
+        &["geometry"],
+    ),
 ];
 
 /// `request` over the control channel, which must succeed.
