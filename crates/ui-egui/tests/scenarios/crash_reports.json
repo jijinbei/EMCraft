@@ -1,0 +1,18 @@
+[
+  {"note": "Crash reports stay on this computer (crate::crash): the window keeps a journal of its actions; File ▸ Report a bug makes a report of the session as it is, shown on the reports' card with Copy (an issue's text) and Delete; Escape closes the card"},
+  {"call": "app.crashes", "params": {"dir": "$TMP/crashes"}},
+  {"expect": {"inspect": {"layers": []}}},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"click": "menu:file"},
+  {"click": "file:report_bug"},
+  {"expect": {"inspect": {"layers": ["reports"]}, "handles": ["reports:copy:0", "reports:delete:0", "reports:close"]}},
+  {"shot": "crash-reports"},
+  {"click": "reports:copy:0"},
+  {"expect": {"status": "Copied: paste it into an issue."}},
+  {"click": "reports:delete:0"},
+  {"expect": {"inspect": {"layers": ["reports"]}, "hidden": ["reports:copy:0"]}},
+  {"key": "Escape"},
+  {"expect": {"inspect": {"layers": []}}},
+  {"note": "Hostile folders are refused"},
+  {"call": "app.crashes", "params": {"dir": 3}, "fail": true}
+]

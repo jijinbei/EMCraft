@@ -59,6 +59,11 @@ fn scenario_tool_mode() {
 }
 
 #[test]
+fn scenario_crash_reports() {
+    scenario("crash_reports");
+}
+
+#[test]
 fn scenario_busy_rule() {
     scenario("busy_rule");
 }

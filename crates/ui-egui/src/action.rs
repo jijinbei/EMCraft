@@ -130,6 +130,12 @@ pub enum Action {
     Pen(Option<crate::state::Pen>),
     /// Measures between two picks (`geometry.measure`); the 3D view draws the reply.
     Measure([crate::tools3d::Snap; 2]),
+    /// Opens the crash reports' card (each then marked seen).
+    ShowReports,
+    /// Deletes a crash report by its id.
+    DeleteReport(String),
+    /// Makes a report of the session as it is (an unexpected result with no crash), shown.
+    ReportBug,
     /// A message in the message area.
     Message {
         text: String,
@@ -328,6 +334,15 @@ impl EmcraftApp {
             Action::OpenStep(step) => crate::steps::open_step(self, step),
             Action::Fix(command) => crate::steps::fix(self, &command)?,
             Action::Fit => self.view3d.goal = Some(crate::view3d::Goal::Fit),
+            Action::ShowReports => self.show_reports()?,
+            Action::DeleteReport(id) => {
+                self.delete_report(&id)?;
+                self.show_reports()?;
+            }
+            Action::ReportBug => {
+                self.report_bug()?;
+                self.show_reports()?;
+            }
             Action::EditSelected => {
                 let row = self.ui_state.selection().single().and_then(|p| crate::browser::rows_of(self, &[p]).into_iter().next());
                 if let Some(a) = row.and_then(|(_, r)| r.edit_action()) {

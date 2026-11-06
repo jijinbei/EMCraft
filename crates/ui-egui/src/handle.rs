@@ -46,6 +46,9 @@ emcraft_macros::named_enum! {
         FileSaveAs = "file:save_as",
         FileExport = "file:export",
         FileStart = "file:start",
+        FileReportBug = "file:report_bug",
+        FileReports = "file:reports",
+        ReportsClose = "reports:close",
         // A browser row's right-click menu.
         RowMenuEdit = "row-menu:edit",
         RowMenuDelete = "row-menu:delete",
@@ -269,6 +272,10 @@ pub enum Handle<'a> {
     Recover(usize),
     /// An autosaved copy's dismiss (it is deleted): `home:recover:dismiss:0`.
     RecoverDismiss(usize),
+    /// A crash report's Copy (its issue text): `reports:copy:0`.
+    ReportCopy(usize),
+    /// A crash report's Delete: `reports:delete:0`.
+    ReportDelete(usize),
     /// A setting's choice: `settings:length:mm`.
     Setting(&'static str, &'a str),
     /// A section of the settings page: `settings:section:units`.
@@ -397,6 +404,8 @@ impl fmt::Display for Handle<'_> {
             Handle::Recent(i) => write!(f, "home:recent:{i}"),
             Handle::Recover(i) => write!(f, "home:recover:{i}"),
             Handle::RecoverDismiss(i) => write!(f, "home:recover:dismiss:{i}"),
+            Handle::ReportCopy(i) => write!(f, "reports:copy:{i}"),
+            Handle::ReportDelete(i) => write!(f, "reports:delete:{i}"),
             Handle::Setting(group, name) => write!(f, "settings:{group}:{name}"),
             Handle::SettingsSection(s) => write!(f, "settings:section:{}", s.id()),
             Handle::Tab(tab) => write!(f, "tab:{}", tab.id()),

@@ -535,6 +535,11 @@ pub fn menu(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     ui.separator();
     item(ui, out, t!("Export history as script…"), "", Fixed::FileExport, !app.session.history().is_empty(), Action::AskExport);
     item(ui, out, t!("Start page"), "", Fixed::FileStart, true, Action::Show(crate::page::Tab::Start));
+    ui.separator();
+    // Crash reports (crate::crash): kept on this computer only.
+    let kept = app.crashes.dir.is_some();
+    item(ui, out, t!("Report a bug…"), "", Fixed::FileReportBug, kept, Action::ReportBug);
+    item(ui, out, t!("Crash reports…"), "", Fixed::FileReports, kept, Action::ShowReports);
 }
 
 /// Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S.

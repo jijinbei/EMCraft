@@ -57,7 +57,7 @@ impl Recording {
         Recording { format: FORMAT.into(), version: VERSION, history, entries: Vec::new(), dropped: 0 }
     }
 
-    /// A recording read from JSON, refused when it is not one this build plays.
+    /// A recording read from a file, or from a crash report's folder (its `recording.json`).
     ///
     /// ```
     /// use emcraft_ui_egui::record::Recording;
@@ -67,6 +67,17 @@ impl Recording {
     /// assert_eq!(Recording::parse(&text), Ok(r));
     /// assert!(Recording::parse(r#"{"format": "other"}"#).is_err());
     /// ```
+    pub fn read(path: &std::path::Path) -> Result<Recording, String> {
+        let file = if path.is_dir() { path.join("recording.json") } else { path.to_path_buf() };
+        let size = std::fs::metadata(&file).map_err(|e| format!("cannot read {}: {e}", file.display()))?.len();
+        if size > MAX_BYTES {
+            return Err(format!("a recording is at most {} MiB", MAX_BYTES >> 20));
+        }
+        let text = std::fs::read_to_string(&file).map_err(|e| format!("cannot read {}: {e}", file.display()))?;
+        Recording::parse(&text)
+    }
+
+    /// A recording read from JSON, refused when it is not one this build plays.
     pub fn parse(text: &str) -> Result<Recording, String> {
         let r: Recording = serde_json::from_str(text).map_err(|e| format!("not a recording: {e}"))?;
         if r.format != FORMAT || r.version != VERSION {
@@ -102,19 +113,24 @@ impl EmcraftApp {
 
     /// Notes `action`, asked for, with the drafts it reads.
     pub(crate) fn record(&mut self, action: &Action) {
-        if self.recorder.depth > 0 || matches!(action, Action::Hover(_)) {
+        if self.recorder.depth > 0 || matches!(action, Action::Hover(_)) || (self.recorder.on.is_none() && self.crashes.journal.is_none()) {
             return;
         }
         let dialog = matches!(action, Action::DialogOk)
             .then(|| self.ui_state.dialog().and_then(|d| Some((d.command.id.to_owned(), d.quiet_params()?))))
             .flatten();
         let fields = matches!(action, Action::ConfirmSetup | Action::StartRun | Action::ExportTouchstone).then(|| self.workflow.fields.drafts());
+        let entry = Entry { action: action.clone(), dialog, fields };
+        // The crash journal keeps every one (crate::crash).
+        if let Some(j) = self.crashes.journal.as_mut() {
+            j.push(&entry);
+        }
         let Some(r) = self.recorder.on.as_mut() else { return };
         if r.entries.len() >= MAX_ENTRIES {
             r.dropped += 1;
             return;
         }
-        r.entries.push(Entry { action: action.clone(), dialog, fields });
+        r.entries.push(entry);
     }
 
     /// Plays `recording` back: its project built again, then its actions, one a frame.

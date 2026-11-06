@@ -193,6 +193,11 @@ impl EmcraftApp {
                 // to be recovered on the next start.
                 self.autosave.file = Some(file);
                 self.autosave.failed = None;
+                // The crash journal begins again from the project the copy holds.
+                let history = serde_json::to_value(self.session.history()).unwrap_or_else(|_| json!([]));
+                if let Some(j) = self.crashes.journal.as_mut() {
+                    j.restart(&history);
+                }
             }
             Err(e) if self.autosave.failed.as_ref() != Some(e) => {
                 self.autosave.failed = Some(e.clone());

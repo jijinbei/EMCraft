@@ -26,6 +26,8 @@ emcraft_macros::named_enum! {
         Ask = "ask",
         /// A template's card.
         Template = "template",
+        /// The crash reports' card.
+        Reports = "reports",
         /// The command search, open.
         Search = "search",
         /// The open dialog (floating, docked or in the step's panel).
@@ -52,6 +54,8 @@ pub enum Overlay {
     Template(Box<TemplateDialog>),
     /// The command search's list (its query is the ribbon's field).
     Search,
+    /// The crash reports' card, the reports as they were read.
+    Reports(Vec<crate::crash::Report>),
 }
 
 impl Overlay {
@@ -61,6 +65,7 @@ impl Overlay {
             Overlay::Ask(_) => Layer::Ask,
             Overlay::Template(_) => Layer::Template,
             Overlay::Search => Layer::Search,
+            Overlay::Reports(_) => Layer::Reports,
         }
     }
 }
@@ -186,7 +191,7 @@ impl UiState {
     /// are) among them.
     pub fn layers(&self, view: &[Layer]) -> Vec<Layer> {
         let open = |l: Layer| match l {
-            Layer::Ask | Layer::Template | Layer::Search => self.overlay.as_ref().is_some_and(|o| o.layer() == l),
+            Layer::Ask | Layer::Template | Layer::Reports | Layer::Search => self.overlay.as_ref().is_some_and(|o| o.layer() == l),
             Layer::Dialog => self.dialog.is_some(),
             Layer::Settings => self.page.settings_shown().is_some(),
             Layer::Selection => !self.selection.is_clear(),
@@ -245,6 +250,21 @@ impl UiState {
         true
     }
 
+    /// Opens the crash reports' card on `reports` (in place of the one open; refused over a
+    /// question).
+    pub fn open_reports(&mut self, reports: Vec<crate::crash::Report>) -> bool {
+        if self.ask().is_some() {
+            return false;
+        }
+        self.overlay = Some(Overlay::Reports(reports));
+        true
+    }
+
+    /// Whether the crash reports' card is open.
+    pub fn showing_reports(&self) -> bool {
+        matches!(self.overlay, Some(Overlay::Reports(_)))
+    }
+
     /// Opens the search's list, unless a question or a card is open.
     pub fn open_search(&mut self) -> bool {
         match self.overlay {
@@ -271,9 +291,9 @@ impl UiState {
     /// prompt's answer), performed after.
     pub fn update(&mut self, action: &Action) -> Option<Vec<Action>> {
         let then = match action {
-            Action::Close(layer @ (Layer::Ask | Layer::Template | Layer::Search | Layer::Dialog | Layer::Settings | Layer::Selection)) => {
-                self.close(*layer)
-            }
+            Action::Close(
+                layer @ (Layer::Ask | Layer::Template | Layer::Reports | Layer::Search | Layer::Dialog | Layer::Settings | Layer::Selection),
+            ) => self.close(*layer),
             // A click in the 3D view (no tool on): the selection's table, then what it asks of
             // the view (crate::selection::step).
             Action::Click(click) => match crate::selection::step(&mut self.selection, *click) {
@@ -335,7 +355,7 @@ impl UiState {
                 }
                 Some(Ask::Export(_)) | None => None,
             },
-            Layer::Template | Layer::Search => {
+            Layer::Template | Layer::Reports | Layer::Search => {
                 self.close_overlay(layer);
                 None
             }
@@ -418,7 +438,10 @@ impl Action {
             | Action::SetPlaying(_)
             | Action::Tool(_)
             | Action::Pen(_)
-            | Action::Message { .. } => false,
+            | Action::Message { .. }
+            | Action::ShowReports
+            | Action::DeleteReport(_)
+            | Action::ReportBug => false,
         }
     }
 }

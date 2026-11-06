@@ -351,6 +351,7 @@ pub fn handle(app: &mut EmcraftApp, ctx: &egui::Context, req: &ControlRequest) -
         "ui.cancel" => Ok(wrap(app.apply(Action::CancelJob))),
         "ui.record" => record(app, a),
         "ui.replay" => replay(app, a),
+        "app.crashes" => crashes(app, a),
         "ui.messages" => Ok(ok(messages(app, a))),
         "ui.move" => pointer(app, a, Press::None),
         "ui.click" => pointer(app, a, if a.bool("double") == Some(true) { Press::Double } else { Press::Single }),
@@ -446,21 +447,30 @@ fn record(app: &mut EmcraftApp, a: Args) -> Handled {
     Ok(ok(json!({"actions": n, "dropped": r.dropped, "recording": r})))
 }
 
-/// Plays a recording back: from `path`, or `recording` itself.
+/// Plays a recording back: from `path` (a file or a crash report's folder), or `recording`
+/// itself.
 fn replay(app: &mut EmcraftApp, a: Args) -> Handled {
-    let text = match (a.str("path"), a.get("recording")) {
-        (Some(path), _) => {
-            let size = std::fs::metadata(path).map_err(|e| format!("cannot read {}: {e}", clip(path, 200)))?.len();
-            if size > crate::record::MAX_BYTES {
-                return Err(format!("a recording is at most {} MiB", crate::record::MAX_BYTES >> 20));
-            }
-            std::fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", clip(path, 200)))?
-        }
-        (None, Some(r)) => r.to_string(),
+    let r = match (a.str("path"), a.get("recording")) {
+        (Some(path), _) => crate::record::Recording::read(std::path::Path::new(path))?,
+        (None, Some(r)) => crate::record::Recording::parse(&r.to_string())?,
         (None, None) => return Err("give `path` or `recording`".into()),
     };
-    let r = crate::record::Recording::parse(&text)?;
     Ok(wrap(app.play(r)))
+}
+
+/// Where crash reports go (`dir`: a folder, the journal begun there), and the reports there.
+fn crashes(app: &mut EmcraftApp, a: Args) -> Handled {
+    match a.get("dir") {
+        None => {}
+        Some(Value::String(d)) if !d.trim().is_empty() && d.len() <= 4096 => app.keep_crash_reports(std::path::PathBuf::from(d), false),
+        Some(_) => return Err("`dir` must be a folder's path (at most 4096 bytes)".into()),
+    }
+    let reports = app.crashes.dir.as_deref().map(crate::crash::list).unwrap_or_default();
+    Ok(ok(json!({
+        "dir": app.crashes.dir.as_ref().map(|d| d.display().to_string()),
+        "journal": app.crashes.journal.as_ref().map(|j| j.path().display().to_string()),
+        "reports": reports.iter().map(|r| json!({"id": r.id, "kind": r.kind, "message": r.message, "count": r.count, "seen": r.seen, "folder": r.folder.display().to_string()})).collect::<Vec<_>>(),
+    })))
 }
 
 fn engine_execute(app: &mut EmcraftApp, req: &ControlRequest, a: Args) -> Handled {

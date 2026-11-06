@@ -53,6 +53,8 @@ pub mod browser;
 mod chart_words;
 pub mod commands;
 pub mod control;
+pub mod crash;
+mod crash_ui;
 pub mod dialog_ui;
 pub mod dialogs;
 pub mod files;
@@ -168,6 +170,8 @@ pub struct EmcraftApp {
     pub ui_state: ui_state::UiState,
     /// The actions being recorded or played back (crate::record).
     pub recorder: record::Recorder,
+    /// The crash reports' folder and this run's journal (crate::crash).
+    pub crashes: crash::Crashes,
     /// The command that failed and why, until a command succeeds: the panel that asked for it
     /// shows it there (the message log keeps every one).
     pub failure: Option<Failure>,
@@ -219,6 +223,10 @@ pub struct Host {
     pub open: Option<String>,
     /// Where autosaved copies go (`autosave::default_dir`); none: no autosave.
     pub autosave: Option<std::path::PathBuf>,
+    /// Where crash reports go (`crash::default_dir`); none: none kept.
+    pub crashes: Option<std::path::PathBuf>,
+    /// A recording to play back at once (a report's folder or its `recording.json`).
+    pub replay: Option<std::path::PathBuf>,
 }
 
 impl Default for EmcraftApp {
@@ -260,6 +268,7 @@ impl EmcraftApp {
             home: home::Home::default(),
             ui_state: ui_state::UiState::default(),
             recorder: record::Recorder::default(),
+            crashes: crash::Crashes::default(),
             failure: None,
             focus_last: None,
             language: lang::ENGLISH,
@@ -298,6 +307,14 @@ impl EmcraftApp {
         });
         if let Some(path) = host.open
             && let Err(e) = app.run("file.open", json!({"path": path}))
+        {
+            app.error(e);
+        }
+        if let Some(dir) = host.crashes {
+            app.keep_crash_reports(dir, true);
+        }
+        if let Some(path) = host.replay
+            && let Err(e) = record::Recording::read(&path).map_err(UiError::Input).and_then(|r| app.play(r))
         {
             app.error(e);
         }
@@ -464,6 +481,7 @@ impl EmcraftApp {
         self.lend_overlay(|app, over| match over {
             ui_state::Overlay::Ask(ask) => files::show(app, ask, &ctx, &mut out),
             ui_state::Overlay::Template(card) => template_dialog::show(card, &ctx, &mut out),
+            ui_state::Overlay::Reports(reports) => crash_ui::show(app, reports, &ctx, &mut out),
             ui_state::Overlay::Search => {}
         });
         files::drop_hint(&ctx);

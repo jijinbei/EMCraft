@@ -54,7 +54,9 @@ pub(crate) fn close(app: &mut EmcraftApp, layer: Layer) -> Option<Action> {
                 app.ui_state.set_tool(None);
             }
         }
-        Layer::Ask | Layer::Template | Layer::Search | Layer::Dialog | Layer::Settings | Layer::Selection => return app.ui_state.close(layer),
+        Layer::Ask | Layer::Template | Layer::Reports | Layer::Search | Layer::Dialog | Layer::Settings | Layer::Selection => {
+            return app.ui_state.close(layer);
+        }
     }
     None
 }

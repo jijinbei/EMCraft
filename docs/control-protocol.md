@@ -63,7 +63,8 @@ Commands never open dialogs when run this way.
 | `ui.dialog` | `set?` (`{param: value}`), `ok?`, `cancel?` | sets fields as typing would, presses OK (the command's reply, or the refusal; the dialog stays open with the error) or Cancel |
 | `ui.cancel` | — | cancels the running job: the session stays as it was before it |
 | `ui.record` | `on`, `path`? | `on: true` starts recording the window's actions from the project as it is; `on: false` stops, replying with the recording (and writing it to `path` when given) |
-| `ui.replay` | `path` or `recording` | plays a recording back: a new project, the recording's history run again, then its actions one a frame (each that waits for a job after the one before); `ui.inspect`'s `replaying` counts what is left |
+| `ui.replay` | `path` or `recording` | plays a recording back (a file, or a crash report's folder): a new project, the recording's history run again, then its actions one a frame (each that waits for a job after the one before); `ui.inspect`'s `replaying` counts what is left |
+| `app.crashes` | `dir`? | where crash reports go (`dir`: a folder, this window's journal begun there; the desktop app keeps them in `<config dir>/crashes`) and the reports there: id, kind (`panic`, `unclean_exit`, `report`), message, count, folder (docs/crash-reports.md) |
 | `ui.messages` | `clear?` | the message area's lines: `text`, `error`, `count` |
 | `ui.click` | `x`, `y` (screen points) or `handle`, `button?` (`left`, `right`, `middle`), `double?`, `shift?`, `ctrl?`, `alt?` | real pointer input |
 | `ui.move` | `x`, `y` or `handle`, modifiers | pointer movement |

@@ -17,7 +17,10 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let usage_text = || {
-        format!("usage: emcraft [PROJECT.emcraft] [--sample NAME] [--control PORT]   (samples: {})", emcraft_engine::templates::names().join(", "))
+        format!(
+            "usage: emcraft [PROJECT.emcraft] [--sample NAME] [--control PORT] [--replay REPORT]   (samples: {})",
+            emcraft_engine::templates::names().join(", ")
+        )
     };
     let usage = || {
         eprintln!("{}", usage_text());
@@ -25,6 +28,7 @@ fn main() -> ExitCode {
     };
     let mut sample = None;
     let mut project = None;
+    let mut replay = None;
     let mut control: Option<u16> = std::env::var("EMCRAFT_CONTROL_PORT").ok().and_then(|p| p.parse().ok());
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -41,6 +45,11 @@ fn main() -> ExitCode {
                 Some(name) if emcraft_engine::templates::find(name).is_some() => sample = Some(name.clone()),
                 _ => return usage(),
             },
+            // A crash report's folder (or a recording): played back in the window.
+            "--replay" => match it.next() {
+                Some(path) => replay = Some(std::path::PathBuf::from(path)),
+                None => return usage(),
+            },
             "--control" => match it.next().map(|p| p.parse::<u16>()) {
                 Some(Ok(p)) => control = Some(p),
                 _ => return usage(),
@@ -55,6 +64,8 @@ fn main() -> ExitCode {
         themes: emcraft_ui_egui::theme::default_dir(),
         open: project,
         autosave: emcraft_ui_egui::autosave::default_dir(),
+        crashes: emcraft_ui_egui::crash::default_dir(),
+        replay,
     };
     // The token file lives as long as the app.
     let mut token_file = None;
