@@ -173,7 +173,7 @@ fn grid(ui: &mut egui::Ui, n: usize, mut each: impl FnMut(&mut egui::Ui, usize))
 fn card<'a>(pic: Option<&'a mut Picture>, glyph: Glyph, name: &'a str, sub: &'a str, dim: bool) -> impl egui::Widget + 'a {
     move |ui: &mut egui::Ui| {
         let t = &Tokens::get();
-        let (r, resp) = ui.allocate_exact_size(vec2(THUMB[0] + 16.0, THUMB[1] + 64.0), Sense::click());
+        let (r, resp) = ui.allocate_exact_size(vec2(THUMB[0] + 16.0, THUMB[1] + 86.0), Sense::click());
         let p = ui.painter();
         p.rect(
             r,
@@ -194,14 +194,13 @@ fn card<'a>(pic: Option<&'a mut Picture>, glyph: Glyph, name: &'a str, sub: &'a 
             }
         }
         let clip = p.with_clip_rect(r.shrink(8.0));
-        clip.text(
-            pos2(r.left() + 10.0, pr.bottom() + 18.0),
-            Align2::LEFT_CENTER,
-            name,
-            FontId::proportional(t.font_body),
-            if dim { t.text_dim } else { t.text },
-        );
-        clip.text(pos2(r.left() + 10.0, pr.bottom() + 40.0), Align2::LEFT_CENTER, sub, FontId::proportional(t.font_small), t.text_dim);
+        // The name on one line, cut with `…` when it runs on.
+        let ink = if dim { t.text_dim } else { t.text };
+        let g = crate::ui_kit::wrapped_galley(ui, name, t.font_body, ink, r.width() - 20.0, 1);
+        clip.galley(pos2(r.left() + 10.0, pr.bottom() + 18.0 - g.size().y / 2.0), g, ink);
+        // The line under it: two rows at most, cut with `…` (the whole on hover).
+        let g = crate::ui_kit::wrapped_galley(ui, sub, t.font_small, t.text_dim, r.width() - 20.0, 2);
+        clip.galley(pos2(r.left() + 10.0, pr.bottom() + 30.0), g, t.text_dim);
         resp.on_hover_cursor(egui::CursorIcon::PointingHand)
     }
 }
@@ -289,7 +288,7 @@ fn purposes(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let w = ui.available_width();
     let per_row = (((w + gap) / (KIND_MIN + gap)).floor() as usize).clamp(1, kinds.len());
     let card_w = ((w - (per_row - 1) as f32 * gap) / per_row as f32).clamp(KIND_MIN, 240.0);
-    let size = vec2(card_w, (card_w * 0.5).clamp(70.0, 110.0) + 74.0);
+    let size = vec2(card_w, (card_w * 0.5).clamp(70.0, 110.0) + 88.0);
     for row in kinds.chunks(per_row) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
@@ -332,8 +331,11 @@ fn samples(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut A
             *slot = (key, thumbnail(s.name));
         }
         let pic = &mut slot.1;
+        // Its description in brief as its name, the rest under it; the whole on hover.
         let about = sample_label(s.name);
-        if ui.named(card(pic.as_mut(), Glyph::Sample, s.name, about, false), Handle::Sample(s.name)).hint(Raw(about)).clicked() {
+        let (title, rest) = title_and_rest(about);
+        let rest = if rest.is_empty() { s.name } else { rest };
+        if ui.named(card(pic.as_mut(), Glyph::Sample, title, rest, false), Handle::Sample(s.name)).on_hover_text(about).clicked() {
             chosen = Some(s.name.to_owned());
         }
     });
@@ -355,4 +357,33 @@ fn settings(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let all = crate::ui_kit::styled(t!("All settings…"), false);
     ui.act(true, all, Fixed::HomeSettings.into(), Action::OpenSettings(Some(Section::Appearance)), out)
         .hint(t!("The theme, the 3D view, dialogs and files"));
+}
+
+/// A template's description as a card's name and the line under it: split at its first colon,
+/// comma, dash or bracket that leaves a name of 6 to 48 characters (`Waveguide high-pass
+/// filter` · `WR-90 filled with …`), else whole as the name.
+fn title_and_rest(about: &str) -> (&str, &str) {
+    let mut best: Option<usize> = None;
+    for sep in [": ", "：", ", ", "、", " — ", " (", "（"] {
+        if let Some(i) = about.find(sep) {
+            let n = about[..i].chars().count();
+            if (6..=48).contains(&n) && best.is_none_or(|b| i < b) {
+                best = Some(i);
+            }
+        }
+    }
+    match best {
+        Some(i) => (about[..i].trim(), about[i..].trim_start_matches([':', '：', ',', '、', ' ', '—']).trim()),
+        None => (about.trim(), ""),
+    }
+}
+
+#[cfg(test)]
+mod card_tests {
+    #[test]
+    fn a_description_splits_into_a_name_and_a_line() {
+        assert_eq!(super::title_and_rest("Waveguide high-pass filter: WR-90 filled"), ("Waveguide high-pass filter", "WR-90 filled"));
+        assert_eq!(super::title_and_rest("Straight rectangular waveguide, WR-90 (a × b)"), ("Straight rectangular waveguide", "WR-90 (a × b)"));
+        assert_eq!(super::title_and_rest("Short"), ("Short", ""));
+    }
 }

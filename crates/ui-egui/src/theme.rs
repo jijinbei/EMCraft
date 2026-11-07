@@ -260,7 +260,7 @@ impl Tokens {
             font_heading: 16.0,
             control_height: 30.0,
             control_radius: 6,
-            form_label_width: 96.0,
+            form_label_width: 112.0,
             form_header_height: 40.0,
             form_footer_height: 48.0,
             form_card_width: 380.0,

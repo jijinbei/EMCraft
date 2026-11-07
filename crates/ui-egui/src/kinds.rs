@@ -86,12 +86,13 @@ pub fn tile(ui: &mut egui::Ui, kind: Solver, size: egui::Vec2, look: Look, handl
     p.rect(r, 10.0, fill, stroke, egui::StrokeKind::Inside);
     let name_ink = if look.on { t.text } else { t.text_dim };
     if look.large {
-        let pic = Rect::from_min_max(r.min + vec2(10.0, 10.0), pos2(r.right() - 10.0, r.bottom() - 58.0));
+        let pic = Rect::from_min_max(r.min + vec2(10.0, 10.0), pos2(r.right() - 10.0, r.bottom() - 72.0));
         p.rect_filled(pic, 6.0, colours(kind)[1]);
         picture(&p, pic.shrink(8.0), kind);
         glyphs::paint(&p, Rect::from_min_size(pos2(r.left() + 10.0, pic.bottom() + 8.0), vec2(20.0, 20.0)), glyph, t.icon, colours(kind)[0]);
         p.text(pos2(r.left() + 36.0, pic.bottom() + 18.0), Align2::LEFT_CENTER, tr(name), FontId::proportional(t.font_body), t.text);
-        let line = p.layout(tr(plain).to_owned(), FontId::proportional(t.font_small), t.text_dim, r.width() - 20.0);
+        // Two lines at most, cut with `…` (the whole on hover).
+        let line = crate::ui_kit::wrapped_galley(ui, tr(plain), t.font_small, t.text_dim, r.width() - 20.0, 2);
         p.galley(pos2(r.left() + 10.0, pic.bottom() + 30.0), line, t.text_dim);
     } else {
         glyphs::paint(&p, Rect::from_center_size(pos2(r.center().x, r.top() + 28.0), vec2(34.0, 34.0)), glyph, t.icon, colours(kind)[0]);

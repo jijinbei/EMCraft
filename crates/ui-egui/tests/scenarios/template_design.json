@@ -1,6 +1,6 @@
 [
   {"note": "Templates built from SolidCraft designs: the card draws the design at its parameters and again as they change (the taper's length, the horn's mouth)"},
-  {"size": [1500, 1600]},
+  {"size": [1500, 2000]},
   {"click": "tab:start"},
   {"click": "home:purpose:frequency"},
   {"frames": 2},

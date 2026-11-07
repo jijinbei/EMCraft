@@ -784,7 +784,7 @@ fn results(app: &EmcraftApp) -> Vec<Row> {
 pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
     egui::Panel::left("emcraft_browser")
-        .default_size(280.0)
+        .default_size(300.0)
         .size_range(200.0..=480.0)
         .resizable(true)
         .show_separator_line(false)
