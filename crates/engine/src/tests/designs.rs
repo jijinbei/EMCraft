@@ -68,6 +68,22 @@ fn the_horn_meshes_finer() {
     }
 }
 
+/// The horn as it was first drawn (`data/horn-crease.solidcraft`): its air goes straight on for
+/// the last millimetre past the mouth, so the crease where it turns lies exactly in the walls'
+/// front face. The Boolean once left a vertex on an edge there from 6 elements per wavelength
+/// up; the crease is moved off the face to the side the union merges (`emcraft_mesh::flush::
+/// creases`), and it meshes at every density.
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn a_crease_lying_in_another_bodys_face_meshes() {
+    let path = format!("{}/src/tests/data/horn-crease.solidcraft", env!("CARGO_MANIFEST_DIR"));
+    for n in [6, 8] {
+        let mut s = Session::new();
+        s.execute("geometry.import", &json!({"path": path, "materials": {"inside": "vacuum"}, "open": true, "thickness": 6, "margin": 14})).unwrap();
+        s.execute("mesh.generate", &json!({"per_wavelength": n, "frequency": 10})).unwrap_or_else(|e| panic!("{n} per wavelength: {e}"));
+    }
+}
+
 /// The corrugated guide's wave is an equation curve of its parameters, the number of periods
 /// `n` a plain number (no unit): changed, the guide is longer by the periods added, its wall's
 /// points placed again from the formula.

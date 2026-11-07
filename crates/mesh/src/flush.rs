@@ -397,6 +397,84 @@ impl Flush<'_> {
     }
 }
 
+/// The body's corners with those lying in a flat face of the `other` surface moved off its plane
+/// along its axis by `g.step`: a crease or an edge of the body crossing the face exactly there
+/// (a horn's air turning straight in the plane of the walls' front face), which the Boolean
+/// would take as a vertex on the other surface and leave unsplit beside it. The move goes to the
+/// side whose part of the body the combination drops — out of the other body for a difference or
+/// an intersection (what of the body lies outside is cut away), into it for a union (what lies
+/// inside is merged) — so the result changes only by the move's tilt of the faces meeting
+/// there. A corner whose neighbours all lie on the other side (the body touching the face from
+/// where it is kept) is left where it is: moving it would open or close a sliver.
+pub(crate) fn creases(body: Triangles, other: Triangles, combine: Combine, g: Gaps) -> Vec<Point3> {
+    let mut out = body.positions.to_vec();
+    let mut planes: [Vec<Flat>; 3] = Default::default();
+    for f in flats(other.positions, other.triangles, g.flush) {
+        planes[f.axis].push(f);
+    }
+    if planes.iter().all(Vec::is_empty) {
+        return out;
+    }
+    for list in &mut planes {
+        list.sort_by(|a, b| a.at.total_cmp(&b.at).then(a.tri.cmp(&b.tri)));
+    }
+    // Each corner's neighbours along the body's edges.
+    let mut near: Vec<Vec<u32>> = vec![Vec::new(); body.positions.len()];
+    for t in body.triangles {
+        for k in 0..3 {
+            let (a, b) = (t[k], t[(k + 1) % 3]);
+            for (from, to) in [(a, b), (b, a)] {
+                if let Some(x) = near.get_mut(from as usize) {
+                    x.push(to);
+                }
+            }
+        }
+    }
+    let flat_corner: Vec<bool> = {
+        // Corners of the body's own flat faces in a plane of the other's are the flush faces'
+        // (`moved`), not creases.
+        let mut v = vec![false; body.positions.len()];
+        for f in flats(body.positions, body.triangles, g.flush) {
+            let list = &planes[f.axis];
+            let from = list.partition_point(|o| o.at < f.at - g.flush);
+            if list[from..].iter().take_while(|o| o.at <= f.at + g.flush).next().is_some() {
+                for &c in body.triangles.get(f.tri).iter().flat_map(|t| t.iter()) {
+                    if let Some(x) = v.get_mut(c as usize) {
+                        *x = true;
+                    }
+                }
+            }
+        }
+        v
+    };
+    for (i, p) in body.positions.iter().enumerate() {
+        if flat_corner.get(i).copied().unwrap_or(true) {
+            continue;
+        }
+        for (axis, list) in planes.iter().enumerate() {
+            let from = list.partition_point(|o| o.at < p[axis] - g.flush);
+            let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+            let Some(face) = list[from..].iter().take_while(|o| o.at <= p[axis] + g.flush).find(|o| covers(&o.uv, [p[u], p[v]])) else {
+                continue;
+            };
+            // Out of the other body along its face's outward normal, or into it for a union.
+            let toward = if combine == Combine::Add { -face.outward } else { face.outward };
+            let side = |q: &Point3| (q[axis] - face.at) * toward;
+            let around = near.get(i).map_or(&[][..], Vec::as_slice);
+            let ahead = around.iter().filter_map(|&n| body.positions.get(n as usize)).any(|q| side(q) > g.flush);
+            if ahead {
+                let mut q = *p;
+                q[axis] = face.at + toward * g.step;
+                if let Some(o) = out.get_mut(i) {
+                    *o = q;
+                }
+            }
+            break;
+        }
+    }
+    out
+}
+
 /// The smallest move `δ` with `n·δ = c` for every row `(n, c)` (unit normals): the rows made
 /// orthonormal one by one (modified Gram–Schmidt), a row that depends on the earlier ones
 /// checked against them instead. `None` when the rows contradict each other (planes that do
@@ -467,6 +545,30 @@ mod tests {
         let (wp, wt) = cube([0.0, 0.0, 8.0], [12.0, 5.0, 9.0]);
         let e = moved("wide", tri(&wp, &wt), tri(&gp, &gt), Combine::Add, G).unwrap_err().to_string();
         assert!(e.contains("partly outside"), "{e}");
+    }
+
+    /// A double pyramid through the box's face z = 10, its waist (the crease) exactly in that
+    /// face: the waist moves out of the box for a difference, into it for a union; a tip only
+    /// touching the face from inside, and corners off it, stay where they are.
+    #[test]
+    fn a_crease_in_a_face_moves_off_it_to_the_side_dropped() {
+        let (bp, bt) = cube([0.0, 0.0, 0.0], [10.0, 10.0, 10.0]);
+        let mut dp = vec![Point3::new(5.0, 5.0, 5.0), Point3::new(5.0, 5.0, 15.0)];
+        dp.extend([[3.0, 3.0], [7.0, 3.0], [7.0, 7.0], [3.0, 7.0]].map(|[x, y]| Point3::new(x, y, 10.0)));
+        let dt: Vec<[u32; 3]> = (0..4u32).flat_map(|k| [[0, 2 + (k + 1) % 4, 2 + k], [1, 2 + k, 2 + (k + 1) % 4]]).collect();
+        let z = |q: &[Point3]| q.iter().map(|p| p.z).collect::<Vec<_>>();
+        let cut = creases(tri(&dp, &dt), tri(&bp, &bt), Combine::Subtract, G);
+        assert_eq!(z(&cut), vec![5.0, 15.0, 10.1, 10.1, 10.1, 10.1]);
+        let joined = creases(tri(&dp, &dt), tri(&bp, &bt), Combine::Add, G);
+        assert_eq!(z(&joined), vec![5.0, 15.0, 9.9, 9.9, 9.9, 9.9]);
+        // A tetrahedron inside the box, its tip on the face: kept as it is (the Boolean refuses
+        // it, as before).
+        let tp = vec![Point3::new(5.0, 5.0, 10.0), Point3::new(4.0, 4.0, 6.0), Point3::new(6.0, 4.0, 6.0), Point3::new(5.0, 6.0, 6.0)];
+        let tt = vec![[0, 1, 2], [0, 2, 3], [0, 3, 1], [1, 3, 2]];
+        assert_eq!(creases(tri(&tp, &tt), tri(&bp, &bt), Combine::Subtract, G), tp);
+        // A body standing on the face (its foot a flat face there) is the flush faces' to move.
+        let (fp, ft) = cube([3.0, 3.0, 10.0], [7.0, 7.0, 12.0]);
+        assert_eq!(creases(tri(&fp, &ft), tri(&bp, &bt), Combine::Subtract, G), fp);
     }
 
     /// The wedge with corners (1, 0, 8), (3, 0, 8), (1, 0, 9), (1, 2, 8): its face on y = 0, a

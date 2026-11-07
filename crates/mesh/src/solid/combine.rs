@@ -51,6 +51,7 @@ fn direct(main: Tessellation, f: &Feature, k: usize, solid: &Shape, size: f64, o
         Shape::Surface { name, positions, triangles: tris, tags, surfaces } => {
             let placed: Vec<Point3> = positions.iter().map(|p| at + f.axis.turn(p.to_vec())).collect();
             let positions = crate::flush::moved(&name, Triangles { positions: &placed, triangles: &tris }, triangles(&main), f.combine, gaps(size))?;
+            let positions = crate::flush::creases(Triangles { positions: &positions, triangles: &tris }, triangles(&main), f.combine, gaps(size));
             (Shape::Surface { name, positions, triangles: tris, tags, surfaces }, Point3::ORIGIN, Axis::Z)
         }
         other => (other, at, f.axis),

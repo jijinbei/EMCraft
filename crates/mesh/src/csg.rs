@@ -18,7 +18,9 @@
 //!
 //! The surfaces must meet in general position: no coplanar overlapping faces and no vertex on
 //! the other surface. The callers move a tool's faces that are flush with the body's off by a
-//! small step first (`crate::solid`); what is still degenerate is refused, never guessed. A
+//! small step first (`crate::solid`), and its corners lying in one of the body's flat faces (a
+//! crease crossing it there, `crate::flush::creases`); what is still degenerate is refused,
+//! never guessed. A
 //! vertex exactly on a plane is taken to lie on its positive side, and an edge exactly through
 //! another's line to pass on the side its node order gives, the same from every triangle that
 //! shares it, so the pieces still close up.
