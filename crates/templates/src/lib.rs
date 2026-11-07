@@ -272,6 +272,13 @@ pub const TEMPLATES: &[Template] = &[
         kinds: &[Analysis::Frequency],
     },
     Template {
+        name: "corrugated-guide",
+        label: "WR-90 whose narrow wall waves, b + h sin(2πz/p) for n periods, a SolidCraft design with the wave an equation curve: the corrugation slows the wave, S21's phase lagging a straight guide's (23° at 10 GHz for h = 2 mm, p = 10 mm, n = 4)",
+        script: include_str!("../scripts/corrugated-guide.json"),
+        marks: include_str!("../scripts/corrugated-guide.marks.json"),
+        kinds: &[Analysis::Frequency],
+    },
+    Template {
         name: "termination",
         label: "Matched load: a lossy wedge (εr = 1.5, tan δ = 0.5) 90 mm long, 1 mm clear of the walls, against the short at the end of a WR-90 guide; one port: |S11| below 0.06 over the band",
         script: include_str!("../scripts/termination.json"),
@@ -557,6 +564,8 @@ pub const DESIGN_SCHEME: &str = "template:";
 pub const DESIGNS: &[Design] = &[
     Design { file: "taper.solidcraft", bytes: include_bytes!("../designs/taper.solidcraft") },
     Design { file: "horn.solidcraft", bytes: include_bytes!("../designs/horn.solidcraft") },
+    Design { file: "corrugated-h.solidcraft", bytes: include_bytes!("../designs/corrugated-h.solidcraft") },
+    Design { file: "corrugated-e.solidcraft", bytes: include_bytes!("../designs/corrugated-e.solidcraft") },
 ];
 
 /// The design a path names, `template:<file>`; `None` for any other path (a file of the

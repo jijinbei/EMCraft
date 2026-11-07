@@ -68,6 +68,22 @@ fn the_horn_meshes_finer() {
     }
 }
 
+/// The corrugated guide's wave is an equation curve of its parameters, the number of periods
+/// `n` a plain number (no unit): changed, the guide is longer by the periods added, its wall's
+/// points placed again from the formula.
+#[test]
+fn the_corrugated_guide_follows_its_parameters() {
+    let length = |s: &Session| s.model.domain.solid.as_ref().map(|r| r.shape.bounds()).map(|b| b.max.z - b.min.z).unwrap();
+    let four = built("corrugated-guide", json!(null));
+    let six = built("corrugated-guide", json!({"n": 6}));
+    // 2 l + n p: 60 mm, then 80 mm.
+    approx::assert_abs_diff_eq!(length(&four), 0.060, epsilon = 1e-9);
+    approx::assert_abs_diff_eq!(length(&six), 0.080, epsilon = 1e-9);
+    // The narrow wall reaches b + h at the crests.
+    let height = |s: &Session| s.model.domain.solid.as_ref().map(|r| r.shape.bounds()).map(|b| b.max.y - b.min.y).unwrap();
+    approx::assert_abs_diff_eq!(height(&four), 0.01016 + 0.002, epsilon = 1e-6);
+}
+
 #[test]
 fn the_termination_template_holds_its_absorber() {
     let s = built("termination", json!(null));

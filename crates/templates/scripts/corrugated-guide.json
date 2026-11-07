@@ -1,0 +1,12 @@
+[
+ {"command": "project.variable", "params": {"name": "h", "value": 2, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "p", "value": 10, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "n", "value": 4}},
+ {"command": "project.variable", "params": {"name": "l", "value": 10, "quantity": "length"}},
+ {"command": "geometry.import", "params": {"path": "template:corrugated-e.solidcraft", "parameters": {"h": "=h", "p": "=p", "n": "=n", "l": "=l"}, "materials": {"guide": "interior"}}},
+ {"command": "mesh.generate", "params": {"size": 2}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}},
+ {"command": "project.setup", "params": {"kind": "frequency", "start": 8.2, "stop": 12.4, "points": 22, "order": 2}},
+ {"command": "solve.frequency", "params": {"start": 8.2, "stop": 12.4, "points": 22, "order": 2}}
+]

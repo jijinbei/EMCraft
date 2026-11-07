@@ -125,6 +125,7 @@ templates! {
     pcb_wilkinson: "pcb-wilkinson",
     pcb_ring: "pcb-ring";
     heavy:
+    corrugated_guide: "corrugated-guide" ("25 s: a sweep of 22 frequencies on 130 000 unknowns"),
     h_bend_radius: "h-bend-radius" ("4 s: its arcs"),
     e_bend_radius: "e-bend-radius" ("3 s: its arcs"),
     cross_guide_coupler: "cross-guide-coupler" ("4 s: its holes"),

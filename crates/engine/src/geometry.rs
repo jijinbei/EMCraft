@@ -562,11 +562,13 @@ fn design_overrides(p: &Params, bytes: &[u8]) -> Result<Vec<(String, String)>> {
     o.iter()
         .map(|(name, value)| {
             let q = known.iter().find(|q| q.name == *name).ok_or_else(|| p.error("parameters", format!("the design has no parameter `{name}`")))?;
+            // A plain number's parameter (its unit `none`) takes the number alone.
+            let unit = if q.unit == "none" { "" } else { q.unit.as_str() };
             let expression = match value {
-                Value::Number(n) => format!("{} {}", n, q.unit),
+                Value::Number(n) => format!("{n} {unit}"),
                 // An expression of the project's variables (`"=a/2"`): its number, in the
                 // design's unit as a number given is (a template passes its parameters so).
-                Value::String(e) if crate::expr::body(e).is_some() => format!("{} {}", p.number_of("parameters", value)?, q.unit),
+                Value::String(e) if crate::expr::body(e).is_some() => format!("{} {unit}", p.number_of("parameters", value)?),
                 Value::String(e) => e.clone(),
                 _ => return Err(p.error("parameters", format!("`{name}`: a number or an expression"))),
             };

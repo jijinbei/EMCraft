@@ -1,0 +1,7 @@
+[
+ {"command": "geometry.import", "params": {"path": "corrugated-h.solidcraft", "materials": {"guide": "interior"}}},
+ {"command": "mesh.generate", "params": {"size": 2}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}},
+ {"command": "solve.frequency", "params": {"frequencies": [10], "order": 2}, "id": "solve"}
+]

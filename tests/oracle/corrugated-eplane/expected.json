@@ -1,0 +1,10 @@
+{
+ "title": "WR-90 whose narrow wall waves, b = 10.16 + 2 sin(2πz/10) mm for four periods between 10 mm leads, a SolidCraft design with the wave an equation curve: S21 at 10 GHz, 23° behind a straight guide",
+ "kind": "theory",
+ "source": "The same wall cut into steps in height (160, 320 and 640 over the four periods, each as high as the wave at its middle) and solved by mode matching of LSE^x_1n modes at every step, cascaded as generalised scattering matrices (A. Wexler, IEEE Trans. MTT 15(9):508–517, 1967; 160 modes, 152.050° against 152.062° with 400 at 320 steps): ∠S21 151.679°, 152.062°, 152.270°, converging geometrically (ratio 0.54) to 152.517°, extrapolated; |S11| 0.0846 with 640 steps",
+ "quantities": [
+  {"id": "s21_phase", "quantity": "phase of S21 at 10 GHz (degrees)", "measure": {"step": "solve", "pointer": "/points/0/s21/deg"}, "value": 152.517, "tolerance": {"absolute": 0.6}, "reason": "the smooth wall meshed with 2 mm tetrahedra at order 2, its curved face as flat triangles: 152.695°, 152.862° at 1.5 mm; the steps' limit is good to about 0.2° (E normal to their faces, its field singular at each step's edge), so the two methods stand about 0.3° apart, 1.4 % of the delay"},
+  {"id": "s21_mag", "quantity": "|S21| at 10 GHz", "measure": {"step": "solve", "pointer": "/points/0/s21/mag"}, "value": 0.996416, "tolerance": {"absolute": 0.001}, "reason": "lossless: |S21|² = 1 − |S11|² to rounding"},
+  {"id": "s11_mag", "quantity": "|S11| at 10 GHz", "measure": {"step": "solve", "pointer": "/points/0/s11/mag"}, "value": 0.0846, "tolerance": {"absolute": 0.006}, "reason": "0.0817 at 2 mm: the reflection's error follows the phase's"}
+ ]
+}
