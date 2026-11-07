@@ -164,6 +164,21 @@ fn spherical_layer(model: &Model) -> Result<Option<SphericalLayer>> {
     Ok(layer)
 }
 
+/// The region's surface before it is meshed: the solid's shape tessellated at about `size` (m)
+/// with its features combined as the mesher combines them (faces flush with others moved off,
+/// creases collapsed) — the mesh's boundary to come, for drawing a model before meshing (an
+/// imported part's metal less the air cut out of it). Symmetry planes and sectors are not cut.
+pub fn region_surface(model: &Model, size: Metres) -> Result<crate::csg::Surface> {
+    let s = model.domain.solid.as_ref().ok_or_else(|| MeshError::Invalid { what: "model".into(), why: "has no solid".into() })?;
+    let size = size.get();
+    let mut main = tessellate(&s.shape, size);
+    let features = joined(model.features(), &s.shape, size)?;
+    if !features.is_empty() {
+        main = combine_all(main, &features, &s.shape, size)?;
+    }
+    Ok(main.surface)
+}
+
 /// [`solid`] with its [`SolidOptions`]: sizes per material, curved edges or straight, local
 /// refinements.
 pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {

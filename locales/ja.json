@@ -2,6 +2,10 @@
   "name": "日本語",
   "complete": true,
   "strings": {
+    "Show the table": "表を表示",
+    "Hide the table": "表を隠す",
+    "phase, unwrapped (°)": "位相・連続 (°)",
+    "group delay (ns)": "群遅延 (ns)",
     "Solved the scattering problem: scattering cross-section {sigma} {unit}².": "散乱問題を解析しました：散乱断面積 {sigma} {unit}²。",
     "Solved the open problem.": "開放問題を解析しました。",
     "Particle speed v/c": "粒子の速さ v/c",

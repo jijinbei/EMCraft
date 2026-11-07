@@ -31,6 +31,10 @@ emcraft_macros::named_enum! {
         Db = "db" => "|S| (dB)",
         Magnitude = "magnitude" => "|S| (linear)",
         Phase = "phase" => "phase (°)",
+        /// The phase followed through its wraps: its slope against frequency is the delay.
+        Unwrapped = "phase_unwrapped" => "phase, unwrapped (°)",
+        /// The group delay τ = −dφ/dω (ns): how long the signal takes through.
+        GroupDelay = "group_delay" => "group delay (ns)",
     }
 }
 
@@ -41,14 +45,65 @@ impl SDisplay {
         match self {
             SDisplay::Db => decibels(s.norm()).max(DB_FLOOR),
             SDisplay::Magnitude => s.norm(),
-            SDisplay::Phase => s.arg().to_degrees(),
+            SDisplay::Phase | SDisplay::Unwrapped | SDisplay::GroupDelay => s.arg().to_degrees(),
         }
+    }
+
+    /// Whether a curve's points are its phase still to be followed through its wraps (and
+    /// differentiated for the group delay) once the curve is whole ([`SDisplay::derived`]).
+    const fn along(self) -> bool {
+        matches!(self, SDisplay::Unwrapped | SDisplay::GroupDelay)
+    }
+
+    /// A whole curve's points (frequency in display units `fu`, phase in degrees as
+    /// [`SDisplay::of`] gives it) as the display shows them: the phase unwrapped, or the group
+    /// delay τ = −(1/360) dφ/df in ns by central differences (one-sided at the ends); others
+    /// as they are.
+    ///
+    /// ```
+    /// use emcraft_engine::view::SDisplay;
+    /// use emcraft_model::units::Frequency;
+    /// // A line 1 ns long: φ = −360° f τ, wrapped; f in GHz.
+    /// let pts: Vec<[f64; 2]> = (0..=20).map(|k| { let f = 8.0 + 0.2 * f64::from(k); [f, (-360.0 * f * 1.0 + 180.0).rem_euclid(360.0) - 180.0] }).collect();
+    /// let tau = SDisplay::GroupDelay.derived(pts.clone(), Frequency::Gigahertz);
+    /// assert!(tau.iter().all(|p| (p[1] - 1.0).abs() < 1e-9), "{tau:?}");
+    /// let phase = SDisplay::Unwrapped.derived(pts, Frequency::Gigahertz);
+    /// assert!(phase.windows(2).all(|w| (w[1][1] - w[0][1] + 72.0).abs() < 1e-9));
+    /// ```
+    pub fn derived(self, mut points: Vec<[f64; 2]>, fu: emcraft_model::units::Frequency) -> Vec<[f64; 2]> {
+        if !self.along() || points.len() < 2 {
+            return if self == SDisplay::GroupDelay { Vec::new() } else { points };
+        }
+        points.sort_by(|a, b| a[0].total_cmp(&b[0]));
+        let mut offset = 0.0;
+        let mut previous: Option<f64> = None;
+        for p in &mut points {
+            if let Some(q) = previous {
+                let step = p[1] + offset - q;
+                offset -= 360.0 * (step / 360.0).round();
+            }
+            p[1] += offset;
+            previous = Some(p[1]);
+        }
+        if self == SDisplay::Unwrapped {
+            return points;
+        }
+        let n = points.len();
+        (0..n)
+            .map(|i| {
+                let (a, b) = (points[i.saturating_sub(1)], points[(i + 1).min(n - 1)]);
+                let df = fu.to_si(b[0]) - fu.to_si(a[0]);
+                let tau = if df > 0.0 { -(b[1] - a[1]) / (360.0 * df) * 1e9 } else { f64::NAN };
+                [points[i][0], tau]
+            })
+            .collect()
     }
 
     /// Entry `pq`'s name in a legend: `$|S_{21}|$`, `arg $S_{21}$`.
     fn entry(self, pq: &str) -> String {
         match self {
-            SDisplay::Phase => format!("arg $S_{{{pq}}}$"),
+            SDisplay::Phase | SDisplay::Unwrapped => format!("arg $S_{{{pq}}}$"),
+            SDisplay::GroupDelay => format!("$\\tau_g$ of $S_{{{pq}}}$"),
             _ => format!("$|S_{{{pq}}}|$"),
         }
     }
@@ -62,8 +117,47 @@ impl SDisplay {
                 Axis::new("$|S|$ (linear, 0 to 1)", 0.0, (top * 1.05).min(10.0))
             }
             SDisplay::Phase => Axis::new("phase (°)", -190.0, 190.0),
+            SDisplay::Unwrapped | SDisplay::GroupDelay => {
+                let values = series.iter().flat_map(|s| s.points.iter().map(|p| p[1])).filter(|v| v.is_finite());
+                let (lo, hi) = values.fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), v| (a.min(v), b.max(v)));
+                let (lo, hi) = if lo <= hi { (lo, hi) } else { (0.0, 1.0) };
+                let pad = 0.05 * (hi - lo).max(1e-9 * hi.abs().max(1.0));
+                let name = if self == SDisplay::Unwrapped { "phase, unwrapped (°)" } else { "group delay (ns)" };
+                Axis::new(name, lo - pad, hi + pad)
+            }
         }
     }
+
+    /// Each curve of `series` as the display shows it whole ([`SDisplay::derived`]); a delay's
+    /// display keeps the transmissions only (a reflection's phase is no time through, and a
+    /// small one's is noise).
+    fn derive_all(self, series: &mut Vec<Series>, fu: emcraft_model::units::Frequency) {
+        if !self.along() {
+            return;
+        }
+        series.retain(|s| !reflection(&s.key));
+        for s in series.iter_mut().filter(|s| s.style != Style::Markers) {
+            s.points = self.derived(std::mem::take(&mut s.points), fu);
+        }
+        // A fast sweep's marks of its full solves are too few to follow the phase through its
+        // wraps: each takes its value from its curve's at its frequency.
+        let curves: Vec<(String, Vec<[f64; 2]>)> =
+            series.iter().filter(|s| s.style != Style::Markers).map(|s| (s.key.clone(), s.points.clone())).collect();
+        for s in series.iter_mut().filter(|s| s.style == Style::Markers) {
+            let Some((_, line)) = curves.iter().find(|(k, _)| *k == s.key) else { continue };
+            for p in &mut s.points {
+                p[1] = line.iter().find(|q| (q[0] - p[0]).abs() <= 1e-12 * p[0].abs().max(1.0)).map_or(f64::NAN, |q| q[1]);
+            }
+        }
+    }
+}
+
+/// Whether a curve's key names a reflection, S_pp (`s11.fem`, `run2.s22`, `s11.ref`).
+fn reflection(key: &str) -> bool {
+    key.split('.').any(|part| {
+        let b = part.as_bytes();
+        b.len() == 3 && b[0] == b's' && b[1].is_ascii_digit() && b[1] == b[2]
+    })
 }
 
 /// A curve as series: one, or for a phase one per stretch between its wraps from +180° to
@@ -134,8 +228,12 @@ pub fn sparameter_chart_compared(session: &Session, display: SDisplay, compare: 
         let pts = |p: usize, q: usize| sw.curve(p, q).into_iter().map(|(f, s)| [fu.from_si(f), display.of(s)]).collect();
         // Its solved points, as the session's own are drawn: data, not curves through it.
         let [p21, p11] = compare_pens(k);
-        chart.series.push(Series::new(&format!("run{}.s21", a.id), format!("#{} {}", a.id, display.entry("21")), p21, Style::Joined, pts(1, 0)));
-        chart.series.push(Series::new(&format!("run{}.s11", a.id), format!("#{} {}", a.id, display.entry("11")), p11, Style::Joined, pts(0, 0)));
+        let mut kept = vec![
+            Series::new(&format!("run{}.s21", a.id), format!("#{} {}", a.id, display.entry("21")), p21, Style::Joined, pts(1, 0)),
+            Series::new(&format!("run{}.s11", a.id), format!("#{} {}", a.id, display.entry("11")), p11, Style::Joined, pts(0, 0)),
+        ];
+        display.derive_all(&mut kept, fu);
+        chart.series.extend(kept);
     }
     if !own && !added {
         return Err(EngineError::NotSolved { what: "results", run: "solve.frequency or solve.time_domain" });
@@ -225,6 +323,7 @@ fn sparameter_chart_now(session: &Session, display: SDisplay) -> Result<Chart> {
         }
     }
     let marks = section_cutoffs(session).into_iter().map(|(fc, name)| (fu.from_si(fc), format!("$f_c$ {name}"))).collect();
+    display.derive_all(&mut series, fu);
     let y = display.axis(&series);
     let mut chart = Chart::new("S-parameters", Axis::new(&format!("frequency ({})", fu.symbol()), fu.from_si(f0), fu.from_si(f1)), y, series);
     chart.marks = marks;

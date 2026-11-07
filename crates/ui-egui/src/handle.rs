@@ -99,6 +99,7 @@ emcraft_macros::named_enum! {
         HistoryPin = "history:pin",
         HistoryDelete = "history:delete",
         SDisplay = "sparameters:display",
+        STableToggle = "sparameters:table",
         // What a narrow window's ribbon has no room for: the tabs, the buttons.
         ToolbarMore = "toolbar:more",
         // Command search.

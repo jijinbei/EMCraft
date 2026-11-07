@@ -446,3 +446,22 @@ fn an_imported_cavitys_walls_show_before_and_after_meshing() {
     s.execute("mesh.generate", &serde_json::json!({"size": 6})).unwrap();
     assert!(shown(&s));
 }
+
+/// An imported part's metal carved by its air (the horn: a solid block, its flare's air cut out)
+/// is drawn before meshing as the mesh will have it: no metal across the mouth's opening
+/// (x 20–60 mm, y 20–50 mm on the plane z = 55 mm), where the block alone would close it.
+#[test]
+fn a_carved_part_is_drawn_open_before_meshing() {
+    let mut s = Session::new();
+    let horn =
+        serde_json::json!({"path": "template:horn.solidcraft", "materials": {"inside": "vacuum"}, "open": true, "thickness": 10, "margin": 18});
+    s.execute("geometry.import", &horn).unwrap();
+    let b = super::build_with(&s, Overlay::Plain, &[], &[]);
+    let walls = super::Pick::Feature(0).tag();
+    let across = b.scene.tris.iter().filter(|t| t.tag == walls).filter(|t| {
+        let c = [0, 1, 2].map(|k| (t.p[0][k] + t.p[1][k] + t.p[2][k]) / 3.0);
+        (c[2] - 0.055).abs() < 1e-6 && c[0] > 0.021 && c[0] < 0.059 && c[1] > 0.021 && c[1] < 0.049
+    });
+    assert_eq!(across.count(), 0, "metal across the mouth");
+    assert!(b.scene.tris.iter().any(|t| t.tag == walls), "the walls drawn");
+}

@@ -137,14 +137,22 @@ impl Fonts {
     }
 }
 
-/// egui's fonts, then the face found, in both families.
+/// The face found first in the proportional family — so a line's letters, digits and kana are
+/// all one typeface's, not egui's Latin beside the language's own, at another weight and
+/// height — egui's fonts after it for what it lacks (symbols); in the monospace family after
+/// egui's (code keeps its fixed widths).
 fn with_installed(found: system::Found) -> egui::FontDefinitions {
     let mut defs = egui::FontDefinitions::default();
     let key = format!("{} (installed)", found.family);
     let data = egui::FontData { font: std::borrow::Cow::Owned(found.bytes), index: found.index, tweak: Default::default() };
     defs.font_data.insert(key.clone(), Arc::new(data));
     for family in FAMILIES {
-        defs.families.entry(family).or_default().push(key.clone());
+        let list = defs.families.entry(family.clone()).or_default();
+        if family == egui::FontFamily::Proportional {
+            list.insert(0, key.clone());
+        } else {
+            list.push(key.clone());
+        }
     }
     defs
 }
@@ -190,16 +198,19 @@ mod tests {
         assert!(missing.is_empty(), "not in the subset (run cargo xtask font-subset): {}", missing.iter().collect::<String>());
     }
 
-    /// A face found goes after egui's own fonts, in both families.
+    /// A face found leads the proportional family (one typeface for a line's letters, digits
+    /// and kana), egui's fonts after it; in the monospace family it follows egui's.
     #[test]
-    fn a_found_font_comes_after_eguis_own() {
+    fn a_found_font_leads_the_proportional_family() {
         let defs = with_installed(system::Found { family: "Some Gothic".into(), index: 0, bytes: NOTO_SANS_JP_OTF.to_vec() });
-        for family in FAMILIES {
-            let list = &defs.families[&family];
-            let n = list.len();
-            assert_eq!(list[n - 1], "Some Gothic (installed)");
-            assert_eq!(list[..n - 1], egui::FontDefinitions::default().families[&family][..]);
-        }
+        let ours = "Some Gothic (installed)";
+        let proportional = &defs.families[&egui::FontFamily::Proportional];
+        assert_eq!(proportional[0], ours);
+        assert_eq!(proportional[1..], egui::FontDefinitions::default().families[&egui::FontFamily::Proportional][..]);
+        let mono = &defs.families[&egui::FontFamily::Monospace];
+        let n = mono.len();
+        assert_eq!(mono[n - 1], ours);
+        assert_eq!(mono[..n - 1], egui::FontDefinitions::default().families[&egui::FontFamily::Monospace][..]);
         let mut f = Fonts::default();
         assert!(f.shows("ja") && f.shows("en"));
     }

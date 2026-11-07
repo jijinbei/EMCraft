@@ -16,7 +16,7 @@ impl ChartView for SParameters {
     /// How S is shown — in dB, as a magnitude or a phase — as one small menu.
     fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, _: &mut Actions) -> Option<SharedChart> {
         ui.horizontal(|ui| {
-            let r = egui::ComboBox::from_id_salt("s_display").width(110.0).selected_text(shown(st.views.sdisplay)).show_ui(ui, |ui| {
+            let r = egui::ComboBox::from_id_salt("s_display").width(150.0).selected_text(shown(st.views.sdisplay)).show_ui(ui, |ui| {
                 for d in view::SDisplay::ALL {
                     if ui.named(egui::Button::selectable(st.views.sdisplay == d, shown(d)), Handle::SParameters(d.id())).clicked() {
                         st.views.sdisplay = d;
@@ -33,14 +33,24 @@ impl ChartView for SParameters {
 
     /// The history (once there are two solves to compare), the table of S and the ports'
     /// reference planes, packed round the chart.
-    fn blocks(app: &EmcraftApp, _: &Parts, ui: &egui::Ui) -> Vec<egui::Vec2> {
-        parts(app).map(|p| p.wants(app, ui)).collect()
+    fn blocks(app: &EmcraftApp, st: &Parts, ui: &egui::Ui) -> Vec<egui::Vec2> {
+        parts(app).map(|p| p.wants(app, ui, st.views.s_table)).collect()
     }
 
     fn block(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, k: usize, out: &mut Actions) {
         match parts(app).nth(k) {
             Some(Part::History) => history(app, &mut st.views.compare, ui, out),
-            Some(Part::Table) => table(app, ui),
+            Some(Part::Table) => {
+                // The chart first: the table one click away.
+                let open = st.views.s_table;
+                let label = if open { tr(t!("Hide the table")) } else { tr(t!("Show the table")) };
+                if ui.named(egui::Button::new(label).small(), Fixed::STableToggle.into()).clicked() {
+                    st.views.s_table = !open;
+                }
+                if open {
+                    table(app, ui);
+                }
+            }
             Some(Part::Planes) => {
                 reference_planes(app, &mut st.views.deembed, ui, out);
                 crate::ui_kit::caption(ui, t!("Click: the fields there · drag: a band to solve more finely"));
@@ -86,11 +96,12 @@ fn parts(app: &EmcraftApp) -> impl Iterator<Item = Part> {
 
 impl Part {
     /// The size it wants (points): the table's measured, the others' from what they show.
-    fn wants(self, app: &EmcraftApp, ui: &egui::Ui) -> egui::Vec2 {
+    fn wants(self, app: &EmcraftApp, ui: &egui::Ui, table_open: bool) -> egui::Vec2 {
         match self {
             // A heading, a row per kept solve, a caption.
             Part::History => vec2(300.0, 30.0 + 34.0 * app.session.archive().len() as f32 + 34.0),
-            Part::Table => STable::of(app, ui).map_or(vec2(300.0, 26.0), |t| t.size(ui)),
+            Part::Table if table_open => STable::of(app, ui).map_or(vec2(300.0, 26.0), |t| t.size(ui)),
+            Part::Table => vec2(140.0, 26.0),
             Part::Planes => vec2(80.0 + 110.0 * app.session.model().ports.len() as f32, 46.0),
         }
     }

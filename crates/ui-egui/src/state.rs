@@ -228,6 +228,8 @@ pub struct ViewState {
     pub pattern: PatternSettings,
     /// What the S-parameter chart shows: |S| in dB, magnitude or phase.
     pub sdisplay: emcraft_engine::view::SDisplay,
+    /// The S-parameter view's table unfolded (the chart first: folded until asked for).
+    pub s_table: bool,
     /// The kept solves (`results.history`) drawn over the S-parameter chart.
     pub compare: Vec<u32>,
     pub tdr: TdrState,

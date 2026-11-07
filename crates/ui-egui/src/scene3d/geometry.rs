@@ -159,7 +159,32 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
             255
         };
         out.scene.tagged(Pick::Solid.tag(), |scene| shape(scene, &solid.shape, &|q| q, tint(&solid.material), alpha));
+        // Imported metal carved by the air placed after it (a horn's solid block and the air of
+        // its flare) is drawn as the mesh will have it: the region's surface, less the region's
+        // own outer faces.
+        let carved: Vec<usize> = (0..m.features().len()).filter(|&i| is_carved(m, i)).collect();
+        if let Some(&first) = carved.first()
+            && let Some(surface) = region_surface(m)
+        {
+            let bounds = solid.shape.bounds();
+            let outer = |c: [f64; 3]| {
+                let tol = 1e-9 * (bounds.max - bounds.min).norm();
+                (0..3).any(|k| (c[k] - bounds.min[k]).abs() <= tol || (c[k] - bounds.max[k]).abs() <= tol)
+            };
+            out.scene.tagged(Pick::Feature(first).tag(), |scene| {
+                for t in &surface.triangles {
+                    let [a, b, c] = t.map(|v| surface.positions.get(v as usize).map_or([0.0; 3], |q| p3(*q)));
+                    let centre = [0, 1, 2].map(|k| (a[k] + b[k] + c[k]) / 3.0);
+                    if !outer(centre) {
+                        scene.tri(a, c, b, sc().metal_dark, 255);
+                    }
+                }
+            });
+        }
         for (i, f) in m.features().iter().enumerate() {
+            if carved.contains(&i) {
+                continue;
+            }
             let (color, alpha) = match f.combine {
                 Combine::Add => (tint(&solid.material), alpha),
                 Combine::Subtract => (sc().metal_dark, 255),
@@ -191,6 +216,25 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
             }
         });
     }
+}
+
+/// Whether metal feature `i` is an imported surface the region's own material placed after it
+/// carves (their boxes meet): drawn from the region's surface ([`region_surface`]).
+fn is_carved(m: &Model, i: usize) -> bool {
+    let features = m.features();
+    features.get(i).is_some_and(|f| {
+        f.combine == Combine::Subtract
+            && matches!(f.shape, Shape::Surface { .. })
+            && features.iter().skip(i + 1).any(|g| g.combine == Combine::Add && g.bounds().overlaps(f.bounds()))
+    })
+}
+
+/// The region's surface as the mesher will combine it, at a twentieth of the model's size;
+/// `None` when the mesher refuses it (the bodies are drawn whole then).
+fn region_surface(m: &Model) -> Option<emcraft_mesh::csg::Surface> {
+    let b = m.bounds()?;
+    let size = emcraft_model::Metres::new((b.max - b.min).norm() / 20.0).ok()?;
+    emcraft_mesh::solid::region_surface(m, size).ok()
 }
 
 /// The inside's surface before meshing, its faces on ports open: a waveguide's box

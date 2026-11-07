@@ -751,6 +751,14 @@ pub fn auto_symmetry(s: &mut Session, _: &Params) -> Result<Value> {
 
 pub fn find_symmetry(s: &mut Session, p: &Params) -> Result<Value> {
     let kind: Option<SymmetryKind> = p.choice("kind").optional()?;
+    // Planes a model cannot carry yet are said as such, not as an asymmetric model (an open
+    // horn is symmetric, its PML box too).
+    let m = &s.model;
+    if m.domain.open.is_some() || !m.lumped.is_empty() || !m.sources.is_empty() {
+        return Err(EngineError::failed(
+            "not supported yet: symmetry planes in an open problem or with lumped ports or sources (the whole model is solved)",
+        ));
+    }
     let found = s.model.find_symmetry();
     if found.is_empty() {
         return Err(EngineError::failed("the model is not symmetric about the middle of any axis (its geometry, materials and ports together)"));

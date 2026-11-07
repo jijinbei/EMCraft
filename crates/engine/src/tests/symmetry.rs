@@ -103,4 +103,12 @@ fn symmetry_planes_are_found_with_the_walls_the_ports_ask_for() {
     assert!(s.model().domain.symmetry.is_empty());
     s.execute("model.symmetry.find", &json!({"kind": "magnetic"})).unwrap();
     assert_eq!(planes(&s), [("x", "magnetic"), ("y", "magnetic")]);
+
+    // An open problem cannot carry planes yet: said so, not as an asymmetric model (the horn's
+    // walls, air, box and feed are symmetric about x and y).
+    let mut s = crate::Session::new();
+    let horn = json!({"path": "template:horn.solidcraft", "materials": {"inside": "vacuum"}, "open": true, "thickness": 10, "margin": 18});
+    s.execute("geometry.import", &horn).unwrap();
+    let e = s.execute("model.symmetry.find", &json!({})).unwrap_err();
+    assert!(e.to_string().contains("open problem"), "{e}");
 }

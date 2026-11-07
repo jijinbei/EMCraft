@@ -6,8 +6,9 @@
 //! Greek letters.
 //!
 //! A character DejaVu Sans lacks (a translation's kana and kanji) is drawn from the fallback
-//! face the window sets ([`set_fallback`]: the font it shows its language with); without one
-//! it shows as DejaVu's missing glyph.
+//! face the window sets ([`set_fallback`]: the font it shows its language with), and so is the
+//! rest of a run that holds one (one typeface on a line); without one it shows as DejaVu's
+//! missing glyph.
 //!
 //! A label's size is its `scale`, as for the bitmap font it replaces: the text's box is about
 //! 7 × `scale` pixels high, from its top at the y given down to the baseline, descenders below.
@@ -178,12 +179,15 @@ fn set(face: &FontRef<'static>, nodes: &[math::Node], size: f32) -> Boxed {
 fn run(face: &FontRef<'static>, text: &str, size: f32) -> Boxed {
     let scaled = face.as_scaled(PxScale::from(size));
     let alt = fallback();
+    // A run with characters only the fallback has (a translation's kana) is drawn in it
+    // whole, its letters and digits too: one typeface on the line, not two side by side.
+    let whole = alt.as_deref().is_some_and(|a| text.chars().any(|c| face.glyph_id(c).0 == 0 && a.glyph_id(c).0 != 0));
     let mut caret = 0.0f32;
     let mut previous: Option<GlyphId> = None;
     let mut marks = Vec::with_capacity(text.len());
     for ch in text.chars() {
         let id = face.glyph_id(ch);
-        if id.0 == 0
+        if (id.0 == 0 || whole)
             && let Some(a) = alt.as_deref()
             && a.glyph_id(ch).0 != 0
         {
