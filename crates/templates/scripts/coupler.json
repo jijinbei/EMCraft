@@ -1,6 +1,6 @@
 [
- {"command": "project.variable", "params": {"name": "er", "value": 2.2}},
- {"command": "project.variable", "params": {"name": "l", "value": 10.106, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "er", "label": "relative permittivity", "value": 2.2}},
+ {"command": "project.variable", "params": {"name": "l", "label": "coupled length", "value": 10.106, "quantity": "length"}},
  {"command": "model.material.create", "params": {"name": "ptfe", "eps_r": "=er"}},
  {"command": "geometry.waveguide", "params": {"width": 20, "height": 4, "sections": [{"length": "=l", "material": "ptfe"}], "strips": [{"y": 2, "x0": 7.2181, "width": 2.6938}, {"y": 2, "x0": 10.0881, "width": 2.6938}]}},
  {"command": "model.symmetry", "params": {"axis": "y", "kind": "magnetic"}},

@@ -311,3 +311,16 @@ fn hostile_grids_are_refused_and_a_cancelled_one_stops() {
     assert_eq!(r, Err(EngineError::Cancelled));
     assert!(s.results.study.is_none());
 }
+
+/// A variable's label says what it is; a change of its value keeps it, and one too long or on
+/// two lines is refused.
+#[test]
+fn a_variables_label_is_kept_and_checked() {
+    let mut s = Session::new();
+    s.execute("project.variable", &json!({"name": "t", "value": 2, "quantity": "length", "label": "iris thickness"})).unwrap();
+    s.execute("project.variable", &json!({"name": "t", "value": 3})).unwrap();
+    let def = s.history.iter().find(|st| st.defines("t")).map(|st| st.params.clone()).unwrap_or_default();
+    assert_eq!((def["label"].as_str(), def["quantity"].as_str()), (Some("iris thickness"), Some("length")));
+    assert!(s.execute("project.variable", &json!({"name": "u", "value": 1, "label": "x".repeat(81)})).is_err());
+    assert!(s.execute("project.variable", &json!({"name": "u", "value": 1, "label": "two\nlines"})).is_err());
+}

@@ -13,10 +13,15 @@ use crate::{Action, Actions, EmcraftApp, Picture, Style, UiExt, scenario, ui_kit
 
 /// The preview's size, in points.
 const PREVIEW: [f32; 2] = [520.0, 340.0];
+/// The parameters' column and their labels' (labels wrap within it).
+const FIELDS_WIDTH: f32 = 320.0;
+const LABEL_WIDTH: f32 = 160.0;
 
 /// A parameter's field: its name, its text, its unit and the template's own value.
 pub struct Field {
     pub name: String,
+    /// What it is, in words (English: [`crate::lang::parameter_label`] shows it).
+    pub label: Option<String>,
     pub text: String,
     pub unit: &'static str,
     pub default: f64,
@@ -59,6 +64,7 @@ impl TemplateDialog {
                 },
                 text: crate::steps::fmt(p.value),
                 default: p.value,
+                label: p.label,
                 name: p.name,
             })
             .collect();
@@ -113,10 +119,13 @@ pub fn show(dlg: &mut TemplateDialog, ctx: &egui::Context, out: &mut Actions) {
     dlg.refresh();
     let t = &Tokens::get();
     let modal = egui::Modal::new(egui::Id::new("emcraft_template")).frame(t.card(t.dialog_body).inner_margin(16)).show(ctx, |ui| {
+        // What it is in brief, its name (the sample `file.sample` opens) in a chip.
         ui.horizontal(|ui| {
-            ui.text(Style::Heading, Raw(&dlg.name));
+            ui.text(Style::Heading, Raw(&crate::ui_ext::brief(sample_label(&dlg.name))));
             ui.add_space(8.0);
-            ui_kit::small(ui, Raw(sample_label(&dlg.name)), t.text_dim);
+            egui::Frame::NONE.fill(t.panel_header).corner_radius(t.radius_sm).inner_margin(egui::Margin::symmetric(5, 1)).show(ui, |ui| {
+                ui.label(egui::RichText::new(&dlg.name).monospace().size(t.font_small).color(t.text_dim));
+            });
         });
         ui.add_space(8.0);
         ui.horizontal_top(|ui| {
@@ -150,24 +159,44 @@ pub fn show(dlg: &mut TemplateDialog, ctx: &egui::Context, out: &mut Actions) {
 fn fields(ui: &mut egui::Ui, dlg: &mut TemplateDialog) {
     let t = &Tokens::get();
     ui.vertical(|ui| {
-        ui.set_width(250.0);
+        ui.set_width(FIELDS_WIDTH);
         ui_kit::section(ui, t!("Parameters"));
-        egui::ScrollArea::vertical().id_salt("template_fields").max_height(PREVIEW[1]).show(ui, |ui| {
+        egui::ScrollArea::vertical().id_salt("template_fields").auto_shrink([false, true]).max_height(PREVIEW[1]).show(ui, |ui| {
             if dlg.fields.is_empty() {
                 ui_kit::caption(ui, t!("none"));
             }
             let (mut hovered, mut focused) = (None, None);
             for f in &mut dlg.fields {
                 let bad = f.value().is_none();
-                let (focus, over) = ui_kit::row(ui, Raw(&f.name), false, |ui| {
-                    let mut edit = egui::TextEdit::singleline(&mut f.text).desired_width(90.0).char_limit(32);
-                    if bad {
-                        edit = edit.background_color(t.form_error_fill).text_color(t.form_error);
-                    }
-                    let r = ui.named(edit, Handle::TemplateField(&f.name));
-                    ui_kit::small(ui, Raw(f.unit), t.text_dim);
-                    (r.has_focus(), ui.rect_contains_pointer(ui.min_rect()))
-                });
+                // Its label in words (wrapped, never cut), its name (what expressions use) dim
+                // under it; then its field and unit.
+                let (focus, over) = ui
+                    .horizontal(|ui| {
+                        ui.allocate_ui_with_layout(vec2(LABEL_WIDTH, t.control_height), egui::Layout::top_down(egui::Align::Min), |ui| {
+                            ui.set_width(LABEL_WIDTH);
+                            match &f.label {
+                                Some(l) => {
+                                    ui.add(
+                                        egui::Label::new(egui::RichText::new(crate::lang::parameter_label(l)).size(t.font_label).color(t.form_ink))
+                                            .wrap(),
+                                    );
+                                    ui.label(egui::RichText::new(&f.name).monospace().size(t.font_small - 1.0).color(t.text_dim));
+                                }
+                                None => {
+                                    ui.label(egui::RichText::new(&f.name).size(t.font_label).color(t.form_ink));
+                                }
+                            }
+                        });
+                        let mut edit = egui::TextEdit::singleline(&mut f.text).desired_width(80.0).char_limit(32);
+                        if bad {
+                            edit = edit.background_color(t.form_error_fill).text_color(t.form_error);
+                        }
+                        let r = ui.named(edit, Handle::TemplateField(&f.name));
+                        ui_kit::small(ui, Raw(f.unit), t.text_dim);
+                        (r.has_focus(), ui.rect_contains_pointer(ui.min_rect()))
+                    })
+                    .inner;
+                ui.add_space(2.0);
                 if over {
                     hovered = Some(f.name.clone());
                 }
@@ -196,8 +225,10 @@ fn preview(ui: &mut egui::Ui, dlg: &mut TemplateDialog) {
     if let (Some(cam), Some(name), None) = (&dlg.camera, &dlg.active, &dlg.error)
         && let Some(m) = dlg.marks.iter().find(|m| &m.name == name)
     {
-        let (value, unit) = dlg.fields.iter().find(|f| &f.name == name).map_or(("", ""), |f| (f.text.as_str(), f.unit));
-        mark(ui.painter(), cam, r, m, &format!("{name} = {value} {unit}"));
+        let field = dlg.fields.iter().find(|f| &f.name == name);
+        let (value, unit) = field.map_or(("", ""), |f| (f.text.as_str(), f.unit));
+        let shown = field.and_then(|f| f.label.as_deref()).map_or(name.as_str(), crate::lang::parameter_label);
+        mark(ui.painter(), cam, r, m, &format!("{shown} = {value} {unit}"));
     }
 }
 

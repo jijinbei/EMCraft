@@ -64,6 +64,9 @@ struct File {
     commands: HashMap<String, CommandText>,
     #[serde(default)]
     samples: HashMap<String, String>,
+    /// The templates' parameters' labels (`iris thickness`), by their English.
+    #[serde(default)]
+    parameters: HashMap<String, String>,
 }
 
 /// A command's texts in a language.
@@ -87,6 +90,7 @@ pub struct Language {
     pub strings: HashMap<String, String>,
     pub commands: HashMap<String, CommandText>,
     pub samples: HashMap<String, String>,
+    pub parameters: HashMap<String, String>,
 }
 
 /// The languages there are, English first, and why a built-in one was left out.
@@ -102,7 +106,9 @@ fn catalog() -> &'static Catalog {
         let mut problems = Vec::new();
         for &(id, text) in BUILT_IN {
             match serde_json::from_str::<File>(text) {
-                Ok(f) => list.push(Language { id, name: f.name, strings: f.strings, commands: f.commands, samples: f.samples }),
+                Ok(f) => {
+                    list.push(Language { id, name: f.name, strings: f.strings, commands: f.commands, samples: f.samples, parameters: f.parameters })
+                }
                 Err(e) => problems.push(format!("language `{id}` left out: {e}")),
             }
         }
@@ -240,6 +246,7 @@ pub fn script_chars(id: &str) -> Vec<char> {
         .strings
         .values()
         .chain(l.samples.values())
+        .chain(l.parameters.values())
         .chain(l.commands.values().flat_map(|c| std::iter::once(&c.label).chain(std::iter::once(&c.doc)).chain(c.params.values())));
     let set: BTreeSet<char> = texts.flat_map(|t| t.chars()).filter(cjk).collect();
     set.into_iter().collect()
@@ -418,6 +425,15 @@ pub fn sample_label(name: &str) -> &'static str {
     match translation().and_then(|l| l.samples.get(name)) {
         Some(s) if !s.is_empty() => s,
         _ => emcraft_engine::templates::find(name).map_or("", |s| s.label),
+    }
+}
+
+/// A template parameter's label (`iris thickness`, the template's English) in the current
+/// language.
+pub fn parameter_label(english: &str) -> &str {
+    match translation().and_then(|l| l.parameters.get(english)) {
+        Some(s) if !s.is_empty() => s,
+        _ => english,
     }
 }
 

@@ -1,8 +1,8 @@
 [
- {"command": "project.variable", "params": {"name": "a", "value": 22.86, "quantity": "length"}},
- {"command": "project.variable", "params": {"name": "b", "value": 10.16, "quantity": "length"}},
- {"command": "project.variable", "params": {"name": "l", "value": 200, "quantity": "length"}},
- {"command": "project.variable", "params": {"name": "sigma", "value": 1000000.0}},
+ {"command": "project.variable", "params": {"name": "a", "label": "guide width", "value": 22.86, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "b", "label": "guide height", "value": 10.16, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "l", "label": "guide length", "value": 200, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "sigma", "label": "wall conductivity (S/m)", "value": 1000000.0}},
  {"command": "geometry.waveguide", "params": {"width": "=a", "height": "=b", "sections": [{"length": "=l", "material": "vacuum"}]}},
  {"command": "model.walls", "params": {"conductivity": "=sigma"}},
  {"command": "mesh.generate", "params": {"size": 6}},

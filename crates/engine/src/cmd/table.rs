@@ -1691,6 +1691,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             req("name", K::String, "the variable's name: a letter or `_`, then letters, digits or `_`"),
             req("value", K::Number, "its value, a plain number (or an expression of the variables defined before it)"),
             opt("quantity", K::String, "what it measures, for showing it with its unit: `length` or `frequency` (in the display units); kept when the value changes without it").one_of(&["length", "frequency"]),
+            opt("label", K::String, "what it is, in a few words (`iris thickness`), shown beside its name; kept when the value changes without it"),
         ],
         effect: Effect::Rebuild,
         invalidates: None,

@@ -1,7 +1,7 @@
 [
- {"command": "project.variable", "params": {"name": "arm", "value": 4.8, "quantity": "length"}},
- {"command": "project.variable", "params": {"name": "gap", "value": 1, "quantity": "length"}},
- {"command": "project.variable", "params": {"name": "t", "value": 2, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "arm", "label": "arm length", "value": 4.8, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "gap", "label": "feed gap", "value": 1, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "t", "label": "arm thickness", "value": 2, "quantity": "length"}},
  {"command": "geometry.solid", "params": {"shape": "box", "size": [60, 60, 60]}},
  {"command": "geometry.inclusion", "params": {"shape": "box", "size": ["=t", "=t", "=arm"], "at": ["=30 - t/2", "=30 - t/2", "=30 - gap/2 - arm"]}},
  {"command": "geometry.inclusion", "params": {"shape": "box", "size": ["=t", "=t", "=arm"], "at": ["=30 - t/2", "=30 - t/2", "=30 + gap/2"]}},

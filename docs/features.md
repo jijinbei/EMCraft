@@ -1319,6 +1319,7 @@ Defines a named variable, or changes one. Any number parameter of a later comman
 | `name` | string |  | yes | the variable's name: a letter or `_`, then letters, digits or `_` |
 | `value` | number |  | yes | its value, a plain number (or an expression of the variables defined before it) |
 | `quantity` | string |  | no | what it measures, for showing it with its unit: `length` or `frequency` (in the display units); kept when the value changes without it |
+| `label` | string |  | no | what it is, in a few words (`iris thickness`), shown beside its name; kept when the value changes without it |
 
 ## `project.variable.delete` — Delete variable
 

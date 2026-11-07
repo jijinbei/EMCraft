@@ -1,5 +1,5 @@
 [
- {"command": "project.variable", "params": {"name": "r", "value": 10, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "r", "label": "sphere radius", "value": 10, "quantity": "length"}},
  {"command": "geometry.solid", "params": {"shape": "sphere", "radius": "=r"}},
  {"command": "model.walls", "params": {"thickness": 1.27, "conductivity": 58000000.0}},
  {"command": "mesh.generate", "params": {"size": 3}},

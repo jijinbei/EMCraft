@@ -153,6 +153,8 @@ pub struct TemplateParameter {
     pub name: String,
     pub value: f64,
     pub quantity: Option<String>,
+    /// What it is, in words (`iris thickness`), in English.
+    pub label: Option<String>,
 }
 
 /// The parameters of template `name` (`None`: no such template).
@@ -171,7 +173,8 @@ pub fn template_parameters(name: &str) -> Option<Vec<TemplateParameter>> {
             .filter_map(|st| {
                 let name = st.param("name")?.as_str()?.to_owned();
                 let value = st.param("value")?.as_f64()?;
-                Some(TemplateParameter { name, value, quantity: st.param("quantity").and_then(Value::as_str).map(str::to_owned) })
+                let text = |k: &str| st.param(k).and_then(Value::as_str).map(str::to_owned);
+                Some(TemplateParameter { name, value, quantity: text("quantity"), label: text("label") })
             })
             .collect(),
     )

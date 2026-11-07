@@ -1,11 +1,11 @@
 [
- {"command": "project.variable", "params": {"name": "er", "value": 3.55}},
- {"command": "project.variable", "params": {"name": "tan_d", "value": 0.0027}},
- {"command": "project.variable", "params": {"name": "h", "value": 0.508, "quantity": "length"}},
- {"command": "project.variable", "params": {"name": "w", "value": 1.1, "quantity": "length"}},
- {"command": "project.variable", "params": {"name": "side", "value": 23, "quantity": "length"}},
- {"command": "project.variable", "params": {"name": "gap", "value": 0.2, "quantity": "length"}},
- {"command": "project.variable", "params": {"name": "l_feed", "value": 6, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "er", "label": "relative permittivity", "value": 3.55}},
+ {"command": "project.variable", "params": {"name": "tan_d", "label": "loss tangent", "value": 0.0027}},
+ {"command": "project.variable", "params": {"name": "h", "label": "substrate thickness", "value": 0.508, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "w", "label": "line width", "value": 1.1, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "side", "label": "ring side", "value": 23, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "gap", "label": "coupling gap", "value": 0.2, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "l_feed", "label": "feed line length", "value": 6, "quantity": "length"}},
  {"command": "pcb.load", "params": {"data": {"name": "square ring resonator", "layers": [{"name": "F.Cu", "z": 0, "eps_below": "=er", "loss_below": "=tan_d"}, {"name": "B.Cu", "z": "=h", "eps_below": 1}], "segments": [
   {"id": "p1", "net": "S", "layer": "F.Cu", "start": [0, 0], "end": ["=l_feed", 0], "width": "=w"},
   {"id": "r1", "net": "R", "layer": "F.Cu", "start": ["=l_feed + gap + w", "=-side/2"], "end": ["=l_feed + gap + w", "=side/2"], "width": "=w"},

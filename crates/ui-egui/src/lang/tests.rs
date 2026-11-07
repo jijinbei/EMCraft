@@ -41,6 +41,18 @@ fn every_command_and_sample_is_translated_and_nothing_else() {
     for name in ja.samples.keys() {
         assert!(emcraft_engine::templates::find(name).is_some(), "no sample `{name}`");
     }
+    // Every template parameter's label translated, and every translation one's.
+    let labels: BTreeSet<String> = emcraft_engine::templates::TEMPLATES
+        .iter()
+        .flat_map(|t| emcraft_engine::template_parameters(t.name).unwrap_or_default())
+        .filter_map(|p| p.label)
+        .collect();
+    for l in &labels {
+        assert!(ja.parameters.get(l).is_some_and(|x| !x.is_empty()), "parameter label `{l}`: no Japanese");
+    }
+    for l in ja.parameters.keys() {
+        assert!(labels.contains(l), "parameter label `{l}`: no template has it");
+    }
 }
 
 #[test]
@@ -75,6 +87,7 @@ fn the_japanese_keeps_its_style() {
     let ja = japanese();
     let mut texts: Vec<(String, &str, bool)> = ja.strings.iter().map(|(k, v)| (k.clone(), v.as_str(), false)).collect();
     texts.extend(ja.samples.iter().map(|(k, v)| (format!("sample {k}"), v.as_str(), false)));
+    texts.extend(ja.parameters.iter().map(|(k, v)| (format!("parameter {k}"), v.as_str(), false)));
     for (id, c) in &ja.commands {
         texts.push((format!("{id} label"), &c.label, true));
         texts.push((format!("{id} doc"), &c.doc, true));

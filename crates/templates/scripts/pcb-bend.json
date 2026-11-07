@@ -1,8 +1,8 @@
 [
- {"command": "project.variable", "params": {"name": "er", "value": 3.55}},
- {"command": "project.variable", "params": {"name": "h", "value": 0.508, "quantity": "length"}},
- {"command": "project.variable", "params": {"name": "w", "value": 1.1, "quantity": "length"}},
- {"command": "project.variable", "params": {"name": "m", "value": 0.8, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "er", "label": "relative permittivity", "value": 3.55}},
+ {"command": "project.variable", "params": {"name": "h", "label": "substrate thickness", "value": 0.508, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "w", "label": "line width", "value": 1.1, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "m", "label": "mitre cut", "value": 0.8, "quantity": "length"}},
  {"command": "pcb.load", "params": {"data": {"name": "mitred microstrip bend", "layers": [{"name": "F.Cu", "z": 0, "eps_below": "=er"}, {"name": "B.Cu", "z": "=h", "eps_below": 1}], "segments": [{"id": "in", "net": "S", "layer": "F.Cu", "start": [0, 0], "end": [10, 0], "width": "=w"}, {"id": "out", "net": "S", "layer": "F.Cu", "start": [10, 0], "end": [10, 10], "width": "=w"}], "copper": [{"net": "S", "layer": "F.Cu", "polygon": [[10, 0], ["=10 + w/2 + m", 0], [10, "=-w/2 - m"]]}]}}},
  {"command": "pcb.region", "params": {"lo": [-2, -5], "hi": [15, 12], "above": 5, "below": 0}},
  {"command": "pcb.port", "params": {"name": "1", "segment": "in", "end": "start"}},

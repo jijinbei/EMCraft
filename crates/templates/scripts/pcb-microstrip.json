@@ -3,6 +3,7 @@
     "command": "project.variable",
     "params": {
       "name": "l",
+      "label": "line length",
       "value": 40,
       "quantity": "length"
     }
@@ -11,6 +12,7 @@
     "command": "project.variable",
     "params": {
       "name": "w",
+      "label": "trace width",
       "value": 0.3,
       "quantity": "length"
     }
@@ -19,6 +21,7 @@
     "command": "project.variable",
     "params": {
       "name": "h",
+      "label": "dielectric thickness",
       "value": 0.18,
       "quantity": "length"
     }
@@ -27,6 +30,7 @@
     "command": "project.variable",
     "params": {
       "name": "er",
+      "label": "relative permittivity",
       "value": 4.2
     }
   },

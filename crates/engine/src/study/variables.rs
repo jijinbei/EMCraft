@@ -11,6 +11,9 @@ use crate::expr;
 use crate::script::DEFINE;
 use crate::{EngineError, Params, Result, Session, Step};
 
+/// The longest label a variable may have (characters).
+pub const MAX_LABEL: usize = 80;
+
 /// What a variable may measure (`quantity`).
 const QUANTITIES: [&str; 2] = ["length", "frequency"];
 
@@ -93,13 +96,20 @@ pub fn variable(s: &mut Session, p: &Params) -> Result<Value> {
     if quantity.is_some_and(|q| !QUANTITIES.contains(&q)) {
         return Err(p.error("quantity", "must be `length` or `frequency`"));
     }
+    let label = p.string("label").optional()?;
+    if label.is_some_and(|l| l.chars().count() > MAX_LABEL || l.chars().any(char::is_control)) {
+        return Err(p.error("label", format!("must be at most {MAX_LABEL} characters on one line")));
+    }
     let mut params = p.value().clone();
-    // A change without a quantity keeps the one the definition had.
-    if quantity.is_none()
-        && let Some(q) = s.history.iter().rev().find(|st| st.defines(name)).and_then(|st| st.param("quantity").cloned())
-        && let Some(map) = params.as_object_mut()
-    {
-        map.insert("quantity".to_owned(), q);
+    // A change without a quantity or a label keeps the ones the definition had.
+    let defined = s.history.iter().rev().find(|st| st.defines(name));
+    for (key, given) in [("quantity", quantity.is_some()), ("label", label.is_some())] {
+        if !given
+            && let Some(v) = defined.and_then(|st| st.param(key).cloned())
+            && let Some(map) = params.as_object_mut()
+        {
+            map.insert(key.to_owned(), v);
+        }
     }
     let step = Step::new(DEFINE, params);
     if s.variables.contains_key(name) {
