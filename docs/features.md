@@ -1074,6 +1074,18 @@ Time-domain reflectometry from the sweep's reflection at a port (the time domain
 | `port` | string |  | no | the port (default the first) |
 | `mode` | string |  | no | `lowpass` (default on a harmonic sweep) or `bandpass` |
 
+## `results.pulse` — Pulse compression
+
+A chirped Gaussian pulse through the solved two-port: its transmission S(f) from the sweep (a body of revolution's, else the time domain's) applied to the pulse's spectrum about its carrier and turned back into time — the input's and output's power envelopes, the compression (the output's peak power over the input's), their widths at half power, the output's peak time, and the guide's group delay and its slope D at the carrier with the chirp that compresses best, −1/D. A pulse with more than 1 % of its energy outside the sweep is refused.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `from` | string |  | no | the port the pulse enters (default the first) |
+| `to` | string |  | no | the port it leaves (default the second) |
+| `frequency` | number | frequency | no | the carrier (default the sweep's middle) |
+| `width` | number |  | yes | the input's width at half power, ns |
+| `bandwidth` | number | frequency | no | the band the chirp sweeps over the width, rising (> 0) or falling (< 0); 0: no chirp; left out: the chirp that compresses best |
+
 ## `view.tdr` — TDR PNG
 
 Writes results.tdr's chart as a PNG.

@@ -1402,6 +1402,21 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::results::tdr,
     },
     CommandSpec {
+        id: "results.pulse",
+        label: "Pulse compression",
+        doc: "A chirped Gaussian pulse through the solved two-port: its transmission S(f) from the sweep (a body of revolution's, else the time domain's) applied to the pulse's spectrum about its carrier and turned back into time — the input's and output's power envelopes, the compression (the output's peak power over the input's), their widths at half power, the output's peak time, and the guide's group delay and its slope D at the carrier with the chirp that compresses best, −1/D. A pulse with more than 1 % of its energy outside the sweep is refused.",
+        params: &[
+            opt("from", K::String, "the port the pulse enters (default the first)"),
+            opt("to", K::String, "the port it leaves (default the second)"),
+            opt("frequency", K::Number, "the carrier (default the sweep's middle)").of(F),
+            req("width", K::Number, "the input's width at half power, ns"),
+            opt("bandwidth", K::Number, "the band the chirp sweeps over the width, rising (> 0) or falling (< 0); 0: no chirp; left out: the chirp that compresses best").of(F),
+        ],
+        effect: Effect::None,
+        invalidates: None,
+        run: crate::results::pulse,
+    },
+    CommandSpec {
         id: "view.tdr",
         label: "TDR PNG",
         doc: "Writes results.tdr's chart as a PNG.",

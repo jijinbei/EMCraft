@@ -263,10 +263,12 @@ pub fn sparameter_chart_compared(session: &Session, display: SDisplay, compare: 
 fn sparameter_chart_now(session: &Session, display: SDisplay) -> Result<Chart> {
     let sweep = session.results.sweep.as_ref();
     let td = session.results.time_domain.as_ref();
+    let bor = session.results.revolution.as_ref();
     let fu = session.display.frequency;
     let span = sweep
         .and_then(|sw| Some((sw.results.first()?.frequency, sw.results.last()?.frequency)))
-        .or_else(|| td.and_then(|t| Some((*t.frequencies.first()?, *t.frequencies.last()?))));
+        .or_else(|| td.and_then(|t| Some((*t.frequencies.first()?, *t.frequencies.last()?))))
+        .or_else(|| bor.and_then(|b| Some((*b.data.frequencies().first()?, *b.data.frequencies().last()?))));
     let Some((f0, f1)) = span else {
         return Err(EngineError::NotSolved { what: "results", run: "solve.frequency or solve.time_domain" });
     };
@@ -317,6 +319,23 @@ fn sparameter_chart_now(session: &Session, display: SDisplay) -> Result<Chart> {
                     format!("{} time domain", display.entry(&entry)),
                     sparameter_pen(p),
                     pts(p, q),
+                    display,
+                ));
+            }
+        }
+    }
+    // A body of revolution's: every entry of its S, in its azimuthal order.
+    if let Some(b) = bor {
+        let n = b.data.outputs().min(MAX_CHART_ENTRIES);
+        for q in b.data.inputs().iter().copied().filter(|q| *q < n) {
+            for p in 0..n {
+                let entry = format!("{}{}", p + 1, q + 1);
+                let pts = b.data.curve(p, q).map(|(f, s)| [fu.from_si(f), display.of(s)]).collect();
+                series.extend(curve(
+                    &format!("s{entry}.bor"),
+                    format!("{} revolution (m = {})", display.entry(&entry), b.m),
+                    sparameter_pen(p),
+                    pts,
                     display,
                 ));
             }

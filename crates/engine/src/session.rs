@@ -86,6 +86,16 @@ impl Sweep {
     }
 }
 
+/// A body of revolution's S-parameters: its azimuthal order, the ports' first modes' names, and
+/// S at each frequency (every port excited).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Revolution {
+    pub m: u32,
+    pub modes: Vec<String>,
+    pub data: crate::sdata::SData,
+    pub unknowns: usize,
+}
+
 /// What the solvers made of the model, each from its own command. Each result is shared: the
 /// copy a command keeps to go back to when it fails costs no copy of the fields.
 #[derive(Clone, Debug, Default)]
@@ -105,6 +115,9 @@ pub struct Results {
     pub study: Option<Arc<study::Study>>,
     /// A periodic cell's dispersion diagram from `solve.dispersion`.
     pub dispersion: Option<Arc<emcraft_solver::bloch::Dispersion>>,
+    /// A body of revolution's S-parameters in one azimuthal order, from
+    /// `solve.revolution.frequency`.
+    pub revolution: Option<Arc<Revolution>>,
     /// The kinds held that are stale: the model changed after they were solved (without
     /// making them wrong, which drops them). Only kinds held; each solve makes its own fresh.
     stale: std::collections::BTreeSet<ResultKind>,
@@ -135,6 +148,7 @@ emcraft_macros::named_enum! {
         TdRadiation = "td_radiation",
         Dispersion = "dispersion",
         Study = "study",
+        Revolution = "revolution",
     }
 }
 
@@ -153,8 +167,8 @@ impl ResultKind {
         use ResultKind::*;
         match change {
             Change::Geometry => !matches!(self, Study),
-            Change::Walls => matches!(self, Sweep | Eigen),
-            Change::Ports => matches!(self, Sweep | TimeDomain),
+            Change::Walls => matches!(self, Sweep | Eigen | Revolution),
+            Change::Ports => matches!(self, Sweep | TimeDomain | Revolution),
             Change::Open => matches!(self, Radiation | TdRadiation),
         }
     }
@@ -173,6 +187,7 @@ impl ResultKind {
             ResultKind::Radiation => "solve.radiation",
             ResultKind::Dispersion => "solve.dispersion",
             ResultKind::Study => "study.sweep",
+            ResultKind::Revolution => "solve.revolution.frequency",
         }
     }
 }
@@ -188,6 +203,7 @@ impl Results {
             ResultKind::TdRadiation => self.td_radiation.is_some(),
             ResultKind::Dispersion => self.dispersion.is_some(),
             ResultKind::Study => self.study.is_some(),
+            ResultKind::Revolution => self.revolution.is_some(),
         }
     }
 
@@ -236,6 +252,7 @@ impl Results {
                 ResultKind::TdRadiation => same(self.td_radiation.as_ref(), before.td_radiation.as_ref()),
                 ResultKind::Dispersion => same(self.dispersion.as_ref(), before.dispersion.as_ref()),
                 ResultKind::Study => same(self.study.as_ref(), before.study.as_ref()),
+                ResultKind::Revolution => same(self.revolution.as_ref(), before.revolution.as_ref()),
             };
             if !unchanged {
                 self.stale.remove(&kind);
@@ -254,6 +271,7 @@ impl Results {
             ResultKind::TdRadiation => self.td_radiation = None,
             ResultKind::Dispersion => self.dispersion = None,
             ResultKind::Study => self.study = None,
+            ResultKind::Revolution => self.revolution = None,
         }
     }
 

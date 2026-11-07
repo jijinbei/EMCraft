@@ -122,6 +122,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("view.revolution_field", None, None, false),
     ui("view.port_mode", None, None, false),
     ui("results.tdr", Some(t!("TDR").en()), Some(Glyph::Chart), false),
+    ui("results.pulse", None, Some(Glyph::Chart), false),
     ui("view.tdr", None, Some(Glyph::Chart), false),
     ui("view.field", Some(t!("Field PNG").en()), Some(Glyph::Field), false),
     ui("view.animation", Some(t!("Field animation").en()), Some(Glyph::Play), false),

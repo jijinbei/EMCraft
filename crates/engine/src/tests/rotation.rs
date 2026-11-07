@@ -829,3 +829,35 @@ fn a_puck_rings_in_the_time_domain_where_its_eigenmodes_lie() {
     let mut q = pillbox();
     assert!(q.execute("solve.revolution.time_domain", &json!({})).is_err());
 }
+
+/// **Setup**: an empty circular guide, radius 10 mm, 100 mm long, swept as a body of revolution
+/// (TE11, m = 1) from 11 to 14 GHz; a 2 ns pulse at 12.5 GHz through it (`results.pulse`).
+/// **Closed form**: the guide's group delay τ = L/v_g, v_g = c √(1 − (f_c/f)²), and its slope
+/// D = dτ/df = −L f_c² / (c f³ (1 − (f_c/f)²)^{3/2}) (Pozar §3.4).
+/// **Reference**: evaluated in the test. The sweep is the session's result: kept in the file,
+/// read back, its pulse the same.
+#[test]
+fn a_pulse_through_a_circular_guide_is_delayed_and_dispersed_as_the_guide_is() {
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 100})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 2})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "modes": 2})).unwrap();
+    s.execute("solve.revolution.frequency", &json!({"start": 11, "stop": 14, "points": 16, "m": 1, "size": 0.8})).unwrap();
+    let r = s.execute("results.pulse", &json!({"frequency": 12.5, "width": 2, "bandwidth": 0})).unwrap();
+    let (f, l, c) = (12.5e9, 0.1, emcraft_model::units::C0);
+    let fc = X11P * c / (2.0 * std::f64::consts::PI * 0.01);
+    let q = 1.0 - (fc / f).powi(2);
+    let tau = l / (c * q.sqrt());
+    let d = -l * fc * fc / (c * f.powi(3) * q.powf(1.5));
+    let (delay, disp) = (r["delay"].as_f64().unwrap() * 1e-9, r["dispersion"].as_f64().unwrap() * 1e-9 / 1e9);
+    assert!((delay - tau).abs() < 0.005 * tau, "{delay:e} against {tau:e}");
+    assert!((disp - d).abs() < 0.05 * d.abs(), "{disp:e} against {d:e}");
+    assert_eq!(r["source"], "revolution");
+    // Kept in the file and read back: the same pulse.
+    let path = super::scratch("revolution-pulse.emcraft");
+    s.execute("file.save", &json!({"path": path})).unwrap();
+    let mut t = Session::new();
+    t.execute("file.open", &json!({"path": path})).unwrap();
+    let again = t.execute("results.pulse", &json!({"frequency": 12.5, "width": 2, "bandwidth": 0})).unwrap();
+    assert_eq!(again["delay"], r["delay"]);
+}

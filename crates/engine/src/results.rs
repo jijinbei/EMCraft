@@ -327,3 +327,76 @@ pub fn cavity(s: &mut Session, p: &Params) -> Result<Value> {
         "shunt": q.map(|q| r_over_q * q),
     }))
 }
+
+/// The session's S-parameters as a set: its sweep's, else its body of revolution's, else its
+/// time domain's; and which it is.
+pub(crate) fn sdata(s: &Session) -> Result<(crate::sdata::SData, &'static str)> {
+    if let Some(sw) = s.results.sweep.as_ref().filter(|sw| !sw.results.is_empty()) {
+        return Ok((sw.sdata().map_err(EngineError::failed)?, "sweep"));
+    }
+    if let Some(b) = s.results.revolution.as_ref() {
+        return Ok((b.data.clone(), "revolution"));
+    }
+    if let Some(td) = s.results.time_domain.as_ref() {
+        return Ok((crate::sdata::of_time_domain(td).map_err(EngineError::failed)?, "time_domain"));
+    }
+    Err(EngineError::NotSolved { what: "sweep", run: "solve.frequency, solve.revolution.frequency or solve.time_domain" })
+}
+
+/// The most points `results.pulse` lists of each envelope.
+const PULSE_POINTS: usize = 512;
+
+/// `results.pulse`: a chirped pulse through the two-port ([`crate::pulse`]).
+pub fn pulse(s: &mut Session, p: &Params) -> Result<Value> {
+    let (data, source) = sdata(s)?;
+    let entries = s.sparameter_entries();
+    let from = args::entry(s, p, "from")?.map_or(0, |(k, _)| k);
+    let to = args::entry(s, p, "to")?.map_or_else(|| usize::from(from == 0), |(k, _)| k);
+    if from == to {
+        return Err(p.error("to", "must be another port than `from`: the pulse is transmitted"));
+    }
+    let (freqs, trans): (Vec<f64>, Vec<_>) = data.curve(to, from).unzip();
+    if freqs.len() != data.frequencies().len() {
+        return Err(EngineError::failed(format!("the {source} holds no transmission from port {} to port {}", from + 1, to + 1)));
+    }
+    let (lo, hi) = (freqs.first().copied().unwrap_or(0.0), freqs.last().copied().unwrap_or(0.0));
+    let f0 = p.frequency("frequency").optional()?.unwrap_or(0.5 * (lo + hi));
+    let width = p.number("width").required()?;
+    if !(width.is_finite() && width > 0.0 && width < 1e6) {
+        return Err(p.error("width", "must be a positive number of ns"));
+    }
+    let width = width * 1e-9;
+    // The chirp: the one that compresses best unless one is given.
+    let fu = s.display.frequency;
+    let rate = match p.number("bandwidth").optional()? {
+        Some(b) if b.is_finite() && fu.to_si(b.abs()) < 1e15 => fu.to_si(b) / width,
+        Some(_) => return Err(p.error("bandwidth", "must be a finite frequency")),
+        None => {
+            let flat = crate::pulse::through(&freqs, &trans, crate::pulse::Chirp { f0, width, rate: 0.0 })?;
+            flat.best_rate().ok_or_else(|| EngineError::failed("the guide does not disperse at the carrier: give `bandwidth`"))?
+        }
+    };
+    let r = crate::pulse::through(&freqs, &trans, crate::pulse::Chirp { f0, width, rate })?;
+    let step = r.times.len().div_ceil(PULSE_POINTS).max(1);
+    let points: Vec<Value> =
+        (0..r.times.len()).step_by(step).map(|i| json!({"t": r.times[i] * 1e9, "input": r.input[i], "output": r.output[i]})).collect();
+    let name = |k: usize| entries.get(k).map_or_else(|| (k + 1).to_string(), |e| e.name.clone());
+    Ok(json!({
+        "source": source,
+        "from": name(from),
+        "to": name(to),
+        "frequency": fu.from_si(f0),
+        "bandwidth": fu.from_si(rate * width),
+        "best_bandwidth": r.best_rate().map(|b| fu.from_si(b * width)),
+        "compression": r.compression(),
+        "input_width": r.input_width * 1e9,
+        "output_width": r.output_width * 1e9,
+        "output_time": r.output_time * 1e9,
+        "delay": r.delay * 1e9,
+        // ns of delay per display unit of frequency.
+        "dispersion": r.dispersion * 1e9 * fu.to_si(1.0),
+        "outside": r.outside,
+        "time_unit": "ns",
+        "points": points,
+    }))
+}

@@ -143,7 +143,7 @@ impl View {
     pub const fn of(kind: emcraft_engine::ResultKind) -> View {
         use emcraft_engine::ResultKind as R;
         match kind {
-            R::Sweep | R::TimeDomain => View::SParameters,
+            R::Sweep | R::TimeDomain | R::Revolution => View::SParameters,
             R::Eigen => View::Eigenmodes,
             R::Radiation | R::TdRadiation => View::FarField,
             R::Dispersion => View::Dispersion,
@@ -159,7 +159,9 @@ impl View {
             // The PCB diagnosis' own stages; a board solved by finite elements is the model's.
             View::Pcb => app.session.model().analysis() == crate::steps::Solver::Pcb,
             // A project just opened: its kept sweeps, drawn from the history.
-            View::SParameters => r.sweep.is_some() || r.time_domain.is_some() || app.session.archive().iter().any(|a| a.kept.sweep.is_some()),
+            View::SParameters => {
+                r.sweep.is_some() || r.time_domain.is_some() || r.revolution.is_some() || app.session.archive().iter().any(|a| a.kept.sweep.is_some())
+            }
             View::Tdr => r.sweep.is_some() || r.time_domain.is_some(),
             View::Field => r.sweep.is_some() || r.eigen.is_some() || r.radiation.is_some(),
             View::PortModes => app.replies.port_modes.is_some() || (app.session.model().mesh.is_some() && !app.session.model().ports.is_empty()),

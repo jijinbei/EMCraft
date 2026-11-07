@@ -48,6 +48,7 @@ pub mod params;
 pub mod periodic;
 pub mod progress;
 pub mod project;
+pub mod pulse;
 mod reply;
 mod results;
 pub mod runs;
@@ -77,7 +78,7 @@ pub use reply::Wave;
 pub use results::{ComparePoint, Comparison};
 pub use script::Step;
 pub use sdata::SData;
-pub use session::{Change, Limits, ResultKind, Results, Session, Sweep};
+pub use session::{Change, Limits, ResultKind, Results, Revolution, Session, Sweep};
 pub use solve::{Compute, Device, LinearSolver, PortModeList, PortModeRow, PortModes};
 pub use view::field_view;
 

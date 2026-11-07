@@ -142,6 +142,8 @@ pub struct StoredSession {
     radiation: Option<StoredRadiation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     td_radiation: Option<StoredTdRadiation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    revolution: Option<StoredRevolution>,
 }
 
 /// The bytes the results' field vectors take.
@@ -169,6 +171,7 @@ impl StoredSession {
             study: r.study.as_deref().map(|st| StoredStudy::write(st, w)).transpose()?,
             radiation: r.radiation.as_deref().map(|o| StoredRadiation::write(o, fields, w)).transpose()?,
             td_radiation: r.td_radiation.as_deref().map(|o| StoredTdRadiation::write(o, w)).transpose()?,
+            revolution: r.revolution.as_deref().map(|b| StoredRevolution::write(b, w)).transpose()?,
         })
     }
 
@@ -190,6 +193,9 @@ impl StoredSession {
         }
         if let Some(x) = self.time_domain {
             keep("the time domain", x.read(r).map(|v| out.time_domain = Some(Arc::new(v))));
+        }
+        if let Some(x) = self.revolution {
+            keep("the body of revolution", x.read(r).map(|v| out.revolution = Some(Arc::new(v))));
         }
         if let Some(x) = self.dispersion {
             keep("the dispersion", x.read(r).map(|v| out.dispersion = Some(Arc::new(v))));
@@ -858,5 +864,46 @@ impl StoredTdRadiation {
         let dt = nums.f()?;
         nums.done()?;
         Ok(emcraft_fdtd::open::OpenRun { frequencies, ports, radiated, huygens, cells: self.cells, steps: self.steps, dt, converged: self.converged })
+    }
+}
+
+/// A body of revolution's S-parameters: its order, its ports' modes, S at each frequency (a
+/// part of frequencies, then the values).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct StoredRevolution {
+    m: u32,
+    modes: Vec<String>,
+    frequencies: usize,
+    ports: usize,
+    unknowns: usize,
+    numbers: String,
+}
+
+impl StoredRevolution {
+    fn write(b: &crate::Revolution, w: &mut Writer) -> Result<StoredRevolution, String> {
+        let mut nums = Out::default();
+        nums.fs(b.data.frequencies());
+        nums.cs(b.data.values());
+        Ok(StoredRevolution {
+            m: b.m,
+            modes: b.modes.clone(),
+            frequencies: b.data.frequencies().len(),
+            ports: b.data.outputs(),
+            unknowns: b.unknowns,
+            numbers: nums.write(w, "results/revolution/numbers.f64")?,
+        })
+    }
+
+    fn read(self, r: &mut Reader) -> Result<crate::Revolution, String> {
+        if self.m > 64 || self.modes.len() > crate::sdata::MAX_ENTRIES || self.modes.iter().any(|n| n.chars().count() > 64) {
+            return Err("the body of revolution's order or modes are out of range".into());
+        }
+        let mut nums = In::read(r, &self.numbers, "the body of revolution")?;
+        let frequencies = nums.fs(self.frequencies)?;
+        let count = self.frequencies.checked_mul(self.ports).and_then(|x| x.checked_mul(self.ports)).ok_or("the body of revolution's S overflows")?;
+        let s = nums.cs(count)?;
+        nums.done()?;
+        let data = crate::sdata::SData::square(frequencies, self.ports, s)?;
+        Ok(crate::Revolution { m: self.m, modes: self.modes, data, unknowns: self.unknowns })
     }
 }

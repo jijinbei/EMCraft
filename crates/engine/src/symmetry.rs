@@ -82,9 +82,12 @@ pub fn revolution_frequency(s: &mut Session, p: &Params) -> Result<Value> {
     let mut rows = Vec::with_capacity(freqs.len());
     let mut names = Vec::new();
     let mut unknowns = 0;
+    let n = ports.len();
+    let mut values = Vec::with_capacity(freqs.len() * n * n);
     for (k, &f) in freqs.iter().enumerate() {
         crate::progress::report(k, freqs.len(), "frequency")?;
         let r = emcraft_solver::bor::s_parameters(&profile, m, &ports, f)?;
+        values.extend((0..n * n).map(|i| r.s.get(i / n, i % n).unwrap_or_default()));
         let mut row = serde_json::Map::new();
         row.insert("frequency".into(), json!(s.show_frequency(f)));
         for a in 0..ports.len() {
@@ -96,6 +99,9 @@ pub fn revolution_frequency(s: &mut Session, p: &Params) -> Result<Value> {
         names = r.modes;
         unknowns = r.unknowns;
     }
+    // Kept as the session's result: its charts, its pulse (`results.pulse`), its file.
+    let data = crate::sdata::SData::square(freqs.clone(), n, values).map_err(EngineError::failed)?;
+    s.results.revolution = Some(std::sync::Arc::new(crate::Revolution { m, modes: names.clone(), data, unknowns }));
     Ok(json!({"m": m, "modes": names, "points": rows, "triangles": profile.triangles.len(), "unknowns": unknowns}))
 }
 
