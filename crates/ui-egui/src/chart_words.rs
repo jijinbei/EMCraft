@@ -103,7 +103,7 @@ fn matches(template: &str, text: &str) -> Option<Vec<(String, String)>> {
         let next = literals.get(k + 1).copied().unwrap_or("");
         let last = k + 2 == literals.len();
         let end = if last {
-            if next.is_empty() { at.len() } else { at.len().checked_sub(next.len()).filter(|e| at[*e..] == *next)? }
+            if next.is_empty() { at.len() } else { at.len().checked_sub(next.len()).filter(|e| at.get(*e..) == Some(next))? }
         } else if next.is_empty() {
             return None;
         } else {
@@ -135,6 +135,19 @@ pub fn translate_chart(chart: &mut Chart) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A text whose end is not a template's ends there in the middle of a character (`→`): no
+    /// match, and no panic slicing it (a pulse chart's title once took the window down).
+    #[test]
+    fn a_text_ending_inside_a_character_matches_nothing_and_does_not_panic() {
+        assert_eq!(matches("{a} ns)", "Pulse: ×1.58, 8.00 → 4.60 ns"), None);
+        for text in ["→", "a → b", "×→×", "Pulse: ×1.58 peak power, 8.00 → 4.60 ns (linear chirp)"] {
+            for template in TEMPLATES {
+                let _ = matches(template, text);
+            }
+            let _ = translate_at(text, 0);
+        }
+    }
 
     #[test]
     fn templates_match_and_fill() {

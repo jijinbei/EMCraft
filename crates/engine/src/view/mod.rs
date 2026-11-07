@@ -19,6 +19,7 @@ mod dispersion;
 mod field;
 mod pattern;
 mod port_mode;
+pub mod pulse;
 mod reference;
 mod sparameters;
 pub(crate) mod study;

@@ -107,6 +107,63 @@ impl TdrParams {
     }
 }
 
+/// The pulse view's settings as `results.pulse`'s parameters: the carrier (the sweep's middle
+/// when `None`), the width (ns), the guide's length (a cell's Bloch wave: display units), the
+/// chirp, and whether the chart shows the instantaneous frequency rather than the power.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PulseParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frequency: Option<f64>,
+    #[serde(default = "default_width")]
+    pub width: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chirp: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bandwidth: Option<f64>,
+}
+
+fn default_width() -> f64 {
+    emcraft_engine::pulse::DEFAULT_WIDTH_NS
+}
+
+impl Default for PulseParams {
+    fn default() -> PulseParams {
+        PulseParams { frequency: None, width: default_width(), length: None, chirp: None, bandwidth: None }
+    }
+}
+
+impl PulseParams {
+    /// The command's JSON parameters.
+    pub fn to_params(&self) -> Value {
+        serde_json::to_value(self).unwrap_or_else(|_| serde_json::json!({}))
+    }
+
+    /// The settings a run of `results.pulse` asked for.
+    pub fn of(params: &Value) -> PulseParams {
+        serde_json::from_value(params.clone()).unwrap_or_default()
+    }
+}
+
+/// What the pulse chart is drawn from: the run of `results.pulse` (a count of them) and
+/// whether it shows the instantaneous frequency rather than the power.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PulseKey {
+    pub run: u64,
+    pub frequency: bool,
+}
+
+/// The pulse view's settings, its last run's count, what it shows and its chart (the reply is
+/// the app's, `Replies::pulse`).
+#[derive(Default)]
+pub struct PulseState {
+    pub params: PulseParams,
+    pub runs: u64,
+    pub frequency: bool,
+    pub chart: Cached<PictureKey<PulseKey>>,
+}
+
 /// The TDR view's settings and its chart.
 #[derive(Default)]
 pub struct TdrState {
@@ -233,6 +290,7 @@ pub struct ViewState {
     /// The kept solves (`results.history`) drawn over the S-parameter chart.
     pub compare: Vec<u32>,
     pub tdr: TdrState,
+    pub pulse: PulseState,
     pub study: StudyState,
     /// The picked port mode's picture.
     pub mode_picture: Cached<PictureKey<ModePicture>>,
@@ -252,6 +310,8 @@ pub struct Replies {
     pub compare: Option<emcraft_engine::Comparison>,
     /// What the import dialog's file holds (`geometry.import.inspect`).
     pub import: Option<ImportProbe>,
+    /// The last `results.pulse`'s reply.
+    pub pulse: Option<Value>,
 }
 
 /// `geometry.import.inspect`'s reply for the file (and STL unit) `key` names, or why not.

@@ -151,6 +151,12 @@ emcraft_macros::named_enum! {
         // The result views.
         ChartSParameters = "chart:sparameters",
         ChartTdr = "chart:tdr",
+        ChartPulse = "chart:pulse",
+        PulseFrequency = "pulse:frequency",
+        PulseWidth = "pulse:width",
+        PulseLength = "pulse:length",
+        PulseBandwidth = "pulse:bandwidth",
+        PulseRun = "pulse:run",
         ChartDispersion = "chart:dispersion",
         ChartPattern = "chart:pattern",
         ChartStudy = "chart:study",
@@ -358,6 +364,8 @@ pub enum Handle<'a> {
     StudyAt(&'a str, usize),
     /// The TDR view's transform: `tdr:mode:auto`.
     TdrMode(&'a str),
+    PulseChirp(&'a str),
+    PulseShow(&'a str),
     /// What the S-parameter chart shows: `sparameters:show:phase`.
     SParameters(&'a str),
     /// A chart style's axis field (`label`, `min`, `max`, `log`): `chart:style:x:min`.
@@ -457,6 +465,8 @@ impl fmt::Display for Handle<'_> {
             Handle::StudyAlong(name) => write!(f, "study:along:{name}"),
             Handle::StudyAt(name, i) => write!(f, "study:at:{name}:{i}"),
             Handle::TdrMode(mode) => write!(f, "tdr:mode:{mode}"),
+            Handle::PulseChirp(c) => write!(f, "pulse:chirp:{c}"),
+            Handle::PulseShow(s) => write!(f, "pulse:show:{s}"),
             Handle::SParameters(what) => write!(f, "sparameters:show:{what}"),
             Handle::StyleAxis(axis, part) => write!(f, "chart:style:{axis}:{part}"),
             Handle::Legend(at) => write!(f, "chart:legend:{at}"),

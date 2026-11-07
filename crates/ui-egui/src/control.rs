@@ -257,6 +257,7 @@ fn chart_style(app: &EmcraftApp) -> Value {
     let id = match app.place.view() {
         View::SParameters => ChartId::SParameters,
         View::Tdr => ChartId::Tdr,
+        View::Pulse => ChartId::Pulse,
         View::FarField => ChartId::Pattern,
         View::Dispersion => ChartId::Dispersion,
         View::Study => ChartId::Study,

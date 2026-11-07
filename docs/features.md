@@ -1090,7 +1090,7 @@ Time-domain reflectometry from the sweep's reflection at a port (the time domain
 
 ## `results.pulse` — Pulse compression
 
-A chirped Gaussian pulse through the solved two-port: its transmission S(f) from the sweep (a body of revolution's, else the time domain's) applied to the pulse's spectrum about its carrier and turned back into time — the input's and output's power envelopes, the compression (the output's peak power over the input's), their widths at half power, the output's peak time, and the guide's group delay and its slope D at the carrier with the chirp that compresses best, −1/D. A pulse with more than 1 % of its energy outside the sweep is refused.
+A chirped Gaussian pulse through the solved two-port: its transmission S(f) from the sweep (a body of revolution's, else the time domain's) applied to the pulse's spectrum about its carrier and turned back into time — the input's and output's power envelopes, the compression (the output's peak power over the input's), their widths at half power, the output's peak time, and the guide's group delay and its slope D at the carrier with the chirp that compresses best, −1/D. Without `bandwidth` the input is optimized: the better of the best linear chirp and the best matched one, whose instantaneous frequency follows the line's group delay (each frequency leaving when it will arrive with the others). The reply gives both envelopes' power and instantaneous frequency against time. A pulse with more than 1 % of its energy outside the sweep is refused.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -1100,6 +1100,8 @@ A chirped Gaussian pulse through the solved two-port: its transmission S(f) from
 | `width` | number |  | yes | the input's width at half power, ns |
 | `bandwidth` | number | frequency | no | the band the chirp sweeps over the width, rising (> 0) or falling (< 0); 0: no chirp; left out: the chirp that compresses best |
 | `length` | number | length | no | a periodic guide this long, from its cell's Bloch wave (solve.revolution.bloch): S = e^{−γ length}, the ends' reflections left out |
+| `chirp` | string |  | no | `none`, `linear` (by `bandwidth`, else the best, −1/D), `matched` (its frequency following the line's group delay, scaled by `scale`) or `optimized` (the better of the best linear and the best matched; the default without `bandwidth`) |
+| `scale` | number |  | no | the matched chirp's scale on the group delay, 0 to 10 (default 1: stationary phase) |
 
 ## `view.tdr` — TDR PNG
 

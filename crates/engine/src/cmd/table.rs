@@ -1421,7 +1421,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "results.pulse",
         label: "Pulse compression",
-        doc: "A chirped Gaussian pulse through the solved two-port: its transmission S(f) from the sweep (a body of revolution's, else the time domain's) applied to the pulse's spectrum about its carrier and turned back into time — the input's and output's power envelopes, the compression (the output's peak power over the input's), their widths at half power, the output's peak time, and the guide's group delay and its slope D at the carrier with the chirp that compresses best, −1/D. A pulse with more than 1 % of its energy outside the sweep is refused.",
+        doc: "A chirped Gaussian pulse through the solved two-port: its transmission S(f) from the sweep (a body of revolution's, else the time domain's) applied to the pulse's spectrum about its carrier and turned back into time — the input's and output's power envelopes, the compression (the output's peak power over the input's), their widths at half power, the output's peak time, and the guide's group delay and its slope D at the carrier with the chirp that compresses best, −1/D. Without `bandwidth` the input is optimized: the better of the best linear chirp and the best matched one, whose instantaneous frequency follows the line's group delay (each frequency leaving when it will arrive with the others). The reply gives both envelopes' power and instantaneous frequency against time. A pulse with more than 1 % of its energy outside the sweep is refused.",
         params: &[
             opt("from", K::String, "the port the pulse enters (default the first)"),
             opt("to", K::String, "the port it leaves (default the second)"),
@@ -1429,6 +1429,8 @@ pub static COMMANDS: &[CommandSpec] = &[
             req("width", K::Number, "the input's width at half power, ns"),
             opt("bandwidth", K::Number, "the band the chirp sweeps over the width, rising (> 0) or falling (< 0); 0: no chirp; left out: the chirp that compresses best").of(F),
             opt("length", K::Number, "a periodic guide this long, from its cell's Bloch wave (solve.revolution.bloch): S = e^{−γ length}, the ends' reflections left out").of(L),
+            opt("chirp", K::String, "`none`, `linear` (by `bandwidth`, else the best, −1/D), `matched` (its frequency following the line's group delay, scaled by `scale`) or `optimized` (the better of the best linear and the best matched; the default without `bandwidth`)").one_of(&["none", "linear", "matched", "optimized"]),
+            opt("scale", K::Number, "the matched chirp's scale on the group delay, 0 to 10 (default 1: stationary phase)"),
         ],
         effect: Effect::None,
         invalidates: None,

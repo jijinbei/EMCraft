@@ -77,6 +77,12 @@ impl EmcraftApp {
             }
             "file.sample" | "engine.script" | "file.open" | "file.new" | "file.save" => self.after_file(id, reply),
             _ if id.starts_with("solve.") => self.after_solve(id, reply),
+            "results.pulse" => {
+                self.views.pulse.params = crate::state::PulseParams::of(params);
+                self.views.pulse.runs += 1;
+                self.replies.pulse = Some(reply.clone());
+                self.place = self.place.show(View::Pulse);
+            }
             "results.tdr" => {
                 self.views.tdr.params = crate::state::TdrParams::of(params);
                 self.place = self.place.show(View::Tdr);

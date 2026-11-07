@@ -23,6 +23,7 @@ pub mod field_params;
 mod field_side;
 mod fields;
 mod model;
+mod pulse;
 mod sparameters;
 mod study;
 mod tables;
@@ -123,6 +124,7 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
                 View::Model => model3d(app, st, ui, out),
                 View::SParameters => show_chart::<SParameters>(app, st, ui, out),
                 View::Tdr => show_chart::<Tdr>(app, st, ui, out),
+                View::Pulse => show_chart::<pulse::Pulse>(app, st, ui, out),
                 View::Field => field(app, st, ui, out),
                 View::PortModes => port_modes(app, st, ui, out),
                 View::FarField => show_chart::<FarField>(app, st, ui, out),
@@ -243,6 +245,12 @@ impl ChartKey for SharedChart {
 impl ChartKey for crate::state::TdrParams {
     fn slot(views: &mut ViewState) -> &mut Cached<PictureKey<Self>> {
         &mut views.tdr.chart
+    }
+}
+
+impl ChartKey for crate::state::PulseKey {
+    fn slot(views: &mut ViewState) -> &mut Cached<PictureKey<Self>> {
+        &mut views.pulse.chart
     }
 }
 

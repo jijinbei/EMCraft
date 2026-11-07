@@ -2,6 +2,22 @@
   "name": "日本語",
   "complete": true,
   "strings": {
+    "Pulse": "パルス",
+    "chirp": "チャープ",
+    "scale": "倍率",
+    "A straight sweep: the band given, else −1/D": "直線的な掃引：指定の帯域、なければ −1/D",
+    "carrier": "搬送波",
+    "Its frequency follows the line's group delay": "周波数が線路の群遅延に沿って動く",
+    "length": "長さ",
+    "Matched": "整合",
+    "No chirp": "チャープなし",
+    "None": "なし",
+    "No sweep yet: Run (step 6), or a cell's Bloch wave (solve.revolution.bloch).": "掃引はまだありません：実行（ステップ 6）、またはセルのブロッホ波（solve.revolution.bloch）。",
+    "Optimized": "最適化",
+    "Power": "電力",
+    "The band the chirp sweeps: rising > 0, falling < 0": "チャープが掃く帯域：上昇は > 0、下降は < 0",
+    "The better of the best linear and the best matched chirp": "最良の直線チャープと最良の整合チャープのうち良い方",
+    "width": "幅",
     "bandwidth": "帯域",
     "Hide earlier messages": "以前のメッセージを隠す",
     "Earlier messages": "以前のメッセージ",
@@ -1666,14 +1682,16 @@
     },
     "results.pulse": {
       "label": "パルス圧縮",
-      "doc": "解析済みの 2 ポートにチャープしたガウスパルスを通す：掃引（回転体のもの、なければ時間領域のもの）の透過 S(f) を搬送波まわりのパルスのスペクトルに掛け、時間に戻す。入力と出力の電力包絡、圧縮率（出力と入力の尖頭電力の比）、半値幅、出力のピーク時刻、搬送波での群遅延とその傾き D、最もよく圧縮するチャープ −1/D を返す。エネルギーの 1 % を超えて掃引の外にあるパルスは受け付けない。",
+      "doc": "解析済みの 2 ポートにチャープしたガウスパルスを通す：掃引（回転体のもの、なければ時間領域のもの）の透過 S(f) を搬送波まわりのパルスのスペクトルに掛け、時間に戻す。入力と出力の電力包絡、圧縮率（出力と入力の尖頭電力の比）、半値幅、出力のピーク時刻、搬送波での群遅延とその傾き D、最もよく圧縮するチャープ −1/D を返す。`bandwidth` を省くと入力を最適化する：最良の直線チャープと、瞬時周波数が線路の群遅延に沿う最良の整合チャープ（各周波数が他と同時に着く時刻に出る）のうち良い方。応答は両方の包絡の電力と瞬時周波数を時間に対して返す。エネルギーの 1 % を超えて掃引の外にあるパルスは受け付けない。",
       "params": {
         "from": "パルスが入るポート（既定は最初）",
         "to": "パルスが出るポート（既定は 2 番目）",
         "frequency": "搬送波（既定は掃引の中央）",
         "width": "入力の半値幅、ns",
         "bandwidth": "チャープが幅の間に掃く帯域。上昇（> 0）または下降（< 0）、0 でチャープなし、省略時は最もよく圧縮するチャープ",
-        "length": "この長さの周期導波管として、セルのブロッホ波（solve.revolution.bloch）から S = e^{−γ length}。両端の反射は含めない"
+        "length": "この長さの周期導波管として、セルのブロッホ波（solve.revolution.bloch）から S = e^{−γ length}。両端の反射は含めない",
+        "chirp": "`none`、`linear`（`bandwidth` で、なければ最良の −1/D）、`matched`（周波数が線路の群遅延に沿い、`scale` 倍）、`optimized`（最良の直線と最良の整合のうち良い方。`bandwidth` を省いたときの既定）",
+        "scale": "整合チャープの群遅延への倍率、0〜10（既定 1：停留位相）"
       }
     },
     "results.tdr": {

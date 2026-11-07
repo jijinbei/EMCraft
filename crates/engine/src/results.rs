@@ -348,6 +348,10 @@ const PULSE_POINTS: usize = 512;
 
 /// `results.pulse`: a chirped pulse through the two-port ([`crate::pulse`]).
 pub fn pulse(s: &mut Session, p: &Params) -> Result<Value> {
+    pulse_of(s, p)
+}
+
+fn pulse_of(s: &Session, p: &Params) -> Result<Value> {
     // A periodic guide `length` long from its cell's Bloch wave, else the solved two-port.
     if let Some(length) = p.positive_length("length").optional()? {
         let b = s.results.revolution.as_ref().and_then(|r| r.bloch.as_ref().map(|(_, g)| (r.data.frequencies().to_vec(), g.clone())));
@@ -378,34 +382,32 @@ pub fn pulse(s: &mut Session, p: &Params) -> Result<Value> {
 /// `freqs` (Hz), from `source`.
 #[allow(clippy::too_many_arguments)]
 fn pulse_reply(s: &Session, p: &Params, freqs: &[f64], mag: &[f64], phase: &[f64], source: &str, from: String, to: String) -> Result<Value> {
-    let (lo, hi) = (freqs.first().copied().unwrap_or(0.0), freqs.last().copied().unwrap_or(0.0));
-    let f0 = p.frequency("frequency").optional()?.unwrap_or(0.5 * (lo + hi));
-    let width = p.number("width").required()?;
-    if !(width.is_finite() && width > 0.0 && width < 1e6) {
-        return Err(p.error("width", "must be a positive number of ns"));
-    }
-    let width = width * 1e-9;
-    // The chirp: the one that compresses best unless one is given.
+    let (r, input) = pulse_run(s, p, freqs, mag, phase)?;
     let fu = s.display.frequency;
-    let rate = match p.number("bandwidth").optional()? {
-        Some(b) if b.is_finite() && fu.to_si(b.abs()) < 1e15 => fu.to_si(b) / width,
-        Some(_) => return Err(p.error("bandwidth", "must be a finite frequency")),
-        None => {
-            let flat = crate::pulse::through_phase(freqs, mag, phase, crate::pulse::Chirp { f0, width, rate: 0.0 })?;
-            flat.best_rate().ok_or_else(|| EngineError::failed("the guide does not disperse at the carrier: give `bandwidth`"))?
-        }
-    };
-    let r = crate::pulse::through_phase(freqs, mag, phase, crate::pulse::Chirp { f0, width, rate })?;
     let step = r.times.len().div_ceil(PULSE_POINTS).max(1);
-    let points: Vec<Value> =
-        (0..r.times.len()).step_by(step).map(|i| json!({"t": r.times[i] * 1e9, "input": r.input[i], "output": r.output[i]})).collect();
+    let shown = |f: f64| if f.is_finite() { json!(fu.from_si(f)) } else { Value::Null };
+    let points: Vec<Value> = (0..r.times.len())
+        .step_by(step)
+        .map(|i| {
+            json!({"t": r.times[i] * 1e9, "input": r.input[i], "output": r.output[i],
+                   "input_frequency": shown(r.input_frequency[i]), "output_frequency": shown(r.output_frequency[i])})
+        })
+        .collect();
+    let (chirp, bandwidth, scale) = match input.law {
+        crate::pulse::Law::Linear { rate: 0.0 } => ("none", Some(0.0), None),
+        crate::pulse::Law::Linear { rate } => ("linear", Some(fu.from_si(rate * input.width)), None),
+        crate::pulse::Law::Matched { scale } => ("matched", None, Some(scale)),
+    };
     Ok(json!({
         "source": source,
         "from": from,
         "to": to,
-        "frequency": fu.from_si(f0),
-        "bandwidth": fu.from_si(rate * width),
-        "best_bandwidth": r.best_rate().map(|b| fu.from_si(b * width)),
+        "frequency": fu.from_si(input.f0),
+        "width": input.width * 1e9,
+        "chirp": chirp,
+        "bandwidth": bandwidth,
+        "scale": scale,
+        "best_bandwidth": r.best_rate().map(|b| fu.from_si(b * input.width)),
         "compression": r.compression(),
         "input_width": r.input_width * 1e9,
         "output_width": r.output_width * 1e9,
@@ -417,4 +419,55 @@ fn pulse_reply(s: &Session, p: &Params, freqs: &[f64], mag: &[f64], phase: &[f64
         "time_unit": "ns",
         "points": points,
     }))
+}
+
+/// The pulse `p` asks for through the transmission: its carrier, width and chirp — `none`, a
+/// `linear` one (`bandwidth`, else the best, −1/D), the `matched` one (`scale`, 1 by default) or
+/// the `optimized` one ([`crate::pulse::optimize`]).
+fn pulse_run(s: &Session, p: &Params, freqs: &[f64], mag: &[f64], phase: &[f64]) -> Result<(crate::pulse::Pulse, crate::pulse::Input)> {
+    use crate::pulse::{Input, Law, through_phase};
+    let (lo, hi) = (freqs.first().copied().unwrap_or(0.0), freqs.last().copied().unwrap_or(0.0));
+    let f0 = p.frequency("frequency").optional()?.unwrap_or(0.5 * (lo + hi));
+    let width = p.number("width").required()?;
+    if !(width.is_finite() && width > 0.0 && width < 1e6) {
+        return Err(p.error("width", "must be a positive number of ns"));
+    }
+    let width = width * 1e-9;
+    let fu = s.display.frequency;
+    let kind = p.string("chirp").optional()?.unwrap_or(if p.number("bandwidth").optional()?.is_some() { "linear" } else { "optimized" });
+    let law = match kind {
+        "none" => Law::Linear { rate: 0.0 },
+        "linear" => match p.number("bandwidth").optional()? {
+            Some(b) if b.is_finite() && fu.to_si(b.abs()) < 1e15 => Law::Linear { rate: fu.to_si(b) / width },
+            Some(_) => return Err(p.error("bandwidth", "must be a finite frequency")),
+            None => {
+                let flat = through_phase(freqs, mag, phase, Input { f0, width, law: Law::Linear { rate: 0.0 } })?;
+                Law::Linear {
+                    rate: flat.best_rate().ok_or_else(|| EngineError::failed("the guide does not disperse at the carrier: give `bandwidth`"))?,
+                }
+            }
+        },
+        "matched" => {
+            let scale = p.number("scale").optional()?.unwrap_or(1.0);
+            if !(scale.is_finite() && scale > 0.0 && scale <= 10.0) {
+                return Err(p.error("scale", "must be a number from 0 to 10"));
+            }
+            Law::Matched { scale }
+        }
+        "optimized" => {
+            let (input, r) = crate::pulse::optimize(freqs, mag, phase, f0, width)?;
+            return Ok((r, input));
+        }
+        other => return Err(p.error("chirp", format!("must be none, linear, matched or optimized, not `{}`", crate::text::clip(other, 32)))),
+    };
+    let input = Input { f0, width, law };
+    Ok((through_phase(freqs, mag, phase, input)?, input))
+}
+
+/// The pulse `p` asks for as a chart: the input's and output's power against time (`show`:
+/// `power`, the default), or their instantaneous frequency (`frequency`).
+pub fn pulse_chart(s: &Session, p: &Params) -> Result<emcraft_render::chart::Chart> {
+    let reply = pulse_of(s, p)?;
+    let frequency = p.string("show").optional()? == Some("frequency");
+    Ok(crate::view::pulse::chart(&reply, frequency, s.display.frequency.symbol()))
 }

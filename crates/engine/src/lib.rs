@@ -88,6 +88,12 @@ pub fn results_tdr_chart(s: &Session, p: &Params) -> Result<emcraft_render::char
     Ok(view::tdr_chart(&t, &port, z0))
 }
 
+/// `results.pulse`'s chart: the pulse's power, or with `show: frequency` its instantaneous
+/// frequency, input and output against time.
+pub fn results_pulse_chart(s: &Session, p: &Params) -> Result<emcraft_render::chart::Chart> {
+    results::pulse_chart(s, p)
+}
+
 #[derive(Clone, Debug, thiserror::Error, PartialEq)]
 pub enum EngineError {
     #[error("unknown command `{0}`")]

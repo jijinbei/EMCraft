@@ -922,3 +922,8 @@ fn a_board_solved_by_finite_elements_has_no_pcb_route_view() {
 fn scenario_symmetry_eye() {
     scenario("symmetry_eye");
 }
+
+#[test]
+fn scenario_pulse_view() {
+    scenario("pulse_view");
+}

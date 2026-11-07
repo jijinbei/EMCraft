@@ -20,6 +20,19 @@
 //!
 //! An ideal line of group delay τ₀ + Dν (S = e^{−j2π(τ₀ν + Dν²/2)}) gives y in closed form,
 //! y(t + τ₀) = √(α′/α) exp(−α′t²) with 1/α′ = 1/α + jD/π: the check of `tests`.
+//!
+//! **A chirp matched to the line.** A linear chirp undoes only the slope of the group delay; a
+//! line whose delay curves (a guide near its cut-off or a stop band) leaves the rest of it spread.
+//! The matched chirp follows the delay itself: its instantaneous frequency f(t) is the one that
+//! leaves at t and arrives with all the others, t + s (τ(f) − τ(f₀)) = 0 (stationary phase: each
+//! frequency spends τ(f) in the line), on the monotonic stretch of τ about f₀, held at its ends
+//! past it; s = 1 is the stationary-phase answer and the search tries others. Its spectrum is
+//! the envelope's transform, taken numerically. [`optimize`] picks, for a given carrier and
+//! width, the linear rate and the matched chirp's s that peak the output highest (golden-section
+//! searches, each bounded), and returns the better of the two.
+//!
+//! **Instantaneous frequency.** Of the input and the output, f₀ + (1/2π) d arg(y)/dt where the
+//! power is above a hundredth of its peak: the input's sweep, and what the line left of it.
 
 use std::f64::consts::{LN_2, PI};
 
@@ -32,6 +45,9 @@ pub const GRID: usize = 4096;
 pub const TIMES: usize = 1024;
 /// The samples about the output's largest that find its peak.
 const PEAK_SAMPLES: usize = 64;
+
+/// The width a pulse is given when nothing says (ns): the pulse view's first.
+pub const DEFAULT_WIDTH_NS: f64 = 8.0;
 
 /// The most of the pulse's energy that may lie outside the swept band.
 pub const MAX_OUTSIDE: f64 = 0.01;
@@ -63,13 +79,39 @@ impl Chirp {
     }
 }
 
+/// How the input's frequency moves: linearly at `rate` (Hz/s), or matched to the line's group
+/// delay, scaled by `scale` (see the module notes).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Law {
+    Linear { rate: f64 },
+    Matched { scale: f64 },
+}
+
+/// An input pulse: a Gaussian envelope of width at half power `width` (s) about the carrier
+/// `f0` (Hz), its frequency moving by `law`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Input {
+    pub f0: f64,
+    pub width: f64,
+    pub law: Law,
+}
+
+impl From<Chirp> for Input {
+    fn from(c: Chirp) -> Input {
+        Input { f0: c.f0, width: c.width, law: Law::Linear { rate: c.rate } }
+    }
+}
+
 /// The pulse through the two-port: times (s, from the input's peak), the input's and output's
-/// power envelopes (the input's peak 1), and what they read.
+/// power envelopes (the input's peak 1) and instantaneous frequencies (Hz; NaN where the power
+/// is below a hundredth of its peak), and what they read.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Pulse {
     pub times: Vec<f64>,
     pub input: Vec<f64>,
     pub output: Vec<f64>,
+    pub input_frequency: Vec<f64>,
+    pub output_frequency: Vec<f64>,
     pub input_width: f64,
     pub output_width: f64,
     pub output_peak: f64,
@@ -148,7 +190,7 @@ fn half_width(times: &[f64], y: &[f64]) -> f64 {
 
 /// The pulse `chirp` through the transmission `s` swept at `freqs` (Hz, ascending), its phase
 /// unwrapped along the sweep (which must sample it finely enough: less than π between points).
-pub fn through(freqs: &[f64], s: &[C], chirp: Chirp) -> Result<Pulse> {
+pub fn through(freqs: &[f64], s: &[C], chirp: impl Into<Input>) -> Result<Pulse> {
     if !s.iter().all(|c| c.re.is_finite() && c.im.is_finite()) {
         return Err(bad("the sweep's S must be finite"));
     }
@@ -156,32 +198,135 @@ pub fn through(freqs: &[f64], s: &[C], chirp: Chirp) -> Result<Pulse> {
     through_phase(freqs, &mag, &unwrapped(s), chirp)
 }
 
+/// A line: its sweep (Hz), its transmission's magnitude and continuous phase, its group delay
+/// at each point (s).
+struct Line<'a> {
+    freqs: &'a [f64],
+    mag: &'a [f64],
+    phase: &'a [f64],
+    tau: Vec<f64>,
+}
+
+impl<'a> Line<'a> {
+    fn new(freqs: &'a [f64], mag: &'a [f64], phase: &'a [f64]) -> Result<Line<'a>> {
+        if freqs.len() != mag.len() || freqs.len() != phase.len() || freqs.len() < 4 {
+            return Err(bad("needs a sweep of at least 4 frequencies"));
+        }
+        if freqs.windows(2).any(|w| !(w[1] > w[0])) || !mag.iter().chain(phase).all(|x| x.is_finite()) {
+            return Err(bad("the sweep's frequencies must ascend and its S be finite"));
+        }
+        // The group delay by central differences over the neighbouring points.
+        let tau = (0..freqs.len())
+            .map(|k| {
+                let (i, j) = (k.saturating_sub(1), (k + 1).min(freqs.len() - 1));
+                -(phase[j] - phase[i]) / (2.0 * PI * (freqs[j] - freqs[i]))
+            })
+            .collect();
+        Ok(Line { freqs, mag, phase, tau })
+    }
+
+    fn band(&self) -> (f64, f64) {
+        (self.freqs[0], self.freqs[self.freqs.len() - 1])
+    }
+
+    /// The group delay at `f` and its slope there.
+    fn delay_at(&self, f: f64) -> (f64, f64) {
+        let (freqs, tau) = (self.freqs, &self.tau);
+        let k = freqs.partition_point(|x| *x <= f).clamp(1, freqs.len() - 1);
+        let w = (f - freqs[k - 1]) / (freqs[k] - freqs[k - 1]);
+        let delay = tau[k - 1] * (1.0 - w) + tau[k] * w;
+        let (i, j) = (k.saturating_sub(2), (k + 1).min(freqs.len() - 1));
+        (delay, (tau[j] - tau[i]) / (freqs[j] - freqs[i]))
+    }
+
+    /// The matched chirp's frequency at each of `times`: the f with t = −s (τ(f) − τ(f₀)) on
+    /// the monotonic stretch of τ about f₀, held at the stretch's ends past it.
+    fn matched(&self, f0: f64, scale: f64, times: &[f64]) -> Vec<f64> {
+        let (freqs, tau) = (self.freqs, &self.tau);
+        let (tau0, slope) = self.delay_at(f0);
+        let k = freqs.partition_point(|x| *x <= f0).clamp(1, freqs.len() - 1);
+        let rising = slope >= 0.0;
+        let up = |a: f64, b: f64| if rising { b >= a } else { b <= a };
+        let mut lo = k - 1;
+        while lo > 0 && up(tau[lo - 1], tau[lo]) {
+            lo -= 1;
+        }
+        let mut hi = k;
+        while hi + 1 < freqs.len() && up(tau[hi], tau[hi + 1]) {
+            hi += 1;
+        }
+        // (t, f) along the stretch, t ascending.
+        let mut table: Vec<(f64, f64)> = (lo..=hi).map(|i| (-scale * (tau[i] - tau0), freqs[i])).collect();
+        table.sort_by(|a, b| a.0.total_cmp(&b.0));
+        table.dedup_by(|a, b| a.0 == b.0);
+        times
+            .iter()
+            .map(|&t| {
+                let j = table.partition_point(|x| x.0 <= t);
+                match j {
+                    0 => table.first().map_or(f0, |x| x.1),
+                    j if j >= table.len() => table.last().map_or(f0, |x| x.1),
+                    j => {
+                        let ((ta, fa), (tb, fb)) = (table[j - 1], table[j]);
+                        fa + (fb - fa) * (t - ta) / (tb - ta)
+                    }
+                }
+            })
+            .collect()
+    }
+}
+
+/// The samples of the matched chirp's envelope taken for its transform, either side of the
+/// peak out to three widths.
+const ENVELOPE_SAMPLES: usize = 2048;
+
 /// [`through`] with the transmission given as its magnitude and its phase, already continuous
 /// (a Bloch wave's −βL over a long guide, which turns many times between the sweep's points).
-pub fn through_phase(freqs: &[f64], mag: &[f64], phase: &[f64], chirp: Chirp) -> Result<Pulse> {
-    if freqs.len() != mag.len() || freqs.len() != phase.len() || freqs.len() < 4 {
-        return Err(bad("needs a sweep of at least 4 frequencies"));
-    }
-    if freqs.windows(2).any(|w| !(w[1] > w[0])) || !mag.iter().chain(phase).all(|x| x.is_finite()) {
-        return Err(bad("the sweep's frequencies must ascend and its S be finite"));
-    }
-    let Chirp { f0, width, rate } = chirp;
-    let (lo, hi) = (freqs[0], freqs[freqs.len() - 1]);
+pub fn through_phase(freqs: &[f64], mag: &[f64], phase: &[f64], input: impl Into<Input>) -> Result<Pulse> {
+    let line = Line::new(freqs, mag, phase)?;
+    pass(&line, input.into())
+}
+
+/// The amplitude of a Gaussian of power width `width` at t.
+fn gauss(width: f64, t: f64) -> f64 {
+    (-2.0 * LN_2 * t * t / (width * width)).exp()
+}
+
+fn pass(line: &Line, input: Input) -> Result<Pulse> {
+    let Input { f0, width, law } = input;
+    let (lo, hi) = line.band();
     if !(f0 > lo && f0 < hi) {
         return Err(bad(format!("the carrier must lie inside the sweep ({lo:e} to {hi:e} Hz)")));
     }
-    if !(width.is_finite() && width > 0.0) || !rate.is_finite() {
+    let finite_law = match law {
+        Law::Linear { rate } => rate.is_finite(),
+        Law::Matched { scale } => scale.is_finite() && scale > 0.0 && scale < 100.0,
+    };
+    if !(width.is_finite() && width > 0.0) || !finite_law {
         return Err(bad("the width must be positive and the chirp finite"));
     }
-    // The spectrum on a grid over the band; its energy inside against all of it.
     let dnu = (hi - lo) / (GRID - 1) as f64;
     let nus: Vec<f64> = (0..GRID).map(|i| lo + i as f64 * dnu - f0).collect();
-    let spec: Vec<C> = nus.iter().map(|&nu| chirp.spectrum(nu)).collect();
+    // The input: its envelope and its frequency at any time, its spectrum on the grid, its
+    // whole energy.
+    let (spec, total): (Vec<C>, f64) = match law {
+        Law::Linear { rate } => {
+            let chirp = Chirp { f0, width, rate };
+            let a = chirp.alpha();
+            let re_inv = (C::new(1.0, 0.0) / a).re;
+            (nus.iter().map(|&nu| chirp.spectrum(nu)).collect(), PI / a.norm() * (PI / (2.0 * PI * PI * re_inv)).sqrt())
+        }
+        Law::Matched { scale } => {
+            let reach = 3.0 * width;
+            let dt = 2.0 * reach / (ENVELOPE_SAMPLES - 1) as f64;
+            let ts: Vec<f64> = (0..ENVELOPE_SAMPLES).map(|i| -reach + i as f64 * dt).collect();
+            let env = matched_envelope(line, f0, width, scale, &ts);
+            let total = env.iter().map(C::norm_sqr).sum::<f64>() * dt;
+            let spec = nus.iter().map(|&nu| evenly(&env, ts[0], dt, -nu) * dt).collect();
+            (spec, total)
+        }
+    };
     let inside: f64 = spec.iter().map(C::norm_sqr).sum::<f64>() * dnu;
-    // |A(ν)|² = (π/|α|) exp(−2π² Re(1/α) ν²): its whole integral in closed form.
-    let a = chirp.alpha();
-    let re_inv = (C::new(1.0, 0.0) / a).re;
-    let total = PI / a.norm() * (PI / (2.0 * PI * PI * re_inv)).sqrt();
     let outside = (1.0 - inside / total).max(0.0);
     if !(outside <= MAX_OUTSIDE) {
         return Err(bad(format!(
@@ -189,42 +334,40 @@ pub fn through_phase(freqs: &[f64], mag: &[f64], phase: &[f64], chirp: Chirp) ->
             100.0 * outside
         )));
     }
-    let transmitted: Vec<C> = nus.iter().zip(&spec).map(|(&nu, a)| sample(freqs, mag, phase, f0 + nu).unwrap_or_default() * a).collect();
-    // The group delay and its slope at f₀ from the unwrapped phase, by central differences over
-    // the sweep's neighbouring points.
-    let tau: Vec<f64> = (0..freqs.len())
-        .map(|k| {
-            let (i, j) = (k.saturating_sub(1), (k + 1).min(freqs.len() - 1));
-            -(phase[j] - phase[i]) / (2.0 * PI * (freqs[j] - freqs[i]))
-        })
-        .collect();
-    let k = freqs.partition_point(|x| *x <= f0).clamp(1, freqs.len() - 1);
-    let w = (f0 - freqs[k - 1]) / (freqs[k] - freqs[k - 1]);
-    let delay = tau[k - 1] * (1.0 - w) + tau[k] * w;
-    let (i, j) = (k.saturating_sub(2), (k + 1).min(freqs.len() - 1));
-    let dispersion = (tau[j] - tau[i]) / (freqs[j] - freqs[i]);
+    let transmitted: Vec<C> =
+        nus.iter().zip(&spec).map(|(&nu, a)| sample(line.freqs, line.mag, line.phase, f0 + nu).unwrap_or_default() * a).collect();
+    let (delay, dispersion) = line.delay_at(f0);
     // The times: about the input's spread and the band's delays.
-    let (tmin, tmax) = tau.iter().fold((0.0f64, 0.0f64), |(a, b), &t| (a.min(t), b.max(t)));
-    // The pulse's band (its Gaussian's and its sweep's) spread by the dispersion, and its own
-    // width, either side.
-    let band = 0.44 / width + rate.abs() * width;
+    let (tmin, tmax) = line.tau.iter().fold((0.0f64, 0.0f64), |(a, b), &t| (a.min(t), b.max(t)));
+    let rate = match law {
+        Law::Linear { rate } => rate.abs(),
+        Law::Matched { .. } => (hi - lo) / width,
+    };
+    let band = 0.44 / width + rate * width;
     let spread = 2.0 * width + 2.0 * dispersion.abs() * band;
     let reach = 1.5 * width.max(1.0 / (hi - lo));
     let (t0, t1) = (tmin.min(0.0) - reach - spread, tmax.max(0.0) + reach + spread);
     let dt = (t1 - t0) / (TIMES - 1) as f64;
     let times: Vec<f64> = (0..TIMES).map(|i| t0 + i as f64 * dt).collect();
-    let input: Vec<f64> = times.iter().map(|&t| chirp.envelope(t).norm_sqr()).collect();
-    let power = |t: f64| (nus.iter().zip(&transmitted).map(|(&nu, x)| x * C::from_polar(1.0, 2.0 * PI * nu * t)).sum::<C>() * dnu).norm_sqr();
-    let output: Vec<f64> = times.iter().map(|&t| power(t)).collect();
+    let input_env: Vec<C> = match law {
+        Law::Linear { rate } => times.iter().map(|&t| Chirp { f0, width, rate }.envelope(t)).collect(),
+        Law::Matched { scale } => matched_envelope(line, f0, width, scale, &times),
+    };
+    let field = |t: f64| evenly(&transmitted, nus[0], dnu, t) * dnu;
+    let output_env: Vec<C> = times.iter().map(|&t| field(t)).collect();
+    let input: Vec<f64> = input_env.iter().map(C::norm_sqr).collect();
+    let output: Vec<f64> = output_env.iter().map(C::norm_sqr).collect();
     let (kp, _) = output.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)).ok_or_else(|| bad("no samples"))?;
     // The peak itself, between the samples either side of the largest: 64 more.
     let (output_peak, output_time) = (0..=PEAK_SAMPLES)
         .map(|i| times[kp] + dt * (2.0 * i as f64 / PEAK_SAMPLES as f64 - 1.0))
-        .map(|t| (power(t), t))
+        .map(|t| (field(t).norm_sqr(), t))
         .fold((f64::NEG_INFINITY, times[kp]), |best, x| if x.0 > best.0 { x } else { best });
     Ok(Pulse {
         input_width: half_width(&times, &input),
         output_width: half_width(&times, &output),
+        input_frequency: instantaneous(&input_env, dt, f0),
+        output_frequency: instantaneous(&output_env, dt, f0),
         output_peak,
         output_time,
         times,
@@ -234,6 +377,97 @@ pub fn through_phase(freqs: &[f64], mag: &[f64], phase: &[f64], chirp: Chirp) ->
         dispersion,
         outside,
     })
+}
+
+/// Σ x_k e^{j2π (x₀ + k dx) y}: the samples x at evenly spaced points from x₀, each turned by
+/// the phase their point makes with y — the exponentials by recurrence (one rotation a step,
+/// renormalized every 256 against rounding), not each its own sine and cosine.
+fn evenly(x: &[C], x0: f64, dx: f64, y: f64) -> C {
+    let step = C::from_polar(1.0, 2.0 * PI * dx * y);
+    let mut turn = C::from_polar(1.0, 2.0 * PI * x0 * y);
+    let mut sum = C::new(0.0, 0.0);
+    for (k, v) in x.iter().enumerate() {
+        sum += v * turn;
+        turn *= step;
+        if k % 256 == 255 {
+            turn = C::from_polar(1.0, 2.0 * PI * (x0 + (k + 1) as f64 * dx) * y);
+        }
+    }
+    sum
+}
+
+/// The matched chirp's envelope at `times`: the Gaussian with the phase 2π ∫ (f(t′) − f₀) dt′
+/// from the peak (t = 0), f the matched frequency.
+fn matched_envelope(line: &Line, f0: f64, width: f64, scale: f64, times: &[f64]) -> Vec<C> {
+    let f = line.matched(f0, scale, times);
+    // The phase by the trapezoidal rule along the times, then shifted to be 0 at t = 0.
+    let mut psi = vec![0.0; times.len()];
+    for i in 1..times.len() {
+        psi[i] = psi[i - 1] + PI * (f[i] + f[i - 1] - 2.0 * f0) * (times[i] - times[i - 1]);
+    }
+    let k = times.partition_point(|t| *t < 0.0).min(times.len().saturating_sub(1));
+    let zero = psi.get(k).copied().unwrap_or(0.0);
+    times.iter().zip(&psi).map(|(&t, &p)| C::from_polar(gauss(width, t), p - zero)).collect()
+}
+
+/// f₀ + (1/2π) d arg(y)/dt at each sample (central differences of the phase between
+/// neighbours), NaN where |y|² is below a hundredth of its peak.
+fn instantaneous(y: &[C], dt: f64, f0: f64) -> Vec<f64> {
+    let peak = y.iter().map(C::norm_sqr).fold(0.0, f64::max);
+    (0..y.len())
+        .map(|k| {
+            let (i, j) = (k.saturating_sub(1), (k + 1).min(y.len() - 1));
+            if y[k].norm_sqr() < 1e-2 * peak || i == j {
+                return f64::NAN;
+            }
+            let turn = (y[j] * y[i].conj()).arg();
+            f0 + turn / (2.0 * PI * (j - i) as f64 * dt)
+        })
+        .collect()
+}
+
+/// The most passes each golden-section search of [`optimize`] makes.
+const SEARCH_STEPS: usize = 24;
+
+/// The golden-section search for the largest of `f` on [a, b] (a unimodal guess), bounded.
+fn golden(mut a: f64, mut b: f64, f: impl Fn(f64) -> f64) -> (f64, f64) {
+    let g = 0.5 * (5f64.sqrt() - 1.0);
+    let (mut c, mut d) = (b - g * (b - a), a + g * (b - a));
+    let (mut fc, mut fd) = (f(c), f(d));
+    for _ in 0..SEARCH_STEPS {
+        if fc > fd {
+            (b, d, fd) = (d, c, fc);
+            c = b - g * (b - a);
+            fc = f(c);
+        } else {
+            (a, c, fc) = (c, d, fd);
+            d = a + g * (b - a);
+            fd = f(d);
+        }
+    }
+    if fc > fd { (c, fc) } else { (d, fd) }
+}
+
+/// The input of carrier `f0` and width `width` that the line compresses most: the better of the
+/// best linear chirp (its rate searched about −1/D within what the band holds) and the best
+/// matched chirp (its scale searched from 0.2 to 2).
+pub fn optimize(freqs: &[f64], mag: &[f64], phase: &[f64], f0: f64, width: f64) -> Result<(Input, Pulse)> {
+    let line = Line::new(freqs, mag, phase)?;
+    let (lo, hi) = line.band();
+    let peak = |input: Input| pass(&line, input).map_or(0.0, |p| p.compression());
+    // A linear chirp's band at most what the sweep holds about the carrier.
+    let room = 2.0 * (f0 - lo).min(hi - f0).max(0.0);
+    let reach = room / width;
+    let (_, d) = line.delay_at(f0);
+    let towards = if d > 0.0 { -1.0 } else { 1.0 };
+    let (rate, linear) = golden(0.0, reach, |r| peak(Input { f0, width, law: Law::Linear { rate: towards * r } }));
+    let (scale, matched) = golden(0.2, 2.0, |s| peak(Input { f0, width, law: Law::Matched { scale: s } }));
+    let best = if matched > linear {
+        Input { f0, width, law: Law::Matched { scale } }
+    } else {
+        Input { f0, width, law: Law::Linear { rate: towards * rate } }
+    };
+    Ok((best, pass(&line, best)?))
 }
 
 #[cfg(test)]
@@ -269,6 +503,34 @@ mod tests {
         assert!(best > half && half > none, "{best} {half} {none}");
         let best_rate = through(&freqs, &s, Chirp { f0, width, rate: 0.0 }).ok().and_then(|p| p.best_rate()).unwrap_or(0.0);
         assert!((best_rate * d + 1.0).abs() < 1e-6, "{best_rate:e}");
+    }
+
+    /// A line whose delay curves, τ = τ₀ + Dν + Cν², ν = f − f₀: a linear chirp undoes only D,
+    /// the matched chirp the whole curve, so it compresses more; the optimizer finds the
+    /// matched one, its scale near 1 (stationary phase), and on a line of constant slope a linear
+    /// chirp within a few per cent of the closed form's best.
+    #[test]
+    fn the_matched_chirp_undoes_a_curved_delay_and_the_optimizer_finds_it() {
+        let (f0, tau0, d, c) = (10e9, 5e-9, 8e-18, 1e-26);
+        let freqs: Vec<f64> = (0..=2000).map(|k| 9e9 + k as f64 * 1e6).collect();
+        // φ = −2π ∫ τ dν.
+        let phase: Vec<f64> = freqs.iter().map(|&f| f - f0).map(|nu| -2.0 * PI * (tau0 * nu + 0.5 * d * nu * nu + c * nu * nu * nu / 3.0)).collect();
+        let mag = vec![1.0; freqs.len()];
+        let width = 10e-9;
+        let linear = through_phase(&freqs, &mag, &phase, Chirp { f0, width, rate: -1.0 / d }).map_or(0.0, |p| p.compression());
+        let matched = through_phase(&freqs, &mag, &phase, Input { f0, width, law: Law::Matched { scale: 1.0 } }).map_or(0.0, |p| p.compression());
+        assert!(matched > linear * 1.05, "matched {matched}, linear {linear}");
+        let (best, p) = optimize(&freqs, &mag, &phase, f0, width).unwrap_or_else(|e| panic!("{e}"));
+        assert!(p.compression() >= matched * 0.99, "{} against {matched}", p.compression());
+        assert!(matches!(best.law, Law::Matched { scale } if (scale - 1.0).abs() < 0.3), "{best:?}");
+        // The input's frequency sweeps down (the delay rises with f): high first.
+        let swept: Vec<f64> = p.input_frequency.iter().copied().filter(|x| x.is_finite()).collect();
+        assert!(swept.first() > swept.last(), "{:?} … {:?}", swept.first(), swept.last());
+        // A straight slope: the best linear chirp, as the closed form's −1/D.
+        let straight: Vec<f64> = freqs.iter().map(|&f| f - f0).map(|nu| -2.0 * PI * (tau0 * nu + 0.5 * d * nu * nu)).collect();
+        let exact = through_phase(&freqs, &mag, &straight, Chirp { f0, width, rate: -1.0 / d }).map_or(0.0, |p| p.compression());
+        let (_, q) = optimize(&freqs, &mag, &straight, f0, width).unwrap_or_else(|e| panic!("{e}"));
+        assert!(q.compression() > 0.97 * exact, "{} against {exact}", q.compression());
     }
 
     #[test]

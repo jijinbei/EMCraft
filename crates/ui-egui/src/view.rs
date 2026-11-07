@@ -14,6 +14,8 @@ emcraft_macros::named_enum! {
         SParameters = "sparameters" => "S-parameters",
         /// Time-domain reflectometry of a port.
         Tdr = "tdr" => "TDR",
+        /// A chirped pulse through the line: its compression.
+        Pulse = "pulse" => "Pulse",
         Field = "field" => "Field",
         PortModes = "port_modes" => "Port modes",
         FarField = "far_field" => "Far field",
@@ -97,7 +99,7 @@ impl View {
             View::Model => Glyph::Box,
             View::Pcb => Glyph::Part,
             View::SParameters => Glyph::Chart,
-            View::Tdr => Glyph::Time,
+            View::Tdr | View::Pulse => Glyph::Time,
             View::Field => Glyph::FieldLines,
             View::PortModes => Glyph::PortModes,
             View::FarField => Glyph::Pattern,
@@ -120,6 +122,7 @@ impl View {
             View::Model | View::Pcb | View::PortModes | View::Compare => None,
             View::SParameters => Some(t!("No S-parameters yet: Run (step 6).")),
             View::Tdr => Some(t!("No sweep yet: Run (step 6) (a harmonic sweep, f = k Δf, for low pass).")),
+            View::Pulse => Some(t!("No sweep yet: Run (step 6), or a cell's Bloch wave (solve.revolution.bloch).")),
             View::Field => Some(t!("No fields yet: solve a sweep, eigenmodes or an open problem first.")),
             View::FarField => Some(t!("No far field yet: Run (step 6) on an open model with sources or lumped ports.")),
             View::Eigenmodes => Some(t!("No eigenmodes yet: Run (step 6).")),
@@ -163,6 +166,7 @@ impl View {
                 r.sweep.is_some() || r.time_domain.is_some() || r.revolution.is_some() || app.session.archive().iter().any(|a| a.kept.sweep.is_some())
             }
             View::Tdr => r.sweep.is_some() || r.time_domain.is_some(),
+            View::Pulse => r.sweep.is_some() || r.time_domain.is_some() || r.revolution.is_some(),
             View::Field => r.sweep.is_some() || r.eigen.is_some() || r.radiation.is_some(),
             View::PortModes => app.replies.port_modes.is_some() || (app.session.model().mesh.is_some() && !app.session.model().ports.is_empty()),
             View::FarField => r.radiation.is_some() || r.td_radiation.is_some(),
@@ -197,6 +201,6 @@ mod tests {
         }
         assert_eq!(View::Tdr.label(), "TDR");
         assert_eq!(View::PortModes.id(), "port_modes");
-        assert_eq!(View::COUNT, 11);
+        assert_eq!(View::COUNT, 12);
     }
 }

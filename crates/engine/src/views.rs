@@ -27,6 +27,7 @@ emcraft_macros::named_enum! {
     pub enum ChartId {
         SParameters = "sparameters" => "S-parameters",
         Tdr = "tdr" => "TDR",
+        Pulse = "pulse" => "pulse",
         Pattern = "pattern" => "far field",
         Dispersion = "dispersion" => "dispersion",
         Study = "study" => "study",
@@ -437,6 +438,7 @@ pub fn chart_of(s: &Session, id: ChartId) -> Result<Chart> {
     match id {
         ChartId::SParameters => crate::view::sparameter_chart(s),
         ChartId::Tdr => crate::results_tdr_chart(s, &Params::new(&json!({}), s.display)),
+        ChartId::Pulse => crate::results_pulse_chart(s, &Params::new(&json!({"width": crate::pulse::DEFAULT_WIDTH_NS}), s.display)),
         ChartId::Pattern => crate::view::pattern_chart(s, 0.0, 91),
         ChartId::Dispersion => crate::view::dispersion_chart(s),
         ChartId::Study => {
