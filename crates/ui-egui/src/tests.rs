@@ -323,6 +323,80 @@ fn scenario_body_grips() {
     scenario("body_grips");
 }
 
+/// The grips' extras on two boxes 10 mm wide, the second from x = 20.4 mm, seen from the front
+/// (x across the screen): the first's +x face dragged to 20.2 mm snaps to the second's face at
+/// 20.4 (the grid's 1 mm would give 20); digits typed while a grip is held set the width
+/// exactly; the x arrow moves the box 6 mm; the ring turns its axis from z to x about its middle.
+/// The drags aim at points worked out from where the grips are drawn.
+#[test]
+fn body_grips_snap_take_digits_move_and_turn() {
+    let mut h = Harness::new();
+    let setup = json!([
+        {"call": "engine.script", "params": {"commands": [
+            {"command": "geometry.body", "params": {"shape": "box", "size": [10, 10, 10], "material": "metal"}},
+            {"command": "geometry.body", "params": {"shape": "box", "size": [10, 10, 10], "at": [20.4, 0, 0], "material": "metal"}}
+        ]}},
+        {"until": {"busy": false}},
+        {"call": "ui.set", "params": {"step": "geometry"}},
+        {"call": "ui.set", "params": {"standard_view": "front"}},
+        {"frames": 2},
+        {"click": "row:body:body 1"},
+        {"frames": 2}
+    ]);
+    h.run(&setup).unwrap();
+    let at = |h: &mut Harness, name: &str| h.at(&json!(name)).unwrap();
+    let values = |h: &mut Harness| {
+        h.call("engine.execute", json!({"command": "project.values", "params": {"command": "geometry.body.edit", "body": "body 1"}}))
+    };
+    let drag = |h: &mut Harness, from: [f64; 2], to: [f64; 2], release: bool| {
+        h.step(&json!({"drag": [from, to], "release": release})).unwrap();
+        h.step(&json!({"frames": 2})).unwrap();
+    };
+    // Points across x per millimetre, from the two x faces' grips.
+    let (lo, hi) = (at(&mut h, "view3d:grip:size.x-"), at(&mut h, "view3d:grip:size.x+"));
+    let per_mm = (hi[0] - lo[0]) / 10.0;
+    assert!(per_mm > 2.0, "{lo:?} {hi:?}");
+    drag(&mut h, hi, [lo[0] + 20.2 * per_mm, hi[1]], true);
+    let v = values(&mut h);
+    assert_eq!(v["result"]["size"][0].as_f64().or_else(|| v["size"][0].as_f64()), Some(20.4), "{v}");
+    // Held, 12.5 typed, Enter: the width is 12.5 wherever the pointer is.
+    let hi = at(&mut h, "view3d:grip:size.x+");
+    drag(&mut h, hi, [hi[0] + 3.0 * per_mm, hi[1]], false);
+    h.step(&json!({"text": "12.5"})).unwrap();
+    h.step(&json!({"frames": 1})).unwrap();
+    let typed = h.call("ui.inspect", json!({}));
+    assert_eq!(
+        typed["result"]["view3d"]["tools"]["grip"]["typed"].as_str().or_else(|| typed["view3d"]["tools"]["grip"]["typed"].as_str()),
+        Some("12.5"),
+        "{typed}"
+    );
+    h.step(&json!({"key": "Enter"})).unwrap();
+    let here = [hi[0] + 3.0 * per_mm, hi[1]];
+    h.step(&json!({"drag": [here, here], "press": false, "release": true})).unwrap();
+    h.step(&json!({"frames": 2})).unwrap();
+    let v = values(&mut h);
+    let size = |v: &Value| v["result"]["size"].as_array().or_else(|| v["size"].as_array()).cloned().unwrap_or_default();
+    assert_eq!(size(&v).first().and_then(Value::as_f64), Some(12.5), "{v}");
+    // The x arrow, 6 mm: three of the grid's 2 mm (the scale read again: the view follows the
+    // edit).
+    let (lo, hi) = (at(&mut h, "view3d:grip:size.x-"), at(&mut h, "view3d:grip:size.x+"));
+    let per_mm = (hi[0] - lo[0]) / 12.5;
+    let m = at(&mut h, "view3d:grip:move.x");
+    drag(&mut h, m, [m[0] + 6.0 * per_mm, m[1]], true);
+    let v = values(&mut h);
+    let place = |v: &Value| v["result"]["at"].as_array().or_else(|| v["at"].as_array()).cloned().unwrap_or_default();
+    assert_eq!(place(&v).first().and_then(Value::as_f64), Some(6.0), "{v}");
+    // The ring: a 12.5 × 10 × 10 box from (6, 0, 0), its middle (12.25, 5, 5); turned onto x its
+    // own (6.25, 5, 5) lies along (5, 6.25, 5), so its origin goes to (7.25, −1.25, 0).
+    let r = at(&mut h, "view3d:grip:turn");
+    drag(&mut h, r, [r[0] + 30.0, r[1] + 30.0], true);
+    let v = values(&mut h);
+    let axis = v["result"]["axis"].as_str().or_else(|| v["axis"].as_str()).map(str::to_owned);
+    assert_eq!(axis.as_deref(), Some("x"), "{v}");
+    let p: Vec<f64> = place(&v).iter().filter_map(Value::as_f64).collect();
+    assert_eq!(p, vec![7.25, -1.25, 0.0], "{v}");
+}
+
 #[test]
 fn scenario_auto_region() {
     scenario("auto_region");

@@ -814,12 +814,16 @@ enum GripDrag {
 /// The tools' share of the frame: the reference plane's drag, what the pointer is over, a
 /// tool's click and Escape.
 fn tools(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, rect: Rect, edit: &Gesture, out: &mut Actions) {
+    crate::grips::keys(app, v, ui, out);
     match edit.grip {
         GripDrag::Idle => {}
         GripDrag::Started(d) => {
-            let pressed = ui.input(|i| i.pointer.hover_pos()).map(|p| p - d);
+            // The move from the press, the drag's threshold included: a grip follows the
+            // pointer from where it was taken, not from where the drag was first told.
+            let (press, now) = ui.input(|i| (i.pointer.press_origin(), i.pointer.hover_pos()));
+            let pressed = press.or_else(|| now.map(|p| p - d));
             crate::grips::start_any(app, v, rect, pressed);
-            crate::grips::moved(app, v, rect, d);
+            crate::grips::moved(app, v, rect, pressed.zip(now).map_or(d, |(a, b)| b - a));
         }
         GripDrag::Moved(d) => crate::grips::moved(app, v, rect, d),
         GripDrag::Released => crate::grips::released(app, v, out),
