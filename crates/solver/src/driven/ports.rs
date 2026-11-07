@@ -165,11 +165,72 @@ fn what(p: &Port) -> String {
 }
 
 /// The aperture whose closed-form modes a port takes, `None` when the cross-section solver
-/// gives them (asked for, on a board, or not a whole rectangle or circle of one material).
-fn closed_form_shape(model: &Model, p: &Port) -> Option<PortShape> {
+/// gives them (asked for, on a board, or not a whole rectangle or circle of one material). A
+/// port at a guide's end is known whole by the model (a plain guide, no feature reaching the
+/// end); one on a face is looked at in `mesh`: its rectangle may hold a ridge, a pin or a
+/// dielectric of the part it lies on ([`whole_section`]).
+fn closed_form_shape(model: &Model, p: &Port, mesh: &Mesh) -> Option<PortShape> {
     // A board's region: its ports' cross-sections hold substrates and copper.
     let board = model.pcb().is_some_and(|b| b.region.is_some());
-    if p.mode_solver == ModeSolver::Numeric || board { None } else { model.port_shape_of(p).ok() }
+    if p.mode_solver == ModeSolver::Numeric || board {
+        return None;
+    }
+    let shape = model.port_shape_of(p).ok()?;
+    if p.face.is_some() && !faces_of_port(mesh, p).is_ok_and(|faces| whole_section(model, p, mesh, &faces, shape)) {
+        return None;
+    }
+    Some(shape)
+}
+
+/// Whether a face port's boundary `faces` fill its aperture `shape` with the port's own
+/// material and nothing else: every edge on the faces' rim lies on the aperture's rim or on a
+/// symmetry plane (a ridge or a pin cut out of the rectangle leaves a rim inside it), no edge
+/// between two of them bounds a metal face behind (a sheet ending on the port), and every
+/// tetrahedron behind is of the port's material.
+fn whole_section(model: &Model, p: &Port, mesh: &Mesh, faces: &[usize], shape: PortShape) -> bool {
+    let Ok(material) = model.port_material(p.end) else { return false };
+    let mut count: std::collections::BTreeMap<[u32; 2], u32> = std::collections::BTreeMap::new();
+    for b in faces.iter().filter_map(|&f| mesh.boundary.get(f)) {
+        let same = mesh.tet_material.get(b.tet as usize).and_then(|&k| model.materials.get(k as usize)).is_some_and(|m| m.name == material.name);
+        if !same {
+            return false;
+        }
+        for e in sorted_edges(b.nodes) {
+            *count.entry(e).or_default() += 1;
+        }
+    }
+    let frame = p.frame();
+    let size = match shape {
+        PortShape::Rect { a, b, .. } => a.max(b),
+        PortShape::Circle { r, .. } => 2.0 * r,
+    };
+    let tol = 1e-3 * size;
+    let on_rim = |q: Point3| {
+        let on_plane = model.domain.symmetry.iter().any(|s| (q[s.axis.index()] - s.at).abs() <= tol);
+        let l = frame.local(q);
+        on_plane
+            || match shape {
+                PortShape::Rect { x0, y0, a, b } => {
+                    let inside = l.x >= x0 - tol && l.x <= x0 + a + tol && l.y >= y0 - tol && l.y <= y0 + b + tol;
+                    inside && ((l.x - x0).abs() <= tol || (l.x - x0 - a).abs() <= tol || (l.y - y0).abs() <= tol || (l.y - y0 - b).abs() <= tol)
+                }
+                PortShape::Circle { cx, cy, r } => ((l.x - cx).hypot(l.y - cy) - r).abs() <= tol,
+            }
+    };
+    let node = |n: u32| mesh.nodes.get(n as usize).copied();
+    let rim_inside = count.iter().filter(|(_, c)| **c == 1).any(|(e, _)| e.iter().any(|&n| !node(n).is_some_and(on_rim)));
+    if rim_inside {
+        return false;
+    }
+    let own: HashSet<usize> = faces.iter().copied().collect();
+    let metal: HashSet<[u32; 2]> = mesh
+        .boundary
+        .iter()
+        .enumerate()
+        .filter(|(i, b)| !own.contains(i) && b.tag == Boundary::Pec)
+        .flat_map(|(_, b)| sorted_edges(b.nodes))
+        .collect();
+    !count.iter().any(|(e, c)| *c == 2 && metal.contains(e))
 }
 
 /// Which of a port face point's basis values have a tangential trace on the face (a plane across
@@ -212,7 +273,7 @@ pub(super) fn faces_of_port(mesh: &Mesh, p: &Port) -> Result<Vec<usize>> {
 /// Port `p` on its boundary `faces`: the closed forms' vectors once, or the numerical modes'
 /// support (their vectors come with each frequency).
 pub(super) fn prepare(model: &Model, p: &Port, space: &Space, faces: &[usize]) -> Result<PortData> {
-    let (modes, terminals) = match closed_form_shape(model, p) {
+    let (modes, terminals) = match closed_form_shape(model, p, space.mesh) {
         Some(shape) => (analytic_port(model, p, shape, space, faces)?, 0),
         None => {
             let n = numeric_port(model, p, space, faces)?;
@@ -486,7 +547,7 @@ pub fn port_modes(model: &Model, order: Order, frequency: f64) -> Result<Vec<(St
                     .collect();
                 return Ok((p.name.clone(), list));
             }
-            let list = match closed_form_shape(model, p) {
+            let list = match closed_form_shape(model, p, mesh) {
                 Some(shape) => {
                     let m = model.port_material(p.end)?;
                     let modes = port_mode_list(model, p, shape)?;
@@ -568,7 +629,8 @@ pub fn port_mode_pattern(model: &Model, order: Order, frequency: f64, port: usiz
             (0..ny).flat_map(|j| (0..nx).map(move |i| (x.0 + w * i as f64 / (nx - 1) as f64, y.0 + h * j as f64 / (ny - 1) as f64))).collect();
         (nx, ny, points)
     };
-    if let Some(shape) = closed_form_shape(model, p) {
+    let mesh = model.mesh.as_ref().ok_or_else(|| SolveError::NotReady("no mesh".into()))?;
+    if let Some(shape) = closed_form_shape(model, p, mesh) {
         let list = port_mode_list(model, p, shape)?;
         let md = list.get(mode).ok_or_else(|| invalid(what(p), format!("has {} modes, not {}", list.len(), mode + 1)))?;
         let m = model.port_material(p.end)?;
@@ -589,7 +651,6 @@ pub fn port_mode_pattern(model: &Model, order: Order, frequency: f64, port: usiz
         let e = points.iter().map(|&(px, py)| if inside(px, py) { md.field(px, py) } else { [f64::NAN; 2] }).collect();
         return Ok(ModePattern { name: md.name(), beta2, x, y, nx, ny, e });
     }
-    let mesh = model.mesh.as_ref().ok_or_else(|| SolveError::NotReady("no mesh".into()))?;
     let (section, medium) = cross_section(model, p, mesh, order, &faces_of_port(mesh, p)?)?;
     use crate::driven::terms::LossyModes;
     // Each mode's transverse field at a point of a triangle (a hybrid lossy mode's real part:

@@ -34,6 +34,29 @@ fn ports_across_x_and_y_carry_a_straight_guide() {
 }
 
 #[test]
+fn a_face_port_holding_a_ridge_takes_the_cross_section_solvers_modes() {
+    // A ridged guide, uniform along z, its ports' rectangles the whole box: the closed forms of
+    // the empty rectangle would reflect half the wave (|S11| 0.46 before the face was looked
+    // at); its own modes match it, so the automatic choice is the numerical solver's, and it
+    // reflects nothing but the mesh's error.
+    let s11 = |solver: &str| {
+        let mut s = Session::new();
+        s.execute("geometry.solid", &json!({"shape": "box", "size": [22.86, 10.16, 30]})).unwrap();
+        s.execute("geometry.feature", &json!({"combine": "subtract", "shape": "box", "size": [4, 4, 30], "at": [9.43, 6.16, 0]})).unwrap();
+        for (name, end, at) in [("1", "start", 0.0), ("2", "end", 30.0)] {
+            let p = json!({"name": name, "end": end, "face": [at, 0, 0, 22.86, 10.16], "mode_solver": solver, "modes": 2});
+            s.execute("model.port.create", &p).unwrap();
+        }
+        s.execute("mesh.generate", &json!({"size": 3})).unwrap();
+        let r = s.execute("solve.frequency", &json!({"frequencies": [10], "order": 2})).unwrap();
+        entry(&r, 0, "s11").0
+    };
+    let (auto, numeric) = (s11("auto"), s11("numeric"));
+    assert_eq!(auto, numeric);
+    assert!(auto < 0.02, "{auto}");
+}
+
+#[test]
 fn the_cross_section_solver_works_on_a_face_across_y() {
     // Across y the port's axes are (x, z, −y): the numerical modes, turned back, carry the
     // guide as the closed forms do.

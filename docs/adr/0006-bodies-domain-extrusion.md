@@ -38,9 +38,14 @@ symmetry, periodic and rotational planes. The browser mirrored the commands, not
 
 ## Left out
 
-- **Ports as faces of the region's box.** A port at a guide's start or end and a port on a face
-  take different paths to their modes; making the first the second would move results, for
-  nothing a user sees (the browser and the legend say either the same way).
+- **Ports as faces of the region's box.** Measured (2026-11-07): a port at a guide's start or end
+  and the same rectangle given as a face give the same S, bit for bit, wherever the closed forms
+  apply (an iris, an offset step); on a guide with strips the face would lose them, since a face
+  port's cross-section was taken whole without looking. The end stays a face of the region by
+  name (`End`), which follows the guide's parameters as a fixed rectangle would not. What the
+  measurement found is fixed: a face port's closed forms are taken only when its faces fill the
+  rectangle with one material and no metal (`whole_section`): a ridged guide's face port
+  reflected |S11| 0.46 under the closed forms of the empty rectangle, 0.002 now.
 
 ## Consequences
 
