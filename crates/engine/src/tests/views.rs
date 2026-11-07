@@ -379,15 +379,17 @@ fn three_ports_report_each_destination_and_follow_the_driven_input() {
     assert!(s.execute("results.power", &json!({"excitation":"missing"})).is_err());
 }
 
-/// A template's symmetry plane opens hidden; its eye (`symmetry:<axis>`) shows it; a plane the
+/// A template's symmetry plane shows; its eye (`symmetry:<axis>`) hides and shows it; a plane the
 /// model lacks or an axis that is none is refused; the hidden set is written by key and read back.
 #[test]
-fn a_templates_symmetry_plane_opens_hidden_and_its_eye_shows_it() {
+fn a_symmetry_planes_eye_hides_and_shows_it() {
     use crate::visibility::{DisplayObject, GeometryObject};
     let mut s = crate::Session::new();
     s.execute("file.sample", &json!({"name": "e-tee"})).unwrap();
     let axis = s.model().domain.symmetry.first().map(|p| p.axis).unwrap();
     let plane = DisplayObject::Geometry(GeometryObject::Symmetry(axis));
+    assert!(s.views().visible(&plane));
+    s.execute("view.visibility", &json!({"kind": "geometry", "name": format!("symmetry:{}", axis.id()), "visible": false})).unwrap();
     assert!(!s.views().visible(&plane));
     s.execute("view.visibility", &json!({"kind": "geometry", "name": format!("symmetry:{}", axis.id()), "visible": true})).unwrap();
     assert!(s.views().visible(&plane));

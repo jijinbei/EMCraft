@@ -1,15 +1,15 @@
 [
-  {"note": "A template's symmetry plane opens hidden; its row's eye shows it, a rectangle across the model's box (not the model's cut), meshed or not"},
+  {"note": "A symmetry plane's row has an eye that hides and shows it, a rectangle across the model's box (not the model's cut), meshed or not"},
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "e-tee"}}},
   {"call": "ui.set", "params": {"step": "geometry"}},
-  {"frames": 3},
-  {"expect": {"inspect": {"hidden_geometry": ["symmetry:z"]}}},
-  {"shot": "symmetry-hidden"},
-  {"click": "choice:geometry_visibility:symmetry:z"},
   {"frames": 3},
   {"expect": {"inspect": {"hidden_geometry": []}}},
   {"shot": "symmetry-shown"},
   {"click": "choice:geometry_visibility:symmetry:z"},
+  {"frames": 3},
+  {"expect": {"inspect": {"hidden_geometry": ["symmetry:z"]}}},
+  {"shot": "symmetry-hidden"},
+  {"click": "choice:geometry_visibility:symmetry:z"},
   {"frames": 2},
-  {"expect": {"inspect": {"hidden_geometry": ["symmetry:z"]}}}
+  {"expect": {"inspect": {"hidden_geometry": []}}}
 ]

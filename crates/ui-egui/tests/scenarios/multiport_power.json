@@ -111,8 +111,7 @@
     "expect": {
       "inspect": {
         "hidden_geometry": [
-          "solid",
-          "symmetry:z"
+          "solid"
         ]
       }
     }

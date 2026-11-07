@@ -61,6 +61,12 @@ pub fn template_picture(name: &str, values: &Value, size: [usize; 2]) -> Result<
         let canvas = emcraft_render::pcb::preview(board, size, rgb(t.panel), rgb(t.panel).mix(rgb(t.success), 0.25), rgb(t.warning))?;
         return Ok((Picture::new(&canvas), Camera::default()));
     }
+    // The model's shape only: its symmetry planes (how it is solved) left out of the picture.
+    for axis in s.model().domain.symmetry.iter().map(|q| q.axis).collect::<Vec<_>>() {
+        let plane =
+            serde_json::json!({"kind": "geometry", "name": emcraft_engine::visibility::GeometryObject::Symmetry(axis).key(), "visible": false});
+        s.execute("view.visibility", &plane).map_err(|e| e.to_string())?;
+    }
     let built = scene3d::build(&s, Overlay::Materials);
     let (lo, hi) = built.bounds.ok_or("nothing to draw")?;
     let [w, h] = size;
