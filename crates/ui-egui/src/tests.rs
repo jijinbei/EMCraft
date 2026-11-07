@@ -927,3 +927,10 @@ fn scenario_symmetry_eye() {
 fn scenario_pulse_view() {
     scenario("pulse_view");
 }
+
+/// Heavy: the template's Bloch wave over 121 frequencies and its optimized pulse.
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn scenario_pulse_template() {
+    scenario("pulse_template");
+}
