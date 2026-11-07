@@ -362,3 +362,24 @@ pub fn slider(ui: &mut Ui, value: &mut f64, range: std::ops::RangeInclusive<f64>
     })
     .inner
 }
+
+/// A command's hover card, as SolidCraft's ribbon shows one: its name in bold with its id beside
+/// it in a chip (the command a script or the control channel runs: `geometry.waveguide`), and
+/// its documentation's first sentence ([`crate::ui_ext::brief`]) under them, at most 320 points
+/// wide.
+pub fn command_tip(resp: Response, id: &str) -> Response {
+    let doc = crate::ui_ext::brief(crate::lang::command_doc(id));
+    resp.on_hover_ui(|ui| {
+        let t = &Tokens::get();
+        ui.set_max_width(320.0);
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(crate::label(id)).strong().color(t.text));
+            egui::Frame::NONE.fill(t.panel_header).corner_radius(t.radius_sm).inner_margin(egui::Margin::symmetric(5, 1)).show(ui, |ui| {
+                ui.label(egui::RichText::new(id).monospace().size(t.font_small).color(t.text_dim));
+            });
+        });
+        if !doc.is_empty() {
+            ui.add(egui::Label::new(crate::math::job(&crate::math::texify(&doc), t.font_small, t.text_dim)).wrap());
+        }
+    })
+}

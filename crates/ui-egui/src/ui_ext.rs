@@ -112,9 +112,56 @@ pub trait Hint {
     fn hint_disabled(self, text: impl Shown) -> Response;
 }
 
+/// The most characters a hover text shows (its first sentence, cut there).
+pub const BRIEF_CHARS: usize = 110;
+
+/// A hover text in brief: its first sentence (to `. `, `。` or a line's end), or its head before
+/// a colon when that says enough (20 characters or more: what follows is the detail), its code
+/// marks (backticks) dropped, at most [`BRIEF_CHARS`] characters, cut at a word with `…` when
+/// longer. The whole text stays the
+/// command's documentation, its dialog's help and the search's.
+///
+/// ```
+/// use emcraft_ui_egui::ui_ext::brief;
+/// assert_eq!(brief("Rectangular waveguide. Sections along z, each with its material."), "Rectangular waveguide.");
+/// assert_eq!(brief("矩形導波管。区間ごとに材料を持つ。"), "矩形導波管。");
+/// assert!(brief(&"word ".repeat(60)).ends_with('…') && brief(&"word ".repeat(60)).chars().count() <= 111);
+/// assert_eq!(brief("v1.5 mm. Next."), "v1.5 mm.");
+/// assert_eq!(brief("A rectangular waveguide along z: `width` (x) × `height` (y)."), "A rectangular waveguide along z");
+/// assert_eq!(brief("Sets `order`."), "Sets order.");
+/// ```
+pub fn brief(text: &str) -> String {
+    let text = text.trim();
+    let mut end = text.len();
+    let mut prev: Option<char> = None;
+    for (i, c) in text.char_indices() {
+        if c == '\n' || c == '。' {
+            end = if c == '。' { i + c.len_utf8() } else { i };
+            break;
+        }
+        if c == ' ' && prev == Some('.') {
+            end = i;
+            break;
+        }
+        if (c == ' ' && prev == Some(':') || c == '：') && text[..i].chars().count() > 20 {
+            end = if c == '：' { i } else { i - 1 };
+            break;
+        }
+        prev = Some(c);
+    }
+    let first = text[..end].replace('`', "");
+    let first = first.as_str();
+    if first.chars().count() <= BRIEF_CHARS {
+        return first.to_owned();
+    }
+    let cut: String = first.chars().take(BRIEF_CHARS).collect();
+    let at = cut.rfind([' ', '、', ',', ';']).filter(|i| *i > BRIEF_CHARS / 2).unwrap_or(cut.len());
+    format!("{}…", cut[..at].trim_end_matches([',', ';', ' ', '、']))
+}
+
 impl Hint for Response {
     fn hint(self, text: impl Shown) -> Response {
-        match text.shown() {
+        match brief(text.shown()).as_str() {
             "" => self,
             // Its symbols set as mathematics (`εr` with a lowered r).
             s => crate::math::tip(self, s),

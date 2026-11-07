@@ -10,7 +10,7 @@ use serde_json::Value;
 use crate::commands::{button_label, glyph};
 use crate::glyphs::{self, Glyph};
 use crate::handle::{Fixed, Handle};
-use crate::lang::{Raw, args, command_doc, tr, trf};
+use crate::lang::{args, command_doc, tr, trf};
 use crate::theme::Tokens;
 use crate::tools3d::Tool;
 use crate::{Action, Actions, EmcraftApp, Hint, Style, UiExt, scenario};
@@ -406,7 +406,7 @@ impl Item {
 
     fn hint(self, r: egui::Response) -> egui::Response {
         match self {
-            Item::Command(id) => r.hint(Raw(command_doc(id))),
+            Item::Command(id) => crate::ui_kit::command_tip(r, id),
             Item::Tool(tool) => r.hint(tool.hint()),
         }
     }
