@@ -12,10 +12,12 @@ on:
   pull_request:
   workflow_dispatch:
 
-# A newer push makes a build of the same branch moot.
+# A newer push to a pull request makes its build moot; on a branch the build in progress runs to
+# the end (a cold Windows or macOS build takes over half an hour, and a busy main would never
+# finish one), only the run waiting behind it replaced by the newest.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
