@@ -101,8 +101,63 @@ pub fn revolution_frequency(s: &mut Session, p: &Params) -> Result<Value> {
     }
     // Kept as the session's result: its charts, its pulse (`results.pulse`), its file.
     let data = crate::sdata::SData::square(freqs.clone(), n, values).map_err(EngineError::failed)?;
-    s.results.revolution = Some(std::sync::Arc::new(crate::Revolution { m, modes: names.clone(), data, unknowns }));
+    s.results.revolution = Some(std::sync::Arc::new(crate::Revolution { m, modes: names.clone(), data, unknowns, bloch: None }));
     Ok(json!({"m": m, "modes": names, "points": rows, "triangles": profile.triangles.len(), "unknowns": unknowns}))
+}
+
+/// The most modes a cell's ends carry for its Bloch wave.
+const MAX_BLOCH_MODES: usize = 8;
+
+/// `solve.revolution.bloch`: the model as one cell of a periodic body of revolution (its ports
+/// on its two ends, one period apart): the Bloch wave of the infinite repetition at each
+/// frequency ([`emcraft_solver::bor::bloch_lambda`]), γ = α + jβ, β unwrapped along the sweep from
+/// the branch nearest the smooth guide's at the first frequency; kept with the cell's own S as
+/// the session's result, for `results.pulse` over any length of it.
+pub fn revolution_bloch(s: &mut Session, p: &Params) -> Result<Value> {
+    let freqs = frequencies(s, p)?;
+    let m = p.integer("m", 0..=64).or(1)? as u32;
+    let modes = p.integer("modes", 1..=MAX_BLOCH_MODES).or(3)?;
+    let top = freqs.last().copied().unwrap_or(1e10);
+    let (profile, ports) = revolution_setup(s, p, top)?;
+    let [near, far] = ports.as_slice() else {
+        return Err(EngineError::failed("a cell needs its two ports, one on each end"));
+    };
+    let (near, far) = (emcraft_solver::bor::BorPort { modes, ..*near }, emcraft_solver::bor::BorPort { modes, ..*far });
+    let period = (far.z - near.z).abs();
+    // The guide's radius at the near end: the profile's widest point on that plane.
+    let radius = profile.points.iter().filter(|q| (q[1] - near.z).abs() <= 1e-9 * period.max(1e-300)).map(|q| q[0]).fold(0.0, f64::max);
+    // The smooth guide's first mode of order m: TE_m1 (the first zero of J_m′), TM01 for m = 0.
+    let x = if m == 0 {
+        2.404_825_557_695_773
+    } else {
+        emcraft_fem::bessel::zeros(|t| emcraft_fem::bessel::jp(m as usize, t), 1, 100.0).first().copied().unwrap_or(1.841_183_781_340_659)
+    };
+    let mut gammas = Vec::with_capacity(freqs.len());
+    let mut values = Vec::with_capacity(freqs.len() * 4);
+    let mut rows = Vec::with_capacity(freqs.len());
+    let (mut names, mut unknowns) = (Vec::new(), 0);
+    let mut last: Option<f64> = None;
+    for (k, &f) in freqs.iter().enumerate() {
+        crate::progress::report(k, freqs.len(), "frequency")?;
+        let (point, _) = emcraft_solver::bor::generalized(&profile, m, &[near, far], f)?;
+        values.extend((0..4).map(|i| point.s.get(i / 2, i % 2).unwrap_or_default()));
+        let lambda = emcraft_solver::bor::bloch_lambda(&profile, m, near, far, f)?;
+        let alpha = -lambda.norm().ln() / period;
+        let raw = -lambda.arg() / period;
+        // The branch: nearest the last (continuity), else the smooth guide's.
+        let k0 = 2.0 * std::f64::consts::PI * f / emcraft_model::units::C0;
+        let guess = last.unwrap_or_else(|| (k0 * k0 - (x / radius.max(1e-300)).powi(2)).max(0.0).sqrt());
+        let turn = 2.0 * std::f64::consts::PI / period;
+        let beta = raw + turn * ((guess - raw) / turn).round();
+        last = Some(beta);
+        gammas.push(emcraft_solver::Complex64::new(alpha, beta));
+        rows.push(json!({"frequency": s.show_frequency(f), "alpha": alpha, "beta": beta, "phase": (beta * period).to_degrees()}));
+        names = point.modes;
+        unknowns = point.unknowns;
+    }
+    let data = crate::sdata::SData::square(freqs.clone(), 2, values).map_err(EngineError::failed)?;
+    s.results.revolution = Some(std::sync::Arc::new(crate::Revolution { m, modes: names.clone(), data, unknowns, bloch: Some((period, gammas)) }));
+    Ok(json!({"m": m, "period": s.show_length(period), "modes": names, "points": rows, "triangles": profile.triangles.len(), "unknowns": unknowns}))
 }
 
 /// The model as a body of revolution with its ports on its lowest and highest ends: its profile in

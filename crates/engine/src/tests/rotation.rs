@@ -861,3 +861,39 @@ fn a_pulse_through_a_circular_guide_is_delayed_and_dispersed_as_the_guide_is() {
     let again = t.execute("results.pulse", &json!({"frequency": 12.5, "width": 2, "bandwidth": 0})).unwrap();
     assert_eq!(again["delay"], r["delay"]);
 }
+
+/// **Setup**: one 16 mm cell of a straight circular guide, radius 10 mm (`solve.revolution.bloch`,
+/// TE11, 11 to 14 GHz); a 2 ns pulse at 12.5 GHz through a metre of it (`results.pulse` with
+/// `length`).
+/// **Closed form**: the cell's Bloch wave is the guide's own, β = √(k² − (x′₁₁/a)²), α = 0; the
+/// metre delays the pulse by L/v_g and disperses it by D = dτ/df (Pozar §3.4).
+/// **Reference**: evaluated in the test.
+#[test]
+fn a_straight_cells_bloch_wave_is_the_guides_and_a_metre_of_it_delays_a_pulse() {
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 16})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 3})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "modes": 3})).unwrap();
+    let r = s.execute("solve.revolution.bloch", &json!({"start": 11, "stop": 14, "points": 16, "m": 1, "size": 0.8})).unwrap();
+    let c = emcraft_model::units::C0;
+    let kc = X11P / 0.01;
+    for p in r["points"].as_array().unwrap() {
+        let f = p["frequency"].as_f64().unwrap() * 1e9;
+        let k = 2.0 * std::f64::consts::PI * f / c;
+        let beta = (k * k - kc * kc).sqrt();
+        assert!((p["beta"].as_f64().unwrap() - beta).abs() < 0.01 * beta && p["alpha"].as_f64().unwrap().abs() < 1e-3, "{p}");
+    }
+    let r = s.execute("results.pulse", &json!({"frequency": 12.5, "width": 2, "bandwidth": 0, "length": 1000})).unwrap();
+    let (f, l) = (12.5e9, 1.0);
+    let fc = kc * c / (2.0 * std::f64::consts::PI);
+    let q = 1.0 - (fc / f).powi(2);
+    let tau = l / (c * q.sqrt());
+    let d = -l * fc * fc / (c * f.powi(3) * q.powf(1.5));
+    let (delay, disp) = (r["delay"].as_f64().unwrap() * 1e-9, r["dispersion"].as_f64().unwrap() * 1e-18);
+    assert!((delay - tau).abs() < 0.01 * tau, "{delay:e} against {tau:e}");
+    assert!((disp - d).abs() < 0.05 * d.abs(), "{disp:e} against {d:e}");
+    assert_eq!(r["source"], "bloch");
+    // Without a cell's Bloch wave, a length is refused.
+    let mut t = Session::new();
+    assert!(t.execute("results.pulse", &json!({"width": 2, "length": 1000})).is_err());
+}

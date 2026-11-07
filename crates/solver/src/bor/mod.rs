@@ -42,12 +42,14 @@ use crate::driven::{Result, invalid};
 use crate::ldlt::Ldlt;
 use crate::sparse::Csr;
 
+mod bloch;
 mod field;
 pub mod open;
 mod ports;
 
+pub use bloch::bloch_lambda;
 pub use field::{HalfPlaneField, MAX_FIELD_SIDE, field};
-pub use ports::{BorPort, BorSweepPoint, MAX_PORT_MODES, s_parameters};
+pub use ports::{BorPort, BorSweepPoint, MAX_PORT_MODES, generalized, s_parameters};
 
 /// Passes of the subspace iteration before it stops.
 pub const MAX_ITERATIONS: usize = 300;

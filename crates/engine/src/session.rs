@@ -94,6 +94,9 @@ pub struct Revolution {
     pub modes: Vec<String>,
     pub data: crate::sdata::SData,
     pub unknowns: usize,
+    /// When the model is one cell of a periodic guide (`solve.revolution.bloch`): its period
+    /// (m) and its Bloch wave's γ = α + jβ (1/m) at each frequency of `data`.
+    pub bloch: Option<(f64, Vec<emcraft_solver::Complex64>)>,
 }
 
 /// What the solvers made of the model, each from its own command. Each result is shared: the

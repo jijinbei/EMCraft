@@ -106,7 +106,15 @@ const GAUSS: [(f64, f64); 5] = [
 /// assert!(s_parameters(&p, 1, &[BorPort { z: 0.5, modes: 1 }], 12e9).is_err());
 /// ```
 pub fn s_parameters(p: &Profile, m: u32, ports: &[BorPort], frequency: f64) -> Result<BorSweepPoint> {
-    Ok(solved(p, m, ports, frequency, None)?.0)
+    Ok(solved(p, m, ports, frequency, None, None)?.0)
+}
+
+/// The generalized scattering matrix between every mode of every port (row-major, the modes by
+/// port in order), each mode's amplitude its own (unnormalized), with the first modes' point.
+pub fn generalized(p: &Profile, m: u32, ports: &[BorPort], frequency: f64) -> Result<(BorSweepPoint, Vec<C>)> {
+    let mut gsm = Vec::new();
+    let point = solved(p, m, ports, frequency, None, Some(&mut gsm))?.0;
+    Ok((point, gsm))
 }
 
 /// [`s_parameters`] with the unknowns' numbering and each excitation's solution (port q's first
@@ -117,6 +125,7 @@ pub(super) fn solved(
     ports: &[BorPort],
     frequency: f64,
     layer: Option<&super::open::Layer>,
+    gsm: Option<&mut Vec<C>>,
 ) -> Result<(BorSweepPoint, Dofs, Vec<Vec<C>>)> {
     if ports.is_empty() || ports.len() > 16 {
         return Err(invalid("ports", "1 to 16 ports on the profile's ends"));
@@ -234,6 +243,26 @@ pub(super) fn solved(
         }
     }
     let factor = Ldlt::factor(&a, &xyz)?;
+    if let Some(out) = gsm {
+        // Every mode of every port excited in turn (a unit wave in), each read on every mode:
+        // the generalized scattering matrix, its amplitudes as the modes' own (no power
+        // normalization), modes by port in order.
+        let all: Vec<&Term> = terms.iter().flatten().collect();
+        let n = all.len();
+        out.clear();
+        out.resize(n * n, C::new(0.0, 0.0));
+        for (q, tq) in all.iter().enumerate() {
+            let mut x = vec![C::new(0.0, 0.0); d.count];
+            for &(i, bi) in &tq.b {
+                x[i] = 2.0 * tq.kappa * bi;
+            }
+            factor.solve(&mut x)?;
+            for (pp, tp) in all.iter().enumerate() {
+                let c: C = tp.b.iter().map(|&(i, bi)| bi * x[i]).sum::<C>() / tp.norm;
+                out[pp * n + q] = if pp == q { c - 1.0 } else { c };
+            }
+        }
+    }
     let n_ports = ports.len();
     let mut s = crate::SMatrix::zeros(n_ports);
     let first: Vec<&Term> = terms.iter().map(|l| &l[0]).collect();

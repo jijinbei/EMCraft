@@ -348,6 +348,15 @@ const PULSE_POINTS: usize = 512;
 
 /// `results.pulse`: a chirped pulse through the two-port ([`crate::pulse`]).
 pub fn pulse(s: &mut Session, p: &Params) -> Result<Value> {
+    // A periodic guide `length` long from its cell's Bloch wave, else the solved two-port.
+    if let Some(length) = p.positive_length("length").optional()? {
+        let b = s.results.revolution.as_ref().and_then(|r| r.bloch.as_ref().map(|(_, g)| (r.data.frequencies().to_vec(), g.clone())));
+        let (freqs, gammas) = b.ok_or(EngineError::NotSolved { what: "Bloch wave", run: "solve.revolution.bloch" })?;
+        // e^{−γL}: its magnitude and its phase −βL as they are, continuous (β is).
+        let mag: Vec<f64> = gammas.iter().map(|g| (-g.re * length).exp()).collect();
+        let phase: Vec<f64> = gammas.iter().map(|g| -g.im * length).collect();
+        return pulse_reply(s, p, &freqs, &mag, &phase, "bloch", "1".into(), "2".into());
+    }
     let (data, source) = sdata(s)?;
     let entries = s.sparameter_entries();
     let from = args::entry(s, p, "from")?.map_or(0, |(k, _)| k);
@@ -359,6 +368,16 @@ pub fn pulse(s: &mut Session, p: &Params) -> Result<Value> {
     if freqs.len() != data.frequencies().len() {
         return Err(EngineError::failed(format!("the {source} holds no transmission from port {} to port {}", from + 1, to + 1)));
     }
+    let name = |k: usize| entries.get(k).map_or_else(|| (k + 1).to_string(), |e| e.name.clone());
+    let mag: Vec<f64> = trans.iter().map(|c| c.norm()).collect();
+    let phase = crate::pulse::unwrapped(&trans);
+    pulse_reply(s, p, &freqs, &mag, &phase, source, name(from), name(to))
+}
+
+/// [`pulse`] through the transmission of magnitude `mag` and continuous phase `phase` at
+/// `freqs` (Hz), from `source`.
+#[allow(clippy::too_many_arguments)]
+fn pulse_reply(s: &Session, p: &Params, freqs: &[f64], mag: &[f64], phase: &[f64], source: &str, from: String, to: String) -> Result<Value> {
     let (lo, hi) = (freqs.first().copied().unwrap_or(0.0), freqs.last().copied().unwrap_or(0.0));
     let f0 = p.frequency("frequency").optional()?.unwrap_or(0.5 * (lo + hi));
     let width = p.number("width").required()?;
@@ -372,19 +391,18 @@ pub fn pulse(s: &mut Session, p: &Params) -> Result<Value> {
         Some(b) if b.is_finite() && fu.to_si(b.abs()) < 1e15 => fu.to_si(b) / width,
         Some(_) => return Err(p.error("bandwidth", "must be a finite frequency")),
         None => {
-            let flat = crate::pulse::through(&freqs, &trans, crate::pulse::Chirp { f0, width, rate: 0.0 })?;
+            let flat = crate::pulse::through_phase(freqs, mag, phase, crate::pulse::Chirp { f0, width, rate: 0.0 })?;
             flat.best_rate().ok_or_else(|| EngineError::failed("the guide does not disperse at the carrier: give `bandwidth`"))?
         }
     };
-    let r = crate::pulse::through(&freqs, &trans, crate::pulse::Chirp { f0, width, rate })?;
+    let r = crate::pulse::through_phase(freqs, mag, phase, crate::pulse::Chirp { f0, width, rate })?;
     let step = r.times.len().div_ceil(PULSE_POINTS).max(1);
     let points: Vec<Value> =
         (0..r.times.len()).step_by(step).map(|i| json!({"t": r.times[i] * 1e9, "input": r.input[i], "output": r.output[i]})).collect();
-    let name = |k: usize| entries.get(k).map_or_else(|| (k + 1).to_string(), |e| e.name.clone());
     Ok(json!({
         "source": source,
-        "from": name(from),
-        "to": name(to),
+        "from": from,
+        "to": to,
         "frequency": fu.from_si(f0),
         "bandwidth": fu.from_si(rate * width),
         "best_bandwidth": r.best_rate().map(|b| fu.from_si(b * width)),

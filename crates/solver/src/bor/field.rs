@@ -26,7 +26,7 @@ pub fn field(p: &Profile, m: u32, ports: &[BorPort], frequency: f64, excitation:
     if !(2..=MAX_FIELD_SIDE).contains(&nx) || !(2..=MAX_FIELD_SIDE).contains(&ny) {
         return Err(invalid("grid", format!("2 to {MAX_FIELD_SIDE} points a side")));
     }
-    let (point, d, xs) = solved(p, m, ports, frequency, None)?;
+    let (point, d, xs) = solved(p, m, ports, frequency, None, None)?;
     let x = xs.get(excitation).ok_or_else(|| invalid("excitation", "no such port"))?;
     let (r0, r1, z0, z1) = p.points.iter().fold((f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY), |b, q| {
         (b.0.min(q[0]), b.1.max(q[0]), b.2.min(q[1]), b.3.max(q[1]))

@@ -578,3 +578,12 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
 - Levels of detail while the view moves: M. Garland, P. S. Heckbert, *Surface simplification
   using quadric error metrics*, SIGGRAPH 1997 — edge collapse ordered by quadric error, open
   boundaries held by planes across them. `crates/render/src/view3d/simplify.rs`.
+
+## Periodic guides and pulses
+- R. E. Collin, *Foundations for Microwave Engineering*, 2nd ed., McGraw-Hill 1992, §9.2 —
+  a periodic structure's Bloch waves as the transfer matrix's eigenvalues e^{−γp}, here of a
+  body of revolution's cell with its evanescent modes kept (`emcraft-solver::bor::bloch_lambda`,
+  `solve.revolution.bloch`).
+- G. P. Agrawal, *Nonlinear Fiber Optics*, 5th ed., Academic Press 2013, §3.2 — a chirped
+  Gaussian pulse through a dispersive line, compressed when its chirp undoes the group-delay
+  slope (`emcraft-engine::pulse`, `results.pulse`; the closed form its test checks).

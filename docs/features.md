@@ -593,6 +593,20 @@ The S-parameters of the model as a body of revolution about z (its profile as so
 | `m` | integer |  | no | the azimuthal order, 0 to 64 (default 1) |
 | `size` | number | length | no | the triangles' size |
 
+## `solve.revolution.bloch` — Bloch wave of a cell
+
+The model as one cell of a periodic body of revolution (its ports on its two ends, one period apart, the same guide on both): the Bloch wave of its infinite repetition in azimuthal order `m` at each frequency, γ = α + jβ, from the cell's generalized scattering matrix between `modes` modes on each end (the transfer matrix's eigenvalue e^{−γp} of the least-attenuated wave going +z; Collin §9.2), β unwrapped along the sweep. In a stop band α > 0. Kept as the session's result with the cell's S: results.pulse takes it over any `length` of the guide. The model is left as it is.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `frequencies` | array | frequency | no | frequencies to solve |
+| `start` | number | frequency | no | first frequency (default the band's start) |
+| `stop` | number | frequency | no | last frequency (default the band's stop) |
+| `points` | integer |  | no | frequencies from `start` to `stop` (default 11) |
+| `m` | integer |  | no | the azimuthal order, 0 to 64 (default 1) |
+| `modes` | integer |  | no | modes on each end, 1 to 8 (default 3): the evanescent ones carry the cells' coupling |
+| `size` | number | length | no | the triangles' size |
+
 ## `solve.revolution.radiation` — Body of revolution radiation
 
 The open model as a body of revolution about z at one frequency: its cylinder (layer shape box: the wall and both ends lined) or sphere (layer shape sphere: the outer shell) lined by the model's perfectly matched layer (model.open), driven by its one source — a dipole on the axis along z (order m = 0) or a plane wave along ±z (orders ±1, the field the dielectrics scatter) — solved on the meridian half-plane, and the far field by the near-to-far transform of a Huygens surface a third of the layer's thickness inside it, turned about the axis: the power out through it and, at polar angles `theta` (degrees, φ = 0 the dipole's or the wave's E-plane), r e^{jkr} E_θ and E_φ with the directivity (a dipole) or the bistatic radar cross-section in the E- and H-planes (a plane wave). Triangles of about `size` (default a twenty-fifth of the wavelength in the densest material). The model is left as it is.
@@ -1085,6 +1099,7 @@ A chirped Gaussian pulse through the solved two-port: its transmission S(f) from
 | `frequency` | number | frequency | no | the carrier (default the sweep's middle) |
 | `width` | number |  | yes | the input's width at half power, ns |
 | `bandwidth` | number | frequency | no | the band the chirp sweeps over the width, rising (> 0) or falling (< 0); 0: no chirp; left out: the chirp that compresses best |
+| `length` | number | length | no | a periodic guide this long, from its cell's Bloch wave (solve.revolution.bloch): S = e^{−γ length}, the ends' reflections left out |
 
 ## `view.tdr` — TDR PNG
 

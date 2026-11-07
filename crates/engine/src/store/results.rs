@@ -877,6 +877,9 @@ struct StoredRevolution {
     ports: usize,
     unknowns: usize,
     numbers: String,
+    /// A cell's period (m), its Bloch wave's γ after S among the numbers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    period: Option<f64>,
 }
 
 impl StoredRevolution {
@@ -884,6 +887,9 @@ impl StoredRevolution {
         let mut nums = Out::default();
         nums.fs(b.data.frequencies());
         nums.cs(b.data.values());
+        if let Some((_, g)) = &b.bloch {
+            nums.cs(g);
+        }
         Ok(StoredRevolution {
             m: b.m,
             modes: b.modes.clone(),
@@ -891,6 +897,7 @@ impl StoredRevolution {
             ports: b.data.outputs(),
             unknowns: b.unknowns,
             numbers: nums.write(w, "results/revolution/numbers.f64")?,
+            period: b.bloch.as_ref().map(|(p, _)| *p),
         })
     }
 
@@ -902,8 +909,13 @@ impl StoredRevolution {
         let frequencies = nums.fs(self.frequencies)?;
         let count = self.frequencies.checked_mul(self.ports).and_then(|x| x.checked_mul(self.ports)).ok_or("the body of revolution's S overflows")?;
         let s = nums.cs(count)?;
+        let bloch = match self.period {
+            Some(p) if p.is_finite() && p > 0.0 => Some((p, nums.cs(self.frequencies)?)),
+            Some(_) => return Err("the cell's period is not a positive length".into()),
+            None => None,
+        };
         nums.done()?;
         let data = crate::sdata::SData::square(frequencies, self.ports, s)?;
-        Ok(crate::Revolution { m: self.m, modes: self.modes, data, unknowns: self.unknowns })
+        Ok(crate::Revolution { m: self.m, modes: self.modes, data, unknowns: self.unknowns, bloch })
     }
 }

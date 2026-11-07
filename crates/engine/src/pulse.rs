@@ -99,7 +99,7 @@ fn bad(why: impl Into<String>) -> EngineError {
 
 /// S at `f` (Hz) from the sweep `freqs`, `s` with its phase `phase` unwrapped: magnitude and phase
 /// each linear between the points; none outside the sweep.
-fn sample(freqs: &[f64], s: &[C], phase: &[f64], f: f64) -> Option<C> {
+fn sample(freqs: &[f64], mag: &[f64], phase: &[f64], f: f64) -> Option<C> {
     let k = freqs.partition_point(|x| *x <= f);
     if k == 0 || k > freqs.len() || (k == freqs.len() && f > freqs[freqs.len() - 1]) {
         return None;
@@ -107,12 +107,11 @@ fn sample(freqs: &[f64], s: &[C], phase: &[f64], f: f64) -> Option<C> {
     let k = k.min(freqs.len() - 1);
     let (i, j) = (k - 1, k);
     let w = if freqs[j] > freqs[i] { (f - freqs[i]) / (freqs[j] - freqs[i]) } else { 0.0 };
-    let mag = s[i].norm() * (1.0 - w) + s[j].norm() * w;
-    Some(C::from_polar(mag, phase[i] * (1.0 - w) + phase[j] * w))
+    Some(C::from_polar(mag[i] * (1.0 - w) + mag[j] * w, phase[i] * (1.0 - w) + phase[j] * w))
 }
 
 /// The phase of `s`, unwrapped along the sweep.
-fn unwrapped(s: &[C]) -> Vec<f64> {
+pub fn unwrapped(s: &[C]) -> Vec<f64> {
     let mut out: Vec<f64> = Vec::with_capacity(s.len());
     for c in s {
         let p = c.arg();
@@ -147,12 +146,23 @@ fn half_width(times: &[f64], y: &[f64]) -> f64 {
     }
 }
 
-/// The pulse `chirp` through the transmission `s` swept at `freqs` (Hz, ascending).
+/// The pulse `chirp` through the transmission `s` swept at `freqs` (Hz, ascending), its phase
+/// unwrapped along the sweep (which must sample it finely enough: less than π between points).
 pub fn through(freqs: &[f64], s: &[C], chirp: Chirp) -> Result<Pulse> {
-    if freqs.len() != s.len() || freqs.len() < 4 {
+    if !s.iter().all(|c| c.re.is_finite() && c.im.is_finite()) {
+        return Err(bad("the sweep's S must be finite"));
+    }
+    let mag: Vec<f64> = s.iter().map(|c| c.norm()).collect();
+    through_phase(freqs, &mag, &unwrapped(s), chirp)
+}
+
+/// [`through`] with the transmission given as its magnitude and its phase, already continuous
+/// (a Bloch wave's −βL over a long guide, which turns many times between the sweep's points).
+pub fn through_phase(freqs: &[f64], mag: &[f64], phase: &[f64], chirp: Chirp) -> Result<Pulse> {
+    if freqs.len() != mag.len() || freqs.len() != phase.len() || freqs.len() < 4 {
         return Err(bad("needs a sweep of at least 4 frequencies"));
     }
-    if freqs.windows(2).any(|w| !(w[1] > w[0])) || !s.iter().all(|c| c.re.is_finite() && c.im.is_finite()) {
+    if freqs.windows(2).any(|w| !(w[1] > w[0])) || !mag.iter().chain(phase).all(|x| x.is_finite()) {
         return Err(bad("the sweep's frequencies must ascend and its S be finite"));
     }
     let Chirp { f0, width, rate } = chirp;
@@ -163,7 +173,6 @@ pub fn through(freqs: &[f64], s: &[C], chirp: Chirp) -> Result<Pulse> {
     if !(width.is_finite() && width > 0.0) || !rate.is_finite() {
         return Err(bad("the width must be positive and the chirp finite"));
     }
-    let phase = unwrapped(s);
     // The spectrum on a grid over the band; its energy inside against all of it.
     let dnu = (hi - lo) / (GRID - 1) as f64;
     let nus: Vec<f64> = (0..GRID).map(|i| lo + i as f64 * dnu - f0).collect();
@@ -180,7 +189,7 @@ pub fn through(freqs: &[f64], s: &[C], chirp: Chirp) -> Result<Pulse> {
             100.0 * outside
         )));
     }
-    let transmitted: Vec<C> = nus.iter().zip(&spec).map(|(&nu, a)| sample(freqs, s, &phase, f0 + nu).unwrap_or_default() * a).collect();
+    let transmitted: Vec<C> = nus.iter().zip(&spec).map(|(&nu, a)| sample(freqs, mag, phase, f0 + nu).unwrap_or_default() * a).collect();
     // The group delay and its slope at f₀ from the unwrapped phase, by central differences over
     // the sweep's neighbouring points.
     let tau: Vec<f64> = (0..freqs.len())
