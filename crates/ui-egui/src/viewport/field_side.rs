@@ -277,7 +277,7 @@ fn power_readout(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
         }
     });
     ui.small(trf(t!("Unaccounted: {value}%"), args!(value = format!("{:.2}", 100.0 * report["unaccounted"].as_f64().unwrap_or(0.0)))));
-    ui_kit::caption(ui, t!("Power in reported S entries. The balance includes loss, radiation, higher modes and numerical error."));
+    ui_kit::caption(ui, t!("Power in the S entries; the rest is loss, radiation or error."));
 }
 
 /// The project's probes (`view.probe.*`): + adds one at the pinned point (the plane's middle

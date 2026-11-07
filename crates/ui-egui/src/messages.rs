@@ -63,12 +63,19 @@ impl EmcraftApp {
 /// In a window less tall than this, the message card shows two lines.
 const SHORT: f32 = 720.0;
 
-/// The message card at the bottom: the last messages, and the running job's progress and Cancel.
+/// The message card at the bottom: the last message on one line, the earlier ones a click away
+/// (the button at its end opens two to four lines of them, scrolled to the newest), and the
+/// running job's progress and Cancel.
 pub(crate) fn area(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &theme::Tokens::get();
-    // Taller while a job runs: its progress row sits above the messages; two lines of them in a
-    // short window, which leaves the room to the views.
-    let lines = if ui.ctx().content_rect().height() < SHORT { 36.0 } else { 72.0 };
+    let open_id = egui::Id::new("emcraft_messages_open");
+    let open = ui.ctx().data(|d| d.get_temp::<bool>(open_id)).unwrap_or(false);
+    // Opened: two lines of history in a short window, four in a tall one.
+    let lines = match (open, ui.ctx().content_rect().height() < SHORT) {
+        (false, _) => 20.0,
+        (true, true) => 40.0,
+        (true, false) => 80.0,
+    };
     egui::Panel::bottom("emcraft_status")
         .exact_size(lines + if app.job.is_some() { 58.0 } else { 24.0 })
         .show_separator_line(false)
@@ -80,17 +87,70 @@ pub(crate) fn area(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 ui.set_min_height(height);
                 scenario::publish_rect(Fixed::Status, ui.max_rect());
                 progress(app, ui, t, out);
+                let line = |m: &Message| {
+                    let text = if m.count > 1 { format!("{} (×{})", m.text, m.count) } else { m.text.clone() };
+                    egui::RichText::new(text).size(t.font_body).color(if m.error { t.error } else { t.text })
+                };
+                // The toggle at the line's end: the history's count, and which way it goes.
+                let toggle = |ui: &mut egui::Ui| {
+                    let n = app.messages.len();
+                    let (rect, _) = ui.allocate_exact_size(egui::vec2(40.0, 18.0), egui::Sense::hover());
+                    let r = ui.hit(rect, Fixed::MessagesToggle.into(), egui::Sense::click());
+                    if r.hovered() {
+                        ui.painter().rect_filled(rect, t.radius_sm, t.hover);
+                    }
+                    // A triangle pointing the way it goes (up: open), and how many there are.
+                    let c = egui::pos2(rect.left() + 10.0, rect.center().y);
+                    let (a, b) = if open { (4.0, -3.0) } else { (-3.0, 4.0) };
+                    let tri = vec![c + egui::vec2(-5.0, b), c + egui::vec2(5.0, b), c + egui::vec2(0.0, a)];
+                    ui.painter().add(egui::Shape::convex_polygon(tri, t.text_dim, egui::Stroke::NONE));
+                    ui.painter().text(
+                        egui::pos2(rect.left() + 20.0, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        n.to_string(),
+                        egui::FontId::proportional(t.font_small),
+                        t.text_dim,
+                    );
+                    r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, crate::lang::tr(t!("Earlier messages"))));
+                    let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).hint(if open {
+                        t!("Hide earlier messages")
+                    } else {
+                        t!("Earlier messages")
+                    });
+                    if r.clicked() {
+                        ui.ctx().data_mut(|d| d.insert_temp(open_id, !open));
+                    }
+                };
+                if !open {
+                    ui.horizontal(|ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            toggle(ui);
+                            if let Some(m) = app.messages.last() {
+                                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| ui.add(egui::Label::new(line(m)).truncate()));
+                            }
+                        });
+                    });
+                    return;
+                }
                 let rest = (height - if app.job.is_some() { 36.0 } else { 0.0 }).max(16.0);
-                egui::ScrollArea::vertical().stick_to_bottom(true).max_height(rest).min_scrolled_height(rest).auto_shrink([false, false]).show(
-                    ui,
-                    |ui| {
-                        let start = app.messages.len().saturating_sub(40);
-                        for m in &app.messages[start..] {
-                            let text = if m.count > 1 { format!("{} (×{})", m.text, m.count) } else { m.text.clone() };
-                            ui.label(egui::RichText::new(text).size(t.font_body).color(if m.error { t.error } else { t.text }));
-                        }
-                    },
-                );
+                ui.horizontal_top(|ui| {
+                    let w = ui.available_width() - 48.0;
+                    ui.vertical(|ui| {
+                        ui.set_width(w);
+                        egui::ScrollArea::vertical()
+                            .stick_to_bottom(true)
+                            .max_height(rest)
+                            .min_scrolled_height(rest)
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                let start = app.messages.len().saturating_sub(40);
+                                for m in &app.messages[start..] {
+                                    ui.label(line(m));
+                                }
+                            });
+                    });
+                    toggle(ui);
+                });
             });
         });
 }

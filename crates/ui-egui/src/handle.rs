@@ -123,6 +123,8 @@ emcraft_macros::named_enum! {
         StepWaveguide = "step:waveguide",
         /// Step 1's new material, under its list of materials.
         StepMaterial = "step:material",
+        /// The message line's toggle: the earlier messages shown or hidden.
+        MessagesToggle = "messages:toggle",
         // The step panels.
         ExcitationPreview = "excitation:preview",
         SetupBand = "setup:band",

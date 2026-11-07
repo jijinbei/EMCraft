@@ -24,17 +24,9 @@ pub(super) fn results(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, state
         kv(ui, t!("max |S − S^T|"), format!("{:.3e}", n("reciprocity_error")));
     }
     ui_kit::section(ui, t!("Mesh accuracy"));
-    ui_kit::caption(
-        ui,
-        t!(
-            "Passivity and reciprocity check physical consistency. They do not measure mesh error. Refine the mesh and compare the results at frequencies important to your design."
-        ),
-    );
+    ui_kit::caption(ui, t!("Physics checks, not the mesh's error: refine and compare."));
     ui.act(!stale, ui_kit::styled(t!("Set up mesh convergence"), false), Fixed::ResultsConvergence.into(), Action::dialog("mesh.adapt"), out);
-    ui_kit::caption(
-        ui,
-        t!("Adaptive mesh changes the mesh at one frequency. Review its tolerance and pass limit, then rerun your analysis on the final mesh."),
-    );
+    ui_kit::caption(ui, t!("Refines the mesh at one frequency; run again on the result."));
     ui_kit::section(ui, t!("Touchstone"));
     let ports = app.session.sparameter_entries().len().max(1);
     if f.touchstone.is_empty() {

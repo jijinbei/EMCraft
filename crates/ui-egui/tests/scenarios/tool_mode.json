@@ -3,7 +3,7 @@
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "iris-bandpass"}}},
   {"click": "step:excitation"},
   {"frames": 2},
-  {"click": [680, 450]},
+  {"click": [690, 470]},
   {"frames": 2},
   {"expect": {"inspect": {"view3d.selected": "Guide"}}},
   {"click": "toolbar:tool:port"},

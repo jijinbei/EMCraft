@@ -36,10 +36,7 @@ impl ChartView for Tdr {
     }
 
     fn block(_: &EmcraftApp, _: &mut Parts, ui: &mut egui::Ui, _: usize, _: &mut Actions) {
-        crate::ui_kit::caption(
-            ui,
-            t!("Time is the round trip from the port's reference plane; resolution about 1/(2 f_max) (low pass) or 1/bandwidth (band pass)."),
-        );
+        crate::ui_kit::caption(ui, t!("Round-trip time from the port's reference plane."));
     }
 }
 

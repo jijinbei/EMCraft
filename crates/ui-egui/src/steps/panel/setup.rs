@@ -55,10 +55,7 @@ pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, out: &m
         Solver::Frequency | Solver::Eigenmodes | Solver::Radiation => {
             let eo = e(f, "order");
             field(ui, t!("Element order"), &mut f.order, "", eo.as_deref(), Fixed::SetupOrder);
-            ui_kit::caption(
-                ui,
-                t!("Order 1 uses less memory; order 2 usually improves accuracy on the same mesh. Compare refined meshes to check convergence."),
-            );
+            ui_kit::caption(ui, t!("Order 2: more accurate, more memory."));
         }
     }
     // Before the mesh there is nothing to estimate from: say when there will be.

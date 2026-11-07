@@ -27,11 +27,8 @@ pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions)
     ui_kit::section(ui, t!("Port modes"));
     let ready = m.mesh.is_some();
     let about = match band(&app.session) {
-        Some((_, z)) => trf(
-            t!("Each port's modes at {f} {unit}: propagation, effective permittivity, impedance (seconds, no full solve)."),
-            args!(f = fmt(z), unit = fu),
-        ),
-        None => tr(t!("Each port's modes: propagation, effective permittivity, impedance (seconds, no full solve).")).to_owned(),
+        Some((_, z)) => trf(t!("Port modes at {f} {unit}, in seconds."), args!(f = fmt(z), unit = fu)),
+        None => tr(t!("Port modes, in seconds.")).to_owned(),
     };
     ui_kit::caption(ui, about);
     let hint = if ready { t!("") } else { t!("needs a mesh (step 6)") };
