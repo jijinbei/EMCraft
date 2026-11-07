@@ -211,7 +211,8 @@ pub fn draw(plot: &FieldPlot, width: usize, palette: &Palette) -> Canvas {
         for (t, _) in scale.ticks() {
             c.text(bx + bw + 5.0, by + (1.0 - t) * bh - 7.0, &scale.tick_text(t), 2, ink);
         }
-        c.text(bx - 10.0, y0 + ph + 34.0, &s.label, 2, ink);
+        let title = if scale.db.is_some() { format!("{} (dB)", s.label) } else { s.label.clone() };
+        c.text(bx - 10.0, y0 + ph + 34.0, &title, 2, ink);
     }
 
     for l in &plot.lines {

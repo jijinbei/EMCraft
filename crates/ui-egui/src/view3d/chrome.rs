@@ -341,7 +341,7 @@ pub(super) fn legend(p: &egui::Painter, rect: Rect, built: &crate::scene3d::Buil
         .chain(items.iter().map(|(s, _)| p.layout_job(crate::math::rich(s, font.size, t.text))))
         .collect();
     let bar_width = 180.0;
-    let title = bar.map(|b| tex(&b.label, t.font_body));
+    let title = bar.map(|b| tex(&if b.scale.db.is_some() { format!("{} · dB", b.label) } else { b.label.clone() }, t.font_body));
     let ticks: Vec<(f64, String)> = bar.map(|b| b.scale.ticks().into_iter().map(|(at, _)| (at, b.scale.tick_text(at))).collect()).unwrap_or_default();
     let bar_height = if bar.is_some() { title.as_ref().map_or(0.0, |g| g.size().y) + 12.0 + 4.0 + row + 6.0 } else { 0.0 };
     let width = galleys.iter().map(|g| g.size().x + 40.0).fold(if bar.is_some() { bar_width + 20.0 } else { 0.0 }, f32::max);

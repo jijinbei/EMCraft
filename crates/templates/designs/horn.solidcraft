@@ -1,5 +1,16 @@
 {
-  "format": "solidcraft/43",
+  "format": "solidcraft/51",
+  "format_pending": [
+    "bridged-counterbore",
+    "embedded-surface-textures",
+    "fillet-turn",
+    "hole-direction-own-faces",
+    "intersection-curve-sketch-curves",
+    "point-cloud-segments-and-triangles",
+    "revolve-axis-origin-expressions",
+    "transferred-profile-frame",
+    "two-sided-extrude-fixed-sides"
+  ],
   "name": "Horn",
   "units": "mm",
   "params": [
@@ -700,7 +711,7 @@
         "origin": [
           0.0,
           0.0,
-          "t + f + h"
+          "t + f + h + 1"
         ],
         "x_dir": [
           1.0,
@@ -726,49 +737,49 @@
           {
             "id": "p1",
             "pos": [
-              2.0,
-              2.0
+              1.7143333333333324,
+              1.6693333333333342
             ],
             "fixed": true,
             "exprs": {
-              "x": "A / 2 + t - (A / 2)",
-              "y": "B / 2 + t - (B / 2)"
+              "x": "A / 2 + t - (A / 2 + (A - a) / (2 * h))",
+              "y": "B / 2 + t - (B / 2 + (B - b) / (2 * h))"
             }
           },
           {
             "id": "p2",
             "pos": [
-              42.0,
-              2.0
+              42.28566666666667,
+              1.6693333333333342
             ],
             "fixed": true,
             "exprs": {
-              "x": "A / 2 + t + (A / 2)",
-              "y": "B / 2 + t - (B / 2)"
+              "x": "A / 2 + t + (A / 2 + (A - a) / (2 * h))",
+              "y": "B / 2 + t - (B / 2 + (B - b) / (2 * h))"
             }
           },
           {
             "id": "p3",
             "pos": [
-              42.0,
-              32.0
+              42.28566666666667,
+              32.330666666666666
             ],
             "fixed": true,
             "exprs": {
-              "x": "A / 2 + t + (A / 2)",
-              "y": "B / 2 + t + (B / 2)"
+              "x": "A / 2 + t + (A / 2 + (A - a) / (2 * h))",
+              "y": "B / 2 + t + (B / 2 + (B - b) / (2 * h))"
             }
           },
           {
             "id": "p4",
             "pos": [
-              2.0,
-              32.0
+              1.7143333333333324,
+              32.330666666666666
             ],
             "fixed": true,
             "exprs": {
-              "x": "A / 2 + t - (A / 2)",
-              "y": "B / 2 + t + (B / 2)"
+              "x": "A / 2 + t - (A / 2 + (A - a) / (2 * h))",
+              "y": "B / 2 + t + (B / 2 + (B - b) / (2 * h))"
             }
           }
         ],
@@ -811,125 +822,6 @@
     },
     {
       "id": 9,
-      "name": "inside 4",
-      "suppressed": false,
-      "type": "sketch",
-      "plane": {
-        "type": "placed",
-        "origin": [
-          0.0,
-          0.0,
-          "t + f + h + 1"
-        ],
-        "x_dir": [
-          1.0,
-          0.0,
-          0.0
-        ],
-        "y_dir": [
-          0.0,
-          1.0,
-          0.0
-        ]
-      },
-      "sketch": {
-        "points": [
-          {
-            "id": "origin",
-            "pos": [
-              0.0,
-              0.0
-            ],
-            "fixed": true
-          },
-          {
-            "id": "p1",
-            "pos": [
-              2.0,
-              2.0
-            ],
-            "fixed": true,
-            "exprs": {
-              "x": "A / 2 + t - (A / 2)",
-              "y": "B / 2 + t - (B / 2)"
-            }
-          },
-          {
-            "id": "p2",
-            "pos": [
-              42.0,
-              2.0
-            ],
-            "fixed": true,
-            "exprs": {
-              "x": "A / 2 + t + (A / 2)",
-              "y": "B / 2 + t - (B / 2)"
-            }
-          },
-          {
-            "id": "p3",
-            "pos": [
-              42.0,
-              32.0
-            ],
-            "fixed": true,
-            "exprs": {
-              "x": "A / 2 + t + (A / 2)",
-              "y": "B / 2 + t + (B / 2)"
-            }
-          },
-          {
-            "id": "p4",
-            "pos": [
-              2.0,
-              32.0
-            ],
-            "fixed": true,
-            "exprs": {
-              "x": "A / 2 + t - (A / 2)",
-              "y": "B / 2 + t + (B / 2)"
-            }
-          }
-        ],
-        "curves": [
-          {
-            "id": "l1",
-            "type": "line",
-            "a": 1,
-            "b": 2,
-            "construction": false
-          },
-          {
-            "id": "l2",
-            "type": "line",
-            "a": 2,
-            "b": 3,
-            "construction": false
-          },
-          {
-            "id": "l3",
-            "type": "line",
-            "a": 3,
-            "b": 4,
-            "construction": false
-          },
-          {
-            "id": "l4",
-            "type": "line",
-            "a": 4,
-            "b": 1,
-            "construction": false
-          }
-        ],
-        "constraints": [],
-        "counters": {
-          "l": 4,
-          "p": 4
-        }
-      }
-    },
-    {
-      "id": 10,
       "name": "inside piece 1",
       "suppressed": false,
       "body_names": [
@@ -953,7 +845,7 @@
       "operation": "new_body"
     },
     {
-      "id": 11,
+      "id": 10,
       "name": "inside piece 2",
       "suppressed": false,
       "type": "loft",
@@ -975,32 +867,8 @@
       "targets": [
         "inside"
       ]
-    },
-    {
-      "id": 12,
-      "name": "inside piece 3",
-      "suppressed": false,
-      "type": "loft",
-      "sections": [
-        {
-          "sketch": 8,
-          "profiles": {
-            "type": "all"
-          }
-        },
-        {
-          "sketch": 9,
-          "profiles": {
-            "type": "all"
-          }
-        }
-      ],
-      "operation": "join",
-      "targets": [
-        "inside"
-      ]
     }
   ],
-  "next_id": 13,
+  "next_id": 11,
   "next_component_color_index": 0
 }

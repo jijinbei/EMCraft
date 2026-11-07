@@ -55,6 +55,19 @@ fn the_horn_template_builds_its_walls_and_air() {
     assert!(s.model.domain.open.is_some());
 }
 
+/// The horn meshes at any density: its air body once went straight on for its last millimetre,
+/// so the crease where it turned lay exactly in the walls' front face, and the Boolean (which
+/// needs the surfaces in general position) left a vertex on an edge at 6, 7, 8 and 10 elements
+/// per wavelength. It flares on past the mouth now.
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn the_horn_meshes_finer() {
+    for n in [7, 10] {
+        let mut s = built("horn", json!(null));
+        s.execute("mesh.generate", &json!({"per_wavelength": n, "frequency": 10})).unwrap_or_else(|e| panic!("{n} per wavelength: {e}"));
+    }
+}
+
 #[test]
 fn the_termination_template_holds_its_absorber() {
     let s = built("termination", json!(null));

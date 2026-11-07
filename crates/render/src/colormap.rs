@@ -160,10 +160,11 @@ impl ColourScale {
         }
     }
 
-    /// A tick's text: the value in `unit`'s numbers, or its decibels below the peak.
+    /// A tick's text: the value, or its decibels below the peak (the unit, dB, said once by
+    /// the bar's title).
     pub fn tick_text(&self, t: f64) -> String {
         match self.db {
-            Some(floor) if !self.signed => format!("{} dB", crate::axes::format((1.0 - t) * floor)),
+            Some(floor) if !self.signed => crate::axes::format((1.0 - t) * floor),
             _ => crate::axes::format(self.value(t)),
         }
     }
@@ -218,8 +219,8 @@ mod tests {
         assert_eq!(ticks.len(), 5);
         assert_eq!(ticks.first().map(|t| t.0), Some(0.0));
         assert_eq!(ticks.last().map(|t| t.0), Some(1.0));
-        assert_eq!(s.tick_text(0.0), "-40 dB");
-        assert_eq!(s.tick_text(1.0), "0 dB");
+        assert_eq!(s.tick_text(0.0), "-40");
+        assert_eq!(s.tick_text(1.0), "0");
         // A signed scale has no decibels.
         assert_eq!(ColourScale::signed(1.0).in_db(-40.0).db, None);
     }

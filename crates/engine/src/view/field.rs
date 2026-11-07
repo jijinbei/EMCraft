@@ -224,7 +224,7 @@ impl FieldView {
             excitation: 0,
             mode: None,
             db: None,
-            contours: true,
+            contours: false,
         }
     }
 

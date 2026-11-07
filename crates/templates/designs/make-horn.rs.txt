@@ -1,6 +1,6 @@
 // Writes crates/templates/designs/horn.solidcraft with SolidCraft's document API: a pyramidal
 // horn fed by a rectangular guide, as two bodies: `walls` (the metal, solid, round the outside
-// of the feed and the flare) and `inside` (the air of the feed and the flare, reaching 1 mm
+// of the feed and the flare) and `inside` (the air of the feed and the flare, flaring on 1 mm
 // beyond the mouth), each of ruled lofts between rectangles. The horn's axis is z, the feed's closed end at z = t, the mouth at
 // z = t + f + h; the walls' bounding box starts at the origin.
 //
@@ -82,15 +82,18 @@ fn main() {
         "walls",
         &[("0", "a / 2 + t", "b / 2 + t", feed), ("t + f", "a / 2 + t", "b / 2 + t", feed), ("t + f + h", "A / 2 + t", "B / 2 + t", mouth)],
     );
-    let (feed, mouth) = ([a / 2.0, b / 2.0], [aa / 2.0, bb / 2.0]);
+    // The air flares on 1 mm past the mouth in one ruled piece, so its faces cross the walls'
+    // front face at an angle (a crease lying in that face would be degenerate for a Boolean).
+    let (h, f1) = (value("h"), 1.0);
+    let feed = [a / 2.0, b / 2.0];
+    let past = [aa / 2.0 + (aa - a) / (2.0 * h) * f1, bb / 2.0 + (bb - b) / (2.0 * h) * f1];
     body(
         &mut doc,
         "inside",
         &[
             ("t", "a / 2", "b / 2", feed),
             ("t + f", "a / 2", "b / 2", feed),
-            ("t + f + h", "A / 2", "B / 2", mouth),
-            ("t + f + h + 1", "A / 2", "B / 2", mouth),
+            ("t + f + h + 1", "A / 2 + (A - a) / (2 * h)", "B / 2 + (B - b) / (2 * h)", past),
         ],
     );
     let text = doc.to_json();
