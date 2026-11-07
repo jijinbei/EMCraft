@@ -2,7 +2,7 @@
   {"note": "The 3D view is drawn by the GPU only. The headless window has no wgpu device of its own, so the view is drawn offscreen on the process's device (a GPU, or a software adapter such as llvmpipe) and read back"},
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "inductive-post"}}},
   {"until": {"busy": false}},
-  {"call": "ui.set", "params": {"step": "materials"}},
+  {"call": "ui.set", "params": {"step": "geometry"}},
   {"click": "view3d:std:iso"},
   {"frames": 2},
   {"expect": {"inspect": {"view3d.gpu": true, "view3d.renderer": "offscreen", "view3d.gpu_adapter": "*"}}},

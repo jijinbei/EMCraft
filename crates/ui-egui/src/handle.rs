@@ -121,6 +121,8 @@ emcraft_macros::named_enum! {
         StepImport = "step:import",
         /// Step 1's waveguide when there is no geometry yet.
         StepWaveguide = "step:waveguide",
+        /// Step 1's new material, under its list of materials.
+        StepMaterial = "step:material",
         // The step panels.
         ExcitationPreview = "excitation:preview",
         SetupBand = "setup:band",

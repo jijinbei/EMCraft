@@ -41,7 +41,7 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
     let length_unit = session.display().length.symbol();
     match id {
         "file.sample" if session.results().any() || session.model().pcb().is_some() => trf(t!("Opened sample {name}."), args!(name = p.text("name"))),
-        "file.sample" => trf(t!("Opened sample {name}; Run (step 7) solves it."), args!(name = p.text("name"))),
+        "file.sample" => trf(t!("Opened sample {name}; Run (step 6) solves it."), args!(name = p.text("name"))),
         "file.open" if !p.text("original").is_empty() => trf(t!("Recovered {name}."), args!(name = r.text("name"))),
         "file.open" => {
             let opened = match p.text("path") {
@@ -198,7 +198,7 @@ mod tests {
             "Adaptive mesh: 1 passes, 0 tetrahedra, last far-field change 4.00e-3, not converged."
         );
         assert_eq!(text("project.setup", &none, &json!({"start": 5.0, "stop": 9.0}), &s), "Settings confirmed.");
-        assert_eq!(text("file.sample", &json!({"name": "highpass"}), &none, &s), "Opened sample highpass; Run (step 7) solves it.");
+        assert_eq!(text("file.sample", &json!({"name": "highpass"}), &none, &s), "Opened sample highpass; Run (step 6) solves it.");
         // An open problem's: the power radiated, a plane wave's scattering cross-section (it
         // radiates nothing of its own: no NaN), or neither.
         assert_eq!(text("solve.radiation", &none, &json!({"radiated_power": 0.00245}), &s), "Solved the open problem: radiated power 2.4500e-3 W.");

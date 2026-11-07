@@ -34,7 +34,7 @@ pub(super) fn geometry(app: &EmcraftApp, ui: &mut egui::Ui, has_dialog: bool, ou
     }
 }
 
-pub(super) fn materials(app: &EmcraftApp, ui: &mut egui::Ui) {
+pub(super) fn materials(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
     ui_kit::section(ui, t!("Materials"));
     let m = app.session.model();
@@ -47,6 +47,11 @@ pub(super) fn materials(app: &EmcraftApp, ui: &mut egui::Ui) {
             let r = ui.label(crate::math::job(&tex, t.font_small, t.text));
             r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, format!("{}: {}", mat.name, mat.summary())));
         });
+    }
+    ui.add_space(4.0);
+    let glyph = ui_kit::glyph_button(crate::glyphs::Glyph::Material, t!("New material"), false);
+    if ui.named_enabled(!app.busy(), glyph, Fixed::StepMaterial.into()).clicked() {
+        out.push(Action::Fix("model.material.create".to_owned()));
     }
 }
 

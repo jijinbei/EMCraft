@@ -9,7 +9,7 @@ pub(super) fn results(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, state
         crate::viewport::stale_band(ui, out);
     }
     if !app.session.results().any() {
-        ui.text(crate::Style::SmallDim, t!("No results yet: Run (step 7). The view tabs over the viewport show them."));
+        ui.text(crate::Style::SmallDim, t!("No results yet: Run (step 6). The view tabs over the viewport show them."));
         return;
     }
     if app.session.results().sweep.is_none() {

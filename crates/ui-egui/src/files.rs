@@ -169,7 +169,7 @@ fn go(app: &mut EmcraftApp, then: Then) {
             let opened = app.run("file.open", json!({"path": path}));
             land(app, opened.is_ok());
         }
-        // Opened at once, not solved: Run (step 7) solves it when wanted.
+        // Opened at once, not solved: Run (step 6) solves it when wanted.
         Then::Sample { name, values, purpose } => {
             let mut params = json!({"name": name});
             if values.as_object().is_some_and(|v| !v.is_empty()) {

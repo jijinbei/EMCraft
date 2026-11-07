@@ -11,7 +11,7 @@
   {
     "call": "ui.set",
     "params": {
-      "step": "materials",
+      "step": "geometry",
       "theme": "midnight",
       "language": "ja"
     }

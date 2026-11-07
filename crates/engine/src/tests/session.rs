@@ -182,7 +182,8 @@ fn the_workflow_status_guides_a_job_and_undo_saves_and_exports_work() {
     let st = status(&mut s);
     assert_eq!(of(&st, "geometry"), "todo");
     assert_eq!((of(&st, "intent"), of(&st, "setup")), ("done".into(), "waiting".into()));
-    assert_eq!((of(&st, "materials"), of(&st, "boundaries"), of(&st, "mesh")), ("waiting".into(), "waiting".into(), "waiting".into()));
+    assert_eq!((of(&st, "boundaries"), of(&st, "mesh")), ("waiting".into(), "waiting".into()));
+    assert!(st.iter().all(|(n, _)| n != "materials"), "the materials are the geometry step's");
     assert_eq!((of(&st, "run"), of(&st, "results")), ("waiting".into(), "waiting".into()));
     // The band below WR-90's cut-off is noted at the port (the wave decays there), the step
     // still done.

@@ -21,7 +21,7 @@ pitfalls they name: skipping the mesh convergence check, and wrong boundary cond
 |---|---|---|---|
 | 0 | **Home** (the job's intent) | the kind of problem (guided-wave component, planar circuit, antenna, scatterer, resonator), units | a kind that does not fit the model |
 | 1 | **Geometry** | shapes, Booleans, imported surfaces (a SolidCraft design with its parameters, 3MF, STL: chosen, dropped on the window or begun from the start page and the empty step; the dialog shows the file's bodies, size and parameters, and what importing makes of them), layers and strips | non-closed or overlapping bodies, features flush with walls |
-| 2 | **Materials** | εr, μr, loss tangent per body; wall conductivity | lossy material at a port; wrong units |
+| 2 | **Materials** (EMCraft: part of Geometry, its bodies drawn in their materials' colours, the materials listed under them with a New material button) | εr, μr, loss tangent per body; wall conductivity | lossy material at a port; wrong units |
 | 3 | **Excitation** | waveguide ports (and how many modes), lumped ports and their impedance, plane waves, dipoles; reference impedances | a port off its face, the first mode cut off in the band, too few modes near a discontinuity |
 | 4 | **Boundaries** | conducting walls (perfect or finite σ), the open boundary (PML thickness, reflection), symmetry | the bodies touching the PML, the Huygens box crossing them |
 | 5 | **Solver setup** | **the frequency range** (or the one frequency), the sweep's points, the order — confirmed with its button (`project.setup`) | a range that does not match the ports' cut-offs; a sweep too coarse for a resonance |
@@ -100,8 +100,8 @@ and the UI should make the same habits easy for the user's own models.
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │ EMCraft   File  Edit  View  Help                              [search commands  /]   │
-│ [0 Home ✓]─[1 Geometry ✓]─  [2 Materials ✓]─[3 Excitation !]─[4 Boundaries ✓]─      │
-│ [5 Mesh ✓]─[6 Setup ✓]─[7 Run ▶]─[8 Results ⟳ stale]                                │
+│ [Analysis ▾]─[1 Geometry ✓]─[2 Excitation !]─[3 Setup ✓]─[4 Region ✓]─[5 Mesh ✓]─    │
+│ [6 Run ▶]─[7 Results ⟳ stale]                                                        │
 ├──────────────┬───────────────────────────────────────────────────┬───────────────────┤
 │ Browser      │                                                   │ Step panel        │
 │  Geometry    │                 3D view                           │  (the active      │

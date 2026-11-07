@@ -48,7 +48,8 @@ pub use run::{Preflight, confirm_setup, preflight, setup_params, start_run};
 /// What the 3D view puts forward in a step.
 pub fn overlay(step: Step) -> Overlay {
     match step {
-        Step::Materials => Overlay::Materials,
+        // The bodies drawn in their materials' colours, the step listing the materials.
+        Step::Geometry => Overlay::Materials,
         Step::Excitation => Overlay::Ports,
         Step::Boundaries => Overlay::Boundaries,
         Step::Mesh => Overlay::Mesh,
@@ -69,7 +70,7 @@ fn status_color(status: Status) -> Color32 {
     }
 }
 
-/// Whether command `id` is a run (a solve or a study, as step 7 starts one): what a failure
+/// Whether command `id` is a run (a solve or a study, as step 6 starts one): what a failure
 /// marks on Run and what Run shows running.
 pub fn is_run(id: &str) -> bool {
     is_solve(id) || id.starts_with("study.")
@@ -241,14 +242,14 @@ emcraft_macros::named_enum! {
 /// The workflow's state in the app.
 #[derive(Default)]
 pub struct Workflow {
-    status: Option<(u64, [StepState; 9])>,
+    status: Option<(u64, [StepState; 8])>,
     /// The planes the model is symmetric about ([`emcraft_model::Model::find_symmetry`]), found
     /// once per revision for the Boundaries step.
     pub symmetry: Option<(u64, Vec<emcraft_model::Found>)>,
     /// The rotational symmetry it allows ([`emcraft_model::Model::find_rotation`]), alike.
     pub rotation: Option<(u64, Option<emcraft_model::symmetry::rotation::FoundRotation>)>,
     /// [`statuses_now`] worked out once for the frame, with what it was worked out from.
-    shown: Option<(Shown, [StepState; 9])>,
+    shown: Option<(Shown, [StepState; 8])>,
     /// The estimate of the step's run (the Mesh step: one solve at an order; Setup and Run: the
     /// run as set up).
     estimate: Option<Estimate>,
@@ -444,7 +445,7 @@ pub fn run_estimate(app: &EmcraftApp) -> Option<&Result<Value, String>> {
 /// a copy), with what the window knows on top: after a refused Run, the steps that block it
 /// need attention; after a run failed, Run does. Worked out once a frame (`prepare`), borrowed
 /// from there while nothing it depends on changed.
-pub fn statuses_now(app: &EmcraftApp) -> std::borrow::Cow<'_, [StepState; 9]> {
+pub fn statuses_now(app: &EmcraftApp) -> std::borrow::Cow<'_, [StepState; 8]> {
     let now = Shown::of(app);
     if let Some((k, states)) = &app.workflow.shown
         && *k == now
@@ -584,7 +585,6 @@ pub fn open_step(app: &mut EmcraftApp, step: Option<Step>) {
     // The ribbon shows the step's tab.
     app.tab = match step {
         Step::Intent | Step::Geometry => RibbonTab::Model,
-        Step::Materials => RibbonTab::Materials,
         Step::Boundaries => RibbonTab::Boundaries,
         Step::Excitation => RibbonTab::PortsSources,
         Step::Mesh => RibbonTab::Mesh,

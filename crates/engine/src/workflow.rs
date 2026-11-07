@@ -22,8 +22,8 @@ emcraft_macros::named_enum! {
         /// The kind of analysis, chosen at the head of the step bar (its id kept from when it was
         /// called Intent).
         Intent = "intent" => "Analysis",
+        /// The bodies and what fills them (the materials step folded into it).
         Geometry = "geometry" => "Geometry",
-        Materials = "materials" => "Materials",
         Excitation = "excitation" => "Excitation",
         /// The run's settings, the band among them: confirmed before the region and the mesh,
         /// which the band's top sizes.
@@ -47,8 +47,15 @@ impl Step {
     pub const fn commands(self) -> &'static [&'static str] {
         match self {
             Step::Intent => &["project.analysis", "units.set"],
-            Step::Geometry => &["geometry.waveguide", "geometry.solid", "geometry.feature", "geometry.inclusion", "geometry.import", "file.sample"],
-            Step::Materials => &["model.material.create"],
+            Step::Geometry => &[
+                "geometry.waveguide",
+                "geometry.solid",
+                "geometry.feature",
+                "geometry.inclusion",
+                "geometry.import",
+                "file.sample",
+                "model.material.create",
+            ],
             Step::Excitation => &["model.port.create", "model.port.lumped", "source.dipole", "source.plane_wave", "source.clear"],
             Step::Boundaries => &["model.region", "model.walls", "model.open", "model.symmetry"],
             Step::Mesh => &["mesh.generate"],
@@ -63,8 +70,7 @@ impl Step {
         Some(match id {
             "project.analysis" | "units.set" => Step::Intent,
             "project.setup" => Step::Setup,
-            _ if id.starts_with("geometry.") || id == "file.sample" => Step::Geometry,
-            "model.material.create" => Step::Materials,
+            _ if id.starts_with("geometry.") || id == "file.sample" || id == "model.material.create" => Step::Geometry,
             _ if id.starts_with("model.port.") || id.starts_with("source.") || id == "solve.port_modes" => Step::Excitation,
             "model.region" | "model.background" | "model.walls" | "model.open" | "model.symmetry" => Step::Boundaries,
             "mesh.generate" | "project.estimate" => Step::Mesh,
@@ -207,7 +213,7 @@ pub const ANALYSES: [AnalysisSpec; Analysis::COUNT] = {
             analysis: Analysis::Pcb,
             solve: "pcb.inspect",
             required: &[Geometry],
-            not_needed: &[Materials, Excitation, Boundaries, Mesh, Setup],
+            not_needed: &[Excitation, Boundaries, Mesh, Setup],
             results: &[],
         },
     ]
@@ -316,7 +322,7 @@ pub fn cutoffs(s: &Session) -> Vec<Cutoff> {
 }
 
 /// Where each step stands, from the model, the mesh and the results; in workflow order.
-pub fn steps(s: &Session) -> [StepState; 9] {
+pub fn steps(s: &Session) -> [StepState; 8] {
     if s.model.analysis() == Analysis::Pcb {
         let mut states = Step::ALL.map(StepState::new);
         if s.model.pcb().is_none() {
@@ -337,10 +343,10 @@ pub fn steps(s: &Session) -> [StepState; 9] {
         return states;
     }
     // In the bar's order (Step's): the region after the settings whose band sizes it.
-    let above = [intent(s), geometry(s), materials(s), excitation(s), setup(s), boundaries(s), mesh(s)];
+    let above = [intent(s), geometry(s), excitation(s), setup(s), boundaries(s), mesh(s)];
     let (run, results) = run_and_results(s, &above);
-    let [intent, geometry, materials, excitation, setup, boundaries, mesh] = above;
-    [intent, geometry, materials, excitation, setup, boundaries, mesh, run, results]
+    let [intent, geometry, excitation, setup, boundaries, mesh] = above;
+    [intent, geometry, excitation, setup, boundaries, mesh, run, results]
 }
 
 /// The steps a run cannot do without: the geometry, the confirmed settings and the mesh; once a kind of analysis is
@@ -393,23 +399,6 @@ fn geometry(s: &Session) -> StepState {
     st
 }
 
-fn materials(s: &Session) -> StepState {
-    let m = &s.model;
-    let mut st = StepState::new(Step::Materials);
-    if !has_geometry(s) {
-        st.note(Status::Waiting, emcraft_i18n::text!("waits for the geometry: no bodies to give materials to yet"), Some("geometry.solid"));
-    }
-    if let Some(p) = m.ports.iter().find(|p| lossy_terminal_port(m, p)) {
-        st.note_with(
-            Status::Warning,
-            emcraft_i18n::text!("port `{port}`: several strips in a lossy or dispersive cross-section, where terminal ports are not supported yet (its lossy modes are not power-orthogonal): set the port's `terminals` modal"),
-            &[("port", p.name.clone())],
-            Some("model.port.create"),
-        );
-    }
-    st
-}
-
 /// Whether a port asks for terminals at an end of a guide where two or more strips reach it and
 /// a material of its cross-section is lossy or dispersive (refused when solving).
 fn lossy_terminal_port(m: &emcraft_model::Model, p: &emcraft_model::Port) -> bool {
@@ -432,6 +421,14 @@ fn lossy_terminal_port(m: &emcraft_model::Model, p: &emcraft_model::Port) -> boo
 fn excitation(s: &Session) -> StepState {
     let m = &s.model;
     let mut st = StepState::new(Step::Excitation);
+    if let Some(p) = m.ports.iter().find(|p| lossy_terminal_port(m, p)) {
+        st.note_with(
+            Status::Warning,
+            emcraft_i18n::text!("port `{port}`: several strips in a lossy or dispersive cross-section, where terminal ports are not supported yet (its lossy modes are not power-orthogonal): set the port's `terminals` modal"),
+            &[("port", p.name.clone())],
+            Some("model.port.create"),
+        );
+    }
     // A cell periodic along z is solved for its dispersion, with nothing driving it.
     let bloch = m.domain.periodic.is_some_and(|p| p.z);
     let chosen = m.job.chosen();
@@ -578,7 +575,7 @@ fn run_and_results(s: &Session, above: &[StepState]) -> (StepState, StepState) {
         if wrong.is_empty() && waiting.is_empty() {
             run.note(Status::Todo, emcraft_i18n::text!("not run yet"), Some(command));
         }
-        results.note(Status::Waiting, emcraft_i18n::text!("no results yet: Run (step 7) makes them"), Some(command));
+        results.note(Status::Waiting, emcraft_i18n::text!("no results yet: Run (step 6) makes them"), Some(command));
     } else if s.results.any_stale() {
         results.note(Status::Stale, emcraft_i18n::text!("the model changed after this run: run again"), Some(command));
         run.note(Status::Stale, emcraft_i18n::text!("the model changed since the last run"), Some(command));

@@ -68,7 +68,7 @@
     "shot": "mesh-section-light"
   },
   {
-    "click": "step:materials"
+    "click": "step:geometry"
   },
   {
     "expect": {

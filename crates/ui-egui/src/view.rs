@@ -118,11 +118,11 @@ impl View {
     fn empty(self) -> Option<crate::lang::Text> {
         match self {
             View::Model | View::Pcb | View::PortModes | View::Compare => None,
-            View::SParameters => Some(t!("No S-parameters yet: Run (step 7).")),
-            View::Tdr => Some(t!("No sweep yet: Run (step 7) (a harmonic sweep, f = k Δf, for low pass).")),
+            View::SParameters => Some(t!("No S-parameters yet: Run (step 6).")),
+            View::Tdr => Some(t!("No sweep yet: Run (step 6) (a harmonic sweep, f = k Δf, for low pass).")),
             View::Field => Some(t!("No fields yet: solve a sweep, eigenmodes or an open problem first.")),
-            View::FarField => Some(t!("No far field yet: Run (step 7) on an open model with sources or lumped ports.")),
-            View::Eigenmodes => Some(t!("No eigenmodes yet: Run (step 7).")),
+            View::FarField => Some(t!("No far field yet: Run (step 6) on an open model with sources or lumped ports.")),
+            View::Eigenmodes => Some(t!("No eigenmodes yet: Run (step 6).")),
             View::Study => Some(t!("No study yet: define a variable, then Sweep or Optimize (step 5).")),
             View::Dispersion => Some(t!("No dispersion diagram yet: periodic boundaries (step 4), then Dispersion (step 5).")),
         }

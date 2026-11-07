@@ -169,7 +169,7 @@ steps open on Setup (step 5) with the band up to the maximum frequency proposed 
 not confirmed: its button (`project.setup`) confirms it with the points and the order. Then the
 mesh (step 6), the board's copper and substrates drawn in the region: the mesh's dialog starts
 on the route's size (a tenth of the wavelength in the substrate at the band's top, at most an
-eighth of the route), its statistics and estimate show before anything is solved; Run (step 7)
+eighth of the route), its statistics and estimate show before anything is solved; Run (step 6)
 solves and Results (step 8) shows the S-parameters, TDR and fields. The kind of analysis's switch goes back to the PCB diagnosis.
 
 ## Editing the board

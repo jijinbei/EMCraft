@@ -64,7 +64,7 @@ pub const TABS: &[(RibbonTab, &[(&str, &[&str])])] = &[
     (
         RibbonTab::Simulate,
         &[
-            // The solve itself is Run's (step 7), its device Setup's (step 5).
+            // The solve itself is Run's (step 6), its device Setup's (step 3).
             (t!("PERIODIC").en(), &["solve.dispersion"]),
             (t!("STUDY").en(), &["project.variable", "study.sweep", "study.optimize"]),
         ],

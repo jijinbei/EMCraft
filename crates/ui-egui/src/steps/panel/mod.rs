@@ -64,8 +64,10 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
                         match step {
                             // The step bar's switch.
                             Step::Intent => {}
-                            Step::Geometry => model::geometry(app, ui, has_dialog, out),
-                            Step::Materials => model::materials(app, ui),
+                            Step::Geometry => {
+                                model::geometry(app, ui, has_dialog, out);
+                                model::materials(app, ui, out);
+                            }
                             Step::Excitation => excitation::excitation(app, ui, out),
                             Step::Boundaries => model::boundaries(app, ui),
                             Step::Mesh => model::mesh(app, ui),

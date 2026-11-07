@@ -215,7 +215,7 @@ fn keys(app: &EmcraftApp, d: &Dialog, ui: &mut egui::Ui, busy: bool, asked: &mut
 }
 
 /// The primary button's label: what a long command does (Mesh, Solve, Sweep…), OK for the
-/// rest — never Run, which is the workflow's step 7.
+/// rest — never Run, which is the workflow's step 6.
 pub fn ok_label(id: &str) -> crate::lang::Text {
     match id {
         _ if id.starts_with("mesh.") => t!("Mesh"),

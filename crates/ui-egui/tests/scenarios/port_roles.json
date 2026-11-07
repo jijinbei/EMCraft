@@ -33,7 +33,7 @@
   {"key": "Escape"},
   {"note": "The materials as typeset: ε with a lowered r, μ_r, tan δ"},
   {"call": "engine.execute", "params": {"command": "model.material.edit", "params": {"name": "ptfe-like", "loss_tangent": 0.001}}},
-  {"call": "ui.set", "params": {"step": "materials"}},
+  {"call": "ui.set", "params": {"step": "geometry"}},
   {"frames": 3},
   {"expect": {"handles": ["row:material:ptfe-like"]}},
   {"shot": "materials-rich"},

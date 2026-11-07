@@ -358,7 +358,7 @@ pub(super) fn empty_with_action(ui: &mut egui::Ui, text: crate::lang::Text, butt
 const STALE: &str = "emcraft_view_stale";
 
 /// The band over a result view whose model changed after its run: its mark, "Out of date" (why
-/// on hover) and Re-run — the run the Setup step sets up, as step 7's Run starts it.
+/// on hover) and Re-run — the run the Setup step sets up, as step 6's Run starts it.
 pub(crate) fn stale_band(ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
     let r = egui::Frame::NONE.fill(t.accent_soft).corner_radius(t.radius_sm).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
