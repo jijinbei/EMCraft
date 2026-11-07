@@ -1,17 +1,10 @@
-//! The planar mesh extruded through a board's stack of slabs: each triangle a column of prisms,
-//! each prism three tetrahedra, the copper a conducting sheet on the triangles it covers.
-//!
-//! Prisms are split by the rule of J. Dompierre, P. Labbé, M.-G. Vallet, R. Camarero, *How to
-//! subdivide pyramids, prisms and hexahedra into tetrahedra*, Proc. 8th International Meshing
-//! Roundtable, 1999: each quadrilateral side is cut by its diagonal from its node of least
-//! global number, which two prisms sharing the side agree on, so the tetrahedra conform. With the
-//! triangle's nodes numbered a < b < c and each level above the one below, the cuts are a–b′,
-//! b–c′ and a–c′, and the prism (a, b, c, a′, b′, c′) is (a, b, c, c′), (a, b, b′, c′),
-//! (a, a′, b′, c′).
+//! The planar mesh extruded through a board's stack of slabs ([`crate::extrude`]): each
+//! triangle a column of prisms, each prism three tetrahedra (with the triangle's nodes a < b < c,
+//! (a, b, c, c′), (a, b, b′, c′), (a, a′, b′, c′)), the copper a conducting sheet on the
+//! triangles it covers.
 
-use emcraft_model::geom::triple;
+use emcraft_model::Mesh;
 use emcraft_model::mesh::{Boundary, BoundaryFace};
-use emcraft_model::{Mesh, Point3};
 
 use super::{NO_NET, Planar};
 use crate::{MAX_TETS, MeshError, Result};
@@ -102,9 +95,7 @@ pub fn extrude(planar: &Planar, stack: &Stack) -> Result<(Mesh, Vec<u32>)> {
         interface.push(z.len() - 1);
     }
     let np = planar.points.len() as u32;
-    let nodes: Vec<Point3> = z.iter().flat_map(|&h| planar.points.iter().map(move |p| Point3::new(p[0], p[1], h))).collect();
     let node = |level: usize, v: u32| level as u32 * np + v;
-    let mut mesh = Mesh { nodes, ..Mesh::default() };
     let top = levels - 1;
     let count = planar.triangles.len();
     // The prisms the holes take out, by level then triangle.
@@ -121,27 +112,12 @@ pub fn extrude(planar: &Planar, stack: &Stack) -> Result<(Mesh, Vec<u32>)> {
             }
         }
     }
-    // The first tetrahedron of each prism left, by level then triangle.
-    let mut first = vec![u32::MAX; top * count];
-    for (slab, s) in stack.slabs.iter().enumerate() {
-        for level in interface[slab]..interface[slab] + s.cells {
-            for (t, tri) in planar.triangles.iter().enumerate() {
-                if gone[level * count + t] {
-                    continue;
-                }
-                first[level * count + t] = mesh.tets.len() as u32;
-                let mut v = *tri;
-                v.sort_unstable();
-                let [a, b, c] = v.map(|x| node(level, x));
-                let [a2, b2, c2] = v.map(|x| node(level + 1, x));
-                for k in [[a, b, c, c2], [a, b, b2, c2], [a, a2, b2, c2]] {
-                    mesh.tets.push(positive(&mesh.nodes, k)?);
-                    mesh.tet_material.push(s.material);
-                }
-            }
-        }
-    }
-    let prism = |level: usize, t: usize| first.get(level * count + t).copied().filter(|&f| f != u32::MAX);
+    // Each level's slab's material.
+    let material: Vec<u32> = stack.slabs.iter().flat_map(|s| std::iter::repeat_n(s.material, s.cells)).collect();
+    let profile = crate::extrude::Profile::Triangles { points: &planar.points, triangles: &planar.triangles };
+    let fill = |level: usize, t: usize| if gone[level * count + t] { None } else { material.get(level).copied() };
+    let crate::extrude::Extruded { mut mesh, first } = crate::extrude::extrude(&profile, &z, fill)?;
+    let prism = |level: usize, t: usize| first.get(level * count + t).copied().filter(|&f| f != crate::CELL_LEFT_OUT);
     // Each triangle's neighbour across each of its edges (none on the outline).
     let mut edges: Vec<([u32; 2], usize)> = planar
         .triangles
@@ -203,21 +179,6 @@ pub fn extrude(planar: &Planar, stack: &Stack) -> Result<(Mesh, Vec<u32>)> {
         }
     }
     Ok((mesh, nets))
-}
-
-/// Tetrahedron `t` with its last two nodes swapped when its volume is negative; a flat one is
-/// refused.
-fn positive(nodes: &[Point3], t: [u32; 4]) -> Result<[u32; 4]> {
-    let p = |i: u32| nodes.get(i as usize).copied().ok_or_else(|| invalid("a node out of range"));
-    let [a, b, c, d] = [p(t[0])?, p(t[1])?, p(t[2])?, p(t[3])?];
-    let v = triple(b - a, c - a, d - a);
-    if v > 0.0 {
-        Ok(t)
-    } else if v < 0.0 {
-        Ok([t[0], t[1], t[3], t[2]])
-    } else {
-        Err(invalid("a flat prism (a triangle of no area or a slab of no thickness)"))
-    }
 }
 
 /// Which of prism `first`'s three tetrahedra holds `face`.

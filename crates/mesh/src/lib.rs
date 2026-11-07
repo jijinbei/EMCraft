@@ -11,6 +11,7 @@ pub mod cavity;
 mod clip;
 mod crease;
 pub mod csg;
+pub mod extrude;
 mod flush;
 pub mod planar;
 mod shared;

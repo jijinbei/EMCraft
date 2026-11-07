@@ -5,16 +5,13 @@
 //! section's aperture are left out. Next to the re-entrant edges of a step or an iris, a strip's
 //! edges and a via's faces the lines close in ([`Options`]).
 //!
-//! Each grid cell is split into six tetrahedra around its main diagonal (the Kuhn, or
-//! Freudenthal, triangulation of the cube: H. W. Kuhn, *Some combinatorial lemmas in topology*,
-//! IBM J. Res. Dev. 4(5):518–524, 1960). Every cell face is then cut along the diagonal from its
-//! lowest to its highest corner, the same in both cells that share it, so the mesh is conforming
-//! without any search.
+//! The grid's cross-section is extruded through the lines along z ([`crate::extrude`]): each
+//! cell split into six tetrahedra around its main diagonal, conforming without any search.
 
 use emcraft_model::mesh::TETS_PER_CELL;
 use emcraft_model::{Aabb, Boundary, BoundaryFace, Grid, Mesh, Metres, Model, Point3, Span, Strip, Symmetry, Via, Waveguide};
 
-use crate::{MAX_TETS, MeshError, Result, Topology, signed_volume, too_large};
+use crate::{MAX_TETS, MeshError, Result, Topology, too_large};
 
 /// Divisions of a length by a target element size: at least `min`.
 fn divisions(length: f64, size: f64, min: usize) -> usize {
@@ -26,20 +23,6 @@ fn divisions(length: f64, size: f64, min: usize) -> usize {
 fn line(start: f64, length: f64, n: usize) -> impl Iterator<Item = f64> {
     (0..=n).map(move |i| if i == n { start + length } else { start + length * i as f64 / n as f64 })
 }
-
-/// The six tetrahedra of a cell as corner offsets (dx, dy, dz) ∈ {0,1}³ encoded as dx + 2dy + 4dz:
-/// one per axis order of the path from corner 0 to corner 7.
-const KUHN: [[usize; 4]; TETS_PER_CELL] = {
-    const AXES: [[usize; 3]; 6] = [[1, 2, 4], [1, 4, 2], [2, 1, 4], [2, 4, 1], [4, 1, 2], [4, 2, 1]];
-    let mut out = [[0; 4]; 6];
-    let mut i = 0;
-    while i < 6 {
-        let a = AXES[i];
-        out[i] = [0, a[0], a[0] + a[1], 7];
-        i += 1;
-    }
-    out
-};
 
 /// How finely a waveguide is meshed.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -205,7 +188,7 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
         .collect::<Result<Vec<_>>>()?;
     let posts: Vec<Aabb> = w.vias.iter().map(Via::bounds).collect();
     let mut mesh =
-        structured(grid, &Cells { layers: &along.layers, ylayers: &materials, posts: &posts, length: along.length, cuts: &model.domain.symmetry });
+        structured(grid, &Cells { layers: &along.layers, ylayers: &materials, posts: &posts, length: along.length, cuts: &model.domain.symmetry })?;
     add_strips(&mut mesh, &w.strips, w.height.get());
     crate::check_tetrahedra(&mesh)?;
     Ok(mesh)
@@ -389,47 +372,27 @@ struct Cells<'a> {
     cuts: &'a [Symmetry],
 }
 
-/// The tetrahedral mesh of a grid: cells whose centre lies outside their layer's aperture or
-/// inside a post are left out, the others split into six tetrahedra ([`KUHN`]), of their layer's
-/// material unless a layer across y holds them; the boundary faces tagged ([`tag_boundary`]).
-fn structured(mut grid: Grid, cells: &Cells) -> Mesh {
-    let (nx, ny, nz) = (grid.x.len() - 1, grid.y.len() - 1, grid.z.len() - 1);
-    let node = |i: usize, j: usize, k: usize| (i + (nx + 1) * (j + (ny + 1) * k)) as u32;
-    let (xs, ys) = (&grid.x, &grid.y);
-    let nodes: Vec<Point3> = grid.z.iter().flat_map(|&z| ys.iter().flat_map(move |&y| xs.iter().map(move |&x| Point3::new(x, y, z)))).collect();
-    let mut tets = Vec::with_capacity(nx * ny * nz * TETS_PER_CELL);
-    let mut tet_material = Vec::with_capacity(tets.capacity());
-    let mut first_tet = Vec::with_capacity(nx * ny * nz);
+/// The tetrahedral mesh of a grid ([`crate::extrude`]): cells whose centre lies outside their
+/// layer's aperture or inside a post are left out, the others of their layer's material unless a
+/// layer across y holds them; the boundary faces tagged ([`tag_boundary`]).
+fn structured(mut grid: Grid, cells: &Cells) -> Result<Mesh> {
+    let nx = grid.x.len() - 1;
     let all = Span::new(f64::NEG_INFINITY, f64::INFINITY);
-    for k in 0..nz {
+    let (xs, ys, zs) = (&grid.x, &grid.y, &grid.z);
+    let fill = |k: usize, c: usize| {
+        let (i, j) = (c % nx, c / nx);
         let layer = cells.layers.get(k).copied().unwrap_or(ZLayer { material: 0, x: all, y: all });
-        for j in 0..ny {
-            let yc = 0.5 * (grid.y[j] + grid.y[j + 1]);
-            let material = cells.ylayers.iter().find(|l| yc < l.top).map_or(layer.material, |l| l.material);
-            for i in 0..nx {
-                let c = Point3::new(0.5 * (grid.x[i] + grid.x[i + 1]), yc, 0.5 * (grid.z[k] + grid.z[k + 1]));
-                let in_post = cells.posts.iter().any(|b| (0..3).all(|d| b.min[d] < c[d] && c[d] < b.max[d]));
-                if !(layer.x.contains(c.x) && layer.y.contains(c.y)) || in_post {
-                    first_tet.push(crate::CELL_LEFT_OUT);
-                    continue;
-                }
-                first_tet.push(tets.len() as u32);
-                let corner = |c: usize| node(i + (c & 1), j + ((c >> 1) & 1), k + ((c >> 2) & 1));
-                for pattern in KUHN {
-                    let mut t = pattern.map(corner);
-                    if signed_volume(&t.map(|n| nodes[n as usize])) < 0.0 {
-                        t.swap(2, 3);
-                    }
-                    tets.push(t);
-                    tet_material.push(material);
-                }
-            }
-        }
-    }
-    grid.cells = first_tet;
-    let mut mesh = Mesh { nodes, tets, tet_material, boundary: Vec::new(), grid: Some(grid), buckets: None, curved: Vec::new() };
+        let yc = 0.5 * (ys[j] + ys[j + 1]);
+        let material = cells.ylayers.iter().find(|l| yc < l.top).map_or(layer.material, |l| l.material);
+        let p = Point3::new(0.5 * (xs[i] + xs[i + 1]), yc, 0.5 * (zs[k] + zs[k + 1]));
+        let in_post = cells.posts.iter().any(|b| (0..3).all(|d| b.min[d] < p[d] && p[d] < b.max[d]));
+        (layer.x.contains(p.x) && layer.y.contains(p.y) && !in_post).then_some(material)
+    };
+    let crate::extrude::Extruded { mut mesh, first } = crate::extrude::extrude(&crate::extrude::Profile::Grid { x: xs, y: ys }, zs, fill)?;
+    grid.cells = first;
+    mesh.grid = Some(grid);
     mesh.boundary = tag_boundary(&mesh, cells.length, cells.cuts);
-    mesh
+    Ok(mesh)
 }
 
 /// The faces held by one tetrahedron, tagged: at z = 0 and z = `length` the ports, on a symmetry
