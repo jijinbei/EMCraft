@@ -161,3 +161,20 @@ fn a_part_is_inspected_without_importing_it() {
     }
     assert!(s.model.domain.solid.is_none());
 }
+
+/// The pulse compressor opens solved: its cell's Bloch wave over the band below the stop band
+/// (TE11 cut-off ×1.35 up to the Bragg frequency less 0.1 h), and the 20 ns pulse it sends
+/// through 3 m, the chirp matched to the delay, compressed well over ×4 and to under 2 ns; the
+/// pulse kept with the project for its view.
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn the_pulse_compressor_opens_with_its_bloch_wave_and_compresses_its_pulse() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "pulse-compressor"})).unwrap();
+    let r = s.results.revolution.as_ref().unwrap();
+    assert!(r.bloch.as_ref().is_some_and(|(p, g)| (p - 0.016).abs() < 1e-9 && g.len() == 121));
+    let kept = s.views.pulse.clone().unwrap();
+    let pulse = s.execute("results.pulse", &kept).unwrap();
+    assert!(pulse["compression"].as_f64().unwrap() > 4.0 && pulse["output_width"].as_f64().unwrap() < 2.0, "{}", pulse["compression"]);
+    assert_eq!(pulse["chirp"], "matched");
+}

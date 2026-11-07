@@ -1,0 +1,13 @@
+{
+  "note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.",
+  "values": {
+    "passing_below": {
+      "band": 1.000000001e-6,
+      "value": 2.012279232133099e-13
+    },
+    "phase_at_bragg": {
+      "band": 0.000010180000001000001,
+      "value": 179.99999999999997
+    }
+  }
+}

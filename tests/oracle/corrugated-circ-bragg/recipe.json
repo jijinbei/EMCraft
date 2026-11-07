@@ -1,0 +1,6 @@
+[
+ {"command": "geometry.import", "params": {"path": "corrugated-cell.solidcraft", "parameters": {"h": "1 mm"}, "materials": {"guide": "interior"}}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},
+ {"command": "solve.revolution.bloch", "params": {"frequencies": [10.700645199903043, 11.889605777670047], "m": 1, "modes": 4}, "id": "bloch"}
+]

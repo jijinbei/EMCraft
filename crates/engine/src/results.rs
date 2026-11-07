@@ -348,7 +348,23 @@ const PULSE_POINTS: usize = 512;
 
 /// `results.pulse`: a chirped pulse through the two-port ([`crate::pulse`]).
 pub fn pulse(s: &mut Session, p: &Params) -> Result<Value> {
-    pulse_of(s, p)
+    let reply = pulse_of(s, p)?;
+    // Kept for the pulse view, as numbers (the expressions' values): the carrier and width the
+    // pulse had, the length and the chirp asked for.
+    let mut kept = serde_json::Map::new();
+    kept.insert("frequency".into(), reply["frequency"].clone());
+    kept.insert("width".into(), reply["width"].clone());
+    if let Some(l) = p.number("length").optional()? {
+        kept.insert("length".into(), json!(l));
+    }
+    if let Some(b) = p.number("bandwidth").optional()? {
+        kept.insert("bandwidth".into(), json!(b));
+    }
+    if let Some(c) = p.string("chirp").optional()? {
+        kept.insert("chirp".into(), json!(c));
+    }
+    s.views.pulse = Some(Value::Object(kept));
+    Ok(reply)
 }
 
 fn pulse_of(s: &Session, p: &Params) -> Result<Value> {

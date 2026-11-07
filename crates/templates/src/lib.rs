@@ -279,6 +279,13 @@ pub const TEMPLATES: &[Template] = &[
         kinds: &[Analysis::Frequency],
     },
     Template {
+        name: "pulse-compressor",
+        label: "Pulse compressor: one 16 mm cell of a circular guide (radius 12 mm) whose wall waves about its axis, r0 + h sin(2πz/p), a SolidCraft design revolved; its TE11 Bloch wave on the half-plane (solve.revolution.bloch) and a 20 ns chirped pulse through 3 m of it, the chirp matched to the group delay: compressed about ×9",
+        script: include_str!("../scripts/pulse-compressor.json"),
+        marks: "{}",
+        kinds: &[Analysis::Frequency],
+    },
+    Template {
         name: "termination",
         label: "Matched load: a lossy wedge (εr = 1.5, tan δ = 0.5) 90 mm long, 1 mm clear of the walls, against the short at the end of a WR-90 guide; one port: |S11| below 0.06 over the band",
         script: include_str!("../scripts/termination.json"),
@@ -566,6 +573,7 @@ pub const DESIGNS: &[Design] = &[
     Design { file: "horn.solidcraft", bytes: include_bytes!("../designs/horn.solidcraft") },
     Design { file: "corrugated-h.solidcraft", bytes: include_bytes!("../designs/corrugated-h.solidcraft") },
     Design { file: "corrugated-e.solidcraft", bytes: include_bytes!("../designs/corrugated-e.solidcraft") },
+    Design { file: "corrugated-cell.solidcraft", bytes: include_bytes!("../designs/corrugated-cell.solidcraft") },
 ];
 
 /// The design a path names, `template:<file>`; `None` for any other path (a file of the

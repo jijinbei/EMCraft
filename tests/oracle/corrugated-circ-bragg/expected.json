@@ -1,0 +1,33 @@
+{
+ "title": "Bragg stop band of a circular guide whose wall waves about its axis (r₀ = 12 mm, h = 1 mm, p = 16 mm, TE11)",
+ "kind": "theory",
+ "source": "The Bragg condition of a periodic guide (R. E. Collin, Foundations for Microwave Engineering, 2nd ed., §9.2): TE11 reflected into itself where β = π/p, at f_B = (c/2π) √((x′₁₁/r₀)² + (π/p)²) = 11.8896 GHz for r₀ = 12 mm, p = 16 mm; a small ripple (h = 1 mm) opens its stop band about f_B (inside it Re β p = π exactly, the wave decaying) and leaves the guide passing at 0.9 f_B",
+ "quantities": [
+  {
+   "id": "phase_at_bragg",
+   "quantity": "the Bloch phase per period at f_B (degrees)",
+   "measure": {
+    "step": "bloch",
+    "pointer": "/points/1/phase"
+   },
+   "value": 180.0,
+   "tolerance": {
+    "absolute": 0.01
+   },
+   "reason": "inside the stop band the phase is π exactly; outside it would differ from 180° by the gap's half-width over the band's slope, about 2°"
+  },
+  {
+   "id": "passing_below",
+   "quantity": "the attenuation at 0.9 f_B (1/m)",
+   "measure": {
+    "step": "bloch",
+    "pointer": "/points/0/alpha"
+   },
+   "value": 0.0,
+   "tolerance": {
+    "absolute": 0.001
+   },
+   "reason": "a pass band: the transfer matrix's eigenvalue on the unit circle to rounding"
+  }
+ ]
+}

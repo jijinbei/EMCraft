@@ -241,7 +241,14 @@ pub struct Views {
     /// when none, or when it names nothing now.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub driven: Option<String>,
+    /// The last pulse `results.pulse` sent, its parameters as given: the pulse view's, kept
+    /// with the project (a template's own).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pulse: Option<serde_json::Value>,
 }
+
+/// The longest the pulse's parameters may be, written (bytes).
+const MAX_PULSE_PARAMS: usize = 4096;
 
 impl Views {
     /// The style of chart `id` (the default when it has none).
@@ -258,6 +265,7 @@ impl Views {
             && self.driven.is_none()
             && self.hidden_materials.is_empty()
             && self.hidden_geometry.is_empty()
+            && self.pulse.is_none()
     }
 
     /// The views as read from a project file, checked: charts the engine knows, styles within
@@ -294,6 +302,9 @@ impl Views {
         {
             return Err(EngineError::failed("views: invalid hidden material names"));
         }
+        if self.pulse.as_ref().is_some_and(|v| !v.is_object() || v.to_string().len() > MAX_PULSE_PARAMS) {
+            return Err(EngineError::failed("views: the pulse's parameters are not an object or too long"));
+        }
         if self.hidden_geometry.len() > crate::visibility::MAX_HIDDEN {
             return Err(EngineError::failed("views: invalid geometry visibility"));
         }
@@ -312,6 +323,7 @@ impl Views {
             driven: self.driven,
             hidden_materials: self.hidden_materials,
             hidden_geometry: self.hidden_geometry,
+            pulse: self.pulse,
         })
     }
 }

@@ -128,6 +128,11 @@ impl EmcraftApp {
 
     /// A project or sample opened, a script run, a new or saved project.
     fn after_file(&mut self, id: &str, reply: &Value) {
+        // Another project: its own pulse, sent again when its view opens.
+        if id != "file.save" {
+            self.replies.pulse = None;
+            self.views.pulse = crate::state::PulseState::default();
+        }
         if matches!(id, "file.open" | "file.save")
             && let Some(path) = reply.get("path").and_then(Value::as_str)
         {

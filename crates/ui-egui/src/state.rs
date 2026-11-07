@@ -161,6 +161,8 @@ pub struct PulseState {
     pub params: PulseParams,
     pub runs: u64,
     pub frequency: bool,
+    /// Whether the project's own pulse (its views') was sent for once since it opened.
+    pub restored: bool,
     pub chart: Cached<PictureKey<PulseKey>>,
 }
 

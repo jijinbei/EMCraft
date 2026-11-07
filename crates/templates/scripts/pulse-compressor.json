@@ -1,0 +1,10 @@
+[
+ {"command": "project.variable", "params": {"name": "r0", "label": "guide radius", "value": 12, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "h", "label": "corrugation depth", "value": 3, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "p", "label": "corrugation period", "value": 16, "quantity": "length"}},
+ {"command": "geometry.import", "params": {"path": "template:corrugated-cell.solidcraft", "parameters": {"r0": "=r0", "h": "=h", "p": "=p"}, "materials": {"guide": "interior"}}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},
+ {"command": "solve.revolution.bloch", "params": {"start": "=1.35*87.85/r0", "stop": "=sqrt((87.85/r0)^2 + (149.9/p)^2) - 0.1*h", "points": 121, "m": 1, "modes": 4}},
+ {"command": "results.pulse", "params": {"frequency": "=sqrt((87.85/r0)^2 + (149.9/p)^2) - 0.2*h", "width": 20, "length": 3000, "chirp": "optimized"}}
+]

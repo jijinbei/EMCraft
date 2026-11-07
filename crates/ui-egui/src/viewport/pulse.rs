@@ -20,6 +20,18 @@ impl ChartView for Pulse {
     const HEIGHT: Height = Height::new(0.8, 260.0, 700.0);
 
     fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) -> Option<Self::Key> {
+        // A project with a pulse of its own (a template's, a file's): sent once, its settings
+        // the view's.
+        let pulse = &mut st.views.pulse;
+        if app.replies.pulse.is_none()
+            && !pulse.restored
+            && !app.busy()
+            && let Some(own) = app.session.views().pulse.clone()
+        {
+            pulse.restored = true;
+            pulse.params = crate::state::PulseParams::of(&own);
+            out.push(Action::run("results.pulse", own));
+        }
         controls(app, &mut st.views.pulse, ui, out);
         app.replies.pulse.as_ref().map(|_| crate::state::PulseKey { run: st.views.pulse.runs, frequency: st.views.pulse.frequency })
     }

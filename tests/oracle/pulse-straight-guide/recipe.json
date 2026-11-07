@@ -1,0 +1,7 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 10, "length": 16}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 3}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 3}},
+ {"command": "solve.revolution.bloch", "params": {"start": 11, "stop": 14, "points": 31, "m": 1, "size": 0.5}, "id": "bloch"},
+ {"command": "results.pulse", "params": {"frequency": 12.5, "width": 2, "length": 1000, "chirp": "none"}, "id": "pulse"}
+]

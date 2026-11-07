@@ -51,7 +51,7 @@ pub fn template_picture(name: &str, values: &Value, size: [usize; 2]) -> Result<
     let steps: Vec<emcraft_engine::Step> = emcraft_engine::template_steps(name, values)
         .map_err(|e| e.to_string())?
         .into_iter()
-        .filter(|s| !s.command.starts_with("mesh.") && !s.command.starts_with("solve."))
+        .filter(|s| !["mesh.", "solve.", "results."].iter().any(|p| s.command.starts_with(p)))
         .collect();
     let mut s = Session::new();
     s.run_steps(&steps).map_err(|e| e.to_string())?;

@@ -1,0 +1,46 @@
+{
+ "title": "A pulse through a metre of straight circular guide, from one 16 mm cell's Bloch wave (radius 10 mm, TE11, 12.5 GHz)",
+ "kind": "theory",
+ "source": "Pozar, Microwave Engineering, 4th ed., §3.4: the circular guide's TE11, β = √(k² − (x′₁₁/a)²), v_g = c √(1 − (f_c/f)²), a length L delaying a pulse by τ = L/v_g and dispersing it by D = dτ/df = −L f_c² / (c f³ (1 − (f_c/f)²)^{3/2}); evaluated at 12.5 GHz for a = 10 mm, L = 1 m",
+ "quantities": [
+  {
+   "id": "beta",
+   "quantity": "the cell's Bloch β at 12.5 GHz (rad/m)",
+   "measure": {
+    "step": "bloch",
+    "pointer": "/points/15/beta"
+   },
+   "value": 186.37132865975008,
+   "tolerance": {
+    "absolute": 0.5
+   },
+   "reason": "0.5 mm triangles of the half-plane, linear elements: the guide's own wave within 0.3 %"
+  },
+  {
+   "id": "delay",
+   "quantity": "the pulse's group delay through 1 m (ns)",
+   "measure": {
+    "step": "pulse",
+    "pointer": "/delay"
+   },
+   "value": 4.688882763313727,
+   "tolerance": {
+    "absolute": 0.03
+   },
+   "reason": "the delay from β's slope between the sweep's points, 0.1 GHz apart"
+  },
+  {
+   "id": "dispersion",
+   "quantity": "its slope dτ/df (ns/GHz)",
+   "measure": {
+    "step": "pulse",
+    "pointer": "/dispersion"
+   },
+   "value": -0.3660963843219576,
+   "tolerance": {
+    "absolute": 0.02
+   },
+   "reason": "β's second difference, the sweep's points 0.1 GHz apart"
+  }
+ ]
+}
