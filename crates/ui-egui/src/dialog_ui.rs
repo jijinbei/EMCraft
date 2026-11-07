@@ -340,14 +340,29 @@ pub(crate) fn fields<L: crate::lang::Shown>(
     drawn
 }
 
+/// A table parameter's title and its line in words.
+fn table_words(name: &str) -> (&str, &str) {
+    match name {
+        "sections" => (tr(t!("Sections")), tr(t!("Along z from the start; a width and offset narrow one's aperture."))),
+        "layers" => (tr(t!("Layers")), tr(t!("From the floor up, across the whole guide."))),
+        "strips" => (tr(t!("Strips")), tr(t!("Conducting strips of no thickness on the plane y."))),
+        "vias" => (tr(t!("Vias")), tr(t!("Metal posts from y0 to y1 (floor to roof when left out)."))),
+        _ => (name, ""),
+    }
+}
+
 /// A table field: a row of cells per entry (sections, layers), each removable, and a button
 /// that adds one. The cells drawn, each with whether it takes text.
 fn table(ui: &mut egui::Ui, f: &mut Field, cols: &'static [Column], doc: &str, session: &emcraft_engine::Session) -> Vec<(egui::Id, bool)> {
     let t = &Tokens::get();
     let mut drawn = Vec::new();
     let name = f.name;
-    ui_kit::section(ui, format!("{name}{}", if f.required { " *" } else { "" }));
-    ui_kit::caption(ui, Raw(doc));
+    // A title and one line in words (the parameter's whole description, with its JSON form,
+    // on hover).
+    let (title, line) = table_words(name);
+    ui_kit::section(ui, format!("{}{}", title, if f.required { " *" } else { "" }));
+    let r = ui.add(egui::Label::new(egui::RichText::new(line).size(t.font_small).color(t.text_dim)).wrap());
+    crate::math::tip(r, doc);
     let materials: Vec<String> = session.model().materials.iter().map(|m| m.name.clone()).collect();
     let mut remove = None;
     egui::Grid::new(("table", name)).num_columns(cols.len() + 1).spacing(vec2(4.0, 3.0)).show(ui, |ui| {
