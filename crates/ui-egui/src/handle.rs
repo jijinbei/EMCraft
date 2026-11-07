@@ -125,6 +125,8 @@ emcraft_macros::named_enum! {
         StepMaterial = "step:material",
         /// The message line's toggle: the earlier messages shown or hidden.
         MessagesToggle = "messages:toggle",
+        /// The quantity bar over the 3D view when the field is drawn on the model.
+        View3dQuantity = "view3d:quantity",
         // The step panels.
         ExcitationPreview = "excitation:preview",
         SetupBand = "setup:band",

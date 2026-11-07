@@ -383,7 +383,7 @@ fn tex_pill(tex: &str, on: bool) -> egui::Button<'static> {
 /// The coloured quantity in two choices: the field (E or H), then its part — the magnitude, a
 /// Cartesian component or the one normal to the plane; with no text field focused, the keys
 /// X, Y, Z, N and M choose the part.
-fn component_choice(field: &mut FieldState, ui: &mut egui::Ui) {
+pub(super) fn component_choice(field: &mut FieldState, ui: &mut egui::Ui) {
     use emcraft_engine::view::{Component, Field, Part};
     let now = field.view.component;
     let (mut f, mut part) = (now.field(), now.part());
