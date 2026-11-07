@@ -1,10 +1,46 @@
 {
  "title": "WR-90 whose broad wall waves, a = 22.86 + 2 sin(2πz/10) mm for four periods between 10 mm leads, a SolidCraft design with the wave an equation curve: S21 at 10 GHz",
  "kind": "theory",
- "source": "The same wall cut into steps (160, 320 and 640 over the four periods, each as wide as the wave at its middle) and solved by mode matching of TE_m0 modes at every step, cascaded as generalised scattering matrices (A. Wexler, IEEE Trans. MTT 15(9):508–517, 1967; 320 modes): ∠S21 −171.958°, −172.163°, −172.274°, converging geometrically (ratio 0.54) to −172.405°, extrapolated; |S11| 0.00825 with 640 steps",
+ "source": "The smooth wall itself, solved as the two-dimensional problem it is (emcraft_theory::wall::SmoothGuide): between the side walls the TE10 harmonic's field E_y obeys the Helmholtz equation in the plane of the waving wall, E_y = 0 on it; the guide mapped onto a rectangle (η = x/a(z)) with the wall exact at every quadrature point, spectral elements of degree 8 (480 along, 6 across), the ends closed by their modal conditions (24 modes) — 0.001° from 240 × 4 elements: ∠S21 −172.366°, |S11| 0.0082. Mode matching of the wall cut into steps agrees here, the field being zero on the wall (−172.27° at 640 steps, within 0.1° of the smooth wall from 1280; a heavy test keeps the two together)",
  "quantities": [
-  {"id": "s21_phase", "quantity": "phase of S21 at 10 GHz (degrees)", "measure": {"step": "solve", "pointer": "/points/0/s21/deg"}, "value": -172.405, "tolerance": {"absolute": 0.5}, "reason": "the smooth wall meshed with 2 mm tetrahedra at order 2 (133 000 unknowns), its curved face as flat triangles: −172.646°, −172.586° at 1.5 mm (268 000), so about −172.5° converged; the steps' limit is good to about 0.1°"},
-  {"id": "s21_mag", "quantity": "|S21| at 10 GHz", "measure": {"step": "solve", "pointer": "/points/0/s21/mag"}, "value": 0.999966, "tolerance": {"absolute": 0.0005}, "reason": "lossless: |S21|² = 1 − |S11|² to rounding"},
-  {"id": "s11_mag", "quantity": "|S11| at 10 GHz", "measure": {"step": "solve", "pointer": "/points/0/s11/mag"}, "value": 0.00825, "tolerance": {"absolute": 0.002}, "reason": "a small reflection, the wave's four periods nearly cancelling: 0.0078 at 2 mm"}
+  {
+   "id": "s21_phase",
+   "quantity": "phase of S21 at 10 GHz (degrees)",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s21/deg"
+   },
+   "value": -172.366,
+   "tolerance": {
+    "absolute": 0.4
+   },
+   "reason": "the wall meshed as flat triangles with 2 mm tetrahedra at order 2 (133 000 unknowns): −172.646°, 0.28° off, the facets' answer as for the E-plane wall"
+  },
+  {
+   "id": "s21_mag",
+   "quantity": "|S21| at 10 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s21/mag"
+   },
+   "value": 0.999966,
+   "tolerance": {
+    "absolute": 0.0005
+   },
+   "reason": "lossless: |S21|² = 1 − |S11|² to rounding"
+  },
+  {
+   "id": "s11_mag",
+   "quantity": "|S11| at 10 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s11/mag"
+   },
+   "value": 0.0082,
+   "tolerance": {
+    "absolute": 0.002
+   },
+   "reason": "a small reflection, the wave's four periods nearly cancelling: 0.0078 at 2 mm"
+  }
  ]
 }

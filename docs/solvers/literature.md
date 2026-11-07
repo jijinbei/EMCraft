@@ -188,6 +188,12 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   Passive Structures*, Wiley 1989, ch. 9; J. Uher, J. Bornemann, U. Rosenberg, *Waveguide
   Components for Antenna Feed Systems: Theory and CAD*, Artech House 1993 — mode matching and
   generalised scattering matrices (`emcraft-theory::modematch`).
+- A. Bayliss, M. Gunzburger, E. Turkel, *Boundary conditions for the numerical solution of
+  elliptic equations in exterior regions*, SIAM J. Appl. Math. 42(2):430–451, 1982; J. Jin, *The
+  Finite Element Method in Electromagnetics*, 3rd ed., Wiley 2014, §9.3 — a guide whose wall
+  moves smoothly solved as its two-dimensional problem, the wall exact (mapped spectral
+  elements), the ends closed by their modal conditions (`emcraft-theory::wall`: the
+  corrugation oracles' reference, where steps of a narrow wall do not converge).
 - H. Patzelt, F. Arndt, *Double-plane steps in rectangular waveguides and their application for
   transformers, irises, and filters*, IEEE Trans. MTT 30(5):771–776, 1982 — the vector TE_mn
   and TM_mn mode matching of a step in width and height at once, each junction's field

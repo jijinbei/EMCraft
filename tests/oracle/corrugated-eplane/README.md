@@ -7,15 +7,18 @@ template's guide. A SolidCraft design compiled into EMCraft
 waving side an equation curve; imported as the region, meshed with 2 mm tetrahedra, solved at
 order 2.
 
-The reference is independent of the finite elements: the wall cut into steps in height,
-solved by mode matching (`emcraft-theory`), its limit as the steps shrink extrapolated from
-160, 320 and 640 steps. The two stand about 0.3° apart (152.70° and 152.52°): the finite
-elements' curved face is faceted, and a step in height carries a field singular at its edge,
-so neither is exact to better than about 0.2°.
+The reference is independent of the finite elements: the smooth wall itself, solved as the
+two-dimensional problem it is (`emcraft_theory::wall`): TE₁₀'s potential H_x between the side
+walls obeys the Helmholtz equation in the y–z plane, its normal derivative zero on the wall,
+the wall exact at every quadrature point of spectral elements: ∠S21 152.444°, converged to a
+thousandth of a degree. The finite elements stand 0.25° from it (152.695°): their wall is flat
+triangles, and the field, normal to it, is singular at the facets' corners. Mode matching of
+the wall cut into steps, the first reference, does not converge here (each step's edge is
+singular in the same way): it moved with the number of steps and of modes alike, 152.3°–152.5°.
 
 What it shows: TE10's propagation constant does not depend on the narrow wall's height, so the
 slow-variation estimate ∫β dz predicts no change at all; yet S21 lags a straight guide's
-−βL = −543.98° by 23.3°. The corrugation loads the guide with the evanescent modes it stirs
+−βL = −543.98° by 23.6°. The corrugation loads the guide with the evanescent modes it stirs
 up — reactively, as a capacitive iris does — and slows the wave: the delay grows from 13° at
 8.2 GHz to 47° at 12.4 GHz, towards the Bragg band where 2β = 2π/p (about 16 GHz). A broad
 wall waving the same way advances the phase instead (`corrugated-hplane`).
