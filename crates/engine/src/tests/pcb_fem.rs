@@ -211,7 +211,7 @@ fn a_line_run_into_the_open_boundary_is_matched() {
 fn the_four_layer_example_board_meshes_and_its_route_crosses_layers() {
     let mut s = Session::new();
     s.execute("file.sample", &json!({"name": "pcb-board"})).unwrap();
-    let board = s.model().pcb.clone().unwrap();
+    let board = s.model().pcb().cloned().unwrap();
     assert_eq!(board.layers.len(), 4);
     // The route's two free ends are its pads; its via joins the layers.
     let ends = crate::pcb_fem::route_ends(&board, "DATA");
@@ -251,7 +251,7 @@ fn lumped_ports_in_a_shielded_board_are_no_warning_for_s_parameters() {
 fn the_example_boards_planes_have_no_hole_but_their_clearances() {
     let mut s = Session::new();
     s.execute("file.sample", &json!({"name": "pcb-board"})).unwrap();
-    let board = s.model().pcb.clone().unwrap();
+    let board = s.model().pcb().cloned().unwrap();
     // Even–odd: a point is copper when a ray from it crosses the outline an odd number of times.
     let inside = |poly: &[[f64; 2]], [x, y]: [f64; 2]| {
         let mut odd = false;
@@ -332,14 +332,14 @@ fn a_board_is_edited_by_commands_and_undone() {
     let mut s = Session::new();
     s.execute("pcb.sample", &json!({"split": false, "neighbour": false})).unwrap();
     let count = |s: &Session| {
-        let b = s.model().pcb.as_ref().unwrap();
+        let b = s.model().pcb().unwrap();
         (b.segments.len(), b.vias.len(), b.copper.len())
     };
     let before = count(&s);
     let r = s.execute("pcb.segment", &json!({"net": "DATA", "layer": "F.Cu", "start": [45, 10], "end": [45, 15], "width": 0.3})).unwrap();
     let id = r["id"].as_str().unwrap().to_owned();
     s.execute("pcb.segment", &json!({"id": id, "width": 0.5})).unwrap();
-    approx::assert_abs_diff_eq!(s.model().pcb.as_ref().unwrap().segments.last().unwrap().width, 0.5e-3, epsilon = 1e-15);
+    approx::assert_abs_diff_eq!(s.model().pcb().unwrap().segments.last().unwrap().width, 0.5e-3, epsilon = 1e-15);
     s.execute("pcb.via", &json!({"net": "DATA", "at": [45, 15], "layers": ["F.Cu", "B.Cu"], "diameter": 0.6, "drill": 0.3})).unwrap();
     s.execute("pcb.pour", &json!({"net": "PWR", "layer": "F.Cu", "polygon": [[60, 0], [70, 0], [70, 5]]})).unwrap();
     assert_eq!(count(&s), (before.0 + 1, before.1 + 1, before.2 + 1));

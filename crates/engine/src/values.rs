@@ -169,7 +169,7 @@ fn shape(shape: &Shape, d: Display) -> Value {
         Shape::Box { size } => json!({"shape": "box", "size": [l(size.x), l(size.y), l(size.z)]}),
         Shape::Cylinder { radius, length } => json!({"shape": "cylinder", "radius": l(radius.get()), "length": l(length.get())}),
         Shape::Sphere { radius } => json!({"shape": "sphere", "radius": l(radius.get())}),
-        Shape::Surface { .. } | Shape::Sheet { .. } => json!({}),
+        Shape::Surface { .. } | Shape::Sheet { .. } | Shape::Board(_) => json!({}),
     }
 }
 

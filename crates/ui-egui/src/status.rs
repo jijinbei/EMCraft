@@ -39,7 +39,7 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
     let (p, r) = (Reply(params), Reply(reply));
     let unit = session.display().frequency.symbol();
     match id {
-        "file.sample" if session.results().any() || session.model().pcb.is_some() => trf(t!("Opened sample {name}."), args!(name = p.text("name"))),
+        "file.sample" if session.results().any() || session.model().pcb().is_some() => trf(t!("Opened sample {name}."), args!(name = p.text("name"))),
         "file.sample" => trf(t!("Opened sample {name}; Run (step 7) solves it."), args!(name = p.text("name"))),
         "file.open" if !p.text("original").is_empty() => trf(t!("Recovered {name}."), args!(name = r.text("name"))),
         "file.open" => {

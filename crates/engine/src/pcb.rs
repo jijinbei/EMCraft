@@ -170,7 +170,7 @@ impl Diagnosis {
 /// assert_eq!(stage(&Session::new()), Stage::Board);
 /// ```
 pub fn stage(s: &Session) -> Stage {
-    match s.model.pcb {
+    match s.model.pcb() {
         Some(_) => s.views.pcb_stage.unwrap_or(Stage::Board),
         None => Stage::Board,
     }
@@ -180,7 +180,7 @@ pub fn stage(s: &Session) -> Stage {
 pub fn view(s: &mut Session, p: &Params) -> Result<Value> {
     let stage = p.pick::<Stage>("stage").optional()?.unwrap_or_else(|| stage(s));
     let net = p.string("net").optional()?;
-    let board = s.model.pcb.as_ref();
+    let board = s.model.pcb();
     if stage != Stage::Board && board.is_none() {
         return Err(failed("load a PCB before continuing"));
     }
@@ -230,7 +230,7 @@ fn install(s: &mut Session, board: Board) -> Result<Value> {
     board.check()?;
     let reply = json!({"board": board.name, "segments": board.segments.len(), "layers": board.layers.len(), "notes": board.notes});
     s.model = emcraft_model::Model::default();
-    s.model.pcb = Some(board);
+    s.model.set_pcb(Some(board));
     s.views.pcb = Diagnosis::Unrouted;
     s.views.pcb_illustration = Illustration::default();
     s.views.pcb_stage = None;
@@ -329,7 +329,7 @@ pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
 pub fn conditions(s: &mut Session, p: &Params) -> Result<Value> {
     let base = s.views.pcb.conditions().cloned().unwrap_or_default();
     let c = Conditions::read(p, &base)?;
-    let board = s.model.pcb.as_ref().ok_or_else(|| failed("load a PCB with pcb.import, pcb.load or pcb.sample"))?;
+    let board = s.model.pcb().ok_or_else(|| failed("load a PCB with pcb.import, pcb.load or pcb.sample"))?;
     if !board.copper.iter().any(|x| x.net == c.ground) && !board.segments.iter().any(|x| x.net == c.ground) {
         return Err(p.error("ground", "names no net of this board"));
     }
@@ -342,7 +342,7 @@ pub fn conditions(s: &mut Session, p: &Params) -> Result<Value> {
 pub fn inspect(s: &mut Session, p: &Params) -> Result<Value> {
     let c = Conditions::read(p, &s.views.pcb.conditions().cloned().unwrap_or_default())?;
     let (ground, reference, stop) = (c.ground.as_str(), c.reference, c.stop_hz);
-    let board = s.model.pcb.as_ref().ok_or_else(|| failed("load a PCB with pcb.import, pcb.load or pcb.sample"))?;
+    let board = s.model.pcb().ok_or_else(|| failed("load a PCB with pcb.import, pcb.load or pcb.sample"))?;
     let net = p
         .string("net")
         .optional()?

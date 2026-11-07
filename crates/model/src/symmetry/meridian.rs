@@ -179,7 +179,7 @@ fn outline(shape: &crate::Shape, at: crate::Point3, axis: crate::Axis, size: f64
             lines.extend((0..n).map(|k| ([q(k), q(k + 1)], sagitta)));
         }
         crate::Shape::Box { .. } => return Err("is a box, not a body of revolution".into()),
-        crate::Shape::Sheet { .. } => return Err("is a sheet (no volume to revolve)".into()),
+        crate::Shape::Sheet { .. } | crate::Shape::Board(_) => return Err("is a sheet (no volume to revolve)".into()),
         crate::Shape::Surface { positions, triangles, .. } => {
             if triangles.len() > MAX_SECTION_TRIANGLES {
                 return Err(format!("has more than {MAX_SECTION_TRIANGLES} triangles"));

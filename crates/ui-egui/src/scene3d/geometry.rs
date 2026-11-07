@@ -75,6 +75,8 @@ fn shape(s: &mut Scene, sh: &Shape, place: &dyn Fn([f64; 3]) -> [f64; 3], color:
                 s.line(at(i, nv / 2), at(i + 1, nv / 2), sc().edge, 160);
             }
         }
+        // A board is drawn by its own view (crate::viewport::pcb).
+        Shape::Board(_) => {}
         Shape::Sheet { size: [a, b] } => {
             let c = [[0.0, 0.0], [a.get(), 0.0], [a.get(), b.get()], [0.0, b.get()]].map(|[u, v]| place([u, v, 0.0]));
             s.quad(c, color, alpha);

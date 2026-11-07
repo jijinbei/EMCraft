@@ -37,7 +37,7 @@ impl Analysis {
     /// assert_eq!(Analysis::parse("transient"), None);
     /// ```
     pub fn infer(m: &Model) -> Analysis {
-        if m.pcb.is_some() {
+        if m.pcb().is_some() {
             Analysis::Pcb
         } else if !m.sources.is_empty() || !m.lumped.is_empty() || m.domain.open.is_some() {
             Analysis::Radiation

@@ -59,7 +59,7 @@ fn exact_resonances(s: &Session) -> Vec<(f64, String)> {
             Shape::Box { size } => emcraft_theory::cavity_resonances(size[0], size[1], size[2], er, 12),
             Shape::Cylinder { radius, length } => emcraft_theory::bessel::cylinder_cavity_resonances(radius.get(), length.get(), er, 12),
             Shape::Sphere { radius } => emcraft_theory::bessel::sphere_cavity_resonances(radius.get(), er, 12),
-            Shape::Surface { .. } | Shape::Sheet { .. } => Vec::new(),
+            Shape::Surface { .. } | Shape::Sheet { .. } | Shape::Board(_) => Vec::new(),
         };
     }
     Vec::new()

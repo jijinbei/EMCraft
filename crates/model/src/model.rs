@@ -28,8 +28,6 @@ pub const MAX_WALL_THICKNESS: f64 = 1.0;
 /// The model.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Model {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pcb: Option<crate::pcb::Board>,
     pub materials: Vec<Material>,
     /// The region solved and what bounds it (crate::domain).
     #[serde(default)]
@@ -91,7 +89,6 @@ impl Default for Model {
     /// An empty model with one material, vacuum.
     fn default() -> Model {
         Model {
-            pcb: None,
             materials: vec![Material::vacuum()],
             domain: crate::domain::Domain::default(),
             bodies: Vec::new(),
@@ -120,6 +117,35 @@ impl Model {
     /// The waveguide the bodies make, when they make one ([`Waveguide::of_bodies`]).
     pub fn waveguide(&self) -> Option<&Waveguide> {
         self.view.guide(&self.bodies)
+    }
+
+    /// The printed circuit board among the bodies, if there is one.
+    pub fn pcb(&self) -> Option<&crate::pcb::Board> {
+        self.bodies.iter().find_map(|b| match &b.shape {
+            Shape::Board(board) => Some(&**board),
+            _ => None,
+        })
+    }
+
+    /// Sets the board (first among the bodies, in place of the last one), or takes it out.
+    pub fn set_pcb(&mut self, board: Option<crate::pcb::Board>) {
+        let is_board = |b: &Body| b.kind == crate::body::Kind::Board;
+        if board.is_none() && !self.bodies.iter().any(is_board) {
+            return;
+        }
+        let mut bodies = self.bodies_mut();
+        bodies.retain(|b| !is_board(b));
+        if let Some(board) = board {
+            let body = Body {
+                shape: Shape::Board(Box::new(board)),
+                at: Point3::ORIGIN,
+                axis: crate::Axis::Z,
+                fill: crate::body::Fill::Metal,
+                kind: crate::body::Kind::Board,
+                name: None,
+            };
+            bodies.insert(0, body);
+        }
     }
 
     /// Takes the waveguide's bodies out (the region is another's).
@@ -201,7 +227,7 @@ impl Model {
     /// Clears what was placed in the geometry just replaced: inclusions, features, the open
     /// boundary, sources, lumped ports and the mesh.
     fn drop_what_fits_the_old_geometry(&mut self) {
-        self.pcb = None;
+        self.set_pcb(None);
         self.bodies_mut().clear();
         self.domain.open = None;
         self.sources.clear();
@@ -343,7 +369,7 @@ impl Model {
             || self.domain.rotation.is_some()
             || self.domain.periodic.is_some()
             || self.waveguide().is_some()
-            || self.pcb.is_some()
+            || self.pcb().is_some()
         {
             return Err(invalid("move", "not supported for symmetry planes, a rotation, periodic boundaries, a waveguide or a board"));
         }

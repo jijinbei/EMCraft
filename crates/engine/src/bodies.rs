@@ -213,7 +213,13 @@ fn part_body_material(s: &mut Session, name: &str, material: &str) -> Result<Val
     m.insert(name.to_owned(), json!(material));
     // The bodies drawn since (not the part's own, which carry their names) are placed again
     // after it, in their order; one the new region cannot hold is left out and named.
-    let drawn: Vec<emcraft_model::Body> = s.model.bodies().iter().filter(|b| !b.is_part() && b.name.is_none()).cloned().collect();
+    let drawn: Vec<emcraft_model::Body> = s
+        .model
+        .bodies()
+        .iter()
+        .filter(|b| matches!(b.kind, emcraft_model::Kind::Combined | emcraft_model::Kind::Apart) && b.name.is_none())
+        .cloned()
+        .collect();
     let vars = s.variables().clone();
     let reader = Params::new(&params, s.display).with_variables(&vars);
     let reply = crate::geometry::import(s, &reader)?;
@@ -270,6 +276,7 @@ fn edited_shape(p: &Params, old: &Shape) -> Result<Shape> {
         }
         (None | Some(Primitive::Sphere), Shape::Sphere { radius }) => Shape::Sphere { radius: p.edit_metres("radius", *radius)? },
         (None, Shape::Sheet { .. }) => return Err(p.error("shape", "a sheet is a guide's strip: edit it with geometry.waveguide")),
+        (None, Shape::Board(_)) => return Err(p.error("shape", "a board is edited with the pcb commands")),
         (None, Shape::Surface { .. }) => {
             if let Some(k) = ["size", "radius", "length"].into_iter().find(|k| p.has(k)) {
                 return Err(p.error(k, "is a primitive's: an imported body's shape is its file's (its `at`, `axis` and `material` change)"));

@@ -205,7 +205,7 @@ impl crate::Model {
                 let centre = [0.5 * size.x, 0.5 * size.y];
                 fits(4, centre).then_some(FoundRotation { centre, most: Some(4) })
             }
-            crate::Shape::Sheet { .. } => None,
+            crate::Shape::Sheet { .. } | crate::Shape::Board(_) => None,
             crate::Shape::Surface { positions, .. } => {
                 let b = solid.shape.bounds();
                 let q = 1e-6 * (b.max - b.min).norm().max(f64::MIN_POSITIVE);
@@ -251,7 +251,7 @@ impl crate::Model {
             crate::Shape::Cylinder { .. } | crate::Shape::Sphere { .. } => [0.0, 0.0],
             crate::Shape::Box { size } => [0.5 * size.x, 0.5 * size.y],
             crate::Shape::Surface { .. } => return None,
-            crate::Shape::Sheet { .. } => return Some("a sheet is no region".into()),
+            crate::Shape::Sheet { .. } | crate::Shape::Board(_) => return Some("a sheet is no region".into()),
         };
         self.rotation_issue_of(&Rotation { n: 4, m: 0, centre })
     }
@@ -362,7 +362,7 @@ impl crate::Model {
                     }
                     Ok(())
                 }
-                crate::Shape::Sheet { .. } => Err("a sheet is no region".into()),
+                crate::Shape::Sheet { .. } | crate::Shape::Board(_) => Err("a sheet is no region".into()),
                 crate::Shape::Surface { positions, .. } => {
                     let key = |p: crate::Point3| {
                         [(p.x / (1e-6 * scale)).round() as i64, (p.y / (1e-6 * scale)).round() as i64, (p.z / (1e-6 * scale)).round() as i64]

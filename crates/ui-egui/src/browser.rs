@@ -295,7 +295,7 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
     let f = Fmt::new(&app.session);
     let m = app.session.model();
     let mut sections = Vec::new();
-    if let Some(board) = m.pcb.as_ref().filter(|_| m.analysis() == crate::steps::Solver::Pcb) {
+    if let Some(board) = m.pcb().filter(|_| m.analysis() == crate::steps::Solver::Pcb) {
         let mut rows = vec![node("pcb", words(t!("PCB"), &[]), Some(own(&board.name)), Glyph::Box, Act::Show(View::Pcb))];
         let nets: std::collections::BTreeSet<_> = board.segments.iter().map(|s| s.net.as_str()).collect();
         for net in nets.into_iter().take(128) {

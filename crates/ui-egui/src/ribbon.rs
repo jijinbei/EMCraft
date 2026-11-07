@@ -317,7 +317,7 @@ impl Panel {
 /// The tab's panels and their commands; SIMULATE's with the solve of the kind of analysis chosen
 /// at step 0 first (its panel first, the solve first in it).
 fn chosen_kind(app: &EmcraftApp) -> Option<crate::steps::Solver> {
-    app.session.model().job.chosen().or_else(|| app.session.model().pcb.as_ref().map(|_| crate::steps::Solver::Pcb))
+    app.session.model().job.chosen().or_else(|| app.session.model().pcb().map(|_| crate::steps::Solver::Pcb))
 }
 
 fn ordered(app: &EmcraftApp, panels: &'static [(&'static str, &'static [&'static str])]) -> Vec<Panel> {
@@ -337,7 +337,7 @@ fn ordered(app: &EmcraftApp, panels: &'static [(&'static str, &'static [&'static
 /// Whether what a ribbon command works on is there: a board's edits need a board.
 fn ready(app: &EmcraftApp, id: &str) -> bool {
     match id {
-        "pcb.segment" | "pcb.via" | "pcb.pour" | "pcb.element" => app.session.model().pcb.is_some(),
+        "pcb.segment" | "pcb.via" | "pcb.pour" | "pcb.element" => app.session.model().pcb().is_some(),
         _ => true,
     }
 }

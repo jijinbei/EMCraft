@@ -555,7 +555,7 @@ fn tour() -> Record {
     }
     h.frames(2);
     h.app.replies.pcb = saved;
-    let mut no_ground = h.app.session.model().pcb.clone().unwrap();
+    let mut no_ground = h.app.session.model().pcb().cloned().unwrap();
     no_ground.copper.clear();
     no_ground.map_lengths(|v| h.app.session.display().length.from_si(v));
     call(&mut h, "engine.execute", json!({"command":"pcb.load","params":{"data":no_ground}}));
@@ -564,7 +564,7 @@ fn tour() -> Record {
     h.frames(3);
     call(&mut h, "engine.execute", json!({"command":"pcb.sample","params":{"split":false}}));
     // A native copy without a neighbour reaches the clean-screening wording too.
-    let mut board = h.app.session.model().pcb.clone().unwrap();
+    let mut board = h.app.session.model().pcb().cloned().unwrap();
     board.segments.retain(|s| s.net == "DATA");
     board.map_lengths(|v| h.app.session.display().length.from_si(v));
     call(&mut h, "engine.execute", json!({"command":"pcb.load","params":{"data":board}}));

@@ -213,7 +213,7 @@ pub(crate) fn land(app: &mut EmcraftApp, opened: bool) {
         return;
     }
     let r = app.session.results();
-    if opened && app.session.model().pcb.is_none() && !r.any() && r.study.is_none() {
+    if opened && app.session.model().pcb().is_none() && !r.any() && r.study.is_none() {
         crate::steps::open_step(app, Some(crate::steps::Step::Geometry));
     }
 }

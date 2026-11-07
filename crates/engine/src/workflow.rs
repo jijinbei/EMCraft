@@ -319,7 +319,7 @@ pub fn cutoffs(s: &Session) -> Vec<Cutoff> {
 pub fn steps(s: &Session) -> [StepState; 9] {
     if s.model.analysis() == Analysis::Pcb {
         let mut states = Step::ALL.map(StepState::new);
-        if s.model.pcb.is_none() {
+        if s.model.pcb().is_none() {
             states[Step::Geometry.index()].note(Status::Todo, emcraft_i18n::text!("Import a PCB or open a PCB template."), Some("pcb.import"));
             states[Step::Run.index()].note(Status::Waiting, emcraft_i18n::text!("Import a PCB or open a PCB template."), Some("pcb.import"));
         } else {

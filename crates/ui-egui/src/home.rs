@@ -55,7 +55,7 @@ pub fn template_picture(name: &str, values: &Value, size: [usize; 2]) -> Result<
         .collect();
     let mut s = Session::new();
     s.run_steps(&steps).map_err(|e| e.to_string())?;
-    if let Some(board) = &s.model().pcb {
+    if let Some(board) = s.model().pcb() {
         let t = Tokens::get();
         let rgb = crate::theme::rgb;
         let canvas = emcraft_render::pcb::preview(board, size, rgb(t.panel), rgb(t.panel).mix(rgb(t.success), 0.25), rgb(t.warning))?;

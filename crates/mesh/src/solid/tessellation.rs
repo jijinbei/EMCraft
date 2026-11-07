@@ -214,7 +214,7 @@ pub(super) fn tessellate(shape: &Shape, size: f64) -> Tessellation {
         Shape::Sphere { radius } => tessellate_sphere(radius.get(), size),
         Shape::Surface { .. } => tessellate_surface(shape),
         // A sheet bounds no volume (strips are the extrusion mesher's).
-        Shape::Sheet { .. } => Tessellation::default(),
+        Shape::Sheet { .. } | Shape::Board(_) => Tessellation::default(),
     }
 }
 
@@ -267,7 +267,7 @@ fn exact(f: FaceSurface) -> AnalyticSurface {
 pub(super) fn interface_size(shape: &Shape, size: f64, conductor: bool) -> f64 {
     let per = if conductor { 6.0 } else { 16.0 };
     match *shape {
-        Shape::Box { .. } | Shape::Surface { .. } | Shape::Sheet { .. } => size,
+        Shape::Box { .. } | Shape::Surface { .. } | Shape::Sheet { .. } | Shape::Board(_) => size,
         Shape::Cylinder { radius, .. } | Shape::Sphere { radius } => size.min(radius * PI / per),
     }
 }
@@ -327,7 +327,7 @@ fn flat_faces(shape: &Shape, at: Point3, axis: Axis) -> Vec<FlatFace> {
             let d = axis.index();
             FlatFace::pair(d, at[d], at[d] + length).to_vec()
         }
-        Shape::Sphere { .. } | Shape::Surface { .. } | Shape::Sheet { .. } => Vec::new(),
+        Shape::Sphere { .. } | Shape::Surface { .. } | Shape::Sheet { .. } | Shape::Board(_) => Vec::new(),
     }
 }
 
@@ -689,7 +689,7 @@ pub(super) fn grid_axes(shape: &Shape, axis: Axis) -> &'static [usize] {
             Axis::Y => &[1],
             Axis::Z => &[2],
         },
-        Shape::Sphere { .. } | Shape::Surface { .. } | Shape::Sheet { .. } => &[],
+        Shape::Sphere { .. } | Shape::Surface { .. } | Shape::Sheet { .. } | Shape::Board(_) => &[],
     }
 }
 

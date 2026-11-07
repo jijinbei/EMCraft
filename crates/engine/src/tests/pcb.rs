@@ -17,14 +17,14 @@ fn board_import_is_embedded_saved_undoable_and_diagnostics_are_explicit() {
     s.execute("file.save", &json!({"path": project})).unwrap();
     let mut t = Session::new();
     t.execute("file.open", &json!({"path": project})).unwrap();
-    assert_eq!(s.model().pcb, t.model().pcb);
+    assert_eq!(s.model().pcb(), t.model().pcb());
     assert_eq!(t.views().pcb.net(), Some("DATA"));
     t.execute("pcb.sample", &json!({"split": true})).unwrap();
     let bad = t.execute("pcb.inspect", &json!({"net": "DATA"})).unwrap();
     assert!(bad["si"].is_null());
     assert_eq!(bad["model_available"], false);
     t.execute("edit.undo", &json!({})).unwrap();
-    assert_eq!(s.model().pcb, t.model().pcb);
+    assert_eq!(s.model().pcb(), t.model().pcb());
     let _ = std::fs::remove_file(project);
 }
 
@@ -43,7 +43,7 @@ fn board_commands_refuse_hostile_inputs_and_keep_the_model() {
         assert!(s.execute("pcb.inspect", &p).is_err());
         assert_eq!(s.model(), &before);
     }
-    let mut board = s.model().pcb.clone().unwrap();
+    let mut board = s.model().pcb().cloned().unwrap();
     board.segments[0].width = -1.0;
     assert!(s.execute("pcb.load", &json!({"data": board})).is_err());
     assert_eq!(s.model(), &before);
@@ -84,12 +84,12 @@ fn a_board_loaded_with_expressions_is_built_again_from_its_variables() {
     let mut s = Session::new();
     s.execute("file.sample", &json!({"name": "pcb-stub-filter", "values": {"l_stub": 6, "er": 9.8}})).unwrap();
     assert_eq!(s.model.analysis(), emcraft_model::Analysis::Frequency);
-    let board = s.model.pcb.as_ref().unwrap();
+    let board = s.model.pcb().unwrap();
     let stub = board.segments.iter().find(|g| g.id == "stub").unwrap();
     approx::assert_abs_diff_eq!(stub.end[1], 0.006, epsilon = 1e-12);
     assert_eq!(board.layers[0].eps_below, 9.8);
     s.execute("project.variable", &json!({"name": "l_stub", "value": 8})).unwrap();
-    let stub = s.model.pcb.as_ref().unwrap().segments.iter().find(|g| g.id == "stub").unwrap().clone();
+    let stub = s.model.pcb().unwrap().segments.iter().find(|g| g.id == "stub").unwrap().clone();
     approx::assert_abs_diff_eq!(stub.end[1], 0.008, epsilon = 1e-12);
     // An expression of a name the session does not hold: refused, nothing changed.
     let before = s.summary();

@@ -54,6 +54,9 @@ pub enum Kind {
     /// Placed in the extruded region: the cells it holds take its fill (a via); a sheet lies
     /// on their faces (a strip).
     Cells,
+    /// A printed circuit board ([`Shape::Board`]): with a region set, its copper is extruded
+    /// through its stack in the region.
+    Board,
 }
 
 /// A body.

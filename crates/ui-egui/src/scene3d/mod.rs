@@ -308,7 +308,7 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
     let m = session.model();
     if overlay == Overlay::Board {
         let mut out = Built::default();
-        if let Some(b) = &m.pcb {
+        if let Some(b) = m.pcb() {
             let route = session.views().pcb.net().unwrap_or("");
             let reference = session.views().pcb.conditions().map_or("GND", |c| c.ground.as_str());
             board::build(b, route, reference, &mut out);
@@ -338,7 +338,7 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
             extras::symmetry_planes(m, &mut out);
             extras::sector_cuts(m, &mut out);
             // A board's region before it is meshed: its copper and substrates in place.
-            if let Some(b) = &m.pcb {
+            if let Some(b) = m.pcb() {
                 board::in_model(b, &mut out);
             }
         }

@@ -22,6 +22,10 @@ pub enum Shape {
     Sphere { radius: Metres },
     /// A rectangle of no thickness, [0, a] × [0, b] on the plane z = 0 (a conducting strip).
     Sheet { size: [Metres; 2] },
+    /// A printed circuit board, its own (layers, routes, filled copper and vias: an imported
+    /// design keeps its nets and layers' names), in its own frame: the board's plane x–y, its
+    /// layers' heights z.
+    Board(Box<crate::pcb::Board>),
     /// A closed triangulated surface (imported): positions (m), outward triangles and a face
     /// tag per triangle; `surfaces[tag]` the face's exact surface where one was recovered from
     /// its vertices (a plane, cylinder, sphere, cone or torus fitted on import), else it is faceted.
@@ -323,6 +327,7 @@ impl Shape {
             Shape::Cylinder { .. } => "Cylinder",
             Shape::Sphere { .. } => "Sphere",
             Shape::Sheet { .. } => "Sheet",
+            Shape::Board(_) => "Board",
             Shape::Surface { .. } => "Surface",
         }
     }
@@ -340,6 +345,13 @@ impl Shape {
                 Aabb::new(Point3::new(-r, -r, -r), Point3::new(r, r, r))
             }
             Shape::Sheet { size: [a, b] } => Aabb::new(Point3::ORIGIN, Point3::new(a.get(), b.get(), 0.0)),
+            Shape::Board(ref b) => {
+                let ([x0, y0], [x1, y1]) = b.bounds().unwrap_or_default();
+                let zs = b.layers.iter().map(|l| l.z);
+                let (z0, z1) = zs.fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), z| (lo.min(z), hi.max(z)));
+                let (z0, z1) = if z0 <= z1 { (z0, z1) } else { (0.0, 0.0) };
+                Aabb::new(Point3::new(x0, y0, z0), Point3::new(x1, y1, z1))
+            }
             Shape::Surface { ref positions, .. } => Aabb::around(positions.iter().copied()).unwrap_or_default(),
         }
     }
@@ -351,7 +363,7 @@ impl Shape {
             Shape::Box { size } => (0..3).all(|d| p[d] > 0.0 && p[d] < size[d]),
             Shape::Cylinder { radius, length } => p.z > 0.0 && p.z < *length && p.x * p.x + p.y * p.y < *radius * *radius,
             Shape::Sphere { radius } => p.to_vec().norm_sqr() < *radius * *radius,
-            Shape::Sheet { .. } => false,
+            Shape::Sheet { .. } | Shape::Board(_) => false,
             Shape::Surface { ref positions, ref triangles, .. } => {
                 let total: f64 = triangles.iter().map(|t| solid_angle(t.map(|v| corner(positions, v) - p))).sum();
                 total / (4.0 * PI) > 0.5
@@ -374,7 +386,7 @@ impl Shape {
             Shape::Box { size } => size.x * size.y * size.z,
             Shape::Cylinder { radius, length } => PI * *radius * *radius * *length,
             Shape::Sphere { radius } => 4.0 / 3.0 * PI * radius.powi(3),
-            Shape::Sheet { .. } => 0.0,
+            Shape::Sheet { .. } | Shape::Board(_) => 0.0,
             Shape::Surface { ref positions, ref triangles, .. } => triangles
                 .iter()
                 .map(|t| {
@@ -390,6 +402,7 @@ impl Shape {
     pub fn check(&self) -> Result<()> {
         match self {
             Shape::Box { .. } | Shape::Cylinder { .. } | Shape::Sphere { .. } | Shape::Sheet { .. } => {}
+            Shape::Board(b) => b.check()?,
             Shape::Surface { positions, triangles, tags, surfaces, .. } => {
                 if surfaces.len() > triangles.len() {
                     return Err(invalid("surface", "has more face surfaces than triangles"));
@@ -442,6 +455,7 @@ impl Shape {
             Shape::Cylinder { radius, .. } => Ok(PortShape::Circle { cx: 0.0, cy: 0.0, r: radius.get() }),
             Shape::Sphere { .. } => Err(invalid("port", "a sphere has no flat end faces for ports")),
             Shape::Sheet { .. } => Err(invalid("port", "a sheet has no end faces for ports")),
+            Shape::Board(_) => Err(invalid("port", "a board's ports are on its region's sides (pcb.port)")),
             Shape::Surface { positions, triangles, .. } => {
                 let [start, stop] = self.end_triangles();
                 let tris = match end {
@@ -489,7 +503,7 @@ pub struct Solid {
 impl Solid {
     /// The shape's dimensions are finite and positive ([`Shape::check`]).
     pub fn check_shape(&self) -> Result<()> {
-        if matches!(self.shape, Shape::Sheet { .. }) {
+        if matches!(self.shape, Shape::Sheet { .. } | Shape::Board(_)) {
             return Err(invalid("region", "a sheet has no volume to fill"));
         }
         self.shape.check()

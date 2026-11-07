@@ -39,13 +39,13 @@ pub(crate) fn sync(app: &mut EmcraftApp) {
 
 /// The route chosen, while it is one of the board's.
 fn route(app: &EmcraftApp) -> Option<&str> {
-    app.session.views().pcb.net().filter(|n| app.session.model().pcb.as_ref().is_some_and(|b| b.segments.iter().any(|s| s.net == *n)))
+    app.session.views().pcb.net().filter(|n| app.session.model().pcb().is_some_and(|b| b.segments.iter().any(|s| s.net == *n)))
 }
 
 /// The PCB-specific workflow stays above the workspace, as the FEM workflow does.
 pub(crate) fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let current = emcraft_engine::pcb::stage(&app.session);
-    let loaded = app.session.model().pcb.is_some();
+    let loaded = app.session.model().pcb().is_some();
     let net = route(app);
     let ready = net.is_some_and(|n| report(app, n).is_some());
     // The conditions are set once confirmed as the form stands.
@@ -104,7 +104,7 @@ pub(crate) fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
-    let board = app.session.model().pcb.as_ref();
+    let board = app.session.model().pcb();
     let side = if board.is_some() { (area.width() * 0.36).clamp(300., 440.).min(area.width()) } else { area.width() };
     let panel = Rect::from_min_size(area.min, vec2(side, area.height()));
     let mut left = ui.new_child(egui::UiBuilder::new().max_rect(panel));
@@ -149,7 +149,7 @@ fn pick_route(app: &EmcraftApp, st: &mut Parts, board: &emcraft_model::pcb::Boar
 fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
     let stage = emcraft_engine::pcb::stage(&app.session);
     let state = &mut st.views.pcb;
-    let board = app.session.model().pcb.as_ref();
+    let board = app.session.model().pcb();
     let selected = route(app).unwrap_or("");
     let result = report(app, selected);
     let confirmed = app.session.views().pcb.conditions();
@@ -416,7 +416,7 @@ fn segments(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui
 /// impedance) and the job turned to S-parameters — the setup (the band proposed up to the
 /// maximum frequency), the mesh and the run are then the S-parameter steps', opened on the setup.
 fn fem(app: &EmcraftApp, c: &emcraft_engine::pcb::Conditions, ui: &mut egui::Ui, net: &str, out: &mut Actions) {
-    let Some(board) = app.session.model().pcb.as_ref() else { return };
+    let Some(board) = app.session.model().pcb() else { return };
     ui.add_space(8.);
     let ends = emcraft_engine::pcb_fem::route_ends(board, net);
     let stop = Some(app.session.display().frequency.from_si(c.stop_hz));
@@ -440,7 +440,7 @@ fn fem(app: &EmcraftApp, c: &emcraft_engine::pcb::Conditions, ui: &mut egui::Ui,
 }
 
 fn stackup(app: &EmcraftApp, ui: &mut egui::Ui, selected: &str, ground: &str) {
-    let Some(board) = app.session.model().pcb.as_ref() else {
+    let Some(board) = app.session.model().pcb() else {
         return;
     };
     ui.heading(tr(t!("Layer stackup (section)")));
@@ -487,7 +487,7 @@ fn stackup(app: &EmcraftApp, ui: &mut egui::Ui, selected: &str, ground: &str) {
 /// The board's top view filling `ui`: the reference copper filled, the routes as lines, the
 /// gaps the report of the selected route found; a click picks the nearest route.
 fn draw_board(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui, out: &mut Actions) {
-    let Some(board) = app.session.model().pcb.as_ref() else {
+    let Some(board) = app.session.model().pcb() else {
         return;
     };
     let net = app.session.views().pcb.net().unwrap_or_default();

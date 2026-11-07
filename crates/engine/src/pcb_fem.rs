@@ -64,7 +64,7 @@ fn is_air(l: &emcraft_model::pcb::Layer) -> bool {
 /// `pcb.region`: the box solved by the finite elements, round the copper or a net's routes by a
 /// margin, or between given corners; the model's geometry becomes that box (its ports cleared).
 pub fn region(s: &mut Session, p: &Params) -> Result<Value> {
-    let board = s.model.pcb.clone().ok_or_else(|| failed("load a PCB first: pcb.import, pcb.load or pcb.sample"))?;
+    let board = s.model.pcb().cloned().ok_or_else(|| failed("load a PCB first: pcb.import, pcb.load or pcb.sample"))?;
     // The fields of the outer traces reach a few of their dielectrics' thicknesses out.
     let t = outer_gap(&board);
     let margin = p.length("margin").check(|m| *m >= 0.0, "must be ≥ 0").or(MARGIN * t)?;
@@ -111,13 +111,13 @@ fn install(s: &mut Session, mut board: Board, region: Region) -> Result<()> {
     }
     s.model.ports.clear();
     board.region = Some(region);
-    s.model.pcb = Some(board);
+    s.model.set_pcb(Some(board));
     Ok(())
 }
 
 /// Whether the model is a board's region (meshed by [`generate`]).
 pub(crate) fn has_region(s: &Session) -> bool {
-    s.model.pcb.as_ref().is_some_and(|b| b.region.is_some())
+    s.model.pcb().is_some_and(|b| b.region.is_some())
 }
 
 /// `mesh.generate` on a board's region: `size` in the plane far from copper, `strip_edge` (a
@@ -126,7 +126,7 @@ pub(crate) fn has_region(s: &Session) -> bool {
 /// one planar triangulation ([`Copper::of`]), extruded through its stack ([`stack`]) with its
 /// vias' barrels taken out ([`barrels`]), laid in the model's axes.
 pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Value> {
-    let board = s.model.pcb.clone().ok_or_else(|| failed("no board"))?;
+    let board = s.model.pcb().cloned().ok_or_else(|| failed("no board"))?;
     let region = board.region.ok_or_else(|| failed("no region: set one with pcb.region"))?;
     let size = sizes.default.get();
     let edge = match p.number("strip_edge").check(|f| *f > 0.0 && *f <= 1.0, "between 0 and 1").optional()? {
@@ -371,7 +371,7 @@ fn barrels(
 /// the port when meshed. Without waveguide ports,
 /// solve.frequency reads S of the lumped ports.
 pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
-    let board = s.model.pcb.clone().ok_or_else(|| failed("load a PCB first"))?;
+    let board = s.model.pcb().cloned().ok_or_else(|| failed("load a PCB first"))?;
     let region = board.region.ok_or_else(|| failed("set the region first: pcb.region"))?;
     let name = p.string("name").required()?.to_owned();
     let id = p.string("segment").required()?;
@@ -416,7 +416,7 @@ pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
 /// `pcb.element`: a lumped element on a layer of the board's region, from one board point to
 /// another (a chip resistor bridging two traces), its parts in Ω, nH and pF.
 pub fn element(s: &mut Session, p: &Params) -> Result<Value> {
-    let board = s.model.pcb.clone().ok_or_else(|| failed("load a PCB first"))?;
+    let board = s.model.pcb().cloned().ok_or_else(|| failed("load a PCB first"))?;
     let region = board.region.ok_or_else(|| failed("set the region first: pcb.region"))?;
     let layer = p.string("layer").required()?;
     let l = board.layers.iter().position(|x| x.name == layer).ok_or_else(|| p.error("layer", "name a layer of the board"))?;
@@ -484,7 +484,7 @@ fn inside(polygon: &[[f64; 2]], p: [f64; 2]) -> bool {
 /// use emcraft_engine::pcb_fem::route_ends;
 /// let mut s = Session::new();
 /// s.execute("pcb.sample", &serde_json::json!({})).unwrap();
-/// let board = s.model().pcb.as_ref().unwrap();
+/// let board = s.model().pcb().unwrap();
 /// // The sample's route is two segments end to end: its ends are the first's start and the
 /// // second's end.
 /// use emcraft_model::End;
@@ -510,7 +510,7 @@ pub fn route_ends(board: &Board, net: &str) -> Vec<(String, End)> {
 /// use emcraft_engine::pcb_fem::route_size;
 /// let mut s = Session::new();
 /// s.execute("pcb.sample", &serde_json::json!({})).unwrap();
-/// let board = s.model().pcb.as_ref().unwrap();
+/// let board = s.model().pcb().unwrap();
 /// // The 40 mm route: an eighth of it at 1 GHz (λ in εr 4.2 is 146 mm), λ/10 = 0.73 mm at
 /// // 20 GHz.
 /// assert!((route_size(board, "DATA", 1e9) - 0.005).abs() < 1e-12);

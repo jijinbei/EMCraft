@@ -350,7 +350,7 @@ fn a_board_shows_its_copper_by_role_with_its_heights_stretched() {
     s.execute("pcb.sample", &json!({"split": true})).unwrap();
     s.execute("view.pcb", &json!({"net": "DATA", "stage": "net"})).unwrap();
     let b = build(&s, Overlay::Board);
-    let board = s.model().pcb.as_ref().unwrap();
+    let board = s.model().pcb().unwrap();
     let nets = board::nets(board);
     let tagged = |net: &str| {
         let tag = Pick::Net(nets.iter().position(|n| n == net).unwrap()).tag();

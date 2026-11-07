@@ -29,7 +29,7 @@ impl Curved {
     /// A shape's curved surfaces, placed at `at` with its z axis along `axis`.
     fn of(shape: &Shape, at: Point3, axis: Axis) -> Vec<Curved> {
         match shape {
-            Shape::Box { .. } | Shape::Sheet { .. } => Vec::new(),
+            Shape::Box { .. } | Shape::Sheet { .. } | Shape::Board(_) => Vec::new(),
             Shape::Cylinder { radius, .. } => vec![Curved::Cylinder { c: at, axis: axis.index(), r: radius.get() }],
             Shape::Sphere { radius } => vec![Curved::Sphere { c: at, r: radius.get() }],
             Shape::Surface { .. } => fitted(shape, at, axis),

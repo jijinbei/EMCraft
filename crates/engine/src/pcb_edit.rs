@@ -13,10 +13,10 @@ fn failed(why: impl std::fmt::Display) -> EngineError {
 
 /// Applies `change` to a copy of the board, checks it and keeps it (the mesh dropped).
 fn edit(s: &mut Session, change: impl FnOnce(&mut Board) -> Result<Value>) -> Result<Value> {
-    let mut board = s.model.pcb.clone().ok_or_else(|| failed("load a PCB first: pcb.import, pcb.load or pcb.sample"))?;
+    let mut board = s.model.pcb().cloned().ok_or_else(|| failed("load a PCB first: pcb.import, pcb.load or pcb.sample"))?;
     let reply = change(&mut board)?;
     board.check()?;
-    s.model.pcb = Some(board);
+    s.model.set_pcb(Some(board));
     s.model.mesh = None;
     Ok(reply)
 }

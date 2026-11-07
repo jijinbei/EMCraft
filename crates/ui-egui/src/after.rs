@@ -57,7 +57,7 @@ impl EmcraftApp {
                 self.replies.pcb = report;
                 self.place = self.place.show(View::Pcb);
             }
-            "project.variable" if self.session.model().pcb.is_some() && self.session.model().analysis() == crate::steps::Solver::Pcb => {
+            "project.variable" if self.session.model().pcb().is_some() && self.session.model().analysis() == crate::steps::Solver::Pcb => {
                 self.replies.pcb = None;
                 self.place = self.place.show(View::Pcb);
             }
@@ -85,7 +85,7 @@ impl EmcraftApp {
             "edit.undo" | "edit.redo" => {
                 self.replies.port_modes = None;
                 self.replies.pcb = None;
-                if self.session.model().pcb.is_some() {
+                if self.session.model().pcb().is_some() {
                     self.place = self.place.show(View::Pcb);
                 } else if self.place.view() == View::Pcb {
                     self.place = self.place.show(View::Model);
@@ -143,7 +143,7 @@ impl EmcraftApp {
         let chosen = emcraft_engine::workflow::spec(self.session.model().analysis()).results.iter().copied().find(|k| results.has(*k));
         self.place = self.place.show(chosen.or_else(|| results.kinds().find(|k| k.of_the_model())).map_or(View::Model, View::of));
         self.replies.pcb = None;
-        if self.session.model().pcb.is_some() && self.session.model().analysis() == crate::steps::Solver::Pcb {
+        if self.session.model().pcb().is_some() && self.session.model().analysis() == crate::steps::Solver::Pcb {
             self.place = self.place.show(View::Pcb);
         }
         self.pick_frequency();
@@ -162,7 +162,7 @@ impl EmcraftApp {
                 // A board's route: the field on the plane halfway up the substrate (the model's
                 // y is the board's height), where the line's E stands between trace and
                 // reference.
-                if let Some(board) = self.session.model().pcb.as_ref()
+                if let Some(board) = self.session.model().pcb()
                     && let Some(r) = board.region
                 {
                     let thickness = board.heights().into_iter().fold(0.0, f64::max);

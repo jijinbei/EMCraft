@@ -660,7 +660,7 @@ pub fn unit(q: Quantity, s: &Session) -> &'static str {
 /// route chosen and the band's top.
 fn route_size(s: &Session) -> Option<f64> {
     let m = s.model();
-    let board = m.pcb.as_ref().filter(|b| b.region.is_some())?;
+    let board = m.pcb().filter(|b| b.region.is_some())?;
     let net = s.views().pcb.net()?;
     let stop = m.job.range()?.stop.get();
     let size = emcraft_engine::pcb_fem::route_size(board, net, stop);
