@@ -55,7 +55,7 @@ pub(super) fn run_panel(app: &EmcraftApp, ui: &mut egui::Ui, states: &[StepState
         (0, nw) => plural(nw, t!("Run, accepting {n} warning"), t!("Run, accepting {n} warnings"), args!(n = nw)),
         (nb, _) => plural(nb, t!("Run — {n} problem to fix first"), t!("Run — {n} problems to fix first"), args!(n = nb)),
     };
-    ui.act(true, ui_kit::styled(&label, true), Fixed::RunStart.into(), Action::StartRun, out);
+    ui.act(true, ui_kit::glyph_button(crate::glyphs::Glyph::Play, &label, true), Fixed::RunStart.into(), Action::StartRun, out);
     // Why Run was refused, under the button: each blocking problem with the way to its step,
     // as long as it blocks.
     let mut went = false;

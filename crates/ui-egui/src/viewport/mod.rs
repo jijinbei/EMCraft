@@ -149,28 +149,16 @@ pub(super) fn view_tabs(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) 
         };
         let any = View::ALL.into_iter().any(result);
         for v in View::ALL.into_iter().filter(|v| if *v == View::Model { any } else { result(*v) }) {
-            ui.act(true, pill(shown(v), app.place.view() == v, 12, PillSize::Body), Handle::View(v), Action::ShowView(v), out);
+            let tab = crate::ui_kit::glyph_tab(v.glyph(), shown(v).to_owned(), app.place.view() == v, crate::theme::Emphasis::Primary);
+            ui.act(true, tab, Handle::View(v), Action::ShowView(v), out);
         }
     });
 }
 
-/// The text size of a pill.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum PillSize {
-    /// The body's text.
-    Body,
-    /// The small text.
-    Small,
-}
-
-/// A pill of a row of options: filled when `on`, its text `size`.
-pub(super) fn pill(label: &str, on: bool, radius: u8, size: PillSize) -> egui::Button<'static> {
+/// A pill of a row of options: filled when `on`, its text at emphasis `e`.
+pub(super) fn pill(label: &str, on: bool, radius: u8, e: crate::theme::Emphasis) -> egui::Button<'static> {
     let t = &Tokens::get();
-    let font = match size {
-        PillSize::Body => t.font_body,
-        PillSize::Small => t.font_small,
-    };
-    let text = egui::RichText::new(label).size(font).color(if on { t.selected_ink } else { t.text });
+    let text = egui::RichText::new(label).size(t.size(e)).color(if on { t.selected_ink } else { t.ink(e) });
     egui::Button::new(text).fill(if on { t.accent_soft } else { Color32::TRANSPARENT }).corner_radius(radius)
 }
 

@@ -203,7 +203,43 @@ colour_names!(Scene: Rgb, SCENE_NAMES {
     "strip" => strip, "intersect" => intersect,
 });
 
+/// How much a part of the window stands out: what to do now (Run, the step open, the view
+/// shown), what is used often (the ribbon, the browser, the field's choices), or what only
+/// informs (details, the log, tips). Parts say which; the sizes, weight and ink are decided here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Emphasis {
+    Primary,
+    Normal,
+    Secondary,
+}
+
 impl Tokens {
+    /// The text size of `e`.
+    pub fn size(&self, e: Emphasis) -> f32 {
+        match e {
+            Emphasis::Primary => self.font_label + 1.0,
+            Emphasis::Normal => self.font_body,
+            Emphasis::Secondary => self.font_small,
+        }
+    }
+
+    /// The text's ink of `e`.
+    pub fn ink(&self, e: Emphasis) -> Color32 {
+        match e {
+            Emphasis::Primary | Emphasis::Normal => self.text,
+            Emphasis::Secondary => self.text_dim,
+        }
+    }
+
+    /// A control's height at `e`.
+    pub fn height(&self, e: Emphasis) -> f32 {
+        match e {
+            Emphasis::Primary => self.control_height + 8.0,
+            Emphasis::Normal => self.control_height,
+            Emphasis::Secondary => self.control_height - 6.0,
+        }
+    }
+
     /// The sizes every theme shares; the colours left transparent for a theme to fill.
     pub fn sizes() -> Tokens {
         Tokens {
@@ -217,12 +253,12 @@ impl Tokens {
             radius_md: 6,
             radius_lg: 8,
             radius_xl: 10,
-            font_small: 11.0,
-            font_body: 12.0,
-            font_label: 12.5,
-            font_button: 13.0,
-            font_heading: 14.0,
-            control_height: 26.0,
+            font_small: 12.0,
+            font_body: 13.5,
+            font_label: 14.0,
+            font_button: 14.0,
+            font_heading: 16.0,
+            control_height: 30.0,
             control_radius: 6,
             form_label_width: 96.0,
             form_header_height: 40.0,
@@ -604,6 +640,17 @@ pub fn apply(ctx: &egui::Context) {
         s.spacing.item_spacing = egui::vec2(t.space_6, t.space_4);
         s.spacing.button_padding = egui::vec2(t.space_6, 3.0);
         s.spacing.interact_size.y = t.control_height - 6.0;
+        // egui's own text styles follow the tokens, so plain labels and buttons size with them.
+        use egui::{FontFamily, TextStyle};
+        for (style, size, family) in [
+            (TextStyle::Small, t.font_small, FontFamily::Proportional),
+            (TextStyle::Body, t.font_body, FontFamily::Proportional),
+            (TextStyle::Button, t.font_button, FontFamily::Proportional),
+            (TextStyle::Heading, t.font_heading, FontFamily::Proportional),
+            (TextStyle::Monospace, t.font_body - 0.5, FontFamily::Monospace),
+        ] {
+            s.text_styles.insert(style, egui::FontId::new(size, family));
+        }
     });
 }
 

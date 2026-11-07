@@ -814,18 +814,39 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         });
 }
 
-/// A section's heading row: its chevron, name and count; a click folds or unfolds it.
+/// A section's glyph, before its heading.
+fn section_glyph(section: &str) -> Glyph {
+    match section {
+        "Variables" => Glyph::Variable,
+        "Bodies" => Glyph::Box,
+        "Materials" => Glyph::Material,
+        "Domain" => Glyph::Region,
+        "Excitation" => Glyph::Port,
+        "Mesh" => Glyph::Mesh,
+        "Results" => Glyph::Chart,
+        "PCB" => Glyph::Part,
+        _ => Glyph::Blank,
+    }
+}
+
+/// A section's heading row: its chevron, glyph, name and count, the heading standing out
+/// ([`crate::theme::Emphasis::Primary`]); a click folds or unfolds it.
 fn section_header(ui: &mut egui::Ui, section: &'static str, count: usize, folded: bool, out: &mut Actions) {
     let t = &Tokens::get();
-    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
+    let e = crate::theme::Emphasis::Primary;
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), t.size(e) + 14.0), Sense::click());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, section));
     if resp.hovered() {
         ui.painter().rect_filled(r, t.radius_sm, t.hover);
     }
     chevron(ui, pos2(r.left() + 9.0, r.center().y), !folded, t.text_dim);
     // An empty section's heading is dim.
-    let ink = if count == 0 { t.text_dim } else { t.text };
-    ui.painter().text(pos2(r.left() + 20.0, r.center().y), Align2::LEFT_CENTER, lang::lookup(section), FontId::proportional(t.font_label), ink);
+    let ink = if count == 0 { t.text_dim } else { t.ink(e) };
+    let icon = t.size(e) + 2.0;
+    let glyph = Rect::from_min_size(pos2(r.left() + 18.0, r.center().y - icon / 2.0), vec2(icon, icon));
+    glyphs::paint(ui.painter(), glyph, section_glyph(section), ink, if count == 0 { t.text_dim } else { t.accent });
+    let text = pos2(glyph.right() + 6.0, r.center().y);
+    ui.painter().text(text, Align2::LEFT_CENTER, lang::lookup(section), FontId::proportional(t.size(e)), ink);
     ui.painter().text(pos2(r.right() - 6.0, r.center().y), Align2::RIGHT_CENTER, count.to_string(), FontId::proportional(t.font_small), t.text_dim);
     scenario::publish_target(Handle::Fold(section), r);
     if resp.clicked() {

@@ -94,13 +94,14 @@ pub(crate) struct Pill<'a> {
 /// short forms when the texts do not fit): the one clicked.
 pub(crate) fn pills(ui: &mut egui::Ui, row: Rect, list: &[Pill]) -> Option<usize> {
     let t = &Tokens::get();
-    let font = FontId::proportional(t.font_body);
-    let width = |text: &str| ui.painter().layout_no_wrap(text.to_owned(), font.clone(), t.text).size().x + 34.0 + 16.0;
-    let short = list.iter().map(|p| width(&p.text)).sum::<f32>() > row.width();
+    // The stage open stands out (crate::theme::Emphasis::Primary).
+    let font = |active: bool| FontId::proportional(t.size(if active { crate::theme::Emphasis::Primary } else { crate::theme::Emphasis::Normal }));
+    let width = |p: &Pill| ui.painter().layout_no_wrap(p.text.clone(), font(p.active), t.text).size().x + 34.0 + 16.0;
+    let short = list.iter().map(width).sum::<f32>() > row.width();
     let mut x = row.left();
     let mut clicked = None;
     for (i, p) in list.iter().enumerate() {
-        let g = ui.painter().layout_no_wrap(if short { p.short.clone() } else { p.text.clone() }, font.clone(), t.text);
+        let g = ui.painter().layout_no_wrap(if short { p.short.clone() } else { p.text.clone() }, font(p.active), t.text);
         let r = Rect::from_min_size(pos2(x, row.top()), vec2(g.size().x + 34.0, row.height()));
         let resp = ui.hit(r, p.handle, if p.enabled { Sense::click() } else { Sense::hover() });
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, p.enabled, format!("{}: {}", p.text, p.said)));

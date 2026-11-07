@@ -90,6 +90,24 @@ impl Place {
 }
 
 impl View {
+    /// The view's glyph, on its tab.
+    pub const fn glyph(self) -> crate::glyphs::Glyph {
+        use crate::glyphs::Glyph;
+        match self {
+            View::Model => Glyph::Box,
+            View::Pcb => Glyph::Part,
+            View::SParameters => Glyph::Chart,
+            View::Tdr => Glyph::Time,
+            View::Field => Glyph::FieldLines,
+            View::PortModes => Glyph::PortModes,
+            View::FarField => Glyph::Pattern,
+            View::Compare => Glyph::Compare,
+            View::Eigenmodes => Glyph::Eigen,
+            View::Study => Glyph::ParamSweep,
+            View::Dispersion => Glyph::Dispersion,
+        }
+    }
+
     /// The view shown with no step open (the PCB's: its window).
     pub const fn place(self) -> Place {
         Place::Workflow { view: View::Model, step: None }.show(self)

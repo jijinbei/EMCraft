@@ -83,7 +83,9 @@ impl ChartView for StudyView {
                 crate::ui_kit::small(ui, t!("Show"), t.text_dim);
                 for p in &parameters {
                     let on = state.parameter.as_ref().unwrap_or(first) == p;
-                    if ui.named(pill(&format!("|{}|", p.to_uppercase()), on, 10, PillSize::Small), Handle::StudyParameter(p)).clicked() && !on {
+                    if ui.named(pill(&format!("|{}|", p.to_uppercase()), on, 10, crate::theme::Emphasis::Normal), Handle::StudyParameter(p)).clicked()
+                        && !on
+                    {
                         state.parameter = Some(p.clone());
                     }
                 }
@@ -143,7 +145,7 @@ fn slice_picker(ui: &mut egui::Ui, study: &Study, slice: &mut Slice) {
         crate::ui_kit::small(ui, t!("Along"), t.text_dim);
         for (k, n) in study.variables.iter().enumerate() {
             let on = slice.free == k;
-            if ui.named(pill(n, on, 10, PillSize::Small), Handle::StudyAlong(n)).clicked() && !on {
+            if ui.named(pill(n, on, 10, crate::theme::Emphasis::Normal), Handle::StudyAlong(n)).clicked() && !on {
                 slice.free = k;
             }
         }
@@ -157,7 +159,7 @@ fn slice_picker(ui: &mut egui::Ui, study: &Study, slice: &mut Slice) {
             crate::ui_kit::small(ui, trf(t!("{name} at"), args!(name = n)), t.text_dim);
             for (i, v) in axis.iter().enumerate().take(MAX_PILLS) {
                 let on = slice.at.get(k) == Some(&i);
-                if ui.named(pill(&short(*v), on, 10, PillSize::Small), Handle::StudyAt(n, i)).clicked()
+                if ui.named(pill(&short(*v), on, 10, crate::theme::Emphasis::Normal), Handle::StudyAt(n, i)).clicked()
                     && !on
                     && let Some(slot) = slice.at.get_mut(k)
                 {

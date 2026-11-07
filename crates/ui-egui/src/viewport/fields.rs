@@ -376,7 +376,7 @@ pub(super) fn kept_planes(app: &EmcraftApp, field: &mut FieldState, ui: &mut egu
 /// like a video.
 pub(super) fn field_display(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut Actions) {
     let before = field.view.component;
-    let r = egui::ComboBox::from_id_salt("component").selected_text(before.label()).show_ui(ui, |ui| {
+    let r = egui::ComboBox::from_id_salt("component").selected_text(before.label()).height(400.0).show_ui(ui, |ui| {
         for c in emcraft_engine::view::Component::ALL {
             let r = ui.selectable_value(&mut field.view.component, c, c.label());
             scenario::publish_target(Handle::Choice("field_component", c.id()), r.rect);

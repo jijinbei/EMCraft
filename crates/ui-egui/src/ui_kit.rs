@@ -203,6 +203,31 @@ pub fn glyph_button(glyph: crate::glyphs::Glyph, label: impl Shown, primary: boo
     }
 }
 
+/// A tab of a row of options with `glyph` before `label` at emphasis `e`: filled when `on`.
+pub fn glyph_tab(glyph: crate::glyphs::Glyph, label: impl Shown, on: bool, e: crate::theme::Emphasis) -> impl egui::Widget {
+    move |ui: &mut Ui| {
+        let t = &Tokens::get();
+        let height = t.height(e);
+        let icon = (t.size(e) + 4.0).round();
+        let ink = if on { t.selected_ink } else { t.ink(e) };
+        let g = ui.painter().layout_no_wrap(label.shown().to_owned(), FontId::proportional(t.size(e)), ink);
+        let width = 10.0 + icon + 6.0 + g.size().x + 12.0;
+        let (r, resp) = ui.allocate_exact_size(vec2(width, height), Sense::click());
+        let fill = match (on, ui.is_enabled() && resp.hovered()) {
+            (true, _) => t.accent_soft,
+            (false, true) => t.hover,
+            (false, false) => Color32::TRANSPARENT,
+        };
+        let p = ui.painter();
+        p.rect_filled(r, height / 2.0, fill);
+        let left = r.left() + 10.0;
+        crate::glyphs::paint(p, Rect::from_min_size(pos2(left, r.center().y - icon / 2.0), vec2(icon, icon)), glyph, ink, t.accent);
+        p.galley(pos2(left + icon + 6.0, r.center().y - g.size().y / 2.0), g, ink);
+        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, ui.is_enabled(), on, label.shown()));
+        resp
+    }
+}
+
 /// A determinate (`Some`) or running (`None`) progress bar.
 pub fn progress(ui: &mut Ui, fraction: Option<f64>, width: f32) -> Response {
     let t = &Tokens::get();

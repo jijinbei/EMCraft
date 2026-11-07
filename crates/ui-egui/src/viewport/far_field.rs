@@ -19,7 +19,9 @@ impl ChartView for FarField {
         let p = &mut st.views.pattern;
         ui.horizontal_wrapped(|ui| {
             for (cut, hint) in [(Cut::Phi, t!("θ varies at an azimuth φ")), (Cut::Theta, t!("φ varies at a polar angle θ"))] {
-                let r = ui.named(pill(crate::lang::lookup(cut.label()), p.cut == cut, 10, PillSize::Small), Handle::PatternCut(cut.id())).hint(hint);
+                let r = ui
+                    .named(pill(crate::lang::lookup(cut.label()), p.cut == cut, 10, crate::theme::Emphasis::Normal), Handle::PatternCut(cut.id()))
+                    .hint(hint);
                 if r.clicked() && p.cut != cut {
                     *p = PatternSettings { cut, angle: if cut == Cut::Theta { 90.0 } else { 0.0 }, ..*p };
                 }
@@ -36,7 +38,10 @@ impl ChartView for FarField {
             }
             ui.separator();
             for c in FarComponent::ALL {
-                let r = ui.named(pill(crate::lang::lookup(c.label()), p.component == c, 10, PillSize::Small), Handle::PatternComponent(c.id()));
+                let r = ui.named(
+                    pill(crate::lang::lookup(c.label()), p.component == c, 10, crate::theme::Emphasis::Normal),
+                    Handle::PatternComponent(c.id()),
+                );
                 if r.hint(t!("the total, or one polarization's share")).clicked() {
                     p.component = c;
                 }
