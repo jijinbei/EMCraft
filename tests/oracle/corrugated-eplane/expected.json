@@ -12,9 +12,9 @@
    },
    "value": 152.444,
    "tolerance": {
-    "absolute": 0.4
+    "absolute": 0.15
    },
-   "reason": "the wall meshed as flat triangles with 2 mm tetrahedra at order 2: 152.695°, 0.25° off; E stands normal to the wall, so the facets' corners carry a singular field and the faceted wall's own answer (0.27° off with 24 chords a period, 0.07° with 48) — curved elements on the wall would close it. The same mesher on an E-plane bump of flat faces (no facets) meets this method within 0.008°"
+   "reason": "the wall's NURBS patch from the design, the tetrahedra's edges on it bent onto it (quadratic geometry), 2 mm at order 2: 152.375° (152.423° at 1.5 mm), converging on it; as flat facets it stood 0.25° off (E normal to the wall is singular at the facets' corners)"
   },
   {
    "id": "s21_mag",
@@ -38,9 +38,9 @@
    },
    "value": 0.08386,
    "tolerance": {
-    "absolute": 0.006
+    "absolute": 0.002
    },
-   "reason": "0.0817 at 2 mm: the faceted wall's reflection, as its phase"
+   "reason": "0.08363 at 2 mm, 0.08382 at 1.5 mm"
   }
  ]
 }

@@ -38,6 +38,7 @@ pub mod material;
 pub mod measure;
 pub mod mesh;
 pub mod model;
+pub mod nurbs;
 pub mod open;
 pub mod periodic;
 pub mod port;

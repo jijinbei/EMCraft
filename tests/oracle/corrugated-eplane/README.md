@@ -11,8 +11,10 @@ The reference is independent of the finite elements: the smooth wall itself, sol
 two-dimensional problem it is (`emcraft_theory::wall`): TE₁₀'s potential H_x between the side
 walls obeys the Helmholtz equation in the y–z plane, its normal derivative zero on the wall,
 the wall exact at every quadrature point of spectral elements: ∠S21 152.444°, converged to a
-thousandth of a degree. The finite elements stand 0.25° from it (152.695°): their wall is flat
-triangles, and the field, normal to it, is singular at the facets' corners. Mode matching of
+thousandth of a degree. The finite elements meet it within 0.07° (152.375° at 2 mm, 152.423° at 1.5 mm): the
+wall's NURBS patch comes from the design, and the tetrahedra's edges on it are bent onto it.
+As flat facets they stood 0.25° off — the field, normal to the wall, is singular at the
+facets' corners. Mode matching of
 the wall cut into steps, the first reference, does not converge here (each step's edge is
 singular in the same way): it moved with the number of steps and of modes alike, 152.3°–152.5°.
 

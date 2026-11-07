@@ -97,9 +97,10 @@ impl std::ops::Deref for BoxSize {
     }
 }
 
-/// The exact surface of an imported face, recovered by fitting its vertices (untrimmed: the
-/// face's triangles say which part of it the face is). Axes and normals are unit vectors.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+/// The exact surface of an imported face, recovered by fitting its vertices or given by the
+/// design (untrimmed: the face's triangles say which part of it the face is). Axes and normals
+/// are unit vectors.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FaceSurface {
     Plane {
@@ -131,6 +132,8 @@ pub enum FaceSurface {
         major: f64,
         minor: f64,
     },
+    /// A free-form patch as the design gives it (an equation curve extruded, a loft).
+    Nurbs(Box<crate::nurbs::Nurbs>),
 }
 
 impl FaceSurface {
@@ -142,6 +145,7 @@ impl FaceSurface {
             FaceSurface::Sphere { .. } => "sphere",
             FaceSurface::Cone { .. } => "cone",
             FaceSurface::Torus { .. } => "torus",
+            FaceSurface::Nurbs(_) => "nurbs",
         }
     }
 
@@ -154,6 +158,7 @@ impl FaceSurface {
     /// axis, at a sphere's centre) or the data is not finite.
     pub fn project(&self, p: Point3) -> Option<Point3> {
         let out = match *self {
+            FaceSurface::Nurbs(ref n) => n.projector().project(p)?,
             FaceSurface::Plane { normal, point } => {
                 let n = normal.normalized()?;
                 p - n * (p - point).dot(n)
@@ -191,6 +196,7 @@ impl FaceSurface {
     /// centre, along a plane's normal).
     pub fn normal(&self, p: Point3) -> Option<Vec3> {
         match *self {
+            FaceSurface::Nurbs(ref n) => n.projector().normal(p),
             FaceSurface::Plane { normal, .. } => normal.normalized(),
             FaceSurface::Cylinder { origin, axis, .. } => {
                 let a = axis.normalized()?;
@@ -219,6 +225,7 @@ impl FaceSurface {
     pub fn check(&self) -> Result<()> {
         let unit = |v: Vec3| v.is_finite() && (v.norm() - 1.0).abs() <= 1e-9;
         let ok = match *self {
+            FaceSurface::Nurbs(ref n) => return n.check(),
             FaceSurface::Plane { normal, point } => unit(normal) && point.is_finite(),
             FaceSurface::Cylinder { origin, axis, radius } => unit(axis) && origin.is_finite() && radius.is_finite() && radius > 0.0,
             FaceSurface::Sphere { center, radius } => center.is_finite() && radius.is_finite() && radius > 0.0,
@@ -247,6 +254,7 @@ impl FaceSurface {
             FaceSurface::Sphere { center, radius } => FaceSurface::Sphere { center: center + d, radius },
             FaceSurface::Cone { apex, axis, half_angle } => FaceSurface::Cone { apex: apex + d, axis, half_angle },
             FaceSurface::Torus { center, axis, major, minor } => FaceSurface::Torus { center: center + d, axis, major, minor },
+            FaceSurface::Nurbs(n) => FaceSurface::Nurbs(Box::new(n.mapped(|p| p + d))),
         }
     }
 }

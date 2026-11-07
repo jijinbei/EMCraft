@@ -130,16 +130,25 @@ fn body(b: &sx::Body) -> Result<Body> {
     let surfaces = b
         .faces
         .iter()
-        .map(|f| match f.surface {
-            sx::Surface::Plane { point: p, normal } => Some(FaceSurface::Plane { normal: vector(normal), point: point(p) }),
+        .map(|f| match &f.surface {
+            sx::Surface::Plane { point: p, normal } => Some(FaceSurface::Plane { normal: vector(*normal), point: point(*p) }),
             sx::Surface::Cylinder { origin, axis, radius } => {
-                Some(FaceSurface::Cylinder { origin: point(origin), axis: vector(axis), radius: radius.to_metres() })
+                Some(FaceSurface::Cylinder { origin: point(*origin), axis: vector(*axis), radius: radius.to_metres() })
             }
-            sx::Surface::Sphere { center, radius } => Some(FaceSurface::Sphere { center: point(center), radius: radius.to_metres() }),
+            sx::Surface::Sphere { center, radius } => Some(FaceSurface::Sphere { center: point(*center), radius: radius.to_metres() }),
             sx::Surface::Cone { apex, axis, half_angle } => {
-                Some(FaceSurface::Cone { apex: point(apex), axis: vector(axis), half_angle: half_angle.0 })
+                Some(FaceSurface::Cone { apex: point(*apex), axis: vector(*axis), half_angle: half_angle.0 })
             }
-            // Tori and free-form patches EMCraft has no exact form for: meshed from their triangles.
+            // A free-form patch: its curved elements bent onto it (a malformed one is meshed
+            // from its triangles, as any surface EMCraft has no exact form for).
+            sx::Surface::Nurbs { u, v, net } => {
+                let knots = |k: &sx::Knots| emcraft_model::nurbs::Knots { degree: k.degree as usize, knots: k.knots.clone() };
+                let net = net.iter().map(|row| row.iter().map(|c| (point(c.point), c.weight)).collect()).collect();
+                let n = emcraft_model::nurbs::Nurbs { u: knots(u), v: knots(v), net };
+                n.check().is_ok().then(|| FaceSurface::Nurbs(Box::new(n)))
+            }
+            // Tori (a fit recovers them) and surfaces EMCraft has no exact form for: meshed from
+            // their triangles.
             _ => None,
         })
         .collect();

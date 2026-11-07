@@ -79,7 +79,7 @@ pub fn fit_faces(s: &Surface, source: &[u32]) -> Vec<Option<FaceSurface>> {
         BTreeMap::new()
     };
     for (tag, tris) in groups(&s.tags) {
-        let inherited = tris.first().and_then(|&t| source.get(t)).and_then(|src| by_source.get(src).copied().flatten());
+        let inherited = tris.first().and_then(|&t| source.get(t)).and_then(|src| by_source.get(src).cloned().flatten());
         let own = match inherited {
             Some(f) => Some(f),
             None => fit(s, &tris, &scale),
@@ -164,13 +164,13 @@ fn fit(s: &Surface, tris: &[usize], scale: &Scale) -> Option<FaceSurface> {
             FaceSurface::Torus { major, minor, .. } => radius_ok(minor) && radius_ok(major),
             // Nearly a cylinder or nearly a plane: those fit better as such.
             FaceSurface::Cone { half_angle, .. } => half_angle > MIN_CONE_ANGLE && half_angle < std::f64::consts::FRAC_PI_2 - MIN_CONE_ANGLE,
-            FaceSurface::Plane { .. } => false,
+            FaceSurface::Plane { .. } | FaceSurface::Nurbs(_) => false,
         };
         if !shaped || f.check().is_err() || !fits(&f) {
             return;
         }
         if let Some(h) = hug(&f)
-            && best.is_none_or(|(b, _)| h < b)
+            && best.as_ref().is_none_or(|(b, _)| h < *b)
         {
             *best = Some((h, f));
         }
@@ -854,11 +854,11 @@ mod tests {
         ] {
             let s = torus_surface(c, a, (big, small), (sweep, tube), (n, m));
             let fits = fit_faces(&s, &s.tags);
-            let Some(FaceSurface::Torus { center, axis, major, minor }) = fits[0] else { panic!("{big} {small} {sweep}: {:?}", fits[0]) };
+            let Some(FaceSurface::Torus { center, axis, major, minor }) = fits[0].clone() else { panic!("{big} {small} {sweep}: {:?}", fits[0]) };
             assert!((major - big).abs() < 1e-11 && (minor - small).abs() < 1e-11, "{major} {minor}");
             assert!(axis.cross(a).norm() < 1e-9 && (center - c).norm() < 1e-10, "{axis:?} {center:?}");
             // Every vertex on it to the fit's tolerance.
-            assert!(s.positions.iter().all(|p| fits[0].unwrap().distance(*p) < TOLERANCE * 0.02), "{big} {small}");
+            assert!(s.positions.iter().all(|p| fits[0].as_ref().map_or(f64::INFINITY, |f| f.distance(*p)) < TOLERANCE * 0.02), "{big} {small}");
             assert_eq!(fit_faces(&s, &s.tags), fits);
         }
         // A torus is not taken for the simpler surfaces it nears, nor they for it.
@@ -880,12 +880,12 @@ mod tests {
         let o = Point3::new(0.011, -0.004, 0.02);
         let s = cylinder_surface(o, a, 0.0015, 0.01, 26, 1);
         let fits = fit_faces(&s, &s.tags);
-        let Some(FaceSurface::Cylinder { origin, axis, radius }) = fits[0] else { panic!("{:?}", fits[0]) };
+        let Some(FaceSurface::Cylinder { origin, axis, radius }) = fits[0].clone() else { panic!("{:?}", fits[0]) };
         assert!((radius - 0.0015).abs() < 1e-14, "{radius}");
         assert!(axis.cross(a).norm() < 1e-12, "{axis:?}");
         assert!((origin - o).cross(a).norm() < 1e-14);
         // The caps are planes along the axis.
-        for (f, sign) in [(fits[1], -1.0), (fits[2], 1.0)] {
+        for (f, sign) in [(fits[1].clone(), -1.0), (fits[2].clone(), 1.0)] {
             let Some(FaceSurface::Plane { normal, .. }) = f else { panic!("{f:?}") };
             assert!((normal - a * sign).norm() < 1e-12, "{normal:?}");
         }

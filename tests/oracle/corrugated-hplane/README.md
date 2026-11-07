@@ -11,8 +11,9 @@ its end faces, solved at order 2.
 The reference is independent of the finite elements: the smooth wall itself, solved as the
 two-dimensional problem it is (`emcraft_theory::wall`, E_y zero on the wall, the wall exact):
 ∠S21 −172.366°. Mode matching of the wall cut into steps agrees with it within 0.1° from 1280
-steps (the field is zero on the wall, so steps model it fairly). The finite elements' flat
-triangles stand 0.28° off (−172.646°).
+steps (the field is zero on the wall, so steps model it fairly). The finite elements, their
+edges bent onto the wall's NURBS patch, meet it within 0.03° (−172.392°); as flat facets they
+stood 0.28° off.
 
 What it shows: a broad wall waving faster than the wave (period 10 mm against a guide
 wavelength of 39.7 mm) *advances* the phase, by about 11.6° against a straight guide's

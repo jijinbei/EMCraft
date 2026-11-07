@@ -384,7 +384,7 @@ impl Model {
                     positions: positions.iter().copied().map(shift).collect(),
                     triangles: triangles.clone(),
                     tags: tags.clone(),
-                    surfaces: surfaces.iter().map(|f| f.map(|f| f.moved(v))).collect(),
+                    surfaces: surfaces.iter().map(|f| f.clone().map(|f| f.moved(v))).collect(),
                 },
                 _ if v == crate::geom::Vec3::ZERO => solid.shape.clone(),
                 _ => return Err(invalid("move", "a cylinder or sphere region stands on the origin")),

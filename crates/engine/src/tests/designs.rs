@@ -84,6 +84,23 @@ fn a_crease_lying_in_another_bodys_face_meshes() {
     }
 }
 
+/// The corrugated guide's waving wall is a NURBS patch in the design: its tetrahedra's edges on
+/// it are bent onto it (quadratic geometry), and its vertices sit on it, not on the
+/// tessellation's chords — every curved edge's midpoint on the narrow wall's sine
+/// y = b + h sin(2π(z − l)/p) to a micrometre (the chords stray up to 0.1 mm).
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn the_corrugated_wall_bends_the_elements_onto_its_sine() {
+    let mut s = built("corrugated-guide", json!(null));
+    s.execute("mesh.generate", &json!({"size": 5})).unwrap();
+    let mesh = s.model.mesh.as_ref().unwrap();
+    let wave = |z: f64| 10.16e-3 + 2e-3 * (2.0 * std::f64::consts::PI * (z - 10e-3) / 10e-3).sin();
+    let on_wave: Vec<_> = mesh.curved.iter().filter(|(_, p)| p.z > 10.2e-3 && p.z < 49.8e-3 && p.y > 8.0e-3).collect();
+    assert!(on_wave.len() > 40, "{}", on_wave.len());
+    let worst = on_wave.iter().map(|(_, p)| (p.y - wave(p.z)).abs()).fold(0.0, f64::max);
+    assert!(worst < 1e-6, "{worst}");
+}
+
 /// The corrugated guide's wave is an equation curve of its parameters, the number of periods
 /// `n` a plain number (no unit): changed, the guide is longer by the periods added, its wall's
 /// points placed again from the formula.

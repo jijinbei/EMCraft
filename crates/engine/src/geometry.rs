@@ -376,7 +376,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         "triangles": triangles,
         "faces": faces,
         "planes": fitted.plane,
-        "curved": {"cylinder": fitted.cylinder, "sphere": fitted.sphere, "cone": fitted.cone, "torus": fitted.torus},
+        "curved": {"cylinder": fitted.cylinder, "sphere": fitted.sphere, "cone": fitted.cone, "torus": fitted.torus, "nurbs": fitted.nurbs},
         "region": region,
         "pieces": pieces,
         "cavity": fallback,
@@ -515,6 +515,7 @@ struct Fitted {
     sphere: usize,
     cone: usize,
     torus: usize,
+    nurbs: usize,
 }
 
 /// An imported body as a shape, each face's exact surface fitted to its vertices (`fit`) where
@@ -526,7 +527,7 @@ fn surface(b: emcraft_io::Surface, source: &[u32], fit: bool, known: Option<&[Op
             let mut out = vec![None; b.tags.iter().map(|t| *t as usize + 1).max().unwrap_or(0)];
             for (tag, src) in b.tags.iter().zip(source) {
                 if let (Some(slot), Some(f)) = (out.get_mut(*tag as usize), known.get(*src as usize)) {
-                    *slot = *f;
+                    slot.clone_from(f);
                 }
             }
             out
@@ -541,6 +542,7 @@ fn surface(b: emcraft_io::Surface, source: &[u32], fit: bool, known: Option<&[Op
             FaceSurface::Sphere { .. } => fitted.sphere += 1,
             FaceSurface::Cone { .. } => fitted.cone += 1,
             FaceSurface::Torus { .. } => fitted.torus += 1,
+            FaceSurface::Nurbs(_) => fitted.nurbs += 1,
         }
     }
     Shape::Surface { name: b.name, positions: b.positions, triangles: b.triangles, tags: b.tags, surfaces }

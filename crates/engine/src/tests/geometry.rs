@@ -192,7 +192,7 @@ fn an_imported_ring_is_fitted_with_its_torus() {
     std::fs::write(&path, emcraft_io::stl::write_binary(&ring, 1.0)).unwrap();
     let mut s = Session::new();
     let r = s.execute("geometry.import", &json!({"path": path, "angle": 60})).unwrap();
-    assert_eq!(r["curved"], json!({"cylinder": 0, "sphere": 0, "cone": 0, "torus": 1}), "{r}");
+    assert_eq!(r["curved"], json!({"cylinder": 0, "sphere": 0, "cone": 0, "torus": 1, "nurbs": 0}), "{r}");
     let bent = s.execute("mesh.generate", &json!({"size": 3})).unwrap()["curved_edges"].as_u64().unwrap();
     assert!(bent > 100, "{bent}");
 }
@@ -206,7 +206,7 @@ fn imported_curved_faces_get_their_exact_surfaces() {
     let mut s = Session::new();
     let r = s.execute("geometry.import", &json!({"path": path})).unwrap();
     assert_eq!((r["faces"].as_u64(), r["planes"].as_u64()), (Some(3), Some(2)), "{r}");
-    assert_eq!(r["curved"], json!({"cylinder": 1, "sphere": 0, "cone": 0, "torus": 0}));
+    assert_eq!(r["curved"], json!({"cylinder": 1, "sphere": 0, "cone": 0, "torus": 0, "nurbs": 0}));
     let bent = s.execute("mesh.generate", &json!({"size": 4})).unwrap()["curved_edges"].as_u64().unwrap();
     assert!(bent > 50, "{bent}");
     // Kept faceted on request: nothing bent.

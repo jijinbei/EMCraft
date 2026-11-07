@@ -12,9 +12,9 @@
    },
    "value": -172.366,
    "tolerance": {
-    "absolute": 0.4
+    "absolute": 0.1
    },
-   "reason": "the wall meshed as flat triangles with 2 mm tetrahedra at order 2 (133 000 unknowns): −172.646°, 0.28° off, the facets' answer as for the E-plane wall"
+   "reason": "the wall's NURBS patch, the elements bent onto it, 2 mm at order 2 (133 000 unknowns): −172.392° (−172.376° at 1.5 mm); as flat facets 0.28° off"
   },
   {
    "id": "s21_mag",
@@ -38,9 +38,9 @@
    },
    "value": 0.0082,
    "tolerance": {
-    "absolute": 0.002
+    "absolute": 0.001
    },
-   "reason": "a small reflection, the wave's four periods nearly cancelling: 0.0078 at 2 mm"
+   "reason": "a small reflection, the wave's four periods nearly cancelling: 0.00803 at 2 mm"
   }
  ]
 }

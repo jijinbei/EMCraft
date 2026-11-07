@@ -5,7 +5,7 @@
 use emcraft_model::{Aabb, Axis, FaceSurface, Mesh, Model, Point3, Shape, Vec3};
 
 /// A curved surface of the model: the edges on it are bent onto it.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 enum Curved {
     /// The side of a cylinder through `c` along `axis`.
     Cylinder {
@@ -21,6 +21,13 @@ enum Curved {
     /// within `within` (the face's vertices' box, grown by the arcs' bulge) lie on it.
     Fitted {
         surface: FaceSurface,
+        within: Aabb,
+    },
+    /// A free-form face (a NURBS patch the design gives), its samples taken once for the many
+    /// projections; the mesher knows no exact form for it, so the vertices it adds there are
+    /// moved onto it as well.
+    Patch {
+        projector: Box<emcraft_model::nurbs::Projector>,
         within: Aabb,
     },
 }
@@ -52,7 +59,8 @@ impl Curved {
                 let d = p - c;
                 c + d * r / d.norm().max(f64::MIN_POSITIVE)
             }
-            Curved::Fitted { surface, .. } => surface.project(p).unwrap_or(p),
+            Curved::Fitted { ref surface, .. } => surface.project(p).unwrap_or(p),
+            Curved::Patch { ref projector, .. } => projector.project(p).unwrap_or(p),
         }
     }
 
@@ -61,7 +69,7 @@ impl Curved {
     fn faces(&self, normal: Vec3) -> bool {
         match self {
             Curved::Cylinder { axis, .. } => normal[*axis].abs() < 0.5,
-            Curved::Sphere { .. } | Curved::Fitted { .. } => true,
+            Curved::Sphere { .. } | Curved::Fitted { .. } | Curved::Patch { .. } => true,
         }
     }
 
@@ -76,6 +84,11 @@ impl Curved {
                 let along = Point3::centroid(*p).and_then(|g| surface.normal(g)).is_some_and(|n| n.dot(normal).abs() > 0.7);
                 on_face && along
             }
+            Curved::Patch { projector, within } => {
+                let on_face = p.iter().all(|q| within.contains(*q));
+                let along = Point3::centroid(*p).and_then(|g| projector.normal(g)).is_some_and(|n| n.dot(normal).abs() > 0.7);
+                on_face && along
+            }
             _ => self.faces(normal),
         }
     }
@@ -88,7 +101,7 @@ fn fitted(shape: &Shape, at: Point3, axis: Axis) -> Vec<Curved> {
     let place = |p: Point3| at + axis.turn(p.to_vec());
     let mut out = Vec::new();
     for (face, f) in surfaces.iter().enumerate() {
-        let Some(f) = f.filter(FaceSurface::is_curved) else { continue };
+        let Some(f) = f.as_ref().filter(|f| f.is_curved()) else { continue };
         // The face's vertices' box, grown by its longest edge's share: an arc between two
         // vertices bulges past them by its sagitta (at most an eighth of the chord for the
         // angles a fit accepts).
@@ -100,14 +113,19 @@ fn fitted(shape: &Shape, at: Point3, axis: Axis) -> Vec<Curved> {
             corners.extend([a, b, c]);
         }
         let Some(b) = Aabb::around(corners.into_iter().map(place)) else { continue };
-        let surface = match f {
+        let within = b.grown(0.15 * longest + 1e-9 * b.size().norm());
+        let surface = match f.clone() {
+            FaceSurface::Nurbs(n) => {
+                out.push(Curved::Patch { projector: Box::new(n.mapped(place).projector()), within });
+                continue;
+            }
             FaceSurface::Plane { normal, point } => FaceSurface::Plane { normal: axis.turn(normal), point: place(point) },
             FaceSurface::Cylinder { origin, axis: a, radius } => FaceSurface::Cylinder { origin: place(origin), axis: axis.turn(a), radius },
             FaceSurface::Sphere { center, radius } => FaceSurface::Sphere { center: place(center), radius },
             FaceSurface::Cone { apex, axis: a, half_angle } => FaceSurface::Cone { apex: place(apex), axis: axis.turn(a), half_angle },
             FaceSurface::Torus { center, axis: a, major, minor } => FaceSurface::Torus { center: place(center), axis: axis.turn(a), major, minor },
         };
-        out.push(Curved::Fitted { surface, within: b.grown(0.15 * longest + 1e-9 * b.size().norm()) });
+        out.push(Curved::Fitted { surface, within });
     }
     out
 }
@@ -123,8 +141,9 @@ fn surface_faces<'a>(mesh: &'a Mesh, topo: &'a crate::Topology) -> impl Iterator
         .map(|(tets, f)| (*f, tets[1] != crate::NO_TET))
 }
 
-/// Moves the vertices of interface triangles onto their curved surface: the points boundary
-/// recovery added there sit on chords of the tessellation. A move that would turn a tetrahedron
+/// Moves the vertices of interface triangles onto their curved surface, and of boundary
+/// triangles onto a free-form patch: the points boundary recovery (or the mesher, on a patch)
+/// added there sit on chords of the tessellation. A move that would turn a tetrahedron
 /// inside out is not made.
 fn snap_interfaces(mesh: &mut Mesh, topo: &crate::Topology, surfaces: &[Curved], size: f64) {
     let mut node_tets: Vec<Vec<u32>> = vec![Vec::new(); mesh.nodes.len()];
@@ -133,11 +152,15 @@ fn snap_interfaces(mesh: &mut Mesh, topo: &crate::Topology, surfaces: &[Curved],
             node_tets[n as usize].push(t as u32);
         }
     }
-    // Interfaces only (both sides tetrahedra of different materials).
-    let interfaces: Vec<[u32; 3]> = surface_faces(mesh, topo).filter(|(_, interface)| *interface).map(|(f, _)| f).collect();
-    for nodes in interfaces {
+    // Interfaces (both sides tetrahedra of different materials), and the boundary on a free-form
+    // patch, which the mesher refined on its tessellation's chords.
+    let faces: Vec<([u32; 3], bool)> = surface_faces(mesh, topo).collect();
+    for (nodes, interface) in faces {
         let p = nodes.map(|n| mesh.nodes[n as usize]);
-        let Some(s) = surface_of(&p, surfaces, size).copied() else { continue };
+        let Some(s) = surface_of(&p, surfaces, size) else { continue };
+        if !interface && !matches!(s, Curved::Patch { .. }) {
+            continue;
+        }
         for &n in &nodes {
             let old = mesh.nodes[n as usize];
             if s.distance(old) < 1e-12 * size {
@@ -261,7 +284,7 @@ mod tests {
         let side = FaceSurface::Cylinder { origin: Point3::new(c[0], c[1], 0.0), axis: Vec3::new(0.0, 0.0, 1.0), radius: r };
         let surfaces = if fitted {
             vec![
-                Some(side),
+                Some(side.clone()),
                 Some(side),
                 Some(FaceSurface::Plane { normal: Vec3::new(0.0, 0.0, -1.0), point: Point3::ORIGIN }),
                 Some(FaceSurface::Plane { normal: Vec3::new(0.0, 0.0, 1.0), point: Point3::new(0.0, 0.0, l) }),
@@ -270,6 +293,56 @@ mod tests {
             Vec::new()
         };
         Shape::Surface { name: "can".into(), positions, triangles, tags, surfaces }
+    }
+
+    /// Half the side of the cylinder of radius r about z, from angle `a` round by π and from z = 0
+    /// to l, as a design gives it: a NURBS patch, two rational quadratic quarter arcs (corner
+    /// weights √½) along u, linear along v.
+    fn half_side(r: f64, l: f64, a: f64) -> FaceSurface {
+        use emcraft_model::nurbs::{Knots, Nurbs};
+        let w = std::f64::consts::FRAC_1_SQRT_2;
+        let at = |t: f64, k: f64| Point3::new(k * r * t.cos(), k * r * t.sin(), 0.0);
+        let q = std::f64::consts::FRAC_PI_2;
+        let arc = [
+            (at(a, 1.0), 1.0),
+            (at(a + q / 2.0, 2f64.sqrt()), w),
+            (at(a + q, 1.0), 1.0),
+            (at(a + 1.5 * q, 2f64.sqrt()), w),
+            (at(a + 2.0 * q, 1.0), 1.0),
+        ];
+        let net = arc.iter().map(|&(p, wt)| vec![(p, wt), (p + Vec3::new(0.0, 0.0, l), wt)]).collect();
+        FaceSurface::Nurbs(Box::new(Nurbs {
+            u: Knots { degree: 2, knots: vec![0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0] },
+            v: Knots { degree: 1, knots: vec![0.0, 0.0, 1.0, 1.0] },
+            net,
+        }))
+    }
+
+    /// The same can with its side as two NURBS patches (the exact surface a design gives, no
+    /// fit): the mesher's nodes on the side moved onto it, the curved edges' midpoints on it.
+    #[test]
+    fn imported_nurbs_faces_bend_the_elements_onto_them() {
+        let (r, l, size) = (0.01, 0.02, 0.003);
+        let rho = |p: Point3| p.x.hypot(p.y);
+        let Shape::Surface { name, positions, triangles, tags, mut surfaces } = imported_cylinder([0.0, 0.0], r, l, 26, true) else { panic!() };
+        surfaces[0] = Some(half_side(r, l, 0.0));
+        surfaces[1] = Some(half_side(r, l, std::f64::consts::PI));
+        let mut m = Model::new();
+        m.set_solid(Solid { shape: Shape::Surface { name, positions, triangles, tags, surfaces }, material: "vacuum".into() }).unwrap();
+        let mesh = solid_with(&m, &SolidOptions::new(metres(size))).unwrap();
+        let side: Vec<Point3> = mesh
+            .boundary
+            .iter()
+            .flat_map(|f| f.nodes)
+            .map(|n| mesh.nodes[n as usize])
+            .filter(|p| p.z.abs() > 1e-12 && (p.z - l).abs() > 1e-12)
+            .collect();
+        assert!(side.len() > 26);
+        let worst = side.iter().map(|p| (rho(*p) - r).abs()).fold(0.0, f64::max);
+        assert!(worst < 1e-9 * r, "a side node {worst} off the cylinder");
+        assert!(mesh.curved.len() > 50);
+        let worst = mesh.curved.iter().map(|(_, p)| (rho(*p) - r).abs()).fold(0.0, f64::max);
+        assert!(worst < 1e-9 * r, "a midpoint {worst} off the cylinder");
     }
 
     #[test]
@@ -386,7 +459,7 @@ mod tests {
         let mut post = imported_cylinder([a / 2.0, b / 2.0], r, 0.01, 26, true);
         if let Shape::Surface { positions, surfaces, .. } = &mut post {
             positions.iter_mut().for_each(|p| p.z += 0.01);
-            *surfaces = surfaces.iter().map(|f| f.map(|f| f.moved(Vec3::new(0.0, 0.0, 0.01)))).collect();
+            *surfaces = surfaces.iter().map(|f| f.clone().map(|f| f.moved(Vec3::new(0.0, 0.0, 0.01)))).collect();
         }
         m.add_feature(Feature { combine: Combine::Subtract, shape: post, at: Point3::ORIGIN, axis: emcraft_model::Axis::Z }).unwrap();
         let mesh = solid_with(&m, &SolidOptions::new(metres(0.003))).unwrap();

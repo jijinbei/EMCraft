@@ -228,7 +228,7 @@ fn tessellate_surface(shape: &Shape) -> Tessellation {
     let mut tags = tags.clone();
     let faces = tags.iter().map(|t| t + 1).max().unwrap_or(0);
     let mut analytic: Vec<Option<AnalyticSurface>> =
-        (0..faces as usize).map(|f| surfaces.get(f).copied().flatten().filter(FaceSurface::is_curved).map(exact)).collect();
+        (0..faces as usize).map(|f| surfaces.get(f).cloned().flatten().filter(FaceSurface::is_curved).and_then(exact)).collect();
     let Aabb { min: lo, max: hi } = shape.bounds();
     let ends = shape.end_triangles();
     let mut tag_of = [None, None];
@@ -247,16 +247,18 @@ fn tessellate_surface(shape: &Shape) -> Tessellation {
     Tessellation { surface, analytic, start_face: tag_of[0], end_face: tag_of[1] }
 }
 
-/// A fitted face's surface as the mesher's.
-fn exact(f: FaceSurface) -> AnalyticSurface {
+/// A fitted face's surface as the mesher's (a free-form patch has none: the points the mesher
+/// adds on it are moved onto it after, `super::curved`).
+fn exact(f: FaceSurface) -> Option<AnalyticSurface> {
     let (p, v) = (mesher_point, mesher_vec);
-    match f {
+    Some(match f {
         FaceSurface::Plane { normal, point } => AnalyticSurface::Plane { normal: v(normal), point: p(point) },
         FaceSurface::Cylinder { origin, axis, radius } => AnalyticSurface::Cylinder { origin: p(origin), axis: v(axis), radius },
         FaceSurface::Sphere { center, radius } => AnalyticSurface::Sphere { center: p(center), radius },
         FaceSurface::Cone { apex, axis, half_angle } => AnalyticSurface::Cone { apex: p(apex), axis: v(axis), half_angle },
         FaceSurface::Torus { center, axis, major, minor } => AnalyticSurface::Torus { center: p(center), axis: v(axis), major, minor },
-    }
+        FaceSurface::Nurbs(_) => return None,
+    })
 }
 
 /// The tessellation size of an inclusion: its interface is kept as tessellated (frozen), so a
