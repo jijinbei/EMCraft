@@ -1,10 +1,20 @@
 //! Display objects shared by material and geometry eye controls. Visibility changes no physics.
 use crate::{EngineError, Params, Result, Session};
-use emcraft_model::{Model, Point3};
+use emcraft_model::{Axis, Model, Point3};
 use serde_json::{Value, json};
 
-/// A geometry tree object, identified independently of the viewport's GPU tags.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A geometry tree object, identified independently of the viewport's GPU tags. Written in
+/// project files and commands as its key (`section:2`, `symmetry:z`), read back checked.
+///
+/// ```
+/// use emcraft_engine::visibility::GeometryObject;
+/// use emcraft_model::Axis;
+/// assert_eq!(GeometryObject::Symmetry(Axis::Z).key(), "symmetry:z");
+/// assert_eq!(GeometryObject::parse("section:2"), Some(GeometryObject::Section(2)));
+/// assert_eq!(GeometryObject::parse("symmetry:w"), None);
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub enum GeometryObject {
     Guide,
     Solid,
@@ -14,6 +24,8 @@ pub enum GeometryObject {
     Via(usize),
     Feature(usize),
     Inclusion(usize),
+    /// The symmetry plane across an axis (a model has one a axis at most).
+    Symmetry(Axis),
 }
 
 impl GeometryObject {
@@ -27,6 +39,7 @@ impl GeometryObject {
             Self::Via(i) => format!("via:{i}"),
             Self::Feature(i) => format!("feature:{i}"),
             Self::Inclusion(i) => format!("inclusion:{i}"),
+            Self::Symmetry(a) => format!("symmetry:{}", a.id()),
         }
     }
 
@@ -36,6 +49,9 @@ impl GeometryObject {
             "solid" => Some(Self::Solid),
             _ => {
                 let (kind, index) = key.split_once(':')?;
+                if kind == "symmetry" {
+                    return Axis::parse(index).map(Self::Symmetry);
+                }
                 let i = index.parse::<usize>().ok()?;
                 match kind {
                     "section" => Some(Self::Section(i)),
@@ -60,6 +76,7 @@ impl GeometryObject {
             Self::Via(i) => m.waveguide().is_some_and(|w| i < w.vias.len()),
             Self::Feature(i) => i < m.features().len(),
             Self::Inclusion(i) => i < m.inclusions().len(),
+            Self::Symmetry(a) => m.domain.symmetry.iter().any(|s| s.axis == a),
         }
     }
 
@@ -81,6 +98,8 @@ impl GeometryObject {
                 .is_some_and(|(y, l)| p.y >= y - 1e-10 && p.y <= y + l + 1e-10),
             Self::Feature(i) => m.features().get(i).is_some_and(|s| s.contains(p)),
             Self::Inclusion(i) => m.inclusions().get(i).is_some_and(|s| s.contains(p)),
+            // A plane hides only its own sheet, nothing of the model.
+            Self::Symmetry(_) => false,
             Self::Strip(i) => m
                 .waveguide()
                 .as_ref()
@@ -92,6 +111,20 @@ impl GeometryObject {
                 .and_then(|w| w.vias.get(i))
                 .is_some_and(|s| p.x >= s.x0 && p.x <= s.x0 + s.wx && p.y >= s.y0 && p.y <= s.y1 && p.z >= s.z0 && p.z <= s.z0 + s.wz),
         }
+    }
+}
+
+impl TryFrom<String> for GeometryObject {
+    type Error = String;
+
+    fn try_from(key: String) -> std::result::Result<Self, String> {
+        GeometryObject::parse(&key).ok_or_else(|| format!("no geometry object `{}`", crate::text::clip(&key, 64)))
+    }
+}
+
+impl From<GeometryObject> for String {
+    fn from(g: GeometryObject) -> String {
+        g.key()
     }
 }
 
@@ -127,38 +160,47 @@ impl crate::views::Views {
     pub fn visible(&self, object: &DisplayObject) -> bool {
         match object {
             DisplayObject::Material(n) => !self.hidden_materials.contains(n),
-            DisplayObject::Geometry(g) => !self.hidden_geometry.contains(&g.key()),
+            DisplayObject::Geometry(g) => !self.hidden_geometry.contains(g),
         }
     }
 }
 
 pub fn set(s: &mut Session, object: DisplayObject, visible: bool) -> Result<Value> {
     let name = object.name();
-    let hidden = match &object {
+    let full = |n: usize| n >= MAX_HIDDEN;
+    match &object {
         DisplayObject::Material(n) => {
             s.model().material(n)?;
-            &mut s.views.hidden_materials
+            let hidden = &mut s.views.hidden_materials;
+            if name.chars().count() > 64 || (!visible && full(hidden.len()) && !hidden.contains(n)) {
+                return Err(EngineError::failed("display object limit exceeded"));
+            }
+            if visible {
+                hidden.remove(n)
+            } else {
+                hidden.insert(n.clone())
+            };
         }
         DisplayObject::Geometry(g) => {
             if !g.exists(s.model()) {
                 return Err(EngineError::failed("no such geometry object"));
             }
-            &mut s.views.hidden_geometry
-        }
-    };
-    if name.chars().count() > 64 || (!visible && hidden.len() >= 4096 && !hidden.contains(&name)) {
-        return Err(EngineError::failed("display object limit exceeded"));
-    }
-    match visible {
-        true => {
-            hidden.remove(&name);
-        }
-        false => {
-            hidden.insert(name.clone());
+            let hidden = &mut s.views.hidden_geometry;
+            if !visible && full(hidden.len()) && !hidden.contains(g) {
+                return Err(EngineError::failed("display object limit exceeded"));
+            }
+            if visible {
+                hidden.remove(g)
+            } else {
+                hidden.insert(*g)
+            };
         }
     }
     Ok(json!({"kind": object.kind(), "name": name, "visible": visible}))
 }
+
+/// The most objects a view hides of each kind.
+pub const MAX_HIDDEN: usize = 4096;
 
 /// `view.visibility`: shows or hides a material's region or a geometry object, the display only
 /// (the model, mesh and results stay as they are).

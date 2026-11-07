@@ -26,6 +26,12 @@ pub(super) fn from_mesh(session: &emcraft_engine::Session, overlay: Overlay, out
     let mut faces: Vec<Face> = Vec::with_capacity(mesh.boundary.len());
     for (i, f) in mesh.boundary.iter().enumerate() {
         let (Some(a), Some(b), Some(c)) = (node(f.nodes[0]), node(f.nodes[1]), node(f.nodes[2])) else { continue };
+        // A symmetry plane's faces lie inside the model drawn whole: the plane is its rectangle
+        // (`extras::symmetry_planes`); they still count for the outline's edges.
+        if matches!(f.tag, Boundary::Symmetry(_)) {
+            faces.push((f.nodes, 0, false));
+            continue;
+        }
         let port = match f.tag {
             Boundary::Port(k) => end_port(k),
             Boundary::Pec | Boundary::Symmetry(_) => None,

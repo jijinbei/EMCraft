@@ -917,3 +917,8 @@ fn a_board_solved_by_finite_elements_has_no_pcb_route_view() {
     h.frames(1);
     assert_ne!(h.app.place.view(), crate::View::Pcb);
 }
+
+#[test]
+fn scenario_symmetry_eye() {
+    scenario("symmetry_eye");
+}

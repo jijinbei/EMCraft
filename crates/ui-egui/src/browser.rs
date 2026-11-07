@@ -107,6 +107,9 @@ pub struct Row {
     pub rich: Option<String>,
     /// A waveguide port's part in the S-parameters.
     pub role: Option<PortRole>,
+    /// What its eye shows or hides (none: no eye): its pick's display object, or its own (a
+    /// symmetry plane's sheet), set once as the tree is built.
+    pub eye: Option<emcraft_engine::visibility::DisplayObject>,
 }
 
 /// A waveguide port's part in the S-parameters as they are read: the driven port is the input
@@ -201,7 +204,7 @@ fn node(id: impl Into<String>, name: Both, detail: Option<Both>, glyph: Glyph, a
         Some(d) => (format!("{}: {}", name.en, d.en), d.shown.clone()),
         None => (name.en.clone(), String::new()),
     };
-    Row { id: id.into(), text: en, shown: name.shown, detail: shown, glyph, act, depth: 0, pick: None, item: None, rich: None, role: None }
+    Row { id: id.into(), text: en, shown: name.shown, detail: shown, glyph, act, depth: 0, pick: None, item: None, rich: None, role: None, eye: None }
 }
 
 /// Text in both languages from a template and its arguments.
@@ -319,6 +322,12 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
         (t!("Mesh").en(), mesh(m)),
         (t!("Results").en(), results(app)),
     ]);
+    // Each row's eye, once: what its pick shows in the view, unless the row named its own.
+    for (_, rows) in &mut sections {
+        for r in rows.iter_mut().filter(|r| r.eye.is_none()) {
+            r.eye = r.pick.and_then(|p| p.display_object(m));
+        }
+    }
     sections
 }
 
@@ -610,7 +619,8 @@ fn domain(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         // Its own plane's values, not the first one's.
         let edit = Act::EditWith("model.symmetry", serde_json::json!({"axis": axis}));
         let name = words(t!("Symmetry plane {axis}"), args!(axis = axis));
-        rows.push(node(format!("symmetry:{axis}"), name, Some(detail), glyph, edit).under());
+        let eye = Some(emcraft_engine::visibility::DisplayObject::Geometry(emcraft_engine::visibility::GeometryObject::Symmetry(plane.axis)));
+        rows.push(Row { eye, ..node(format!("symmetry:{axis}"), name, Some(detail), glyph, edit).under() });
     }
     if let Some(r) = &d.rotation {
         let detail = words(t!("{n} sectors about z · harmonic {m}"), args!(n = r.n, m = r.m));
@@ -884,8 +894,8 @@ fn browser_row(app: &EmcraftApp, ui: &mut egui::Ui, r: &Row, out_of_date: bool, 
         t.text
     };
     let mut clip = rect;
-    if let Some(object) = r.pick.and_then(|p| p.display_object(app.session.model())) {
-        clip.max.x = visibility_eye(app, ui, rect, &object, out).left() - 3.0;
+    if let Some(object) = &r.eye {
+        clip.max.x = visibility_eye(app, ui, rect, object, out).left() - 3.0;
     }
     if out_of_date {
         let c = pos2(rect.right() - 12.0, rect.center().y);

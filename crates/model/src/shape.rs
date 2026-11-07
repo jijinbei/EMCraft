@@ -543,7 +543,7 @@ impl Inclusion {
 
 emcraft_macros::named_enum! {
     /// A coordinate axis.
-    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum Axis {
         X = "x",
         Y = "y",

@@ -117,11 +117,17 @@ pub(crate) fn quad_centre(q: &[[f64; 3]; 4]) -> [f64; 3] {
     [0, 1, 2].map(|k| 0.25 * (q[0][k] + q[1][k] + q[2][k] + q[3][k]))
 }
 
-/// The symmetry planes before the model is meshed: each a faint sheet across the model's box,
-/// framed, in its wall's colour (meshed, the half below it is what is drawn, its cut the plane).
-pub(super) fn symmetry_planes(m: &Model, out: &mut Built) {
+/// The symmetry planes, meshed or not: each a faint rectangle across the model's box, framed, in
+/// its wall's colour (the model is drawn whole either way, so the mesh's own faces on the plane,
+/// which follow the model's cut, are not drawn); a plane hidden by its eye is left out.
+pub(super) fn symmetry_planes(session: &emcraft_engine::Session, out: &mut Built) {
+    use emcraft_engine::visibility::{DisplayObject, GeometryObject};
+    let m = session.model();
     let Some((lo, hi)) = out.bounds else { return };
     for s in &m.domain.symmetry {
+        if !session.views().visible(&DisplayObject::Geometry(GeometryObject::Symmetry(s.axis))) {
+            continue;
+        }
         let k = s.axis.index();
         let (u, v) = ((k + 1) % 3, (k + 2) % 3);
         let at = |a: f64, b: f64| {

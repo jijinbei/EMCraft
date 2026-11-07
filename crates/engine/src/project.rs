@@ -342,6 +342,10 @@ pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
     } else if let Some(kind) = own {
         fresh.execute("project.analysis", &json!({"kind": kind.id()}))?;
     }
+    // A template's symmetry planes are how it is solved, not what it shows: hidden until their
+    // eyes are opened.
+    let planes: Vec<_> = fresh.model.domain.symmetry.iter().map(|q| crate::visibility::GeometryObject::Symmetry(q.axis)).collect();
+    fresh.views.hidden_geometry.extend(planes);
     fresh.mark_saved();
     fresh.sample = Some(name.to_owned());
     // Undo goes back to before the sample, not through the steps that built it.

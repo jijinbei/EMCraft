@@ -231,7 +231,7 @@ pub struct Views {
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub hidden_materials: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub hidden_geometry: BTreeSet<String>,
+    pub hidden_geometry: BTreeSet<crate::visibility::GeometryObject>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub charts: BTreeMap<String, ChartStyle>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -288,10 +288,12 @@ impl Views {
         if self.driven.as_ref().is_some_and(|d| d.trim().is_empty() || d.chars().count() > MAX_NAME) {
             return Err(EngineError::failed(format!("views: the driven port needs a name of 1 to {MAX_NAME} characters")));
         }
-        if self.hidden_materials.len() > 4096 || self.hidden_materials.iter().any(|n| n.is_empty() || n.chars().count() > MAX_NAME) {
+        if self.hidden_materials.len() > crate::visibility::MAX_HIDDEN
+            || self.hidden_materials.iter().any(|n| n.is_empty() || n.chars().count() > MAX_NAME)
+        {
             return Err(EngineError::failed("views: invalid hidden material names"));
         }
-        if self.hidden_geometry.len() > 4096 || self.hidden_geometry.iter().any(|k| crate::visibility::GeometryObject::parse(k).is_none()) {
+        if self.hidden_geometry.len() > crate::visibility::MAX_HIDDEN {
             return Err(EngineError::failed("views: invalid geometry visibility"));
         }
         if !self.pcb.holds() {

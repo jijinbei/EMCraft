@@ -341,7 +341,6 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
         }
         None => {
             geometry::from_geometry(m, overlay, &mut out);
-            extras::symmetry_planes(m, &mut out);
             extras::sector_cuts(m, &mut out);
             // A board's region before it is meshed: its copper and substrates in place.
             if let Some(b) = m.pcb() {
@@ -352,6 +351,7 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
     geometry::part_walls(m, &mut out);
     present_materials(session, selected, &mut out);
     filter_geometry(session, &mut out);
+    extras::symmetry_planes(session, &mut out);
     extras::extras(m, session.driven_port(), overlay, &mut out);
     legend::legend(session, overlay, &mut out);
     if overlay == Overlay::Field {
@@ -432,9 +432,8 @@ fn present_materials(session: &Session, selected: &[Pick], out: &mut Built) {
 
 /// The same geometry targets hide mesh surfaces, region surfaces and wire outlines.
 fn filter_geometry(session: &Session, out: &mut Built) {
-    use emcraft_engine::visibility::GeometryObject;
     let m = session.model();
-    let hidden: Vec<_> = session.views().hidden_geometry.iter().filter_map(|s| GeometryObject::parse(s)).collect();
+    let hidden: Vec<_> = session.views().hidden_geometry.iter().copied().collect();
     if hidden.is_empty() {
         return;
     }

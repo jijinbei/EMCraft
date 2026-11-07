@@ -378,3 +378,26 @@ fn three_ports_report_each_destination_and_follow_the_driven_input() {
     assert!(s.execute("results.power", &json!({"frequency":8.7})).is_err());
     assert!(s.execute("results.power", &json!({"excitation":"missing"})).is_err());
 }
+
+/// A template's symmetry plane opens hidden; its eye (`symmetry:<axis>`) shows it; a plane the
+/// model lacks or an axis that is none is refused; the hidden set is written by key and read back.
+#[test]
+fn a_templates_symmetry_plane_opens_hidden_and_its_eye_shows_it() {
+    use crate::visibility::{DisplayObject, GeometryObject};
+    let mut s = crate::Session::new();
+    s.execute("file.sample", &json!({"name": "e-tee"})).unwrap();
+    let axis = s.model().domain.symmetry.first().map(|p| p.axis).unwrap();
+    let plane = DisplayObject::Geometry(GeometryObject::Symmetry(axis));
+    assert!(!s.views().visible(&plane));
+    s.execute("view.visibility", &json!({"kind": "geometry", "name": format!("symmetry:{}", axis.id()), "visible": true})).unwrap();
+    assert!(s.views().visible(&plane));
+    let other = if axis == emcraft_model::Axis::X { "y" } else { "x" };
+    assert!(s.execute("view.visibility", &json!({"kind": "geometry", "name": format!("symmetry:{other}"), "visible": false})).is_err());
+    assert!(s.execute("view.visibility", &json!({"kind": "geometry", "name": "symmetry:w", "visible": false})).is_err());
+    s.execute("view.visibility", &json!({"kind": "geometry", "name": format!("symmetry:{}", axis.id()), "visible": false})).unwrap();
+    let written = serde_json::to_value(s.views()).unwrap();
+    assert_eq!(written["hidden_geometry"], json!([format!("symmetry:{}", axis.id())]));
+    let read: crate::views::Views = serde_json::from_value(written).unwrap();
+    assert!(!read.visible(&plane));
+    assert!(serde_json::from_value::<crate::views::Views>(json!({"hidden_geometry": ["nonsense"]})).is_err());
+}
