@@ -445,9 +445,10 @@ fn bodies(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         };
         rows.push(row);
     }
-    // A board: its own view (routes, nets, the region solved).
+    // A board solved by the finite elements (a board's PCB analysis has its own tree, above):
+    // a row like the other bodies, the 3D view kept (its route view is the PCB analysis').
     if let Some(board) = m.pcb() {
-        rows.push(node("board", words(t!("PCB"), &[]), Some(own(&board.name)), Glyph::Part, Act::Show(View::Pcb)));
+        rows.push(node("board", words(t!("PCB"), &[]), Some(own(&board.name)), Glyph::Part, Act::None));
     }
     // An imported part's walls and region body: a double-click gives them another material.
     for (i, b) in emcraft_engine::bodies::parts(m).into_iter().enumerate() {
