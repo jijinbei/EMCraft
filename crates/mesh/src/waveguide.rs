@@ -247,8 +247,12 @@ impl Axis<'_> {
             breaks.push(a.start.clamp(0.0, span));
             breaks.push(a.end().clamp(0.0, span));
         }
-        for (narrow, wide) in aperture_steps(w, aperture, tol).into_iter().flatten() {
-            sharp.extend([narrow.start, narrow.end()].into_iter().filter(|&e| e > wide.start + tol && e < wide.end() - tol));
+        // A re-entrant edge: one aperture's edge strictly inside the other's (a narrower one's
+        // within the wider; both ways where they overlap in part).
+        for (p, q) in aperture_steps(w, aperture, tol).into_iter().flatten() {
+            for (edges, other) in [(p, q), (q, p)] {
+                sharp.extend([edges.start, edges.end()].into_iter().filter(|&e| e > other.start + tol && e < other.end() - tol));
+            }
         }
         breaks.sort_by(f64::total_cmp);
         breaks.dedup_by(|a, b| (*a - *b).abs() <= tol);

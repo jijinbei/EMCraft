@@ -1,0 +1,46 @@
+{
+ "title": "Offset H-plane step: a 22.86 mm aperture moved 7.14 mm across a 30 mm guide, the two overlapping in part (15.72 mm), at 10 GHz",
+ "kind": "theory",
+ "source": "Mode matching of the vector TE_mn and TM_mn modes at each junction (the field on the junction's plane on the two apertures' intersection), cascaded as generalised scattering matrices (H. Patzelt, F. Arndt, IEEE Trans. MTT 30(5):771–776, 1982; A. Wexler, IEEE Trans. MTT 15(9):508–517, 1967), each guide's modes up to one cut-off (relative convergence), 1350 in the largest aperture",
+ "quantities": [
+  {
+   "id": "s11_mag",
+   "quantity": "|S11| at 10 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s11/mag"
+   },
+   "value": 0.4791383588211008,
+   "tolerance": {
+    "absolute": 0.003
+   },
+   "reason": "the overlap's four re-entrant edges graded at 2 mm, order 2: 0.4801 (0.4797 at 1.4 mm)"
+  },
+  {
+   "id": "s11_phase",
+   "quantity": "phase of S11 at 10 GHz (degrees)",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s11/deg"
+   },
+   "value": -157.73707309322708,
+   "tolerance": {
+    "absolute": 0.3
+   },
+   "reason": "0.09° (0.05° at 1.4 mm)"
+  },
+  {
+   "id": "s21_mag",
+   "quantity": "|S21| at 10 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s21/mag"
+   },
+   "value": 0.87781,
+   "tolerance": {
+    "absolute": 0.002
+   },
+   "reason": "lossless: |S21|² = 1 − |S11|²"
+  }
+ ]
+}

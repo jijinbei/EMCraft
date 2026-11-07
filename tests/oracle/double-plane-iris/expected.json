@@ -1,0 +1,46 @@
+{
+ "title": "Double-plane iris: a 14 × 6 mm window, 2 mm thick, centred in WR-90, at 10 GHz",
+ "kind": "theory",
+ "source": "Mode matching of the vector TE_mn and TM_mn modes at each junction (the field on the junction's plane on the two apertures' intersection), cascaded as generalised scattering matrices (H. Patzelt, F. Arndt, IEEE Trans. MTT 30(5):771–776, 1982; A. Wexler, IEEE Trans. MTT 15(9):508–517, 1967), each guide's modes up to one cut-off (relative convergence), 1350 in the largest aperture",
+ "quantities": [
+  {
+   "id": "s11_mag",
+   "quantity": "|S11| at 10 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s11/mag"
+   },
+   "value": 0.5208230263997148,
+   "tolerance": {
+    "absolute": 0.006
+   },
+   "reason": "the window's eight edges singular, graded at 2 mm, order 2: 0.5245 (0.5236 at 1.4 mm, converging down); the reference's spread over 300–1350 modes ±6e-4"
+  },
+  {
+   "id": "s11_phase",
+   "quantity": "phase of S11 at 10 GHz (degrees)",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s11/deg"
+   },
+   "value": -105.32845938787038,
+   "tolerance": {
+    "absolute": 0.5
+   },
+   "reason": "0.27° (0.20° at 1.4 mm)"
+  },
+  {
+   "id": "s21_phase",
+   "quantity": "phase of S21 at 10 GHz (degrees)",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s21/deg"
+   },
+   "value": 164.67154061212963,
+   "tolerance": {
+    "absolute": 0.5
+   },
+   "reason": "as S11's"
+  }
+ ]
+}

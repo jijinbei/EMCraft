@@ -188,6 +188,11 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   Passive Structures*, Wiley 1989, ch. 9; J. Uher, J. Bornemann, U. Rosenberg, *Waveguide
   Components for Antenna Feed Systems: Theory and CAD*, Artech House 1993 — mode matching and
   generalised scattering matrices (`emcraft-theory::modematch`).
+- H. Patzelt, F. Arndt, *Double-plane steps in rectangular waveguides and their application for
+  transformers, irises, and filters*, IEEE Trans. MTT 30(5):771–776, 1982 — the vector TE_mn
+  and TM_mn mode matching of a step in width and height at once, each junction's field
+  expanded on the two apertures' intersection (`emcraft-theory::modematch::RectLine`, oracles
+  `double-plane-step`, `double-plane-iris`, `offset-step`).
 - R. Mittra, T. Itoh, T.-S. Li, *Analytical and numerical studies of the relative convergence
   phenomenon arising in the solution of an integral equation by the moment method*, IEEE Trans.
   MTT 20(2):96–104, 1972 — mode counts in proportion to the apertures.

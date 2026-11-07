@@ -4,6 +4,7 @@
 
 use emcraft_model::Material;
 use emcraft_solver::Complex64 as C;
+use emcraft_theory::modematch::{RectLine, RectSection};
 use emcraft_theory::{EPlaneLine, ESection, HPlaneLine, HSection, Layer, Te10Line, te10_cutoff};
 
 use crate::{EngineError, Result, Session};
@@ -85,6 +86,9 @@ pub enum Reference {
     Exact(ExactLine),
     ModeMatching(HPlaneLine),
     EPlane(EPlaneLine),
+    /// A guide whose aperture changes in width and height together, or whose apertures
+    /// overlap in part: vector mode matching (TE_mn, TM_mn).
+    Rect(emcraft_theory::modematch::RectLine),
     /// A uniform guide `length` long whose first mode has cut-off wavenumber `cutoff` (0 for
     /// TEM) in a fill of εr μr = `index2`: S11 = 0, S21 = e^{−jβL}.
     Uniform {
@@ -100,7 +104,7 @@ impl Reference {
     pub fn label(&self) -> &'static str {
         match self {
             Reference::Exact(_) | Reference::Uniform { .. } => "exact",
-            Reference::ModeMatching(_) | Reference::EPlane(_) => "mode matching",
+            Reference::ModeMatching(_) | Reference::EPlane(_) | Reference::Rect(_) => "mode matching",
             Reference::Stack(_) => "exact (plane wave)",
         }
     }
@@ -108,7 +112,7 @@ impl Reference {
     /// Whether the reference is mode matching: dense linear algebra per frequency, its accuracy
     /// set by the modes it takes.
     pub fn is_mode_matching(&self) -> bool {
-        matches!(self, Reference::ModeMatching(_) | Reference::EPlane(_))
+        matches!(self, Reference::ModeMatching(_) | Reference::EPlane(_) | Reference::Rect(_))
     }
 
     /// (S11, S21), power waves, with `modes` TE_m0 modes for mode matching.
@@ -117,6 +121,9 @@ impl Reference {
             Reference::Exact(l) => Ok(l.at(frequency).solve(frequency)?.s_power()),
             Reference::ModeMatching(l) => Ok(l.solve(frequency, modes)?),
             Reference::EPlane(l) => Ok(l.solve(frequency, modes)?),
+            // Vector modes: three for each scalar one asked for (most do not couple to a
+            // single-plane change; a double-plane one needs them).
+            Reference::Rect(l) => Ok(l.solve(frequency, (3 * modes).min(1500))?),
             Reference::Stack(st) => Ok(st.s(frequency)?),
             Reference::Uniform { length, cutoff, index2 } => {
                 let k = 2.0 * std::f64::consts::PI * frequency / emcraft_model::units::C0;
@@ -147,6 +154,30 @@ pub fn reference(session: &Session) -> Result<Reference> {
     if w.uniform() {
         return Ok(Reference::Exact(te10_line(session)?));
     }
+    // Apertures overlapping in part, or changing in width and height together: vector modes.
+    let nested = (1..w.sections.len()).all(|i| {
+        let ([px, py], [qx, qy]) = (w.opening(i - 1), w.opening(i));
+        let tol = 1e-9 * w.width.get();
+        (px.holds(qx, tol) && py.holds(qy, tol)) || (qx.holds(px, tol) && qy.holds(py, tol))
+    });
+    if !nested || !(w.full_width() || w.full_height()) {
+        let mut sections = Vec::with_capacity(w.sections.len());
+        for (i, s) in w.sections.iter().enumerate() {
+            let m = constant(session.model.material(&s.material)?.1)?;
+            let [x, y] = w.opening(i);
+            sections.push(RectSection {
+                length: s.length.get(),
+                eps_r: m.eps_r.get(),
+                mu_r: m.mu_r.get(),
+                loss_tangent: m.loss_tangent.get(),
+                x0: x.start,
+                a: x.width,
+                y0: y.start,
+                b: y.width,
+            });
+        }
+        return Ok(Reference::Rect(RectLine { sections }));
+    }
     if w.full_width() {
         let mut sections = Vec::with_capacity(w.sections.len());
         for (i, s) in w.sections.iter().enumerate() {
@@ -162,9 +193,6 @@ pub fn reference(session: &Session) -> Result<Reference> {
             });
         }
         return Ok(Reference::EPlane(EPlaneLine { a: w.width.get(), sections }));
-    }
-    if !w.full_height() {
-        return Err(EngineError::failed("not supported yet: a reference for guides whose width and height both change"));
     }
     let mut sections = Vec::with_capacity(w.sections.len());
     for (i, s) in w.sections.iter().enumerate() {

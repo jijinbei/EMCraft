@@ -1,0 +1,3 @@
+# Offset H-plane step: a 22.86 mm aperture moved 7.14 mm across a 30 mm guide, the two overlapping in part (15.72 mm), at 10 GHz
+
+A guide whose aperture changes to one overlapping its neighbour only in part, meshed by the structured waveguide mesher (cells outside each section's aperture left out, the grid graded towards every edge of one aperture lying inside the other) and solved at order 2. The reference is independent of the finite elements: vector mode matching (`emcraft_theory::modematch::RectLine`), the field on each junction's plane expanded on the two apertures' intersection, its convergence over 300 to 1350 modes stated in `expected.json`.

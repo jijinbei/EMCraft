@@ -394,6 +394,249 @@ impl EPlaneLine {
     }
 }
 
+/// A section of a rectangular line whose aperture may change in both width and height: its
+/// length, material and aperture [x0, x0 + a] × [y0, y0 + b] (m).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RectSection {
+    pub length: f64,
+    pub eps_r: f64,
+    pub mu_r: f64,
+    pub loss_tangent: f64,
+    pub x0: f64,
+    pub a: f64,
+    pub y0: f64,
+    pub b: f64,
+}
+
+/// A rectangular line of sections whose apertures change across x, y or both, nesting or
+/// overlapping in part: mode matching of the vector TE_mn and TM_mn modes (R. R. Mansour,
+/// R. H. MacPhie, *An improved transmission matrix formulation of cascaded discontinuities and
+/// its application to E-plane circuits*, IEEE Trans. MTT 34(12):1490–1498, 1986; H. Patzelt,
+/// F. Arndt, *Double-plane steps in rectangular waveguides and their application for
+/// transformers, irises, and filters*, IEEE Trans. MTT 30(5):771–776, 1982).
+///
+/// Each section's modes are those whose cut-off lies below one wavenumber, so a larger aperture
+/// keeps more (relative convergence). The field on a junction's plane lies on the two
+/// apertures' intersection: a junction is two nested ones through a guide of that intersection
+/// of no length (one of them alone when an aperture holds the other).
+#[derive(Clone, Debug, PartialEq)]
+pub struct RectLine {
+    pub sections: Vec<RectSection>,
+}
+
+/// A rectangular aperture: [x0, x0 + a] × [y0, y0 + b].
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Rect {
+    x0: f64,
+    a: f64,
+    y0: f64,
+    b: f64,
+}
+
+impl Rect {
+    fn of(s: &RectSection) -> Rect {
+        Rect { x0: s.x0, a: s.a, y0: s.y0, b: s.b }
+    }
+
+    fn holds(&self, o: &Rect, tol: f64) -> bool {
+        self.x0 <= o.x0 + tol && o.x0 + o.a <= self.x0 + self.a + tol && self.y0 <= o.y0 + tol && o.y0 + o.b <= self.y0 + self.b + tol
+    }
+
+    /// The intersection, `None` when the two do not overlap with area.
+    fn meet(&self, o: &Rect) -> Option<Rect> {
+        let (x0, x1) = (self.x0.max(o.x0), (self.x0 + self.a).min(o.x0 + o.a));
+        let (y0, y1) = (self.y0.max(o.y0), (self.y0 + self.b).min(o.y0 + o.b));
+        (x1 > x0 && y1 > y0).then_some(Rect { x0, a: x1 - x0, y0, b: y1 - y0 })
+    }
+}
+
+/// A vector mode of a rectangular guide: TE_mn (m + n ≥ 1) or TM_mn (m, n ≥ 1). Its transverse
+/// E is (cx cos(kx u) sin(ky v), cy sin(kx u) cos(ky v)), u and v from the aperture's corner:
+/// TE (ky, −kx), TM (kx, ky).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct VMode {
+    te: bool,
+    kx: f64,
+    ky: f64,
+}
+
+impl VMode {
+    fn coefficients(&self) -> (f64, f64) {
+        if self.te { (self.ky, -self.kx) } else { (self.kx, self.ky) }
+    }
+
+    fn kc2(&self) -> f64 {
+        self.kx * self.kx + self.ky * self.ky
+    }
+}
+
+/// The modes of aperture `r` with cut-off wavenumber up to `kc` (at least the fundamental),
+/// lowest first; at most `cap`.
+fn vmodes(r: &Rect, kc: f64, cap: usize) -> Vec<VMode> {
+    let (mmax, nmax) = ((kc * r.a / PI).floor() as usize, (kc * r.b / PI).floor() as usize);
+    let mut out = Vec::new();
+    for m in 0..=mmax.min(4000) {
+        for n in 0..=nmax.min(4000) {
+            let (kx, ky) = (m as f64 * PI / r.a, n as f64 * PI / r.b);
+            if kx * kx + ky * ky > kc * kc * (1.0 + 1e-12) {
+                continue;
+            }
+            if m + n >= 1 {
+                out.push(VMode { te: true, kx, ky });
+            }
+            if m >= 1 && n >= 1 {
+                out.push(VMode { te: false, kx, ky });
+            }
+        }
+    }
+    out.sort_by(|p, q| p.kc2().total_cmp(&q.kc2()).then(q.te.cmp(&p.te)));
+    if out.is_empty() {
+        let (kx, ky) = if r.a >= r.b { (PI / r.a, 0.0) } else { (0.0, PI / r.b) };
+        out.push(VMode { te: true, kx, ky });
+    }
+    out.truncate(cap.max(1));
+    out
+}
+
+/// ∫ over [lo, hi] of f(k1 (t − s1)) f(k2 (t − s2)), f cos (`cos`) or sin.
+fn int_product(cos: bool, (k1, s1): (f64, f64), (k2, s2): (f64, f64), (lo, hi): (f64, f64)) -> f64 {
+    // A = k1 t − k1 s1, B = k2 t − k2 s2.
+    let d = int_cos(k1 - k2, -k1 * s1 + k2 * s2, lo, hi);
+    let s = int_cos(k1 + k2, -k1 * s1 - k2 * s2, lo, hi);
+    if cos { 0.5 * (d + s) } else { 0.5 * (d - s) }
+}
+
+/// ∫ e_p⁽¹⁾ · e_q⁽²⁾ over `region` of mode `p` of aperture `r1` and `q` of `r2`.
+fn vproduct(p: &VMode, r1: &Rect, q: &VMode, r2: &Rect, region: &Rect) -> f64 {
+    let (cx1, cy1) = p.coefficients();
+    let (cx2, cy2) = q.coefficients();
+    let xs = (region.x0, region.x0 + region.a);
+    let ys = (region.y0, region.y0 + region.b);
+    let ex = cx1 * cx2 * int_product(true, (p.kx, r1.x0), (q.kx, r2.x0), xs) * int_product(false, (p.ky, r1.y0), (q.ky, r2.y0), ys);
+    let ey = cy1 * cy2 * int_product(false, (p.kx, r1.x0), (q.kx, r2.x0), xs) * int_product(true, (p.ky, r1.y0), (q.ky, r2.y0), ys);
+    ex + ey
+}
+
+/// A guide's modes with their propagation constants and admittances (per 1/(ωμ₀)): TE β/μr,
+/// TM k²/(μr β), k² = k₀² εr μr (1 − j tan δ).
+struct Guide {
+    rect: Rect,
+    modes: Vec<VMode>,
+    beta: Vec<C>,
+    y: Vec<C>,
+    norm: Vec<f64>,
+}
+
+impl Guide {
+    fn new(rect: Rect, s: &RectSection, k0: f64, kc: f64, cap: usize) -> Guide {
+        let modes = vmodes(&rect, kc, cap);
+        let k2 = C::new(1.0, -s.loss_tangent) * (k0 * k0 * s.eps_r * s.mu_r);
+        let beta: Vec<C> = modes.iter().map(|m| crate::decaying_sqrt(k2 - m.kc2())).collect();
+        let y = modes.iter().zip(&beta).map(|(m, b)| if m.te { b / s.mu_r } else { k2 / (b * s.mu_r) }).collect();
+        let norm = modes.iter().map(|m| vproduct(m, &rect, m, &rect, &rect)).collect();
+        Guide { rect, modes, beta, y, norm }
+    }
+}
+
+/// The nested junction of guide `wide` and guide `narrow` whose aperture it holds: the GSM with
+/// `wide` on the left (as [`junction`], with vector modes).
+fn vjunction(wide: &Guide, narrow: &Guide) -> Result<Gsm, TheoryError> {
+    let (n1, n2) = (wide.modes.len(), narrow.modes.len());
+    let mut m = Mat::zeros(n1, n2);
+    for (i, p) in wide.modes.iter().enumerate() {
+        for (j, q) in narrow.modes.iter().enumerate() {
+            m.v[i * n2 + j] = C::new(vproduct(p, &wide.rect, q, &narrow.rect, &narrow.rect), 0.0);
+        }
+    }
+    let d1inv = Mat::diag(&wide.norm.iter().map(|d| C::new(1.0 / d, 0.0)).collect::<Vec<_>>());
+    let d2y2 = Mat::diag(&narrow.y.iter().zip(&narrow.norm).map(|(y, d)| y * *d).collect::<Vec<_>>());
+    let mt_y1 = m.transpose().mul(&Mat::diag(&wide.y));
+    let w = d2y2.add(&mt_y1.mul(&d1inv.mul(&m)), ONE);
+    let s21 = w.solve(&mt_y1.scale(C::new(2.0, 0.0)))?;
+    let s22 = w.solve(&d2y2.scale(C::new(2.0, 0.0)))?.add(&Mat::identity(n2), -ONE);
+    let md = d1inv.mul(&m);
+    let s11 = md.mul(&s21).add(&Mat::identity(n1), -ONE);
+    let s12 = md.mul(&s22.add(&Mat::identity(n2), ONE));
+    Ok(Gsm { ll: s11, lr: s12, rl: s21, rr: s22 })
+}
+
+/// A GSM seen from its other side.
+fn flipped(g: Gsm) -> Gsm {
+    Gsm { ll: g.rr, lr: g.rl, rl: g.lr, rr: g.ll }
+}
+
+impl RectLine {
+    /// S₁₁ and S₂₁ of the fundamental mode (TE₁₀ for a wider than high guide; power waves,
+    /// referred to the end faces), the modes of each section up to the cut-off the largest
+    /// aperture's `modes`-th has.
+    ///
+    /// ```
+    /// use emcraft_theory::modematch::{RectLine, RectSection};
+    /// // WR-90, a step to a smaller guide centred in both width and height, and back.
+    /// let s = |length: f64, a: f64, b: f64| RectSection { length, eps_r: 1.0, mu_r: 1.0, loss_tangent: 0.0, x0: (0.02286 - a) / 2.0, a, y0: (0.01016 - b) / 2.0, b };
+    /// let line = RectLine { sections: vec![s(0.01, 0.02286, 0.01016), s(0.005, 0.018, 0.006), s(0.01, 0.02286, 0.01016)] };
+    /// let (s11, s21) = line.solve(10e9, 120)?;
+    /// assert!((s11.norm_sqr() + s21.norm_sqr() - 1.0).abs() < 1e-9); // lossless
+    /// // A refused line: an aperture of no width.
+    /// assert!(RectLine { sections: vec![s(0.01, 0.0, 0.01)] }.solve(10e9, 50).is_err());
+    /// # Ok::<(), emcraft_theory::TheoryError>(())
+    /// ```
+    pub fn solve(&self, frequency: f64, modes: usize) -> Result<(C, C), TheoryError> {
+        let secs = &self.sections;
+        if !(frequency.is_finite() && frequency > 0.0) {
+            return Err(TheoryError::Invalid(format!("frequency {frequency}")));
+        }
+        if secs.is_empty() || !(1..=1500).contains(&modes) {
+            return Err(TheoryError::Invalid("line or mode count".into()));
+        }
+        for s in secs {
+            if ![s.length, s.eps_r, s.mu_r, s.a, s.b].iter().all(|v| v.is_finite() && *v > 0.0)
+                || !(s.x0.is_finite() && s.y0.is_finite())
+                || !(s.loss_tangent.is_finite() && s.loss_tangent >= 0.0)
+            {
+                return Err(TheoryError::Invalid(format!("section {s:?}")));
+            }
+        }
+        let k0 = 2.0 * PI * frequency / C0;
+        // The cut-off wavenumber of the largest aperture's `modes`-th mode: every guide's
+        // modes up to it.
+        let largest =
+            secs.iter().map(Rect::of).max_by(|p, q| (p.a * p.b).total_cmp(&(q.a * q.b))).ok_or_else(|| TheoryError::Invalid("no sections".into()))?;
+        let mut kc = PI / largest.a.min(largest.b);
+        while vmodes(&largest, kc, usize::MAX).len() < modes && kc < 1e9 {
+            kc *= 1.05;
+        }
+        let cap = 3 * modes;
+        let guides: Vec<Guide> = secs.iter().map(|s| Guide::new(Rect::of(s), s, k0, kc, cap)).collect();
+        for (i, g) in guides.iter().enumerate() {
+            if g.beta.first().is_some_and(|b| b.norm() < 1e-9 * k0.max(1.0)) {
+                return Err(TheoryError::Cutoff(i));
+            }
+        }
+        let travel = |i: usize| -> Vec<C> { guides[i].beta.iter().map(|b| (C::new(0.0, -1.0) * b * secs[i].length).exp()).collect() };
+        let mut total = Gsm::line(&travel(0));
+        let tol = 1e-9 * largest.a.max(largest.b);
+        for i in 1..secs.len() {
+            let (a, b) = (&guides[i - 1], &guides[i]);
+            let j = if a.rect.holds(&b.rect, tol) {
+                vjunction(a, b)?
+            } else if b.rect.holds(&a.rect, tol) {
+                flipped(vjunction(b, a)?)
+            } else {
+                // The field on the plane lies on the apertures' intersection: through a guide
+                // of it, of no length.
+                let o = a.rect.meet(&b.rect).ok_or_else(|| TheoryError::Invalid(format!("sections {i} and {}: apertures apart", i + 1)))?;
+                let mid = Guide::new(o, &secs[i - 1], k0, kc, cap);
+                vjunction(a, &mid)?.star(&flipped(vjunction(b, &mid)?))?
+            };
+            total = total.star(&j)?.star(&Gsm::line(&travel(i)))?;
+        }
+        let power = |g: &Guide| g.norm[0] * g.y[0];
+        let factor = (power(&guides[secs.len() - 1]) / power(&guides[0])).sqrt();
+        Ok((total.ll.at(0, 0), total.rl.at(0, 0) * factor))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -505,5 +748,41 @@ mod tests {
             sections: vec![HSection { x0: 0.0, width: 0.01, ..full(0.01, 1.0) }, HSection { x0: 0.005, width: 0.01, ..full(0.01, 1.0) }],
         };
         assert!(skew.solve(2e10, 10).is_err());
+    }
+
+    /// The vector mode matching reduces to the scalar lines it holds: an H-plane iris (only
+    /// TE_m0 take part) and an E-plane iris (LSE^x_1n, made of TE and TM_1n) agree with the
+    /// H-plane and E-plane solutions as the modes grow, and a double-plane step is lossless and
+    /// reciprocal.
+    #[test]
+    fn vector_mode_matching_holds_the_scalar_lines() {
+        let b = 0.01016;
+        let sec = |length: f64, x0: f64, a: f64, y0: f64, h: f64| RectSection { length, eps_r: 1.0, mu_r: 1.0, loss_tangent: 0.0, x0, a, y0, b: h };
+        // H-plane: an inductive iris 10 mm wide, 2 mm thick, off centre.
+        let rect = RectLine { sections: vec![sec(0.01, 0.0, A, 0.0, b), sec(0.002, 0.004, 0.010, 0.0, b), sec(0.01, 0.0, A, 0.0, b)] };
+        let h = HPlaneLine { sections: vec![full(0.01, 1.0), HSection { x0: 0.004, ..iris(0.002, 0.010) }, full(0.01, 1.0)] };
+        // Of the vector modes, only the TE_m0 couple to an H-plane iris: with as many TE_m0 the
+        // two agree to rounding (some count of the scalar line's is the vector set's).
+        let (r, t) = rect.solve(10e9, 300).unwrap();
+        let closest = (10..40).map(|n| h.solve(10e9, n).unwrap()).map(|(rh, th)| (r - rh).norm() + (t - th).norm()).fold(f64::INFINITY, f64::min);
+        assert!(closest < 1e-9, "{closest}");
+        // E-plane: a capacitive iris 4 mm high, 1 mm thick, centred.
+        let rect = RectLine { sections: vec![sec(0.01, 0.0, A, 0.0, b), sec(0.001, 0.0, A, (b - 0.004) / 2.0, 0.004), sec(0.01, 0.0, A, 0.0, b)] };
+        let full_e = |l: f64| ESection { length: l, eps_r: 1.0, mu_r: 1.0, loss_tangent: 0.0, y0: 0.0, height: b };
+        let e = EPlaneLine {
+            a: A,
+            sections: vec![full_e(0.01), ESection { length: 0.001, y0: (b - 0.004) / 2.0, height: 0.004, ..full_e(0.0) }, full_e(0.01)],
+        };
+        // Here TE_1n and TM_1n (n ≥ 0) make the LSE^x_1n: the two agree as both converge.
+        let (r, t) = rect.solve(10e9, 600).unwrap();
+        let (re, te) = e.solve(10e9, 160).unwrap();
+        assert!((r - re).norm() < 5e-3 && (t - te).norm() < 5e-3, "{r} {re} {t} {te}");
+        // A double-plane step down and its mirror: lossless and reciprocal.
+        let big = sec(0.01, 0.0, A, 0.0, b);
+        let small = sec(0.012, 0.002, 0.019, 0.001, 0.0086);
+        let (r, f) = RectLine { sections: vec![big, small] }.solve(10e9, 200).unwrap();
+        let (_, g) = RectLine { sections: vec![small, big] }.solve(10e9, 200).unwrap();
+        approx::assert_abs_diff_eq!(r.norm_sqr() + f.norm_sqr(), 1.0, epsilon = 1e-9);
+        assert!((f - g).norm() < 1e-9, "{f} {g}");
     }
 }

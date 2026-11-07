@@ -1,0 +1,46 @@
+{
+ "title": "Double-plane step: WR-90 into WR-75 (19.05 × 9.525 mm), centred, 15 mm each side, at 10 GHz",
+ "kind": "theory",
+ "source": "Mode matching of the vector TE_mn and TM_mn modes at each junction (the field on the junction's plane on the two apertures' intersection), cascaded as generalised scattering matrices (H. Patzelt, F. Arndt, IEEE Trans. MTT 30(5):771–776, 1982; A. Wexler, IEEE Trans. MTT 15(9):508–517, 1967), each guide's modes up to one cut-off (relative convergence), 1350 in the largest aperture",
+ "quantities": [
+  {
+   "id": "s11_mag",
+   "quantity": "|S11| at 10 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s11/mag"
+   },
+   "value": 0.07072876413325196,
+   "tolerance": {
+    "absolute": 0.001
+   },
+   "reason": "2 mm tetrahedra at order 2: 0.07070 (1.4 mm the same); the reference's own spread over 300–1350 modes ±2e-4"
+  },
+  {
+   "id": "s11_phase",
+   "quantity": "phase of S11 at 10 GHz (degrees)",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s11/deg"
+   },
+   "value": 124.68212391186674,
+   "tolerance": {
+    "absolute": 1.0
+   },
+   "reason": "a small reflection: its phase as uncertain as |S11| makes it (the reference ±0.25° over its modes)"
+  },
+  {
+   "id": "s21_phase",
+   "quantity": "phase of S21 at 10 GHz (degrees)",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s21/deg"
+   },
+   "value": 114.98353496459374,
+   "tolerance": {
+    "absolute": 0.1
+   },
+   "reason": "the guide's phase, 0.01° from the reference"
+  }
+ ]
+}

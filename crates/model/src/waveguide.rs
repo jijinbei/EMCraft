@@ -352,18 +352,14 @@ impl Waveguide {
         if !self.layers.is_empty() && !uniform {
             return Err(invalid("layers", "not supported yet: layers in a guide whose aperture changes"));
         }
-        // Neighbouring apertures must nest: one rectangle holds the other (steps, irises).
-        let rect = |k: usize| self.aperture(k).zip(self.aperture_y(k));
-        let holds = |(ax, ay): (Span, Span), (bx, by): (Span, Span)| ax.holds(bx, room.tol) && ay.holds(by, room.toly);
+        // Neighbouring apertures must meet: they share some of the plane between them (an
+        // aperture holding the other, a step; or overlapping in part, an offset).
         for i in 1..self.sections.len() {
-            if let (Some(p), Some(q)) = (rect(i - 1), rect(i))
-                && !holds(p, q)
-                && !holds(q, p)
-            {
-                return Err(invalid(
-                    format!("sections {} and {}", i, i + 1),
-                    "not supported yet: apertures that overlap only in part (one must hold the other)",
-                ));
+            let [px, py] = self.opening(i - 1);
+            let [qx, qy] = self.opening(i);
+            let overlap = |p: Span, q: Span, tol: f64| p.end().min(q.end()) - p.start.max(q.start) > tol;
+            if !(overlap(px, qx, room.tol) && overlap(py, qy, room.toly)) {
+                return Err(invalid(format!("sections {} and {}", i, i + 1), "their apertures do not meet: the guide would be closed between them"));
             }
         }
         Ok(())
@@ -522,13 +518,15 @@ mod tests {
     }
 
     #[test]
-    fn apertures_must_fit_and_nest() {
+    fn apertures_must_fit_and_meet() {
         let w = guide(vec![sec(None, None), sec(Some(0.01), None), sec(None, None)]);
         w.check(vacuum_only).unwrap();
         assert_eq!(w.aperture(1), Some(Span::new(0.005, 0.01)));
         assert!(!w.uniform());
         assert!(guide(vec![sec(Some(0.03), None)]).check(vacuum_only).is_err());
-        assert!(guide(vec![sec(Some(0.01), Some(0.0)), sec(Some(0.01), Some(0.008))]).check(vacuum_only).is_err());
+        // Overlapping in part (an offset) they meet; apart, the guide would be closed.
+        guide(vec![sec(Some(0.01), Some(0.0)), sec(Some(0.01), Some(0.008))]).check(vacuum_only).unwrap();
+        assert!(guide(vec![sec(Some(0.008), Some(0.0)), sec(Some(0.008), Some(0.012))]).check(vacuum_only).is_err());
         assert!(guide(vec![sec(Some(0.01), Some(f64::NAN))]).check(vacuum_only).is_err());
         guide(vec![sec(Some(0.012), Some(0.0)), sec(Some(0.008), Some(0.002))]).check(vacuum_only).unwrap();
     }
