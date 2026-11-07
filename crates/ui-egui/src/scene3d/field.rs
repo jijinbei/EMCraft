@@ -1,11 +1,12 @@
-//! The field on its planes in the 3D view: the colour map cell by cell and the arrows, filled,
-//! on both sides of the plane.
+//! The field on its planes in the 3D view: the colour map and the arrows, filled, on both sides
+//! of the plane, with the colour bar and the arrows' scale for the legend. The view's own plane
+//! is coloured by the GPU (`gpu3d::field`); planes kept beside it cell by cell here, by the same
+//! scale ([`emcraft_render::plot::Scalar::scale`]).
 
 use emcraft_engine::Session;
 use emcraft_engine::view::Plane;
-use emcraft_render::plot::ScalarKind;
 
-use super::{Built, FieldLayer, plain};
+use super::{Built, FieldLayer};
 
 /// Most cells along the field plane's longer side.
 const FIELD_CELLS: usize = 120;
@@ -55,19 +56,14 @@ pub(super) fn field_plane(session: &Session, f: &FieldLayer, shared_peak: f64, l
     let l = session.display().length;
     let (h0, h1, v0, v1) = (l.to_si(f.plot.x.min), l.to_si(f.plot.x.max), l.to_si(f.plot.y.min), l.to_si(f.plot.y.max));
     let point = |u: f64, v: f64| on_plane(f.plane, lo, f.at, u, v);
-    let own = s.range.filter(|r| *r > 0.0).unwrap_or_else(|| largest_magnitude(&s.values));
-    let peak = if shared_peak > 0.0 { shared_peak } else { own };
-    let color = |v: f64| match s.kind {
-        ScalarKind::Signed => emcraft_render::colormap::diverging(v / peak.max(1e-300)),
-        ScalarKind::Magnitude => emcraft_render::colormap::sequential(v / peak.max(1e-300)),
-    };
+    let scale = s.scale(shared_peak);
+    if legend {
+        out.colour_bar = Some(super::ColourBar { label: s.label.clone(), scale });
+    }
     if f.gpu {
         let [c, u, v] = plane_frame(session, f.plane, f.at, f.plot.x.span(), f.plot.y.span(), lo);
         let far = [u[0] + v[0] - c[0], u[1] + v[1] - c[1], u[2] + v[2] - c[2]];
-        out.scene.quad([c, u, far, v], color(0.0), 255);
-        if legend {
-            out.legend.push((plain(&s.label), color(peak)));
-        }
+        out.scene.quad([c, u, far, v], scale.colour(0.0), 255);
         field_arrows(session, f, lo, legend, out);
         return;
     }
@@ -79,20 +75,29 @@ pub(super) fn field_plane(session: &Session, f: &FieldLayer, shared_peak: f64, l
         let mut i = 0;
         while i + 1 < nx {
             let i1 = (i + step).min(nx - 1);
-            let corners = [at(i, j), at(i1, j), at(i1, j1), at(i, j1)];
-            if corners.iter().all(|v| v.is_finite()) {
-                let mean = corners.iter().sum::<f64>() / 4.0;
+            // The corners inside the mesh: a cell with half of them or more is drawn (as the
+            // GPU's plane ends half way to a sample outside).
+            let inside: Vec<f64> = [at(i, j), at(i1, j), at(i1, j1), at(i, j1)].into_iter().filter(|v| v.is_finite()).collect();
+            if inside.len() >= 2 {
+                let mean = inside.iter().sum::<f64>() / inside.len() as f64;
                 let (u0, u1, w0, w1) = (h0 + du * i as f64, h0 + du * i1 as f64, v0 + dv * j as f64, v0 + dv * j1 as f64);
-                out.scene.quad([point(u0, w0), point(u1, w0), point(u1, w1), point(u0, w1)], color(mean), 255);
+                out.scene.quad([point(u0, w0), point(u1, w0), point(u1, w1), point(u0, w1)], scale.colour(mean), 255);
             }
             i = i1;
         }
         j = j1;
     }
-    if legend {
-        out.legend.push((plain(&s.label), color(peak)));
-    }
     field_arrows(session, f, lo, legend, out);
+}
+
+/// The legend's line for the arrows of E (or H, `magnetic`) scaled to `longest` (V/m, A/m): an
+/// arrow at full length is that much.
+pub(crate) fn arrow_legend(magnetic: bool, longest: f64) -> String {
+    let (field, unit) = if magnetic { ("H", "A/m") } else { ("E", "V/m") };
+    crate::lang::trf(
+        t!("{field} in the plane · longest {value} {unit}"),
+        crate::lang::args!(field = format!("$\\mathbf{{{field}}}$"), value = emcraft_render::axes::format(longest), unit = unit),
+    )
 }
 
 /// The plot's arrows (E's, H's), generated and shaded in WGSL, a hair off
@@ -119,10 +124,10 @@ fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], legend: bool, o
             emcraft_render::Pen::HArrows => crate::theme::scene().port_output,
             _ => crate::theme::palette().pen(set.pen),
         };
+        if legend && !f.gpu {
+            out.arrow_legend.push((arrow_legend(set.pen == emcraft_render::Pen::HArrows, scale), color));
+        }
         if f.gpu {
-            if legend {
-                out.legend.push((plain(&set.label), color));
-            }
             continue;
         }
         for (p, v) in &set.arrows {
@@ -142,9 +147,6 @@ fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], legend: bool, o
                     motion: None,
                 });
             }
-        }
-        if legend {
-            out.legend.push((plain(&set.label), color));
         }
     }
 }

@@ -26,6 +26,8 @@ pub struct Scalar {
     pub kind: ScalarKind,
     /// The value drawn at full colour; the largest |value| when `None`.
     pub range: Option<f64>,
+    /// A magnitude's colours in decibels from this many dB below the peak (< 0).
+    pub db: Option<f64>,
 }
 
 impl Scalar {
@@ -47,9 +49,25 @@ impl Scalar {
         a * (1.0 - fy) + b * fy
     }
 
-    fn scale(&self) -> f64 {
-        let r = self.range.unwrap_or_else(|| self.values.iter().filter(|v| v.is_finite()).fold(0.0f64, |m, v| m.max(v.abs())));
+    /// The value drawn at full colour: `shared` when positive (planes shown together), else its
+    /// range, else its largest |value|; 1 when none is a positive finite number.
+    fn peak(&self, shared: f64) -> f64 {
+        let own = self.range.unwrap_or_else(|| self.values.iter().filter(|v| v.is_finite()).fold(0.0f64, |m, v| m.max(v.abs())));
+        let r = if shared > 0.0 && shared.is_finite() { shared } else { own };
         if r > 0.0 && r.is_finite() { r } else { 1.0 }
+    }
+
+    /// Its colour map and range — what every picture of it (the 2D plot, the 3D view's plane and
+    /// colour bar) colours by; `shared` (when positive) the peak of planes shown together.
+    pub fn scale(&self, shared: f64) -> colormap::ColourScale {
+        let peak = self.peak(shared);
+        match self.kind {
+            ScalarKind::Signed => colormap::ColourScale::signed(peak),
+            ScalarKind::Magnitude => {
+                let s = colormap::ColourScale::magnitude(peak);
+                self.db.map_or(s, |floor| s.in_db(floor))
+            }
+        }
     }
 }
 
@@ -166,7 +184,7 @@ pub fn draw(plot: &FieldPlot, width: usize, palette: &Palette) -> Canvas {
     }
 
     if let Some(s) = &plot.scalar {
-        let r = s.scale();
+        let scale = s.scale(0.0);
         for py in 0..ph.ceil() as usize {
             for px in 0..pw.ceil() as usize {
                 let u = (px as f64 + 0.5) / pw;
@@ -177,33 +195,21 @@ pub fn draw(plot: &FieldPlot, width: usize, palette: &Palette) -> Canvas {
                     c.set((x0 + px as f64) as i64, (y0 + py as f64) as i64, palette.metal);
                     continue;
                 }
-                let col = match s.kind {
-                    ScalarKind::Signed => colormap::diverging(val / r),
-                    ScalarKind::Magnitude => colormap::sequential(val / r),
-                };
-                c.set((x0 + px as f64) as i64, (y0 + py as f64) as i64, col);
+                c.set((x0 + px as f64) as i64, (y0 + py as f64) as i64, scale.colour(val));
             }
         }
         // The colour bar.
         let (bx, by, bw, bh) = (x0 + pw + 22.0, y0, 18.0, ph);
         for k in 0..bh.ceil() as usize {
             let t = 1.0 - k as f64 / bh.max(1.0);
-            let col = match s.kind {
-                ScalarKind::Signed => colormap::diverging(2.0 * t - 1.0),
-                ScalarKind::Magnitude => colormap::sequential(t),
-            };
-            c.rect(bx, by + k as f64, bw, 1.0, col);
+            c.rect(bx, by + k as f64, bw, 1.0, scale.at(t));
         }
         for (a, b) in [([bx, by], [bx + bw, by]), ([bx + bw, by], [bx + bw, by + bh]), ([bx + bw, by + bh], [bx, by + bh]), ([bx, by + bh], [bx, by])]
         {
             c.line(a, b, 1.0, ink);
         }
-        let marks: Vec<(f64, f64)> = match s.kind {
-            ScalarKind::Signed => vec![(r, 0.0), (0.0, 0.5), (-r, 1.0)],
-            ScalarKind::Magnitude => vec![(r, 0.0), (r / 2.0, 0.5), (0.0, 1.0)],
-        };
-        for (v, f) in marks {
-            c.text(bx + bw + 5.0, by + f * bh - 7.0, &axes::format(v), 2, ink);
+        for (t, _) in scale.ticks() {
+            c.text(bx + bw + 5.0, by + (1.0 - t) * bh - 7.0, &scale.tick_text(t), 2, ink);
         }
         c.text(bx - 10.0, y0 + ph + 34.0, &s.label, 2, ink);
     }
@@ -264,7 +270,7 @@ mod tests {
             subtitle: "sub".into(),
             x: Axis::new("x (mm)", 0.0, 20.0),
             y: Axis::new("y (mm)", 0.0, 10.0),
-            scalar: Some(Scalar { label: "Ey".into(), nx, ny, values, kind: ScalarKind::Signed, range: None }),
+            scalar: Some(Scalar { label: "Ey".into(), nx, ny, values, kind: ScalarKind::Signed, range: None, db: None }),
             arrows: vec![Arrows {
                 label: "H".into(),
                 pen: Pen::EArrows,
@@ -282,9 +288,9 @@ mod tests {
         let pw = c.w as f64 - LEFT - RIGHT;
         let ph = c.h as f64 - TOP - BOTTOM;
         let at = |x: f64, y: f64| c.pixel((LEFT + x / 20.0 * pw) as usize, (TOP + ph - y / 10.0 * ph) as usize).unwrap();
-        // sin(πx/a) peaks red in the middle, white at the walls.
+        // sin(πx/a) peaks deep red in the middle, light grey at the walls.
         let mid = at(7.5, 8.5);
-        assert!(mid.0 > 150 && mid.2 < 140, "{mid:?}");
+        assert!(mid.0 > 100 && u32::from(mid.0) > 2 * u32::from(mid.2) && u32::from(mid.0) > 2 * u32::from(mid.1), "{mid:?}");
         let wall = at(0.2, 8.5);
         assert!(wall.0 > 200 && wall.1 > 200 && wall.2 > 200, "{wall:?}");
         // The arrow at (5, 5) points +x: its head (dark) is right of the centre, not left.
@@ -324,7 +330,7 @@ mod tests {
         assert_eq!(night.pixel(2, 2), Some(crate::palette::samples::dark().ground));
         let mut p = plot();
         p.x = Axis::new("x", f64::NAN, f64::INFINITY);
-        p.scalar = Some(Scalar { label: "s".into(), nx: 0, ny: 0, values: vec![], kind: ScalarKind::Magnitude, range: Some(f64::NAN) });
+        p.scalar = Some(Scalar { label: "s".into(), nx: 0, ny: 0, values: vec![], kind: ScalarKind::Magnitude, range: Some(f64::NAN), db: None });
         p.arrows[0].arrows.push(([f64::NAN, 0.0], [f64::INFINITY, 1.0]));
         let c = draw(&p, 0, &crate::palette::samples::dark());
         assert!(c.png().is_some());

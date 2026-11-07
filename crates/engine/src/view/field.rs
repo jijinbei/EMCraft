@@ -39,17 +39,22 @@ impl Plane {
 }
 
 emcraft_macros::named_enum! {
-    /// The quantity a field picture colours: a Cartesian component of E or H, or the magnitude of
-    /// one.
+    /// The quantity a field picture colours: a component of E or H — Cartesian, or normal to the
+    /// picture's plane — or the magnitude of one. Its two parts are the field ([`Field`]) and
+    /// which part of it ([`Part`]): [`Component::of`].
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
     pub enum Component {
         Ex = "ex" => "Ex",
         #[default]
         Ey = "ey" => "Ey",
         Ez = "ez" => "Ez",
+        /// E normal to the plane.
+        En = "en" => "En",
         Hx = "hx" => "Hx",
         Hy = "hy" => "Hy",
         Hz = "hz" => "Hz",
+        /// H normal to the plane.
+        Hn = "hn" => "Hn",
         /// |E|.
         E = "|e|" => "|E|",
         /// |H|.
@@ -59,22 +64,100 @@ emcraft_macros::named_enum! {
 
 emcraft_macros::named_serde!(Component);
 
+emcraft_macros::named_enum! {
+    /// The field a picture shows.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub enum Field {
+        E = "e" => "E",
+        H = "h" => "H",
+    }
+}
+
+emcraft_macros::named_enum! {
+    /// Which part of the field a picture colours.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub enum Part {
+        Magnitude = "magnitude" => "|·|",
+        X = "x",
+        Y = "y",
+        Z = "z",
+        /// Normal to the picture's plane.
+        Normal = "normal" => "⊥",
+    }
+}
+
 impl Component {
-    /// The name as TeX math, for pictures: `$E_y$`, `$|H|$`.
-    pub fn tex(self) -> String {
+    /// The component of `field` that is `part`.
+    ///
+    /// ```
+    /// use emcraft_engine::view::{Component, Field, Part};
+    /// assert_eq!(Component::of(Field::H, Part::Normal), Component::Hn);
+    /// assert_eq!((Component::E.field(), Component::E.part()), (Field::E, Part::Magnitude));
+    /// assert_eq!(Component::Hz.tex(), "$H_z$");
+    /// assert_eq!(Component::En.tex(), "$E_\\perp$");
+    /// assert_eq!(Component::H.tex(), "$|\\mathbf{H}|$");
+    /// ```
+    pub const fn of(field: Field, part: Part) -> Component {
+        match (field, part) {
+            (Field::E, Part::X) => Component::Ex,
+            (Field::E, Part::Y) => Component::Ey,
+            (Field::E, Part::Z) => Component::Ez,
+            (Field::E, Part::Normal) => Component::En,
+            (Field::E, Part::Magnitude) => Component::E,
+            (Field::H, Part::X) => Component::Hx,
+            (Field::H, Part::Y) => Component::Hy,
+            (Field::H, Part::Z) => Component::Hz,
+            (Field::H, Part::Normal) => Component::Hn,
+            (Field::H, Part::Magnitude) => Component::H,
+        }
+    }
+
+    /// Its field.
+    pub const fn field(self) -> Field {
+        if self.is_magnetic() { Field::H } else { Field::E }
+    }
+
+    /// Its part.
+    pub const fn part(self) -> Part {
         match self {
-            Component::E => "$|E|$".into(),
-            Component::H => "$|H|$".into(),
-            c => {
-                let n = c.label();
-                let (f, axis) = n.split_at(1);
-                format!("${f}_{axis}$")
+            Component::Ex | Component::Hx => Part::X,
+            Component::Ey | Component::Hy => Part::Y,
+            Component::Ez | Component::Hz => Part::Z,
+            Component::En | Component::Hn => Part::Normal,
+            Component::E | Component::H => Part::Magnitude,
+        }
+    }
+
+    /// The name as TeX math, for labels and pictures: `$E_y$`, `$H_\perp$`, `$|\mathbf{E}|$`.
+    pub fn tex(self) -> String {
+        let f = self.field().label();
+        match self.part() {
+            Part::Magnitude => format!("$|\\mathbf{{{f}}}|$"),
+            Part::Normal => format!("${f}_\\perp$"),
+            p => format!("${f}_{}$", p.id()),
+        }
+    }
+
+    /// The vector component read on a plane whose normal is model axis `normal`: 0–2, or 3 for
+    /// the vector's length.
+    pub const fn axis(self, normal: usize) -> u32 {
+        match self.part() {
+            Part::X => 0,
+            Part::Y => 1,
+            Part::Z => 2,
+            Part::Normal => {
+                if normal < 3 {
+                    normal as u32
+                } else {
+                    2
+                }
             }
+            Part::Magnitude => 3,
         }
     }
 
     pub const fn is_magnetic(self) -> bool {
-        matches!(self, Component::Hx | Component::Hy | Component::Hz | Component::H)
+        matches!(self, Component::Hx | Component::Hy | Component::Hz | Component::Hn | Component::H)
     }
 
     pub const fn is_magnitude(self) -> bool {
@@ -82,16 +165,13 @@ impl Component {
     }
 
     /// The value at the phase `rot` (e^{jωt}) and the amplitude over the period, of the fields
-    /// E and H at a point.
-    fn sample(self, e: &CVec3, h: &CVec3, rot: C) -> (f64, f64) {
+    /// E and H at a point of a plane whose normal is model axis `normal`.
+    fn sample(self, e: &CVec3, h: &CVec3, rot: C, normal: usize) -> (f64, f64) {
         let f = if self.is_magnetic() { h } else { e };
-        let axis = match self {
-            Component::Ex | Component::Hx => 0,
-            Component::Ey | Component::Hy => 1,
-            Component::Ez | Component::Hz => 2,
-            Component::E | Component::H => return ((*f * rot).re().norm(), f.norm_sqr().sqrt()),
-        };
-        ((f[axis] * rot).re, f[axis].norm())
+        match self.axis(normal) {
+            3 => ((*f * rot).re().norm(), f.norm_sqr().sqrt()),
+            a => ((f[a as usize] * rot).re, f[a as usize].norm()),
+        }
     }
 }
 
@@ -100,8 +180,9 @@ impl std::str::FromStr for Component {
 
     /// A component by its name, in either case.
     fn from_str(s: &str) -> Result<Component> {
-        Component::parse(&s.to_ascii_lowercase())
-            .ok_or_else(|| EngineError::Params(format!("`component` must be ex, ey, ez, hx, hy, hz, |e| or |h|, got `{}`", crate::text::clip(s, 20))))
+        Component::parse(&s.to_ascii_lowercase()).ok_or_else(|| {
+            EngineError::Params(format!("`component` must be ex, ey, ez, en, hx, hy, hz, hn, |e| or |h|, got `{}`", crate::text::clip(s, 20)))
+        })
     }
 }
 
@@ -123,11 +204,28 @@ pub struct FieldView {
     pub excitation: usize,
     /// An eigenmode's index (from `solve.eigenmodes`) instead of a driven solution.
     pub mode: Option<usize>,
+    /// A magnitude's colours in decibels, from this many dB below the peak (< 0); linear when
+    /// `None`.
+    pub db: Option<f64>,
+    /// Thin lines at every tenth of the colour map.
+    pub contours: bool,
 }
 
 impl FieldView {
     pub fn new(frequency: f64, plane: Plane) -> FieldView {
-        FieldView { frequency, plane, at: None, component: Component::Ey, show_e: true, show_h: true, phase: 0.0, excitation: 0, mode: None }
+        FieldView {
+            frequency,
+            plane,
+            at: None,
+            component: Component::Ey,
+            show_e: true,
+            show_h: true,
+            phase: 0.0,
+            excitation: 0,
+            mode: None,
+            db: None,
+            contours: true,
+        }
     }
 
     /// A view of eigenmode `index`.
@@ -371,16 +469,23 @@ pub struct Probe {
     pub at: [f64; 2],
     pub e: CVec3,
     pub h: CVec3,
+    /// The model axis normal to the plane (a normal component's).
+    pub normal: usize,
 }
 
 impl Probe {
     /// The value of `component` at phase ωt = `phase` (rad), and its amplitude over the period.
     pub fn value(&self, component: Component, phase: f64) -> (f64, f64) {
-        component.sample(&self.e, &self.h, C::from_polar(1.0, phase))
+        component.sample(&self.e, &self.h, C::from_polar(1.0, phase), self.normal)
     }
 }
 
 impl PlaneSamples {
+    /// The model axis normal to the plane (0 x, 1 y, 2 z).
+    pub fn normal_axis(&self) -> usize {
+        self.axes[2]
+    }
+
     /// The picture's horizontal and vertical axes (display units).
     pub fn axes(&self) -> (&Axis, &Axis) {
         (&self.x, &self.y)
@@ -401,7 +506,7 @@ impl PlaneSamples {
         let j = (v * (self.ny - 1) as f64).round() as usize;
         let (e, h) = (*self.grid.get(j * self.nx + i)?)?;
         let at = [xa + (xb - xa) * i as f64 / (self.nx - 1) as f64, ya + (yb - ya) * j as f64 / (self.ny - 1) as f64];
-        Some(Probe { at, e, h })
+        Some(Probe { at, e, h, normal: self.axes[2] })
     }
 
     /// The model point (m) at `point` on the plane (display units `unit` along the picture's
@@ -475,7 +580,7 @@ impl PlaneSamples {
         let values = self
             .grid
             .iter()
-            .map(|g| match g.as_ref().map(|(e, h)| comp.sample(e, h, rot)) {
+            .map(|g| match g.as_ref().map(|(e, h)| comp.sample(e, h, rot, self.axes[2])) {
                 Some((v, amp)) => {
                     amplitudes.push(amp);
                     v
@@ -510,6 +615,7 @@ impl PlaneSamples {
                 values,
                 kind: if comp.is_magnitude() { ScalarKind::Magnitude } else { ScalarKind::Signed },
                 range: Some(peak),
+                db: view.db,
             }),
             arrows: sets,
             lines: self.lines.clone(),

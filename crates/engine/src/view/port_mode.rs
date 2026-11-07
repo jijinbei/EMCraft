@@ -52,7 +52,7 @@ pub fn port_mode_plot(session: &Session, port: &str, mode: usize, frequency: f64
         subtitle: format!("transverse E of the mode (its shape: the amplitude is arbitrary); {state}"),
         x: Axis::new(&format!("{u} ({lu})"), l.from_si(pat.x.0), l.from_si(pat.x.1)),
         y: Axis::new(&format!("{v} ({lu})"), l.from_si(pat.y.0), l.from_si(pat.y.1)),
-        scalar: Some(Scalar { label: "$|E_t|$".into(), nx, ny, values: magnitude, kind: ScalarKind::Magnitude, range: None }),
+        scalar: Some(Scalar { label: "$|E_t|$".into(), nx, ny, values: magnitude, kind: ScalarKind::Magnitude, range: None, db: None }),
         arrows: vec![Arrows { label: "E (in plane)".into(), pen: Pen::EArrows, arrows, scale: None }],
         lines: Vec::new(),
         arrow_length: spacing * 0.9,

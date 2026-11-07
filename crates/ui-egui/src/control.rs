@@ -239,6 +239,8 @@ pub fn inspect(app: &EmcraftApp) -> Value {
     v["pcb"] = json!({"loaded":app.session.model().pcb().is_some(),"report":app.replies.pcb,"selected_net":app.session.views().pcb.net(),"conditions":app.session.views().pcb.conditions().map(|c| c.shown(app.session.display().frequency)),"unconfirmed":app.views.pcb.unconfirmed,"stage":emcraft_engine::pcb::stage(&app.session).id(),"illustration":app.session.views().pcb_illustration});
     v["hidden_geometry"] = json!(app.session.views().hidden_geometry);
     v["hidden_materials"] = json!(app.session.views().hidden_materials);
+    v["field"]["db"] = json!(app.field.view.db);
+    v["field"]["contours"] = json!(app.field.view.contours);
     v["pattern"] = json!({"cut": app.views.pattern.cut.id(), "angle": app.views.pattern.angle, "component": app.views.pattern.component.id()});
     v["estimate"] =
         json!({"run": estimate(crate::steps::run_estimate(app)), "dialog": estimate(app.workflow.dialog_estimate.as_ref().map(|e| &e.reply))});

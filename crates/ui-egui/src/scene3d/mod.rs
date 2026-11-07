@@ -17,6 +17,7 @@ mod cache;
 mod extras;
 pub(crate) mod faces;
 mod field;
+pub(crate) use field::arrow_legend;
 mod geometry;
 mod legend;
 mod mesh;
@@ -147,6 +148,13 @@ pub struct Label {
     pub anchor: Option<[f64; 3]>,
 }
 
+/// A colour bar: the quantity coloured (TeX, with its unit) and its scale.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ColourBar {
+    pub label: String,
+    pub scale: emcraft_render::colormap::ColourScale,
+}
+
 /// A scene with its labels and legend.
 #[derive(Clone, Debug, Default)]
 pub struct Built {
@@ -155,6 +163,10 @@ pub struct Built {
     pub(crate) arrows: Vec<crate::gpu3d::Arrow>,
     pub labels: Vec<Label>,
     pub legend: Vec<(String, Rgb)>,
+    /// The field plane's colour bar: its quantity (TeX) and scale.
+    pub colour_bar: Option<ColourBar>,
+    /// The field's arrows: what they show and their scale, in their colour.
+    pub arrow_legend: Vec<(String, Rgb)>,
     /// The model's box (m).
     pub bounds: Option<([f64; 3], [f64; 3])>,
     /// Its picking index and coarser copy, made once ([`Cache`]).
@@ -189,12 +201,6 @@ impl Built {
     pub fn moving(&self) -> &Scene {
         self.cache.coarse(&self.scene).unwrap_or(&self.scene)
     }
-}
-
-/// A picture's label as plain text for the legend: TeX math in Unicode, subscripts written on
-/// the line (the UI's font lacks most subscript letters: `$E_z$` reads `Ez`).
-fn plain(label: &str) -> String {
-    emcraft_render::math::to_unicode(&label.replace('_', ""))
 }
 
 fn p3(p: emcraft_model::geom::Point3) -> [f64; 3] {
@@ -357,6 +363,8 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
                 field::field_plane(session, f, peak, i == 0, &mut part);
                 *scene = part.scene;
                 out.legend.extend(part.legend);
+                out.colour_bar = out.colour_bar.take().or(part.colour_bar);
+                out.arrow_legend.extend(part.arrow_legend);
                 out.arrows.extend(part.arrows);
             });
         }

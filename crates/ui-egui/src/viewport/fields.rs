@@ -372,17 +372,74 @@ pub(super) fn kept_planes(app: &EmcraftApp, field: &mut FieldState, ui: &mut egu
     });
 }
 
+/// A pill whose text is TeX (`$E_x$`), filled when `on`.
+fn tex_pill(tex: &str, on: bool) -> egui::Button<'static> {
+    let t = &crate::theme::Tokens::get();
+    let ink = if on { t.selected_ink } else { t.text };
+    let job = crate::math::job(tex, t.size(crate::theme::Emphasis::Normal), ink);
+    egui::Button::new(job).fill(if on { t.accent_soft } else { egui::Color32::TRANSPARENT }).corner_radius(10).min_size(egui::vec2(28.0, 0.0))
+}
+
+/// The coloured quantity in two choices: the field (E or H), then its part — the magnitude, a
+/// Cartesian component or the one normal to the plane; with no text field focused, the keys
+/// X, Y, Z, N and M choose the part.
+fn component_choice(field: &mut FieldState, ui: &mut egui::Ui) {
+    use emcraft_engine::view::{Component, Field, Part};
+    let now = field.view.component;
+    let (mut f, mut part) = (now.field(), now.part());
+    let row = ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        for x in Field::ALL {
+            let tex = format!("$\\mathbf{{{}}}$", x.label());
+            let r = ui.add(tex_pill(&tex, f == x));
+            scenario::publish_target(Handle::Choice("field_field", x.id()), r.rect);
+            if r.clicked() {
+                f = x;
+            }
+        }
+        ui.add_space(8.0);
+        for p in Part::ALL {
+            let tex = match p {
+                Part::Magnitude => "$|\\cdot|$".to_owned(),
+                Part::Normal => "$\\perp$".to_owned(),
+                p => format!("${}$", p.id()),
+            };
+            let r = ui.add(tex_pill(&tex, part == p)).on_hover_text(match p {
+                Part::Magnitude => tr(t!("magnitude (M)")),
+                Part::X => tr(t!("x component (X)")),
+                Part::Y => tr(t!("y component (Y)")),
+                Part::Z => tr(t!("z component (Z)")),
+                Part::Normal => tr(t!("normal to the plane (N)")),
+            });
+            scenario::publish_target(Handle::Choice("field_part", p.id()), r.rect);
+            if r.clicked() {
+                part = p;
+            }
+        }
+    });
+    scenario::publish_target(Fixed::FieldComponent, row.response.rect);
+    if !ui.ctx().egui_wants_keyboard_input() {
+        let key = ui.input(|i| {
+            if !i.modifiers.is_none() {
+                return None;
+            }
+            [(egui::Key::X, Part::X), (egui::Key::Y, Part::Y), (egui::Key::Z, Part::Z), (egui::Key::N, Part::Normal), (egui::Key::M, Part::Magnitude)]
+                .into_iter()
+                .find(|(k, _)| i.key_pressed(*k))
+                .map(|(_, p)| p)
+        });
+        if let Some(p) = key {
+            part = p;
+        }
+    }
+    field.view.component = Component::of(f, part);
+}
+
 /// What is drawn: the coloured component, the arrows, the excited port, and the phase played
 /// like a video.
 pub(super) fn field_display(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut Actions) {
     let before = field.view.component;
-    let r = egui::ComboBox::from_id_salt("component").selected_text(before.label()).height(400.0).show_ui(ui, |ui| {
-        for c in emcraft_engine::view::Component::ALL {
-            let r = ui.selectable_value(&mut field.view.component, c, c.label());
-            scenario::publish_target(Handle::Choice("field_component", c.id()), r.rect);
-        }
-    });
-    scenario::publish_target(Fixed::FieldComponent, r.response.rect);
+    component_choice(field, ui);
     // Arrows of the field coloured; the other stays a click away.
     let now = field.view.component;
     if now != before && now.is_magnetic() != before.is_magnetic() {
@@ -391,6 +448,15 @@ pub(super) fn field_display(app: &EmcraftApp, field: &mut FieldState, ui: &mut e
     }
     ui.checkbox(&mut field.view.show_e, tr(t!("E arrows")));
     ui.checkbox(&mut field.view.show_h, tr(t!("H arrows")));
+    // A magnitude in decibels (40 dB below its peak), and the contour lines.
+    if field.view.component.is_magnitude() {
+        let mut db = field.view.db.is_some();
+        let r = ui.checkbox(&mut db, "dB").on_hover_text(tr(t!("Colours in decibels, down to 40 dB below the peak")));
+        scenario::publish_target(Handle::Choice("field_scale", "db"), r.rect);
+        field.view.db = db.then_some(-40.0);
+    }
+    let r = ui.checkbox(&mut field.view.contours, tr(t!("Contours")));
+    scenario::publish_target(Handle::Choice("field_scale", "contours"), r.rect);
     // Each entry of S is an excitation: a port, or a terminal of a terminal port. The one
     // shown is the driven port (`view.driven`), the input everywhere else too.
     let entries = app.session.sparameter_entries();

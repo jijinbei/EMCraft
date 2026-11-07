@@ -17,8 +17,6 @@ pub struct FieldGrid {
     pub id: u64,
     pub nx: usize,
     pub ny: usize,
-    /// Samples per cell along each side (as the CPU's cells).
-    pub step: usize,
     /// The component: 0, 1, 2 for x, y, z; 3 for the vector's length.
     pub axis: u32,
     /// Real and imaginary parts at each sample (row 0 at the plane's low v side), NaN outside
@@ -31,9 +29,6 @@ pub struct FieldGrid {
     pub v_end: [f64; 3],
 }
 
-/// Most cells along the field plane's longer side (`scene3d::field`'s).
-pub const FIELD_CELLS: usize = 120;
-
 impl FieldGrid {
     /// The grid of `phasors`, `nx` × `ny` (`PlaneSamples::phasors`), for `axis`, over the plane
     /// from `corner` to `u_end` and `v_end` (`scene3d::field_frame_of`).
@@ -45,7 +40,7 @@ impl FieldGrid {
     ) -> FieldGrid {
         let nan = [f64::NAN; 3];
         let (re, im) = (0..nx * ny).map(|k| phasors.get(k).copied().flatten().unwrap_or((nan, nan))).unzip();
-        FieldGrid { id, nx, ny, step: nx.max(ny).div_ceil(FIELD_CELLS).max(1), axis: axis.min(3), re, im, corner, u_end, v_end }
+        FieldGrid { id, nx, ny, axis: axis.min(3), re, im, corner, u_end, v_end }
     }
 
     /// The value at sample `k` at the phase with cos φ = `c`, sin φ = `s`: Re(F e^{jφ}).
@@ -58,7 +53,23 @@ impl FieldGrid {
         }
     }
 
-    /// The largest |value| at the phase (the CPU's colour scale for one plane).
+    /// The amplitude over the period at sample `k`: |F_k| of a component, |re| + |im| bounds the
+    /// length's.
+    pub fn amplitude(&self, k: usize) -> f64 {
+        let (Some(re), Some(im)) = (self.re.get(k), self.im.get(k)) else { return f64::NAN };
+        match self.axis {
+            3 => (0..3).map(|i| re[i] * re[i] + im[i] * im[i]).sum::<f64>().sqrt(),
+            a => re[a as usize].hypot(im[a as usize]),
+        }
+    }
+
+    /// The colour scale's peak over the whole period (so an animation keeps one scale), a
+    /// near field's spike left to saturate ([`emcraft_engine::view::robust_peak`]).
+    pub fn period_peak(&self) -> f64 {
+        emcraft_engine::view::robust_peak((0..self.nx * self.ny).map(|k| self.amplitude(k)).collect())
+    }
+
+    /// The largest |value| at the phase.
     pub fn peak(&self, phase: f64) -> f64 {
         let (s, c) = phase.sin_cos();
         (0..self.nx * self.ny).map(|k| self.value(k, c, s)).filter(|v| v.is_finite()).fold(0.0, |a, b| a.max(b.abs()))
@@ -87,12 +98,14 @@ impl FieldGrid {
 pub struct FieldFrame {
     pub grid: std::sync::Arc<FieldGrid>,
     pub phase: f64,
-    /// The value drawn at full colour.
-    pub peak: f64,
+    /// The colour map and its range (the colour bar's).
+    pub scale: colormap::ColourScale,
+    /// Thin lines at every tenth of the map.
+    pub contours: bool,
 }
 
 /// Bytes of the field's uniform (`scene.wgsl`'s `F`).
-pub const FIELD_BYTES: usize = 10 * 16;
+pub const FIELD_BYTES: usize = (6 + colormap::STOPS) * 16;
 
 impl FieldFrame {
     /// The uniform for a scene packed round `origin`: the plane's frame, the grid, the phase,
@@ -108,20 +121,17 @@ impl FieldFrame {
         let o = sub(g.corner, origin);
         let (u, v) = (dual(sub(g.u_end, g.corner)), dual(sub(g.v_end, g.corner)));
         let (s, c) = self.phase.sin_cos();
-        let inv = if self.peak > 0.0 && self.peak.is_finite() { 1.0 / self.peak } else { 0.0 };
-        let signed = g.axis < 3;
-        let stops: Vec<[f64; 4]> = [-1.0, -0.5, 0.0, 0.5, 1.0]
-            .iter()
-            .map(|&t| if signed { colormap::diverging(t) } else { colormap::sequential(0.5 * (t + 1.0)) })
-            .map(|c| [f64::from(c.0) / 255.0, f64::from(c.1) / 255.0, f64::from(c.2) / 255.0, 1.0])
-            .collect();
+        let sc = &self.scale;
+        let inv = if sc.peak > 0.0 && sc.peak.is_finite() { 1.0 / sc.peak } else { 0.0 };
+        let stops: Vec<[f64; 4]> = sc.stops().iter().map(|c| [f64::from(c.0) / 255.0, f64::from(c.1) / 255.0, f64::from(c.2) / 255.0, 1.0]).collect();
         let mut out = Vec::with_capacity(FIELD_BYTES);
         let rows: Vec<[f64; 4]> = [
             [o[0], o[1], o[2], 0.0],
             [u[0], u[1], u[2], 0.0],
             [v[0], v[1], v[2], 0.0],
-            [g.nx as f64, g.ny as f64, g.step as f64, f64::from(g.axis)],
-            [c, s, inv, if signed { 1.0 } else { 0.0 }],
+            [g.nx as f64, g.ny as f64, 0.0, f64::from(g.axis)],
+            [c, s, inv, if sc.signed { 1.0 } else { 0.0 }],
+            [sc.db.unwrap_or(0.0), if self.contours { 1.0 } else { 0.0 }, 0.0, 0.0],
         ]
         .into_iter()
         .chain(stops)

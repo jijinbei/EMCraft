@@ -4,6 +4,7 @@
 //! or a software one (Mesa's lavapipe or llvmpipe, WARP; `EMCRAFT_GPU_FALLBACK=1` asks for it).
 //! Without any they skip, unless `EMCRAFT_REQUIRE_GPU` is set.
 
+use emcraft_render::colormap::ColourScale;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -339,9 +340,10 @@ fn picking_finds_what_the_ray_meets() {
     assert!(g.r.tags_at(&g.device, &g.queue, key ^ 1, [10, 10]).is_none());
 }
 
-/// The field's plane coloured from known values: each cell the colour map of the mean of its
-/// corners over the largest value, at phase 0 from the real parts and at a quarter period from
-/// the imaginary ones; a cell with a corner outside the mesh left out.
+/// The field's plane coloured from known values, interpolated bilinearly between the samples:
+/// a field linear along x reads its exact value anywhere (at phase 0 from the real parts, at a
+/// quarter period from the imaginary ones); next to a sample outside the mesh the colour comes
+/// from the samples inside, and the plane ends half way to the one outside.
 #[test]
 fn the_field_is_coloured_by_its_values() {
     let Some(mut g) = gpu() else { return };
@@ -361,24 +363,25 @@ fn the_field_is_coloured_by_its_values() {
         let (c, u, v) = ([-1.0, 0.0, -0.6], [1.0, 0.0, -0.6], [-1.0, 0.0, 0.6]);
         let grid = Arc::new(FieldGrid::new(50 + u64::from(axis) + u64::from(quarter), axis, (nx, ny, &phasors), [c, u, v]));
         let phase = if quarter { std::f64::consts::FRAC_PI_2 } else { 0.0 };
-        let peak = grid.peak(phase);
-        approx::assert_abs_diff_eq!(peak, 40.0, epsilon = 1e-9);
+        let peak = 40.0;
+        let scale = if axis < 3 { ColourScale::signed(peak) } else { ColourScale::magnitude(peak) };
         let tag = 9 << 16;
         let mut s = Scene::default();
         s.tagged(tag, |s| s.quad([c, u, [1.0, 0.0, 0.6], v], Rgb(128, 128, 128), 255));
         let mut cam = Camera { projection: Projection::Orthographic, ..Camera::default() };
         cam.standard(StandardView::Top);
         cam.fit([-1.0, 0.0, -0.6], [1.0, 0.0, 0.6], 1.5);
-        let shot = g.shot(&s, cam, [240, 160], Some((tag, 1, 0.0)), |f| f.field = Some(FieldFrame { grid: grid.clone(), phase, peak }));
+        let shot =
+            g.shot(&s, cam, [240, 160], Some((tag, 1, 0.0)), |f| f.field = Some(FieldFrame { grid: grid.clone(), phase, scale, contours: false }));
         shot.png(&format!("field-{axis}-{quarter}"));
         let at = |i: f64, j: f64| [c[0] + (u[0] - c[0]) * i / 4.0, 0.0, c[2] + (v[2] - c[2]) * j / 2.0];
-        for i in 0..4 {
-            let mean = 10.0 * i as f64 + 5.0;
-            let map = if axis < 3 { emcraft_render::colormap::diverging(mean / peak) } else { emcraft_render::colormap::sequential(mean / peak) };
-            near(shot.at(at(i as f64 + 0.5, 0.5)), lit(map, [0.0, 1.0, 0.0], &cam), 3.0, &format!("cell {i}, 0"));
+        for (i, j) in [(0.5, 0.5), (1.25, 0.5), (2.5, 1.0), (3.5, 0.5)] {
+            near(shot.at(at(i, j)), lit(scale.colour(10.0 * i), [0.0, 1.0, 0.0], &cam), 3.0, &format!("at {i}, {j}"));
         }
-        // The cell with the corner outside: the ground.
-        near(shot.at(at(3.5, 1.5)), [0.0, 0.0, 0.0], 1.0, "the cell left out");
+        // Next to the sample outside, the three inside weigh alike: (30 + 40 + 30) / 3.
+        near(shot.at(at(3.5, 1.5)), lit(scale.colour(100.0 / 3.0), [0.0, 1.0, 0.0], &cam), 3.0, "beside the sample outside");
+        // Close to it the plane has ended: the ground.
+        near(shot.at(at(3.9, 1.9)), [0.0, 0.0, 0.0], 1.0, "the corner left out");
     }
 }
 
@@ -541,7 +544,7 @@ fn complex_vector_glyphs_rotate_on_gpu_without_new_vertices() {
     let draw = |g: &mut Gpu, phase| {
         g.shot(&scene, cam, [300, 240], None, |f| {
             f.packed = packed.clone();
-            f.field = Some(FieldFrame { grid: grid.clone(), phase, peak: 1.0 });
+            f.field = Some(FieldFrame { grid: grid.clone(), phase, scale: emcraft_render::colormap::ColourScale::signed(1.0), contours: false });
         })
     };
     let zero = draw(&mut g, 0.0);

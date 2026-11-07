@@ -12,7 +12,6 @@
 use std::time::Instant;
 
 use egui::{Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
-use emcraft_render::Rgb;
 use emcraft_render::view3d::{self, Camera, CameraAnim, Drag, Keep, Projection, StandardView};
 
 use emcraft_engine::view::{FieldView, Plane};
@@ -307,6 +306,8 @@ impl View3d {
                     arrows: full.arrows.clone(),
                     labels,
                     legend: full.legend.clone(),
+                    colour_bar: full.colour_bar.clone(),
+                    arrow_legend: full.arrow_legend.clone(),
                     bounds: full.bounds,
                     cache: Default::default(),
                 };
@@ -430,6 +431,8 @@ static EMPTY: Built = Built {
     arrows: Vec::new(),
     labels: Vec::new(),
     legend: Vec::new(),
+    colour_bar: None,
+    arrow_legend: Vec::new(),
     bounds: None,
     cache: scene3d::Cache::none(),
 };
@@ -517,7 +520,13 @@ pub fn show(app: &EmcraftApp, st: &mut crate::viewport::Parts, ui: &mut egui::Ui
     let p = ui.painter().with_clip_rect(rect);
     labels(&p, rect, &v.camera, &built.labels);
     crate::section3d::annotate(app, v, &p, rect, bounds);
-    legend(&p, rect, &built.legend);
+    legend(&p, rect, &built);
+    if overlay == Overlay::Field {
+        field.hover = hover_probe(app, v, field, ui, rect, bounds.0);
+        if let Some(probe) = &field.hover {
+            hover_card(&p, ui, probe, field.view.component, field.view.phase);
+        }
+    }
     crate::tools3d::draw(app, v, &p, rect);
     if let Some(b) = v.boxsel {
         paint_box(&p, b);
@@ -594,6 +603,52 @@ fn normal(plane: Plane) -> usize {
         Plane::E => 0,
         Plane::H => 1,
         Plane::Cross => 2,
+    }
+}
+
+/// The fields where the pointer's ray meets the field plane (model `lo` its low corner), when
+/// it does inside the mesh.
+fn hover_probe(app: &EmcraftApp, v: &View3d, field: &FieldState, ui: &egui::Ui, rect: Rect, lo: [f64; 3]) -> Option<emcraft_engine::view::Probe> {
+    let samples = field.samples.as_ref()?;
+    let at = ui.ctx().pointer_hover_pos().filter(|p| rect.contains(*p))?;
+    let (origin, dir) =
+        v.camera.ray(f64::from(at.x - rect.left()), f64::from(at.y - rect.top()), f64::from(rect.width()), f64::from(rect.height()))?;
+    let k = samples.normal_axis();
+    let plane = lo[k] + samples.at;
+    if dir[k].abs() < 1e-12 {
+        return None;
+    }
+    let t = (plane - origin[k]) / dir[k];
+    let mut p = [0, 1, 2].map(|i| origin[i] + t * dir[i]);
+    p[k] = plane;
+    let unit = app.session.display().length;
+    let q = samples.plane_point(emcraft_model::Point3::new(p[0], p[1], p[2]), unit)?;
+    samples.probe(q)
+}
+
+/// A card by the pointer with the fields under it: the coloured quantity at this phase, and E
+/// and H's amplitudes, each component.
+fn hover_card(p: &egui::Painter, ui: &egui::Ui, probe: &emcraft_engine::view::Probe, component: emcraft_engine::view::Component, phase: f64) {
+    let Some(at) = ui.ctx().pointer_hover_pos() else { return };
+    let t = &Tokens::get();
+    let fmt = emcraft_render::axes::format;
+    let unit = |magnetic: bool| if magnetic { "A/m" } else { "V/m" };
+    let (now, _) = probe.value(component, phase);
+    let mut lines = vec![format!("{} = {} {}", component.tex(), fmt(now), unit(component.is_magnetic()))];
+    for (f, v, magnetic) in [("E", probe.e, false), ("H", probe.h, true)] {
+        lines.push(format!("$|{f}_x|$ {}  $|{f}_y|$ {}  $|{f}_z|$ {} {}", fmt(v.x.norm()), fmt(v.y.norm()), fmt(v.z.norm()), unit(magnetic)));
+    }
+    let galleys: Vec<_> = lines.iter().map(|l| p.layout_job(crate::math::job(l, t.font_small, t.text))).collect();
+    let w = galleys.iter().map(|g| g.size().x).fold(0.0, f32::max) + 16.0;
+    let h = galleys.iter().map(|g| g.size().y + 2.0).sum::<f32>() + 10.0;
+    let r = Rect::from_min_size(at + vec2(16.0, 16.0), vec2(w, h));
+    p.rect_filled(r, 6.0, t.panel.gamma_multiply(0.95));
+    p.rect_stroke(r, 6.0, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
+    let mut y = r.top() + 5.0;
+    for g in galleys {
+        let gh = g.size().y;
+        p.galley(pos2(r.left() + 8.0, y), g, t.text);
+        y += gh + 2.0;
     }
 }
 
@@ -691,6 +746,8 @@ fn dynamic_field_arrows(app: &EmcraftApp, field: &FieldState, built: &mut Built)
         if !(peak > 0.0 && peak.is_finite()) {
             continue;
         }
+        // An arrow at full length is the peak (its length clamps at it).
+        built.arrow_legend.push((scene3d::arrow_legend(component.is_magnetic(), peak), color));
         let stride = nx.max(ny).div_ceil(18).max(1);
         for j in (stride / 2..ny).step_by(stride) {
             for i in (stride / 2..nx).step_by(stride) {

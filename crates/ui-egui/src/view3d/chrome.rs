@@ -169,20 +169,29 @@ pub(super) fn field_frame(app: &EmcraftApp, v: &mut View3d, field: &FieldState) 
             let (nx, ny, phasors) = s.phasors(component);
             let (x, y) = s.axes();
             let frame = scene3d::field_frame_of(&app.session, s.plane, s.at, x.span(), y.span(), lo);
-            let axis = match component {
-                emcraft_engine::view::Component::Ex | emcraft_engine::view::Component::Hx => 0,
-                emcraft_engine::view::Component::Ey | emcraft_engine::view::Component::Hy => 1,
-                emcraft_engine::view::Component::Ez | emcraft_engine::view::Component::Hz => 2,
-                _ => 3,
-            };
+            let axis = component.axis(s.normal_axis());
             let g = std::sync::Arc::new(crate::gpu3d::FieldGrid::new(id, axis, (nx, ny, &phasors), frame));
             v.field_grid = Some(g.clone());
             g
         }
     };
-    let phase = field.view.phase;
-    let peak = grid.peak(phase);
-    Some(crate::gpu3d::FieldFrame { grid, phase, peak })
+    // The scale the scene's colour bar shows (scene3d::field), so the plane and the bar agree.
+    let bar = v.built.as_ref().and_then(|(_, b)| b.colour_bar.as_ref()).map(|b| b.scale);
+    let scale = bar.unwrap_or_else(|| field_scale(&grid, &field.view));
+    Some(crate::gpu3d::FieldFrame { grid, phase: field.view.phase, scale, contours: field.view.contours })
+}
+
+/// The field plane's colour scale when the scene has none: signed for a component, a magnitude's (in decibels when the
+/// view asks) for a length, to the peak over the period.
+pub(super) fn field_scale(grid: &crate::gpu3d::FieldGrid, view: &emcraft_engine::view::FieldView) -> emcraft_render::colormap::ColourScale {
+    use emcraft_render::colormap::ColourScale;
+    let peak = grid.period_peak();
+    if grid.axis < 3 {
+        ColourScale::signed(peak)
+    } else {
+        let s = ColourScale::magnitude(peak);
+        view.db.map_or(s, |floor| s.in_db(floor))
+    }
 }
 
 /// The window pixel under `at` (points from the view's corner).
@@ -304,29 +313,85 @@ impl Built {
             arrows: Vec::new(),
             labels: self.labels.clone(),
             legend: self.legend.clone(),
+            colour_bar: self.colour_bar.clone(),
+            arrow_legend: self.arrow_legend.clone(),
             bounds: self.bounds.or_else(|| self.scene.bounds()),
             cache: Default::default(),
         }
     }
 }
 
-pub(super) fn legend(p: &egui::Painter, rect: Rect, items: &[(String, Rgb)]) {
+/// The legend over the picture's top-left corner: the field's colour bar (its quantity, the
+/// gradient and its ticks), the arrows (each an arrow in its colour with what it shows and its
+/// scale), then the swatches of everything else.
+pub(super) fn legend(p: &egui::Painter, rect: Rect, built: &crate::scene3d::Built) {
     let t = &Tokens::get();
-    if items.is_empty() {
+    let (items, arrows, bar) = (&built.legend, &built.arrow_legend, built.colour_bar.as_ref());
+    if items.is_empty() && arrows.is_empty() && bar.is_none() {
         return;
     }
     let font = FontId::proportional(t.font_small);
-    let row = 18.0;
-    // Each item's symbols set as mathematics (`εr` with a lowered r).
-    let galleys: Vec<_> = items.iter().map(|(s, _)| p.layout_job(crate::math::rich(s, font.size, t.text))).collect();
-    let width = galleys.iter().map(|g| g.size().x).fold(0.0, f32::max) + 34.0;
-    let r = Rect::from_min_size(rect.min + vec2(10.0, 10.0), vec2(width, row * items.len() as f32 + 8.0));
-    p.rect_filled(r, 6.0, t.panel.gamma_multiply(0.9));
+    let row = t.font_small + 8.0;
+    // The arrows' lines and the bar's title are TeX; the swatches' plain text has its symbols
+    // set as mathematics (`εr` with a lowered r).
+    let tex = |s: &str, size: f32| p.layout_job(crate::math::job(s, size, t.text));
+    let galleys: Vec<_> = arrows
+        .iter()
+        .map(|(s, _)| tex(s, font.size))
+        .chain(items.iter().map(|(s, _)| p.layout_job(crate::math::rich(s, font.size, t.text))))
+        .collect();
+    let bar_width = 180.0;
+    let title = bar.map(|b| tex(&b.label, t.font_body));
+    let ticks: Vec<(f64, String)> = bar.map(|b| b.scale.ticks().into_iter().map(|(at, _)| (at, b.scale.tick_text(at))).collect()).unwrap_or_default();
+    let bar_height = if bar.is_some() { title.as_ref().map_or(0.0, |g| g.size().y) + 12.0 + 4.0 + row + 6.0 } else { 0.0 };
+    let width = galleys.iter().map(|g| g.size().x + 40.0).fold(if bar.is_some() { bar_width + 20.0 } else { 0.0 }, f32::max);
+    let r = Rect::from_min_size(rect.min + vec2(10.0, 10.0), vec2(width, bar_height + row * galleys.len() as f32 + 8.0));
+    p.rect_filled(r, 6.0, t.panel.gamma_multiply(0.92));
     p.rect_stroke(r, 6.0, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
-    for (i, ((_, c), g)) in items.iter().zip(galleys).enumerate() {
-        let y = r.top() + 4.0 + row * (i as f32 + 0.5);
-        p.rect_filled(Rect::from_center_size(pos2(r.left() + 14.0, y), vec2(12.0, 12.0)), 2.0, color(*c));
-        p.galley(pos2(r.left() + 26.0, y - g.size().y / 2.0), g, t.text);
+    let mut y = r.top() + 6.0;
+    if let (Some(b), Some(title)) = (bar, title) {
+        let left = r.left() + 10.0;
+        let h = title.size().y;
+        p.galley(pos2(left, y), title, t.text);
+        y += h + 4.0;
+        // The gradient, left (low) to right (peak), in strips a pixel or two wide.
+        let strip = Rect::from_min_size(pos2(left, y), vec2(bar_width, 12.0));
+        let n = 90;
+        for k in 0..n {
+            let a = k as f32 / n as f32;
+            let x0 = strip.left() + a * bar_width;
+            let x1 = strip.left() + (k + 1) as f32 / n as f32 * bar_width + 0.5;
+            let c = b.scale.at((f64::from(a) + 0.5 / f64::from(n as u32)).clamp(0.0, 1.0));
+            p.rect_filled(Rect::from_min_max(pos2(x0, strip.top()), pos2(x1, strip.bottom())), 0.0, color(c));
+        }
+        p.rect_stroke(strip, 0.0, Stroke::new(1.0, t.border), egui::StrokeKind::Outside);
+        y = strip.bottom() + 2.0;
+        for (at, text) in &ticks {
+            let x = strip.left() + *at as f32 * bar_width;
+            p.line_segment([pos2(x, strip.bottom()), pos2(x, strip.bottom() + 3.0)], Stroke::new(1.0, t.text_dim));
+            let align = if *at <= 0.0 {
+                Align2::LEFT_TOP
+            } else if *at >= 1.0 {
+                Align2::RIGHT_TOP
+            } else {
+                Align2::CENTER_TOP
+            };
+            p.text(pos2(x, y + 2.0), align, text, font.clone(), t.text_dim);
+        }
+        y += row + 6.0;
+    }
+    for (i, ((_, c), g)) in arrows.iter().chain(items).zip(galleys).enumerate() {
+        let mid = y + row * (i as f32 + 0.5);
+        let x = r.left() + 10.0;
+        if i < arrows.len() {
+            // An arrow in its colour, as on the plane.
+            let (a, b) = (pos2(x, mid), pos2(x + 20.0, mid));
+            p.line_segment([a, b - vec2(5.0, 0.0)], Stroke::new(2.5, color(*c)));
+            p.add(egui::Shape::convex_polygon(vec![b, b + vec2(-7.0, -4.5), b + vec2(-7.0, 4.5)], color(*c), Stroke::NONE));
+        } else {
+            p.rect_filled(Rect::from_center_size(pos2(x + 6.0, mid), vec2(12.0, 12.0)), 2.0, color(*c));
+        }
+        p.galley(pos2(x + 28.0, mid - g.size().y / 2.0), g, t.text);
     }
 }
 

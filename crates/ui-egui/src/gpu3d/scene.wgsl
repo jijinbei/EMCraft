@@ -17,15 +17,17 @@ struct U {
 @group(0) @binding(0) var<uniform> u: U;
 
 // The field's plane (field.rs): its frame from the scene's origin (u = (p − origin) · ua), the
-// grid (nx, ny, samples per cell, component: 0–2 or 3 for the length), the phase (cos, sin),
-// 1 / the colour scale, 1 for a signed map; the map's five stops.
+// grid (nx, ny, unused, component: 0–2 or 3 for the length), the phase (cos, sin), 1 / the
+// colour scale's peak, 1 for a signed map; the scale (a decibel scale's floor in dB or 0, 1 for
+// contour lines); the map's nine stops.
 struct F {
     origin: vec4<f32>,
     ua: vec4<f32>,
     va: vec4<f32>,
     grid: vec4<f32>,
     phase: vec4<f32>,
-    stops: array<vec4<f32>, 5>,
+    scale: vec4<f32>,
+    stops: array<vec4<f32>, 9>,
 };
 
 @group(1) @binding(0) var<uniform> f: F;
@@ -49,30 +51,53 @@ fn field_value(i: i32, j: i32) -> vec2<f32> {
     return vec2<f32>(x, re.w);
 }
 
-// The colour of the field's cell at `p` (as scene3d::field paints it: the mean of the cell's
-// corners, the cell left out with a corner outside the mesh: alpha 0).
+// Where a value lies on the colour map, 0 to 1 (colormap::ColourScale::position).
+fn field_position(v: f32) -> f32 {
+    let x = v * f.phase.z;
+    var t = x;
+    if (f.phase.w > 0.5) {
+        t = 0.5 * (x + 1.0);
+    } else if (f.scale.x < 0.0) {
+        let db = 20.0 * 0.30103 * log2(max(abs(x), 1e-30));
+        t = 1.0 - db / f.scale.x;
+    }
+    return clamp(t, 0.0, 1.0);
+}
+
+// The field's colour at `p`: the samples round it interpolated bilinearly, those outside the
+// mesh left out of the weights; transparent (alpha 0) where less than half the weight lies
+// inside, so the plane ends half way between a sample inside and one outside. Thin darker
+// lines mark every tenth of the map (contours) when asked for.
 fn field_colour(p: vec3<f32>) -> vec4<f32> {
     let d = p - f.origin.xyz;
     let n = vec2<f32>(f.grid.x, f.grid.y) - vec2<f32>(1.0);
     let x = clamp(vec2<f32>(dot(d, f.ua.xyz), dot(d, f.va.xyz)), vec2<f32>(0.0), vec2<f32>(1.0)) * n;
-    let step = max(f.grid.z, 1.0);
-    let c0 = floor(min(x, n - vec2<f32>(1e-3)) / step) * step;
-    let c1 = min(c0 + vec2<f32>(step), n);
-    let a = field_value(i32(c0.x), i32(c0.y));
-    let b = field_value(i32(c1.x), i32(c0.y));
-    let c = field_value(i32(c1.x), i32(c1.y));
-    let e = field_value(i32(c0.x), i32(c1.y));
-    if (min(min(a.y, b.y), min(c.y, e.y)) < 0.5) {
+    let c0 = min(floor(x), max(n - vec2<f32>(1.0), vec2<f32>(0.0)));
+    let r = clamp(x - c0, vec2<f32>(0.0), vec2<f32>(1.0));
+    let i0 = vec2<i32>(c0);
+    let a = field_value(i0.x, i0.y);
+    let b = field_value(i0.x + 1, i0.y);
+    let c = field_value(i0.x + 1, i0.y + 1);
+    let e = field_value(i0.x, i0.y + 1);
+    let wa = (1.0 - r.x) * (1.0 - r.y) * a.y;
+    let wb = r.x * (1.0 - r.y) * b.y;
+    let wc = r.x * r.y * c.y;
+    let we = (1.0 - r.x) * r.y * e.y;
+    let w = wa + wb + wc + we;
+    if (w < 0.5) {
         return vec4<f32>(0.0);
     }
-    let mean = 0.25 * (a.x + b.x + c.x + e.x) * f.phase.z;
-    var t = mean;
-    if (f.phase.w > 0.5) {
-        t = 0.5 * (mean + 1.0);
+    let t = field_position((wa * a.x + wb * b.x + wc * c.x + we * e.x) / w);
+    let s = t * 8.0;
+    let k = min(i32(floor(s)), 7);
+    var colour = mix(f.stops[k].rgb, f.stops[k + 1].rgb, s - f32(k));
+    if (f.scale.y > 0.5) {
+        let tenth = abs(fract(t * 10.0 + 0.5) - 0.5);
+        if (tenth < 0.04 && t > 0.02 && t < 0.98) {
+            colour = colour * 0.62;
+        }
     }
-    let s = clamp(t, 0.0, 1.0) * 4.0;
-    let k = min(i32(floor(s)), 3);
-    return vec4<f32>(mix(f.stops[k].rgb, f.stops[k + 1].rgb, s - f32(k)), 1.0);
+    return vec4<f32>(colour, 1.0);
 }
 
 fn removed(p: vec3<f32>) -> bool {

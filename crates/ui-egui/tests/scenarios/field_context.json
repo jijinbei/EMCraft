@@ -91,16 +91,35 @@
     "shot": "field-context-electric"
   },
   {
+    "note": "The fields under the pointer: where its ray meets the plane, on a card by it"
+  },
+  {
+    "move": "view3d"
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "inspect": {
+        "field.hover": "*"
+      }
+    }
+  },
+  {
+    "shot": "field-context-hover"
+  },
+  {
     "click": "field:plane:e"
   },
   {
     "shot": "field-context-e-plane"
   },
   {
-    "click": "field:component"
+    "click": "choice:field_field:h"
   },
   {
-    "click": "choice:field_component:|h|"
+    "click": "choice:field_part:magnitude"
   },
   {
     "expect": {

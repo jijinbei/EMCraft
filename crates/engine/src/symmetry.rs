@@ -494,7 +494,7 @@ pub fn revolution_field(s: &mut Session, p: &Params) -> Result<Value> {
         subtitle: "the meridian half-plane (axis on the left): |E| in colour, (E_r, E_z) at φ = 0".into(),
         x: emcraft_render::Axis::new(&format!("r ({lu})"), l.from_si(r0), l.from_si(r1)),
         y: emcraft_render::Axis::new(&format!("z ({lu})"), l.from_si(z0), l.from_si(z1)),
-        scalar: Some(Scalar { label: "$|E|$".into(), nx, ny, values: magnitude, kind: ScalarKind::Magnitude, range: None }),
+        scalar: Some(Scalar { label: "$|E|$".into(), nx, ny, values: magnitude, kind: ScalarKind::Magnitude, range: None, db: None }),
         arrows: vec![Arrows { label: "E (in plane)".into(), pen: emcraft_render::Pen::EArrows, arrows, scale: None }],
         lines: Vec::new(),
         arrow_length: l.from_si((r1 - r0).max(z1 - z0)) / 20.0 * 0.9,

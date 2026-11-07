@@ -210,7 +210,8 @@ impl Frame {
         self.uniforms.bytes().hash(&mut h);
         self.out.hash(&mut h);
         if let Some(f) = &self.field {
-            (f.grid.id, f.phase.to_bits(), f.peak.to_bits()).hash(&mut h);
+            let sc = &f.scale;
+            (f.grid.id, f.phase.to_bits(), sc.peak.to_bits(), sc.signed, sc.db.map(f64::to_bits), f.contours).hash(&mut h);
         }
         h.finish()
     }
