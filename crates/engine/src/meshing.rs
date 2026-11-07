@@ -86,10 +86,11 @@ pub fn generate(s: &mut Session, p: &Params) -> Result<Value> {
     if s.meshing == crate::session::Meshing::Recorded {
         return Ok(json!({"meshed": false}));
     }
-    if crate::pcb_fem::has_region(s) {
+    let plan = emcraft_mesh::Plan::of(&s.model);
+    if plan == emcraft_mesh::Plan::Board {
         return crate::pcb_fem::generate(s, p, &sizes);
     }
-    if s.model.waveguide().is_none() && s.model.domain.solid.is_some() {
+    if plan == emcraft_mesh::Plan::General {
         let curved = p.flag("curved").or(true)?;
         let solid_sizes = emcraft_mesh::solid::Sizes { default: sizes.default, per_material: sizes.per_material.clone() };
         let options = emcraft_mesh::solid::SolidOptions { sizes: solid_sizes, curved, refine: Vec::new() };
@@ -101,6 +102,7 @@ pub fn generate(s: &mut Session, p: &Params) -> Result<Value> {
         s.model.set_mesh(mesh);
         return Ok(reply);
     }
+    // A guide's grid (with nothing to mesh, the grid mesher says so).
     let size = sizes.grid_size(s)?;
     let mesh = emcraft_mesh::waveguide_with(&s.model, &grid_options(p, size)?)?;
     let mut reply = json!({"nodes": mesh.nodes.len(), "tetrahedra": mesh.tets.len()});

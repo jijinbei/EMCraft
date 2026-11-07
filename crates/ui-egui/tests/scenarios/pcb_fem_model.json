@@ -12,6 +12,8 @@
   {"until": {"busy": false}},
   {"frames": 2},
   {"expect": {"view": "model", "inspect": {"workflow.step": "setup", "workflow.analysis.kind": "frequency", "workflow.steps.geometry": "done", "workflow.steps.excitation": "done", "workflow.steps.boundaries": "done", "model.results": null}}},
+  {"note": "The board is a body of the model: the browser lists it under the bodies"},
+  {"expect": {"handles": ["row:board"]}},
   {"note": "The band is proposed up to the maximum frequency, not confirmed: Setup is to do, the mesh and Run wait for its button"},
   {"expect": {"inspect": {"workflow.setup.start": "0.05", "workflow.setup.stop": "1", "workflow.confirmed": false, "workflow.steps.setup": "todo", "workflow.steps.run": "waiting", "model.mesh": null, "dialog": null}, "handles": ["setup:confirm"]}},
   {"shot": "pcb-fem-setup-step"},

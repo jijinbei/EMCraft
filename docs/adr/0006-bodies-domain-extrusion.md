@@ -1,6 +1,6 @@
 # ADR 0006: Bodies, the domain, and the waveguide as an extrusion
 
-Status: proposed (2026-11-07). Steps 1–2 done; steps 3–4 open (below).
+Status: accepted (2026-11-07). Steps 1–4 done; what was left out, below.
 
 ## Context
 
@@ -21,34 +21,28 @@ symmetry, periodic and rotational planes. The browser mirrored the commands, not
    inclusions as before through `MeshView` (each list in the bodies' order), so meshes are
    unchanged, bit for bit (the whole oracle). An imported part keeps its surfaces: changing a
    part's material keeps the bodies drawn since.
-3. **The waveguide as bodies** (open). `geometry.waveguide` would place a box region and
-   bodies; `Model::waveguide` would become a view recognised from them (as `MeshView` is),
-   so the waveguide mesher, the time domain and the Floquet ports read it unchanged.
-4. **One extrusion mesher** (open): a cross-section mesh (a structured grid, or triangles as
-   the PCB's) extruded through slabs, for the waveguide, the PCB and any stack of prisms along
-   one axis; the general tetrahedral mesher for the rest; bodies of revolution as now.
+3. **The waveguide as bodies** (done). `geometry.waveguide` places the guide's box (the
+   region, `Kind::Extruded`), a slab along z per section (its aperture's box, `Kind::Slab`),
+   one across y per layer, a metal sheet per strip (`Shape::Sheet`) and a metal box per via
+   (`Kind::Cells`); `Model::waveguide()` is the guide read back from them (cached as
+   `MeshView` is), so the waveguide mesher, the time domain and the Floquet ports read it
+   unchanged. Lengths come from the boxes' sizes, never from differences of placements; a
+   strip's end and a via's top are placed plus size, exact for every guide of the gate. A
+   board is one body too (`Shape::Board`, its nets and layers' names its own).
+4. **One extrusion mesher** (done): `emcraft_mesh::extrude`, a cross-section (a structured grid
+   or a triangulation) extruded through levels along z, each cell at each level filled or left
+   out; the waveguide's grid (six Kuhn tetrahedra a cell) and the board's stack (three a prism)
+   are both it, each with its own lines, fills and boundaries. `emcraft_mesh::Plan` reads from
+   the bodies which mesher a model takes. Every waveguide and board template meshes as before,
+   bit for bit, and the whole oracle is unchanged.
 
-## What steps 3–4 need (found on the way)
+## Left out
 
-- **Exact round trip.** The waveguide mesher builds its grid from section lengths and aperture
-  spans; a view recognised from bodies must give the same numbers bit for bit, or every
-  waveguide oracle moves. A box body's size is exact (the section's length) but its placement
-  is a running sum: the view must take lengths from sizes, never from differences of
-  placements. Apertures: a section's metal with the aperture put back as a box of the region's
-  material keeps the aperture's width and start exact.
-- **A sheet shape.** Strips have no thickness: a `Shape::Sheet` (a rectangle in a plane) is
-  needed; the general mesher must refuse it until it can mesh one.
-- **Sections are slabs, not inclusions.** A section fills the region between two planes; it is
-  neither combined with the region nor meshed apart under today's rules (inclusions lie
-  strictly inside, apart from each other). A `Kind::Slab` (the extrusion mesher's only) keeps
-  that honest.
-- **Readers.** 106 reads of `model.waveguide` in 43 files; the writers (geometry.waveguide, the
-  templates, the item edits, `project.values`) would write bodies. The view keeps the readers.
-- **Ports.** Start and end ports are the region's z sides; `End` can become a side of the
-  region's box when the waveguide is a view.
+- **Ports as faces of the region's box.** A port at a guide's start or end and a port on a face
+  take different paths to their modes; making the first the second would move results, for
+  nothing a user sees (the browser and the legend say either the same way).
 
 ## Consequences
 
-The browser now reads the model (bodies, materials with what uses them, the domain with its
-boundary and planes, excitation, mesh, results). Steps 3–4 are their own work, each checked by
-the oracle bit for bit.
+The browser reads the model: the bodies (a guide's from its bodies, a board's), the materials
+with what uses them, the domain with its boundary and planes, excitation, mesh, results.

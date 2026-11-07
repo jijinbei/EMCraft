@@ -16,6 +16,7 @@
 use egui::{Align2, FontId, Rect, Sense, Stroke, pos2, vec2};
 
 use crate::glyphs::{self, Glyph};
+use emcraft_model::Kind;
 use std::fmt::Display;
 
 use crate::handle::{Fixed, Handle};
@@ -383,54 +384,70 @@ fn bodies(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
     let (mm, lu) = (|x| f.len(x), f.unit());
     let region = m.domain.solid.as_ref().map_or("vacuum", |s| s.material.as_str());
     let mut rows = Vec::new();
-    if let Some(w) = m.waveguide() {
-        let edit = || Act::Edit("geometry.waveguide");
-        let size = words(t!("{w} × {h} × {l} {unit}"), args!(w = mm(w.width.get()), h = mm(w.height.get()), l = mm(w.length()), unit = lu));
-        rows.push(node("waveguide", words(t!("Waveguide"), &[]), Some(size), Glyph::Waveguide, edit()).picks(Pick::Guide));
-        for (i, sec) in w.sections.iter().enumerate() {
-            let material = material_name(&sec.material);
-            let detail = match sec.width {
-                Some(a) => words(
-                    t!("{length} {unit} · {material} · aperture {aperture}"),
-                    args!(length = mm(sec.length.get()), unit = lu, material = material.shown, aperture = mm(a.get())),
-                ),
-                None => words(t!("{length} {unit} · {material}"), args!(length = mm(sec.length.get()), unit = lu, material = material.shown)),
-            };
-            let name = words(t!("Section {n}"), args!(n = i + 1));
-            rows.push(
-                node(format!("section:{}", i + 1), name, Some(detail), body_glyph(&sec.material, "vacuum"), edit()).under().picks(Pick::Section(i)),
-            );
-        }
-        for (i, layer) in w.layers.iter().enumerate() {
-            let detail = words(
-                t!("{length} {unit} · {material}"),
-                args!(length = mm(layer.thickness.get()), unit = lu, material = material_name(&layer.material).shown),
-            );
-            rows.push(
+    // A waveguide's bodies: its box, then under it each section, layer, strip and via, in
+    // the order placed.
+    let edit = || Act::Edit("geometry.waveguide");
+    let mut count = [0usize; 4];
+    for body in m.bodies().iter().filter(|b| b.is_extruded()) {
+        let material = body.material().unwrap_or("vacuum");
+        let box_size = match body.shape {
+            emcraft_model::Shape::Box { size } => Some(size),
+            _ => None,
+        };
+        let row = match (body.kind, box_size, &body.shape) {
+            (Kind::Extruded(_), Some(size), _) => {
+                let detail = words(t!("{w} × {h} × {l} {unit}"), args!(w = mm(size.x), h = mm(size.y), l = mm(size.z), unit = lu));
+                node("waveguide", words(t!("Waveguide"), &[]), Some(detail), Glyph::Waveguide, edit()).picks(Pick::Guide)
+            }
+            (Kind::Slab(emcraft_model::Axis::Z), Some(size), _) => {
+                let i = count[0];
+                count[0] += 1;
+                let shown = material_name(material).shown;
+                let narrowed = m.waveguide().is_some_and(|w| size.x != w.width.get());
+                let detail = if narrowed {
+                    words(
+                        t!("{length} {unit} · {material} · aperture {aperture}"),
+                        args!(length = mm(size.z), unit = lu, material = shown, aperture = mm(size.x)),
+                    )
+                } else {
+                    words(t!("{length} {unit} · {material}"), args!(length = mm(size.z), unit = lu, material = shown))
+                };
+                let name = words(t!("Section {n}"), args!(n = i + 1));
+                node(format!("section:{}", i + 1), name, Some(detail), body_glyph(material, "vacuum"), edit()).under().picks(Pick::Section(i))
+            }
+            (Kind::Slab(_), Some(size), _) => {
+                let i = count[1];
+                count[1] += 1;
+                let detail =
+                    words(t!("{length} {unit} · {material}"), args!(length = mm(size.y), unit = lu, material = material_name(material).shown));
                 node(format!("layer:{}", i + 1), words(t!("Layer {n}"), args!(n = i + 1)), Some(detail), Glyph::Dielectric, edit())
                     .under()
-                    .picks(Pick::Layer(i)),
-            );
-        }
-        for (i, st) in w.strips.iter().enumerate() {
-            let detail = words(t!("metal · y {y} · width {width}"), args!(y = mm(st.y), width = mm(st.width.get())));
-            rows.push(
+                    .picks(Pick::Layer(i))
+            }
+            (Kind::Cells, _, emcraft_model::Shape::Sheet { size: [_, width] }) => {
+                let i = count[2];
+                count[2] += 1;
+                let detail = words(t!("metal · y {y} · width {width}"), args!(y = mm(body.at.y), width = mm(width.get())));
                 node(format!("strip:{}", i + 1), words(t!("Strip {n}"), args!(n = i + 1)), Some(detail), Glyph::Metal, edit())
                     .under()
-                    .picks(Pick::Strip(i)),
-            );
-        }
-        for (i, v) in w.vias.iter().enumerate() {
-            let detail = words(
-                t!("metal · {wx} × {wz} {unit} · y {y0} to {y1}"),
-                args!(wx = mm(v.wx.get()), wz = mm(v.wz.get()), unit = lu, y0 = mm(v.y0), y1 = mm(v.y1)),
-            );
-            rows.push(
-                node(format!("via:{}", i + 1), words(t!("Via {n}"), args!(n = i + 1)), Some(detail), Glyph::Metal, edit())
-                    .under()
-                    .picks(Pick::Via(i)),
-            );
-        }
+                    .picks(Pick::Strip(i))
+            }
+            (Kind::Cells, Some(size), _) => {
+                let i = count[3];
+                count[3] += 1;
+                let detail = words(
+                    t!("metal · {wx} × {wz} {unit} · y {y0} to {y1}"),
+                    args!(wx = mm(size.x), wz = mm(size.z), unit = lu, y0 = mm(body.at.y), y1 = mm(body.at.y + size.y)),
+                );
+                node(format!("via:{}", i + 1), words(t!("Via {n}"), args!(n = i + 1)), Some(detail), Glyph::Metal, edit()).under().picks(Pick::Via(i))
+            }
+            _ => continue,
+        };
+        rows.push(row);
+    }
+    // A board: its own view (routes, nets, the region solved).
+    if let Some(board) = m.pcb() {
+        rows.push(node("board", words(t!("PCB"), &[]), Some(own(&board.name)), Glyph::Part, Act::Show(View::Pcb)));
     }
     // An imported part's walls and region body: a double-click gives them another material.
     for (i, b) in emcraft_engine::bodies::parts(m).into_iter().enumerate() {

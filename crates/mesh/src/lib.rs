@@ -22,9 +22,44 @@ mod waveguide;
 pub use topology::{LOCAL_EDGES, LOCAL_FACES, NO_TET, Topology};
 pub use waveguide::{Options, waveguide, waveguide_with};
 
+/// How a model is meshed, read from its bodies: a board's region its copper's triangulation
+/// extruded through its stack, a waveguide its grid extruded along z (both [`extrude`]),
+/// a region of its own the general tetrahedral mesher ([`solid`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Plan {
+    /// A board with its region set ([`planar::extrude`]).
+    Board,
+    /// A waveguide ([`waveguide_with`]).
+    Guide,
+    /// A region solid ([`solid::solid_with`]).
+    General,
+    /// Nothing to mesh.
+    Nothing,
+}
+
+impl Plan {
+    /// The model's plan.
+    ///
+    /// ```
+    /// use emcraft_mesh::Plan;
+    /// assert_eq!(Plan::of(&emcraft_model::Model::new()), Plan::Nothing);
+    /// ```
+    pub fn of(m: &Model) -> Plan {
+        if m.pcb().is_some_and(|b| b.region.is_some()) {
+            Plan::Board
+        } else if m.waveguide().is_some() {
+            Plan::Guide
+        } else if m.domain.solid.is_some() {
+            Plan::General
+        } else {
+            Plan::Nothing
+        }
+    }
+}
+
 use emcraft_model::geom::triple;
 use emcraft_model::mesh::TETS_PER_CELL;
-use emcraft_model::{Aabb, Mesh, Point3};
+use emcraft_model::{Aabb, Mesh, Model, Point3};
 
 /// The most tetrahedra a mesh may have (a cap on hostile sizes).
 pub const MAX_TETS: usize = 3_000_000;

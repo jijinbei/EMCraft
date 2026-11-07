@@ -115,11 +115,6 @@ fn install(s: &mut Session, mut board: Board, region: Region) -> Result<()> {
     Ok(())
 }
 
-/// Whether the model is a board's region (meshed by [`generate`]).
-pub(crate) fn has_region(s: &Session) -> bool {
-    s.model.pcb().is_some_and(|b| b.region.is_some())
-}
-
 /// `mesh.generate` on a board's region: `size` in the plane far from copper, `strip_edge` (a
 /// fraction of it) at the copper's edges, by default a sixth of the narrowest trace or a quarter
 /// of the thinnest substrate (the fields are singular at a strip's edges). The board's copper in
