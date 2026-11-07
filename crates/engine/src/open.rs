@@ -340,6 +340,18 @@ pub(crate) fn far_rows(s: &Session, dirs: &[(f64, f64)], solver: Option<FarSolve
     if use_td { time_domain_far_rows(s, dirs, frequency) } else { fem_far_rows(s, dirs) }
 }
 
+/// The azimuth φ (degrees, 0 to 345 by 15) of the strongest direction of the last open solve's
+/// far field (directivity, or radar cross-section for a plane wave), over polar angles 5° to
+/// 175° by 10°: where a θ-varying cut shows the main lobe (a patch's broadside, off its plane).
+pub fn strongest_azimuth(s: &Session) -> Option<f64> {
+    let dirs: Vec<(f64, f64)> =
+        (0..24).flat_map(|j| (0..18).map(move |i| (f64::from(5 + 10 * i).to_radians(), f64::from(15 * j).to_radians()))).collect();
+    let far = far_rows(s, &dirs, None, None).ok()?;
+    let strength = |v: &Value| v.get("directivity").or_else(|| v.get("rcs")).and_then(Value::as_f64).filter(|x| x.is_finite());
+    let best = far.rows.iter().zip(&dirs).filter_map(|(v, d)| Some((strength(v)?, d.1))).max_by(|a, b| a.0.total_cmp(&b.0))?;
+    Some(best.1.to_degrees().round())
+}
+
 /// The frequency-domain solve's far field, with the closed form's where it applies.
 fn fem_far_rows(s: &Session, dirs: &[(f64, f64)]) -> Result<FarRows> {
     let r = solved(s)?;

@@ -593,17 +593,7 @@ pub fn open_step(app: &mut EmcraftApp, step: Option<Step>) {
     };
     app.place = app.place.show(match step {
         Step::Intent => View::Model,
-        Step::Results => {
-            if app.session.results().sweep.is_some() || app.session.results().time_domain.is_some() {
-                View::SParameters
-            } else if app.session.results().eigen.is_some() {
-                View::Eigenmodes
-            } else if app.session.results().radiation.is_some() || app.session.results().td_radiation.is_some() {
-                View::FarField
-            } else {
-                View::Model
-            }
-        }
+        Step::Results => crate::after::results_view(&app.session),
         _ => View::Model,
     });
     // A dialog of another step closes.

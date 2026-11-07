@@ -8,5 +8,6 @@
  {"command": "geometry.waveguide", "params": {"width": "=a", "height": "=b", "sections": [{"length": "=l_air", "material": "vacuum"}, {"length": "=l_slab", "material": "slab"}]}},
  {"command": "mesh.generate", "params": {"size": 3}},
  {"command": "model.periodic", "params": {"x": false, "y": false, "z": true}},
+ {"command": "project.setup", "params": {"kind": "eigenmodes", "frequency": 10, "count": 2, "order": 2}},
  {"command": "solve.dispersion", "params": {"from": 0, "to": 180, "points": 11, "bands": 2, "near": 10, "order": 2}}
 ]

@@ -2,6 +2,8 @@
   "name": "日本語",
   "complete": true,
   "strings": {
+    "Solved the scattering problem: scattering cross-section {sigma} {unit}².": "散乱問題を解析しました：散乱断面積 {sigma} {unit}²。",
+    "Solved the open problem.": "開放問題を解析しました。",
     "Particle speed v/c": "粒子の速さ v/c",
     "On the region's axis along z, for a particle at the speed of light (results.cavity)": "領域の z 軸上、光速の粒子に対して（results.cavity）",
     "Colours in decibels, down to 40 dB below the peak": "色をデシベルで（ピークから −40 dB まで）",

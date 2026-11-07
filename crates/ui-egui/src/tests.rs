@@ -34,6 +34,11 @@ fn scenario_refine_and_planes() {
 }
 
 #[test]
+fn scenario_dispersion_template_runs() {
+    scenario("dispersion_template_runs");
+}
+
+#[test]
 fn scenario_eigen_cavity() {
     scenario("eigen_cavity");
 }

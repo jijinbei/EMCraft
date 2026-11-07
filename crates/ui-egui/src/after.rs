@@ -6,6 +6,15 @@ use serde_json::Value;
 
 use crate::{EmcraftApp, View, files, status, steps};
 
+/// The view of a session's results: the chosen kind of analysis' own first (a periodic cell's
+/// dispersion for eigenmodes), else the first result of the model it holds; the model when
+/// there is none.
+pub(crate) fn results_view(session: &emcraft_engine::Session) -> View {
+    let results = session.results();
+    let chosen = emcraft_engine::workflow::spec(session.model().analysis()).results.iter().copied().find(|k| results.has(*k));
+    chosen.or_else(|| results.kinds().find(|k| k.of_the_model())).map_or(View::Model, View::of)
+}
+
 impl EmcraftApp {
     /// What follows a command's success: the view it calls for, its message.
     pub(crate) fn after(&mut self, id: &str, params: &Value, reply: &Value) {
@@ -138,10 +147,7 @@ impl EmcraftApp {
         self.field.view.component = if self.session.model().domain.open.is_some() { Component::E } else { Component::Ey };
         self.replies.port_modes = None;
         self.replies.compare = None;
-        // The chosen kind's own result first, else the first the session holds.
-        let results = self.session.results();
-        let chosen = emcraft_engine::workflow::spec(self.session.model().analysis()).results.iter().copied().find(|k| results.has(*k));
-        self.place = self.place.show(chosen.or_else(|| results.kinds().find(|k| k.of_the_model())).map_or(View::Model, View::of));
+        self.place = self.place.show(results_view(&self.session));
         self.replies.pcb = None;
         if self.session.model().pcb().is_some() && self.session.model().analysis() == crate::steps::Solver::Pcb {
             self.place = self.place.show(View::Pcb);
@@ -184,6 +190,11 @@ impl EmcraftApp {
                 }
                 if let Some(r) = &results.radiation {
                     self.field.view.frequency = r.result.frequency;
+                }
+                // The pattern's cut through the strongest direction (a patch's broadside lies
+                // off its own plane, which φ = 0 cuts along).
+                if let Some(phi) = emcraft_engine::open::strongest_azimuth(&self.session) {
+                    self.views.pattern.angle = phi;
                 }
             }
             "solve.time_domain" => {

@@ -38,6 +38,7 @@ impl<'a> Reply<'a> {
 pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> String {
     let (p, r) = (Reply(params), Reply(reply));
     let unit = session.display().frequency.symbol();
+    let length_unit = session.display().length.symbol();
     match id {
         "file.sample" if session.results().any() || session.model().pcb().is_some() => trf(t!("Opened sample {name}."), args!(name = p.text("name"))),
         "file.sample" => trf(t!("Opened sample {name}; Run (step 7) solves it."), args!(name = p.text("name"))),
@@ -103,8 +104,17 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             trf(t!("Dispersion along {axis}: {n} phases, {bands} bands each."), args!(axis = r.text("axis"), n = points.len(), bands = bands))
         }
         "solve.radiation" => {
-            let power = reply.get("power").or_else(|| reply.get("radiated_power")).and_then(Value::as_f64).unwrap_or(f64::NAN);
-            trf(t!("Solved the open problem: radiated power {power} W."), args!(power = format!("{power:.4e}")))
+            // A plane wave's problem is scattering: its cross-section, not a radiated power.
+            let sigma = reply.get("scattering_cross_section").and_then(Value::as_f64);
+            let power = reply.get("power").or_else(|| reply.get("radiated_power")).and_then(Value::as_f64);
+            match (sigma, power) {
+                (Some(sigma), _) => trf(
+                    t!("Solved the scattering problem: scattering cross-section {sigma} {unit}²."),
+                    args!(sigma = format!("{sigma:.4e}"), unit = length_unit),
+                ),
+                (None, Some(power)) => trf(t!("Solved the open problem: radiated power {power} W."), args!(power = format!("{power:.4e}"))),
+                (None, None) => tr(t!("Solved the open problem.")).to_owned(),
+            }
         }
         "solve.time_domain" => match (emcraft_engine::Device::parse(r.text("device")), r.text("device")) {
             (None | Some(emcraft_engine::Device::Cpu), _) => trf(t!("Time domain: solved in {n} steps."), args!(n = r.count("steps"))),
@@ -189,5 +199,13 @@ mod tests {
         );
         assert_eq!(text("project.setup", &none, &json!({"start": 5.0, "stop": 9.0}), &s), "Settings confirmed.");
         assert_eq!(text("file.sample", &json!({"name": "highpass"}), &none, &s), "Opened sample highpass; Run (step 7) solves it.");
+        // An open problem's: the power radiated, a plane wave's scattering cross-section (it
+        // radiates nothing of its own: no NaN), or neither.
+        assert_eq!(text("solve.radiation", &none, &json!({"radiated_power": 0.00245}), &s), "Solved the open problem: radiated power 2.4500e-3 W.");
+        assert_eq!(
+            text("solve.radiation", &none, &json!({"scattering_cross_section": 12.5}), &s),
+            "Solved the scattering problem: scattering cross-section 1.2500e1 mm²."
+        );
+        assert_eq!(text("solve.radiation", &none, &none, &s), "Solved the open problem.");
     }
 }
