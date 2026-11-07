@@ -20,6 +20,8 @@ pub enum Shape {
     Cylinder { radius: Metres, length: Metres },
     /// Centred on the origin.
     Sphere { radius: Metres },
+    /// A rectangle of no thickness, [0, a] × [0, b] on the plane z = 0 (a conducting strip).
+    Sheet { size: [Metres; 2] },
     /// A closed triangulated surface (imported): positions (m), outward triangles and a face
     /// tag per triangle; `surfaces[tag]` the face's exact surface where one was recovered from
     /// its vertices (a plane, cylinder, sphere, cone or torus fitted on import), else it is faceted.
@@ -320,6 +322,7 @@ impl Shape {
             Shape::Box { .. } => "Box",
             Shape::Cylinder { .. } => "Cylinder",
             Shape::Sphere { .. } => "Sphere",
+            Shape::Sheet { .. } => "Sheet",
             Shape::Surface { .. } => "Surface",
         }
     }
@@ -336,6 +339,7 @@ impl Shape {
                 let r = radius.get();
                 Aabb::new(Point3::new(-r, -r, -r), Point3::new(r, r, r))
             }
+            Shape::Sheet { size: [a, b] } => Aabb::new(Point3::ORIGIN, Point3::new(a.get(), b.get(), 0.0)),
             Shape::Surface { ref positions, .. } => Aabb::around(positions.iter().copied()).unwrap_or_default(),
         }
     }
@@ -347,6 +351,7 @@ impl Shape {
             Shape::Box { size } => (0..3).all(|d| p[d] > 0.0 && p[d] < size[d]),
             Shape::Cylinder { radius, length } => p.z > 0.0 && p.z < *length && p.x * p.x + p.y * p.y < *radius * *radius,
             Shape::Sphere { radius } => p.to_vec().norm_sqr() < *radius * *radius,
+            Shape::Sheet { .. } => false,
             Shape::Surface { ref positions, ref triangles, .. } => {
                 let total: f64 = triangles.iter().map(|t| solid_angle(t.map(|v| corner(positions, v) - p))).sum();
                 total / (4.0 * PI) > 0.5
@@ -369,6 +374,7 @@ impl Shape {
             Shape::Box { size } => size.x * size.y * size.z,
             Shape::Cylinder { radius, length } => PI * *radius * *radius * *length,
             Shape::Sphere { radius } => 4.0 / 3.0 * PI * radius.powi(3),
+            Shape::Sheet { .. } => 0.0,
             Shape::Surface { ref positions, ref triangles, .. } => triangles
                 .iter()
                 .map(|t| {
@@ -383,7 +389,7 @@ impl Shape {
     /// primitives' dimensions are finite and positive by type).
     pub fn check(&self) -> Result<()> {
         match self {
-            Shape::Box { .. } | Shape::Cylinder { .. } | Shape::Sphere { .. } => {}
+            Shape::Box { .. } | Shape::Cylinder { .. } | Shape::Sphere { .. } | Shape::Sheet { .. } => {}
             Shape::Surface { positions, triangles, tags, surfaces, .. } => {
                 if surfaces.len() > triangles.len() {
                     return Err(invalid("surface", "has more face surfaces than triangles"));
@@ -435,6 +441,7 @@ impl Shape {
             Shape::Box { size } => Ok(PortShape::Rect { x0: 0.0, y0: 0.0, a: size.x, b: size.y }),
             Shape::Cylinder { radius, .. } => Ok(PortShape::Circle { cx: 0.0, cy: 0.0, r: radius.get() }),
             Shape::Sphere { .. } => Err(invalid("port", "a sphere has no flat end faces for ports")),
+            Shape::Sheet { .. } => Err(invalid("port", "a sheet has no end faces for ports")),
             Shape::Surface { positions, triangles, .. } => {
                 let [start, stop] = self.end_triangles();
                 let tris = match end {
@@ -482,6 +489,9 @@ pub struct Solid {
 impl Solid {
     /// The shape's dimensions are finite and positive ([`Shape::check`]).
     pub fn check_shape(&self) -> Result<()> {
+        if matches!(self.shape, Shape::Sheet { .. }) {
+            return Err(invalid("region", "a sheet has no volume to fill"));
+        }
         self.shape.check()
     }
 }

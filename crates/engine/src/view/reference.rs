@@ -39,7 +39,7 @@ pub fn te10_line(session: &Session) -> Result<ExactLine> {
     if session.model.domain.periodic.is_some() {
         return Err(EngineError::failed("not supported yet: exact fields of a periodic cell"));
     }
-    let w = session.model.waveguide.as_ref().ok_or_else(|| EngineError::failed("no waveguide"))?;
+    let w = session.model.waveguide().ok_or_else(|| EngineError::failed("no waveguide"))?;
     if !w.uniform() {
         return Err(EngineError::failed(
             "not supported yet: exact fields of a guide whose aperture changes (the S-parameters are compared with mode matching)",
@@ -135,12 +135,12 @@ pub fn reference(session: &Session) -> Result<Reference> {
     if session.model.domain.periodic.is_some() {
         return crate::periodic::stack_reference(session).map(Reference::Stack);
     }
-    if session.model.waveguide.is_none()
+    if session.model.waveguide().is_none()
         && let Some(solid) = session.model.domain.solid.as_ref()
     {
         return body_reference(session, solid);
     }
-    let w = session.model.waveguide.as_ref().ok_or_else(|| EngineError::failed("no waveguide"))?;
+    let w = session.model.waveguide().ok_or_else(|| EngineError::failed("no waveguide"))?;
     if !w.plain() {
         return Err(EngineError::failed("not supported yet: a reference for a layered guide or one with strips"));
     }
@@ -209,7 +209,7 @@ fn body_reference(session: &Session, solid: &emcraft_model::Solid) -> Result<Ref
 /// the section's material, or its width where it is narrowed.
 pub fn section_cutoffs(session: &Session) -> Vec<(f64, String)> {
     let mut out: Vec<(f64, String)> = Vec::new();
-    let Some(w) = session.model.waveguide.as_ref() else { return out };
+    let Some(w) = session.model.waveguide() else { return out };
     // A periodic cell's walls are not walls: no guide cut-offs.
     if session.model.domain.periodic.is_some() {
         return out;

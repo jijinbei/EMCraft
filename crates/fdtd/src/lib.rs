@@ -262,7 +262,7 @@ pub fn s_parameters_with(model: &Model, o: &Options, frequencies: &[f64], device
     if !frequencies_ok(frequencies) {
         return Err(invalid("frequencies", "must be finite numbers > 0"));
     }
-    let w = model.waveguide.as_ref().ok_or_else(|| FdtdError::NotReady("no waveguide".into()))?;
+    let w = model.waveguide().ok_or_else(|| FdtdError::NotReady("no waveguide".into()))?;
     if !model.domain.symmetry.is_empty() {
         return Err(FdtdError::Unsupported("symmetry planes in the time domain (clear them: model.symmetry with clear true)".into()));
     }

@@ -93,7 +93,7 @@ pub(crate) fn exact_bands(s: &Session, d: &Dispersion, psi: f64, count: usize, f
     if d.axis != 2 || p.x || p.y {
         return None;
     }
-    let w = m.waveguide.as_ref()?;
+    let w = m.waveguide()?;
     if !(w.uniform() && w.plain() && m.domain.symmetry.is_empty()) {
         return None;
     }
@@ -154,7 +154,7 @@ pub(crate) fn dispersion_table(s: &Session) -> Result<Value> {
 pub fn stack_reference(s: &Session) -> Result<emcraft_theory::floquet::Stack> {
     let m = &s.model;
     let p = m.domain.periodic.ok_or_else(|| EngineError::failed("the model is not periodic"))?;
-    let w = m.waveguide.as_ref().ok_or_else(|| EngineError::failed("no waveguide"))?;
+    let w = m.waveguide().ok_or_else(|| EngineError::failed("no waveguide"))?;
     if !(p.x && p.y && !p.z && w.uniform() && w.plain()) {
         return Err(EngineError::failed("not supported yet: a reference for this periodic cell (one of plane layers periodic in x and y has one)"));
     }

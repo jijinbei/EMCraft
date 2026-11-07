@@ -137,7 +137,7 @@ pub fn waveguide(s: &mut Session, p: &Params) -> Result<Value> {
         })
         .collect::<Result<Vec<_>>>()?;
     s.model.set_waveguide(Waveguide { width, height, sections, layers, strips, vias })?;
-    Ok(json!({"length": s.show_length(s.model.waveguide.as_ref().map_or(0.0, Waveguide::length))}))
+    Ok(json!({"length": s.show_length(s.model.waveguide().map_or(0.0, Waveguide::length))}))
 }
 
 /// `geometry.iris_filter`: a rectangular waveguide with a row of inductive irises.
@@ -161,7 +161,7 @@ pub fn iris_filter(s: &mut Session, p: &Params) -> Result<Value> {
     }
     let sections = emcraft_templates::iris_sections(&f);
     s.model.set_waveguide(Waveguide { width, height, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() })?;
-    Ok(json!({"length": s.show_length(s.model.waveguide.as_ref().map_or(0.0, Waveguide::length)), "irises": f.irises}))
+    Ok(json!({"length": s.show_length(s.model.waveguide().map_or(0.0, Waveguide::length)), "irises": f.irises}))
 }
 
 emcraft_macros::named_enum! {

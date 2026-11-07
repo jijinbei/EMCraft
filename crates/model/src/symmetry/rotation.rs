@@ -205,6 +205,7 @@ impl crate::Model {
                 let centre = [0.5 * size.x, 0.5 * size.y];
                 fits(4, centre).then_some(FoundRotation { centre, most: Some(4) })
             }
+            crate::Shape::Sheet { .. } => None,
             crate::Shape::Surface { positions, .. } => {
                 let b = solid.shape.bounds();
                 let q = 1e-6 * (b.max - b.min).norm().max(f64::MIN_POSITIVE);
@@ -250,6 +251,7 @@ impl crate::Model {
             crate::Shape::Cylinder { .. } | crate::Shape::Sphere { .. } => [0.0, 0.0],
             crate::Shape::Box { size } => [0.5 * size.x, 0.5 * size.y],
             crate::Shape::Surface { .. } => return None,
+            crate::Shape::Sheet { .. } => return Some("a sheet is no region".into()),
         };
         self.rotation_issue_of(&Rotation { n: 4, m: 0, centre })
     }
@@ -257,7 +259,7 @@ impl crate::Model {
     /// What keeps the model from any rotational symmetry whatever its shape: no solid, or
     /// what a sector cannot carry yet.
     pub fn rotation_unsupported(&self) -> Option<String> {
-        if self.domain.solid.is_none() || self.waveguide.is_some() {
+        if self.domain.solid.is_none() || self.waveguide().is_some() {
             return Some("needs a solid (geometry.solid): a waveguide has no rotational symmetry to cut".into());
         }
         if !self.domain.symmetry.is_empty() || self.domain.periodic.is_some() || self.domain.open.is_some() {
@@ -360,6 +362,7 @@ impl crate::Model {
                     }
                     Ok(())
                 }
+                crate::Shape::Sheet { .. } => Err("a sheet is no region".into()),
                 crate::Shape::Surface { positions, .. } => {
                     let key = |p: crate::Point3| {
                         [(p.x / (1e-6 * scale)).round() as i64, (p.y / (1e-6 * scale)).round() as i64, (p.z / (1e-6 * scale)).round() as i64]

@@ -44,7 +44,7 @@ pub(super) fn from_mesh(session: &emcraft_engine::Session, overlay: Overlay, out
             color = sc().port_soft;
             alpha = 25;
         }
-        let pick = port.map_or_else(|| if m.waveguide.is_some() { Pick::Guide } else { Pick::Solid }, Pick::Port);
+        let pick = port.map_or_else(|| if m.waveguide().is_some() { Pick::Guide } else { Pick::Solid }, Pick::Port);
         let air = kind == Kind::Air && port.is_none();
         if overlay == Overlay::Mesh {
             // The volume mesh's faces with their edges, drawn on the GPU on each triangle (the
@@ -63,7 +63,7 @@ pub(super) fn from_mesh(session: &emcraft_engine::Session, overlay: Overlay, out
     if let Some(t) = m.domain.wall_thickness
         && m.domain.open.is_none()
     {
-        let inside = match &m.waveguide {
+        let inside = match m.waveguide() {
             Some(_) => {
                 let (lo, hi) = mesh.nodes.iter().fold(([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]), |(lo, hi), q| {
                     (std::array::from_fn(|k| lo[k].min(q[k])), std::array::from_fn(|k| hi[k].max(q[k])))

@@ -91,7 +91,7 @@ impl Model {
     fn periodic_issue_of(&self, p: &Periodic) -> Option<String> {
         let issue = || -> std::result::Result<(), String> {
             p.check()?;
-            if self.waveguide.is_none() {
+            if self.waveguide().is_none() {
                 return Err(if self.domain.solid.is_some() {
                     "not supported yet: periodic boundaries on a solid (the unstructured mesher does not make matching opposite faces; use geometry.waveguide, whose structured mesh does)".into()
                 } else {

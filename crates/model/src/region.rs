@@ -123,7 +123,7 @@ impl crate::Model {
         }
         self.domain.solid = Some(Solid { shape, material });
         self.set_parts(Vec::new());
-        self.waveguide = None;
+        self.clear_waveguide();
         self.mesh = None;
         self.domain.open = Some(open);
         Ok(true)

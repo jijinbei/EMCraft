@@ -137,7 +137,7 @@ pub(super) fn prepare(model: &Model, periodic: &Periodic, p: &Port, faces: &[usi
     if p.face.is_some() {
         return Err(invalid(what(), "a Floquet port lies on an end of the cell, not on a face inside it"));
     }
-    let w = model.waveguide.as_ref().ok_or_else(|| invalid("model", "has no waveguide"))?;
+    let w = model.waveguide().ok_or_else(|| invalid("model", "has no waveguide"))?;
     if !w.layers.is_empty() {
         return Err(invalid(what(), "not supported yet: a Floquet port on a layered cell (its face must be one material)"));
     }

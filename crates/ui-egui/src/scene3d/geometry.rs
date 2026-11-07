@@ -75,6 +75,13 @@ fn shape(s: &mut Scene, sh: &Shape, place: &dyn Fn([f64; 3]) -> [f64; 3], color:
                 s.line(at(i, nv / 2), at(i + 1, nv / 2), sc().edge, 160);
             }
         }
+        Shape::Sheet { size: [a, b] } => {
+            let c = [[0.0, 0.0], [a.get(), 0.0], [a.get(), b.get()], [0.0, b.get()]].map(|[u, v]| place([u, v, 0.0]));
+            s.quad(c, color, alpha);
+            for k in 0..4 {
+                s.line(c[k], c[(k + 1) % 4], sc().edge, 200);
+            }
+        }
         Shape::Surface { positions, triangles, .. } => {
             for t in triangles.iter().take(emcraft_render::view3d::MAX_PRIMITIVES) {
                 let p = |v: u32| positions.get(v as usize).map(|q| place(p3(*q)));
@@ -99,7 +106,7 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
     let mat = |name: &str| m.materials.iter().position(|x| x.name == name).unwrap_or(0);
     let tint = |name: &str| if overlay == Overlay::Materials { material_rgb(m, mat(name)) } else { sc().metal };
     let see_through = matches!(overlay, Overlay::Ports | Overlay::Boundaries | Overlay::Field);
-    if let Some(w) = &m.waveguide {
+    if let Some(w) = m.waveguide() {
         let mut z = 0.0;
         // A planar circuit's conductors lie inside: its walls let them show.
         let alpha = if see_through || !w.plain() {
@@ -189,7 +196,7 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
 /// its own); a solid's own faces (no Boolean features). `None` for the rest, whose walls are
 /// drawn thick once meshed.
 fn inside(m: &Model) -> Option<Inside> {
-    if let Some(w) = &m.waveguide {
+    if let Some(w) = m.waveguide() {
         let b = m.bounds()?;
         return w.plain().then(|| super::shell::guide_box(m, b.min.to_array(), b.max.to_array()));
     }

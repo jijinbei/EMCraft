@@ -675,7 +675,7 @@ impl Session {
     /// A short summary of the model and results.
     pub fn summary(&self) -> Value {
         let l = self.display.length;
-        let w = self.model.waveguide.as_ref().map(|w| {
+        let w = self.model.waveguide().map(|w| {
             json!({
                 "width": l.from_si(w.width.get()), "height": l.from_si(w.height.get()), "length": l.from_si(w.length()),
                 "sections": w.sections.iter().enumerate().map(|(i, s)| {

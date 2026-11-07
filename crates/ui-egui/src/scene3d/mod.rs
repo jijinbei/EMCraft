@@ -379,9 +379,9 @@ fn present_materials(session: &Session, selected: &[Pick], out: &mut Built) {
         let index = match Pick::from_tag(t.tag) {
             Some(Pick::Material(i)) => Some(i),
             Some(Pick::Section(i)) if m.mesh.is_none() => {
-                m.waveguide.as_ref().and_then(|w| w.sections.get(i)).and_then(|s| m.material(&s.material).ok()).map(|(i, _)| i)
+                m.waveguide().and_then(|w| w.sections.get(i)).and_then(|s| m.material(&s.material).ok()).map(|(i, _)| i)
             }
-            Some(Pick::Layer(i)) => m.waveguide.as_ref().and_then(|w| w.layers.get(i)).and_then(|s| m.material(&s.material).ok()).map(|(i, _)| i),
+            Some(Pick::Layer(i)) => m.waveguide().and_then(|w| w.layers.get(i)).and_then(|s| m.material(&s.material).ok()).map(|(i, _)| i),
             Some(Pick::Solid) if m.mesh.is_none() => m.domain.solid.as_ref().and_then(|s| m.material(&s.material).ok()).map(|(i, _)| i),
             Some(Pick::Inclusion(i)) => m.inclusions().get(i).and_then(|s| s.material.as_ref()).and_then(|s| m.material(s).ok()).map(|(i, _)| i),
             _ => None,
@@ -400,7 +400,7 @@ fn present_materials(session: &Session, selected: &[Pick], out: &mut Built) {
             if matches!(Pick::from_tag(t.tag), Some(Pick::Section(_))) {
                 if t.p.iter().all(|p| (p[2] - t.p[0][2]).abs() < 1e-12) {
                     let z = t.p[0][2];
-                    let length = m.waveguide.as_ref().map_or(0.0, emcraft_model::Waveguide::length);
+                    let length = m.waveguide().map_or(0.0, emcraft_model::Waveguide::length);
                     let start = z.abs() < 1e-12;
                     let end = (z - length).abs() < 1e-12;
                     let port = m

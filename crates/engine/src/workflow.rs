@@ -377,7 +377,7 @@ fn solved(s: &Session) -> bool {
 }
 
 fn has_geometry(s: &Session) -> bool {
-    s.model.waveguide.is_some() || s.model.domain.solid.is_some()
+    s.model.waveguide().is_some() || s.model.domain.solid.is_some()
 }
 
 fn intent(_: &Session) -> StepState {
@@ -413,7 +413,7 @@ fn materials(s: &Session) -> StepState {
 /// Whether a port asks for terminals at an end of a guide where two or more strips reach it and
 /// a material of its cross-section is lossy or dispersive (refused when solving).
 fn lossy_terminal_port(m: &emcraft_model::Model, p: &emcraft_model::Port) -> bool {
-    let Some(w) = &m.waveguide else { return false };
+    let Some(w) = m.waveguide() else { return false };
     if p.terminals != emcraft_model::Terminals::Auto {
         return false;
     }

@@ -457,7 +457,7 @@ impl Model {
     /// The cross-section of the port at an end: the waveguide's end section, or a box's or a
     /// cylinder's end face.
     pub fn port_shape(&self, end: End) -> Result<PortShape> {
-        if let Some(w) = &self.waveguide {
+        if let Some(w) = self.waveguide() {
             if !w.plain() {
                 return Err(invalid("port", "a layered guide or one with strips has no closed-form modes"));
             }
@@ -494,12 +494,12 @@ impl Model {
 
     /// The material filling the waveguide at a port's end.
     pub fn port_material(&self, end: End) -> Result<&Material> {
-        if self.waveguide.is_none()
+        if self.waveguide().is_none()
             && let Some(s) = &self.domain.solid
         {
             return Ok(self.material(&s.material)?.1);
         }
-        let w = self.waveguide.as_ref().ok_or_else(|| invalid("model", "has no waveguide"))?;
+        let w = self.waveguide().ok_or_else(|| invalid("model", "has no waveguide"))?;
         let s = match end {
             End::Start => w.sections.first(),
             End::End => w.sections.last(),

@@ -383,7 +383,7 @@ fn bodies(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
     let (mm, lu) = (|x| f.len(x), f.unit());
     let region = m.domain.solid.as_ref().map_or("vacuum", |s| s.material.as_str());
     let mut rows = Vec::new();
-    if let Some(w) = &m.waveguide {
+    if let Some(w) = m.waveguide() {
         let edit = || Act::Edit("geometry.waveguide");
         let size = words(t!("{w} × {h} × {l} {unit}"), args!(w = mm(w.width.get()), h = mm(w.height.get()), l = mm(w.length()), unit = lu));
         rows.push(node("waveguide", words(t!("Waveguide"), &[]), Some(size), Glyph::Waveguide, edit()).picks(Pick::Guide));
@@ -497,7 +497,7 @@ fn materials(m: &emcraft_model::Model) -> Vec<Row> {
     let mut metal: Vec<String> =
         emcraft_engine::bodies::parts(m).into_iter().filter(|b| b.material == emcraft_engine::bodies::METAL).map(|b| b.name).collect();
     metal.extend(names.iter().filter(|b| b.material == emcraft_engine::bodies::METAL).map(|b| b.name.clone()));
-    if let Some(w) = &m.waveguide {
+    if let Some(w) = m.waveguide() {
         metal.extend((0..w.strips.len()).map(|k| lang::trf(t!("Strip {n}"), args!(n = k + 1))));
         metal.extend((0..w.vias.len()).map(|k| lang::trf(t!("Via {n}"), args!(n = k + 1))));
     }
@@ -544,7 +544,7 @@ fn domain(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
             }
         };
         rows.push(node("region", words(t!("Region"), &[]), Some(detail), Glyph::Region, act).picks(Pick::Solid));
-    } else if m.waveguide.is_some() {
+    } else if m.waveguide().is_some() {
         rows.push(node(
             "region",
             words(t!("Region"), &[]),

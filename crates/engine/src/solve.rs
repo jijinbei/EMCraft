@@ -306,7 +306,7 @@ pub fn time_domain(s: &mut Session, p: &Params) -> Result<Value> {
     }
     let options = emcraft_fdtd::Options::new(cell);
     // A solid's ports on its faces (the guide's own sections otherwise): on the CPU's threads.
-    let solid = s.model.waveguide.is_none() && s.model.domain.solid.is_some();
+    let solid = s.model.waveguide().is_none() && s.model.domain.solid.is_some();
     let r = if solid {
         let inputs = excited(s, p)?;
         emcraft_fdtd::s_parameters_solid(&s.model, &options, &freqs, &inputs)?

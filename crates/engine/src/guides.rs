@@ -99,7 +99,7 @@ pub fn bands(s: &Session) -> Vec<GuideBand> {
         widths.push((a, (mat.eps_r.get() * mat.mu_r.get()).sqrt()));
     }
     if widths.is_empty()
-        && let Some(w) = &m.waveguide
+        && let Some(w) = m.waveguide()
     {
         widths.push((w.width.get(), 1.0));
     }

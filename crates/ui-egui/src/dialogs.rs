@@ -572,7 +572,7 @@ pub fn initial(command: &str, s: &Session) -> Value {
 
 /// The model's waveguide as `geometry.waveguide`'s parameters, or a WR-90 section.
 fn waveguide(s: &Session) -> Value {
-    let Some(w) = s.model().waveguide.as_ref() else {
+    let Some(w) = s.model().waveguide() else {
         return json!({"width": 22.86, "height": 10.16, "sections": [{"length": 20, "material": "vacuum"}]});
     };
     let l = s.display().length;
@@ -734,9 +734,9 @@ mod tests {
         s.execute("file.sample", &json!({"name": "iris-bandpass"})).unwrap();
         let mut d = Dialog::new(spec("geometry.waveguide"), &s, &initial("geometry.waveguide", &s), false);
         let p = d.params().unwrap();
-        let before = s.model().waveguide.clone();
+        let before = s.model().waveguide().cloned();
         s.execute("geometry.waveguide", &p).unwrap();
-        assert_eq!(s.model().waveguide, before);
+        assert_eq!(s.model().waveguide(), before.as_ref());
     }
 
     /// Hostile text is refused field by field: nothing is built from it.

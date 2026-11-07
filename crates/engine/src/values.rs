@@ -169,13 +169,13 @@ fn shape(shape: &Shape, d: Display) -> Value {
         Shape::Box { size } => json!({"shape": "box", "size": [l(size.x), l(size.y), l(size.z)]}),
         Shape::Cylinder { radius, length } => json!({"shape": "cylinder", "radius": l(radius.get()), "length": l(length.get())}),
         Shape::Sphere { radius } => json!({"shape": "sphere", "radius": l(radius.get())}),
-        Shape::Surface { .. } => json!({}),
+        Shape::Surface { .. } | Shape::Sheet { .. } => json!({}),
     }
 }
 
 /// The model's waveguide as geometry.waveguide's parameters; nothing without one.
 fn waveguide(m: &Model, d: Display) -> Value {
-    let Some(w) = &m.waveguide else { return json!({}) };
+    let Some(w) = m.waveguide() else { return json!({}) };
     let l = |x: f64| d.length.from_si(x);
     let sections: Vec<Value> = w
         .sections

@@ -29,7 +29,7 @@ impl Surface {
         let open = m.domain.open.is_some();
         let n = mesh.boundary.len();
         // A waveguide's faces are all walls.
-        if m.waveguide.is_some() || n == 0 {
+        if m.waveguide().is_some() || n == 0 {
             return Surface { outer: vec![true; n], open };
         }
         let joins = |f: &emcraft_model::BoundaryFace| !matches!(f.tag, Boundary::Port(_));

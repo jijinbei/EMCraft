@@ -503,7 +503,7 @@ fn file_and_edit_menus() {
     let text = std::fs::read_to_string(&script).unwrap();
     let mut s = emcraft_engine::Session::new();
     s.run_script(&serde_json::from_str::<Value>(&text).unwrap()).unwrap();
-    assert_eq!(s.model().waveguide, h.app.session.model().waveguide);
+    assert_eq!(s.model().waveguide(), h.app.session.model().waveguide());
     assert_eq!(s.model().job.range(), h.app.session.model().job.range());
     let _ = std::fs::remove_dir_all(&dir);
 }

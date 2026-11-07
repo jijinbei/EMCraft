@@ -31,7 +31,6 @@ pub struct Model {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pcb: Option<crate::pcb::Board>,
     pub materials: Vec<Material>,
-    pub waveguide: Option<Waveguide>,
     /// The region solved and what bounds it (crate::domain).
     #[serde(default)]
     pub domain: crate::domain::Domain,
@@ -94,7 +93,6 @@ impl Default for Model {
         Model {
             pcb: None,
             materials: vec![Material::vacuum()],
-            waveguide: None,
             domain: crate::domain::Domain::default(),
             bodies: Vec::new(),
             view: ViewCache::default(),
@@ -117,6 +115,18 @@ impl Model {
     /// The bodies to change in place (the mesher's view follows).
     pub fn bodies_mut(&mut self) -> BodiesMut<'_> {
         BodiesMut { bodies: &mut self.bodies, view: &mut self.view }
+    }
+
+    /// The waveguide the bodies make, when they make one ([`Waveguide::of_bodies`]).
+    pub fn waveguide(&self) -> Option<&Waveguide> {
+        self.view.guide(&self.bodies)
+    }
+
+    /// Takes the waveguide's bodies out (the region is another's).
+    pub fn clear_waveguide(&mut self) {
+        if self.bodies.iter().any(Body::is_extruded) {
+            self.bodies_mut().retain(|b| !b.is_extruded());
+        }
     }
 
     /// The bodies as the mesher reads them.
@@ -165,12 +175,14 @@ impl Model {
         Ok(())
     }
 
-    /// Sets the waveguide geometry after checking it; the mesh is dropped (it no longer fits).
+    /// Sets the waveguide geometry after checking it, as its bodies ([`Waveguide::bodies`]) in
+    /// place of the model's; the mesh is dropped (it no longer fits).
     pub fn set_waveguide(&mut self, w: Waveguide) -> Result<()> {
         w.check(|name| self.material(name).map(|_| ()))?;
-        self.waveguide = Some(w);
+        let bodies = w.bodies()?;
         self.domain.solid = None;
         self.drop_what_fits_the_old_geometry();
+        *self.bodies_mut() = bodies;
         Ok(())
     }
 
@@ -179,7 +191,7 @@ impl Model {
         s.check_shape()?;
         self.material(&s.material)?;
         self.domain.solid = Some(s);
-        self.waveguide = None;
+        self.clear_waveguide();
         // A region set is pinned (ADR 0005).
         self.domain.region = crate::region::Region::Pinned;
         self.drop_what_fits_the_old_geometry();
@@ -330,7 +342,7 @@ impl Model {
         if !self.domain.symmetry.is_empty()
             || self.domain.rotation.is_some()
             || self.domain.periodic.is_some()
-            || self.waveguide.is_some()
+            || self.waveguide().is_some()
             || self.pcb.is_some()
         {
             return Err(invalid("move", "not supported for symmetry planes, a rotation, periodic boundaries, a waveguide or a board"));
@@ -391,7 +403,7 @@ impl Model {
 
     /// The bounding box of the geometry.
     pub fn bounds(&self) -> Option<Aabb> {
-        if let Some(w) = &self.waveguide {
+        if let Some(w) = self.waveguide() {
             return Some(Aabb::new(Point3::ORIGIN, Point3::new(w.width.get(), w.height.get(), w.length())));
         }
         let s = self.domain.solid.as_ref()?;
@@ -410,7 +422,7 @@ impl Model {
         if let Some(why) = self.rotation_issue() {
             issues.push(Issue::Rotation(why));
         }
-        if self.waveguide.is_none() && self.domain.solid.is_none() {
+        if self.waveguide().is_none() && self.domain.solid.is_none() {
             issues.push(Issue::NoGeometry);
         }
         if self.ports.is_empty() && self.lumped.is_empty() {
@@ -510,7 +522,7 @@ mod tests {
         w.sections[0].material = "nothing".into();
         assert!(matches!(m.set_waveguide(w), Err(ModelError::Unknown { .. })));
         m.set_waveguide(guide()).unwrap();
-        approx::assert_abs_diff_eq!(m.waveguide.as_ref().unwrap().length(), 0.01, epsilon = 1e-15);
+        approx::assert_abs_diff_eq!(m.waveguide().unwrap().length(), 0.01, epsilon = 1e-15);
         m.add_port(Port::new("1", End::Start)).unwrap();
         m.add_port(Port::new("2", End::End)).unwrap();
         assert_eq!(m.check(), vec![Issue::NoMesh]);
@@ -527,7 +539,7 @@ mod tests {
         m.set_waveguide(guide()).unwrap();
         assert!(m.set_solid(Solid { shape: Shape::Sphere { radius: metres(0.01) }, material: "nothing".into() }).is_err());
         m.set_solid(Solid { shape: Shape::Cylinder { radius: metres(0.01), length: metres(0.03) }, material: "vacuum".into() }).unwrap();
-        assert!(m.waveguide.is_none());
+        assert!(m.waveguide().is_none());
         assert_eq!(m.bounds(), Some(Aabb::new(Point3::new(-0.01, -0.01, 0.0), Point3::new(0.01, 0.01, 0.03))));
         assert_eq!(m.port_shape(End::End).unwrap(), PortShape::Circle { cx: 0.0, cy: 0.0, r: 0.01 });
         m.set_solid(Solid { shape: Shape::Sphere { radius: metres(0.01) }, material: "vacuum".into() }).unwrap();

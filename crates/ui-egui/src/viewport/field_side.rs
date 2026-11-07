@@ -71,7 +71,7 @@ pub(super) fn bands(app: &EmcraftApp, plane: Plane) -> Vec<(f64, f64, Option<Col
     };
     let axis = normal_axis(plane);
     // A waveguide's sections lie along z; across it, its first section's material.
-    if let Some(w) = &m.waveguide {
+    if let Some(w) = m.waveguide() {
         let index = |name: &str| m.material(name).ok().map(|(i, _)| colour(i));
         if axis != 2 {
             return vec![(0.0, 1.0, w.sections.first().and_then(|s| index(&s.material)))];

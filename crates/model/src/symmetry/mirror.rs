@@ -441,7 +441,7 @@ impl Model {
         }
         let symmetric = || {
             Symmetry::check_planes(planes)?;
-            match (&self.waveguide, &self.domain.solid) {
+            match (self.waveguide(), &self.domain.solid) {
                 (Some(w), _) => planes.iter().try_for_each(|p| p.check_guide(w)),
                 (None, Some(solid)) => {
                     let tol = 1e-9 * self.bounds().map_or(1.0, |b| (b.max - b.min).norm());

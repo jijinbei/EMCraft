@@ -181,7 +181,7 @@ pub fn notes(
         dims.push(Dim { a: at(lo[u], lo[v]), b: at(lo[u], hi[v]), off: along(u, -gap), text: len(hi[v] - lo[v]) });
     }
     // A guide's apertures where they narrow (an iris, a step), in the sections the cut crosses.
-    if let Some(w) = &m.waveguide {
+    if let Some(w) = m.waveguide() {
         let mut z = 0.0;
         for (i, s) in w.sections.iter().enumerate() {
             let (z0, z1) = (z, z + s.length.get());
@@ -358,7 +358,7 @@ mod tests {
         let cut = Preset::HPlane.cut(bounds);
         assert!(Preset::HPlane.is(cut, bounds) && !Preset::EPlane.is(cut, bounds));
         let (dims, ports) = notes(m, s.display().length, s.driven_port(), cut, outline(&Scene::default(), cut, bounds));
-        let w = m.waveguide.as_ref().unwrap();
+        let w = m.waveguide().unwrap();
         assert!(dims.len() > 2, "{dims:?}");
         assert!(dims[0].text.starts_with(&crate::steps::fmt(w.width.get() * 1e3)), "{dims:?}");
         assert_eq!(ports.len(), 2);

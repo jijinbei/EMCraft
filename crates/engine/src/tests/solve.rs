@@ -345,7 +345,7 @@ fn stubs_and_vias_mesh_and_solve_and_hostile_vias_are_refused() {
             "strips": [{"y": 1, "x0": 2, "width": 2}, {"y": 1, "x0": 4, "width": 4, "z0": 2, "z1": 4}], "vias": vias})
     };
     s.execute("geometry.waveguide", &guide(json!([{"x0": 8, "z0": 1, "wx": 1, "wz": 4}]))).unwrap();
-    assert_eq!(s.model.waveguide.as_ref().unwrap().vias[0].y1, 0.002, "y1 is the height when left out");
+    assert_eq!(s.model.waveguide().unwrap().vias[0].y1, 0.002, "y1 is the height when left out");
     s.execute("model.symmetry", &json!({"axis": "y", "kind": "magnetic"})).unwrap();
     s.execute("mesh.generate", &json!({"size": 1, "strip_edge": 0.25})).unwrap();
     s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 1})).unwrap();

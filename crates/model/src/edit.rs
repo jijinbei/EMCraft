@@ -120,7 +120,7 @@ impl Model {
     /// Where the material named `name` is used: sections, layers, the solid and inclusions.
     pub fn material_uses(&self, name: &str) -> Vec<MaterialUse> {
         let mut uses = Vec::new();
-        if let Some(w) = &self.waveguide {
+        if let Some(w) = self.waveguide() {
             uses.extend(w.sections.iter().enumerate().filter(|(_, s)| s.material == name).map(|(i, _)| MaterialUse::Section(i)));
             uses.extend(w.layers.iter().enumerate().filter(|(_, l)| l.material == name).map(|(i, _)| MaterialUse::Layer(i)));
         }
@@ -176,25 +176,15 @@ impl Model {
         Ok(())
     }
 
-    /// Points everything that uses material `old` at `new`.
+    /// Points everything that uses material `old` at `new`: the bodies of it (a guide's
+    /// sections and layers, the inclusions) and the region.
     fn rename_uses(&mut self, old: &str, new: &str) {
-        for u in self.material_uses(old) {
-            if let MaterialUse::Inclusion(i) = u {
-                let k = self.mesh_view().inclusion_body.get(i).copied();
-                if let Some(b) = k.and_then(|k| self.bodies_mut().get_mut(k).map(|b| b.fill = crate::body::Fill::Material(new.to_owned()))) {
-                    b
-                }
-                continue;
-            }
-            let slot = match u {
-                MaterialUse::Section(k) => self.waveguide.as_mut().and_then(|w| w.sections.get_mut(k)).map(|s| &mut s.material),
-                MaterialUse::Layer(k) => self.waveguide.as_mut().and_then(|w| w.layers.get_mut(k)).map(|l| &mut l.material),
-                MaterialUse::Region => self.domain.solid.as_mut().map(|s| &mut s.material),
-                MaterialUse::Inclusion(_) => None,
-            };
-            if let Some(slot) = slot {
-                new.clone_into(slot);
-            }
+        let of_old = |b: &crate::Body| b.material() == Some(old);
+        if self.bodies().iter().any(of_old) {
+            self.bodies_mut().iter_mut().filter(|b| of_old(b)).for_each(|b| b.fill = crate::body::Fill::Material(new.to_owned()));
+        }
+        if let Some(s) = self.domain.solid.as_mut().filter(|s| s.material == old) {
+            new.clone_into(&mut s.material);
         }
     }
 
@@ -282,7 +272,7 @@ mod tests {
         // Renamed: the section follows; a name taken is refused, and so is a bad material.
         let (i, ptfe) = m.material("ptfe").map(|(i, x)| (i, x.clone())).unwrap();
         m.replace_material(i, Material { name: "teflon".into(), ..ptfe.clone() }).unwrap();
-        assert_eq!(m.waveguide.as_ref().unwrap().sections[1].material, "teflon");
+        assert_eq!(m.waveguide().unwrap().sections[1].material, "teflon");
         assert!(matches!(m.replace_material(i, Material { name: "glass".into(), ..ptfe.clone() }), Err(ModelError::Duplicate { .. })));
         let poles = vec![crate::Pole::debye(1.0, 1e-11).unwrap(); crate::MAX_POLES + 1];
         assert!(m.replace_material(i, Material { dispersion: poles, ..ptfe.clone() }).is_err());

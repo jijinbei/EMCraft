@@ -10,7 +10,7 @@ fn display_units_convert_at_the_boundary() {
     let mut s = Session::new();
     s.execute("units.set", &json!({"length": "m", "frequency": "MHz"})).unwrap();
     s.execute("geometry.waveguide", &json!({"width": 0.02286, "height": 0.01016, "sections": [{"length": 0.03, "material": "vacuum"}]})).unwrap();
-    let w = s.model.waveguide.as_ref().unwrap();
+    let w = s.model.waveguide().unwrap();
     approx::assert_abs_diff_eq!(w.width.get(), 0.02286, epsilon = 1e-15);
     s.execute("mesh.generate", &json!({"size": 0.005})).unwrap();
     s.execute("model.port.create", &json!({"name": "a", "end": "start"})).unwrap();
@@ -165,7 +165,7 @@ fn every_sample_opens() {
         s.execute("file.sample", &json!({"name": smp.name})).unwrap_or_else(|e| panic!("{}: {e}", smp.name));
         let meshed = smp.script.contains("\"mesh.generate\"") || smp.script.contains("\"mesh.adapt\"");
         assert!(!meshed || s.model.mesh.is_some() || s.model.pcb.is_some(), "{}", smp.name);
-        assert!(s.model.domain.solid.is_some() || s.model.waveguide.is_some() || s.model.pcb.is_some(), "{}: no geometry", smp.name);
+        assert!(s.model.domain.solid.is_some() || s.model.waveguide().is_some() || s.model.pcb.is_some(), "{}: no geometry", smp.name);
     }
 }
 
@@ -228,7 +228,7 @@ fn the_workflow_status_guides_a_job_and_undo_saves_and_exports_work() {
     assert_eq!(t.model.mesh.as_ref().map(|m| m.tets.len()), s.model.mesh.as_ref().map(|m| m.tets.len()));
     // Back to the empty session before the open.
     t.execute("edit.undo", &json!({})).unwrap();
-    assert!(t.model.waveguide.is_none());
+    assert!(t.model.waveguide().is_none());
     // Hostile input is refused.
     assert!(s.execute("project.setup", &json!({"kind": "frequency", "start": 9, "stop": 2})).is_err());
     assert!(s.execute("project.setup", &json!({"kind": "frequency", "start": -1, "stop": 2})).is_err());

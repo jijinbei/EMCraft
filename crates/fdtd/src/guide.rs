@@ -110,7 +110,7 @@ impl Grid {
     /// the port-1 guide (the incident run). `freqs` are the run's frequencies (for the slowest
     /// wave).
     pub(crate) fn new(model: &Model, o: &Options, reference: bool, freqs: &[f64]) -> Result<Grid> {
-        let w = model.waveguide.as_ref().ok_or_else(|| FdtdError::NotReady("no waveguide".into()))?;
+        let w = model.waveguide().ok_or_else(|| FdtdError::NotReady("no waveguide".into()))?;
         let band = Band::of(freqs);
         let losses = Losses::new(band.fc);
         let wall = match model.domain.wall_conductivity {

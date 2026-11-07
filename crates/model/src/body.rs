@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::geom::Point3;
 use crate::shape::{Axis, Combine, Feature, Inclusion, Shape};
+use crate::waveguide::Waveguide;
 
 /// What a body is made of.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,6 +44,16 @@ pub enum Kind {
     Walls,
     /// An imported part's body that is the region itself.
     Interior,
+    /// The region itself, a box extruded along the axis (a waveguide): the slabs placed in it
+    /// fill it.
+    Extruded(crate::Axis),
+    /// A slab of the extruded region: the region between two planes normal to the axis,
+    /// filled over the box's cross-section (a waveguide's section along z, with its aperture;
+    /// a layer across y).
+    Slab(crate::Axis),
+    /// Placed in the extruded region: the cells it holds take its fill (a via); a sheet lies
+    /// on their faces (a strip).
+    Cells,
 }
 
 /// A body.
@@ -86,6 +97,11 @@ impl Body {
     /// Whether it is an imported part's walls or region (not in the region's mesh).
     pub fn is_part(&self) -> bool {
         matches!(self.kind, Kind::Walls | Kind::Interior)
+    }
+
+    /// Whether it belongs to an extruded region (a waveguide's box, slabs and cells).
+    pub fn is_extruded(&self) -> bool {
+        matches!(self.kind, Kind::Extruded(_) | Kind::Slab(_) | Kind::Cells)
     }
 
     /// The material's name when it is one of the model's.
@@ -157,24 +173,36 @@ impl MeshView {
     }
 }
 
-/// The mesher's view, made when first read after the bodies changed. Copies of a model share
-/// nothing; two models compare by their bodies alone.
+/// The views of the bodies (the mesher's, the waveguide's), each made when first read after the
+/// bodies changed. Copies of a model share nothing; two models compare by their bodies alone.
 #[derive(Debug, Default)]
-pub(crate) struct ViewCache(OnceLock<MeshView>);
+pub(crate) struct ViewCache {
+    mesh: OnceLock<MeshView>,
+    guide: OnceLock<Option<Waveguide>>,
+}
 
 impl ViewCache {
     pub(crate) fn get(&self, bodies: &[Body]) -> &MeshView {
-        self.0.get_or_init(|| MeshView::of(bodies))
+        self.mesh.get_or_init(|| MeshView::of(bodies))
+    }
+
+    pub(crate) fn guide(&self, bodies: &[Body]) -> Option<&Waveguide> {
+        self.guide.get_or_init(|| Waveguide::of_bodies(bodies)).as_ref()
     }
 
     pub(crate) fn clear(&mut self) {
-        self.0 = OnceLock::new();
+        *self = ViewCache::default();
     }
+}
+
+/// A copy of what a cell holds.
+fn copied<T: Clone>(cell: &OnceLock<T>) -> OnceLock<T> {
+    cell.get().cloned().map_or_else(OnceLock::new, OnceLock::from)
 }
 
 impl Clone for ViewCache {
     fn clone(&self) -> ViewCache {
-        ViewCache(self.0.get().cloned().map_or_else(OnceLock::new, OnceLock::from))
+        ViewCache { mesh: copied(&self.mesh), guide: copied(&self.guide) }
     }
 }
 

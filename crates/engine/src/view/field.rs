@@ -352,7 +352,7 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
 /// units; none across the guide.
 fn section_lines(session: &Session, plane: Plane, vspan: f64) -> Vec<[[f64; 2]; 2]> {
     let l = session.display.length;
-    match session.model.waveguide.as_ref() {
+    match session.model.waveguide() {
         Some(w) if plane != Plane::Cross => w
             .interfaces()
             .iter()

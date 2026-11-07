@@ -51,7 +51,7 @@ fn materials_are_edited_renamed_and_deleted_unless_in_use() {
     let r = s.execute("model.material.edit", &json!({"name": "ptfe-like", "rename": "ptfe"})).unwrap();
     assert_eq!(r["results_dropped"], false);
     assert!(s.results.sweep.is_some());
-    assert_eq!(s.model.waveguide.as_ref().unwrap().sections[2].material, "ptfe");
+    assert_eq!(s.model.waveguide().unwrap().sections[2].material, "ptfe");
     // Its permittivity: the results go, the mesh stays.
     s.execute("model.material.edit", &json!({"name": "ptfe", "eps_r": 2.1})).unwrap();
     assert!(s.results.sweep.is_none() && s.model.mesh.is_some());

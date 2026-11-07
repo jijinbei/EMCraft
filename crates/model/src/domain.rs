@@ -1,7 +1,7 @@
 //! The analysis domain: the region solved (its shape and what fills it) and what bounds it —
 //! its outer walls (a conductor, or open into free space through a PML) and the planes that
 //! cut it (symmetry, periodic boundaries, a rotational sector). Its bodies are the model's
-//! ([`crate::Model::features`], [`crate::Model::inclusions`], the waveguide).
+//! ([`crate::Model::bodies`]; a waveguide is its box and slabs among them).
 
 use serde::{Deserialize, Serialize};
 

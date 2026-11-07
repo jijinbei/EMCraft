@@ -93,7 +93,7 @@ fn grips_of(h: &Held) -> Vec<(Grip, [f64; 3], [f64; 3])> {
             (Grip::Length, p(world(Vec3::new(0.0, 0.0, length.get()))), dir(Vec3::new(0.0, 0.0, 1.0))),
         ],
         Shape::Sphere { radius } => vec![(Grip::Radius, p(world(Vec3::new(radius.get(), 0.0, 0.0))), dir(Vec3::new(1.0, 0.0, 0.0)))],
-        Shape::Surface { .. } => Vec::new(),
+        Shape::Surface { .. } | Shape::Sheet { .. } => Vec::new(),
     }
 }
 

@@ -374,7 +374,7 @@ mod tests {
         approx::assert_abs_diff_eq!(area(&quarter, Boundary::Symmetry(SymmetryKind::Electric)), a / 2.0 * l, epsilon = 1e-13);
         approx::assert_abs_diff_eq!(area(&quarter, Boundary::Symmetry(SymmetryKind::Magnetic)), b / 2.0 * l, epsilon = 1e-13);
         // A guide no longer symmetric is refused.
-        let mut w = m.waveguide.clone().unwrap();
+        let mut w = m.waveguide().cloned().unwrap();
         w.sections[1].width = Some(metres(0.01));
         w.sections[1].offset = Some(0.0);
         m.set_waveguide(w).unwrap();
@@ -514,7 +514,7 @@ mod tests {
         let half_walls = (2.0 * b / 2.0 + a) * l - via.wx * via.wz + 2.0 * (via.wx + via.wz) * b / 2.0;
         assert!((area(&half, Boundary::Pec) - half_walls - strip.width * l).abs() < 1e-12, "{}", area(&half, Boundary::Pec));
         // A via under the strip only (y1 below the plane) has no image: refused.
-        let mut w = m.waveguide.clone().unwrap();
+        let mut w = m.waveguide().cloned().unwrap();
         w.vias[0].y1 = b / 2.0;
         m.set_waveguide(w).unwrap();
         assert!(waveguide(&m, metres(0.001)).is_err());

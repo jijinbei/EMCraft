@@ -129,7 +129,7 @@ pub(crate) fn place(m: &mut Model, shape: Shape, at: Point3, axis: Axis, materia
         m.domain.solid = Some(emcraft_model::Solid { shape, material: filling });
         m.domain.region = emcraft_model::Region::Pinned;
         m.domain.open = None;
-        m.waveguide = None;
+        m.clear_waveguide();
         m.mesh = None;
         return Ok(Placed::Interior);
     }
@@ -269,6 +269,7 @@ fn edited_shape(p: &Params, old: &Shape) -> Result<Shape> {
             Shape::Cylinder { radius: p.edit_metres("radius", *radius)?, length: p.edit_metres("length", *length)? }
         }
         (None | Some(Primitive::Sphere), Shape::Sphere { radius }) => Shape::Sphere { radius: p.edit_metres("radius", *radius)? },
+        (None, Shape::Sheet { .. }) => return Err(p.error("shape", "a sheet is a guide's strip: edit it with geometry.waveguide")),
         (None, Shape::Surface { .. }) => {
             if let Some(k) = ["size", "radius", "length"].into_iter().find(|k| p.has(k)) {
                 return Err(p.error(k, "is a primitive's: an imported body's shape is its file's (its `at`, `axis` and `material` change)"));

@@ -4,9 +4,11 @@
 use serde::{Deserialize, Serialize};
 
 use crate::Axis;
+use crate::body::{Body, Fill, Kind};
 use crate::error::{Result, all_finite, invalid, near};
 use crate::geom::{Aabb, Point3};
-use crate::quantity::Metres;
+use crate::quantity::{Metres, Quantity};
+use crate::shape::{BoxSize, Shape};
 
 /// A rectangular waveguide along z: x ∈ [0, a], y ∈ [0, b], z from 0 through its sections. A
 /// section may narrow the broad wall to an aperture of its own (an H-plane step, an inductive
@@ -368,6 +370,89 @@ impl Waveguide {
     }
 }
 
+impl Waveguide {
+    /// The guide as bodies ([`crate::body`]): its box (the region, extruded along z), a slab
+    /// along z per section (its aperture's box, of its material), a slab across y per layer, a
+    /// metal sheet per strip and a metal box per via. [`Waveguide::of_bodies`] reads them back.
+    ///
+    /// ```
+    /// use emcraft_model::{Metres, Section, Waveguide, body::Kind};
+    ///
+    /// let m = |v: f64| Metres::new(v).unwrap();
+    /// let mut w = Waveguide { width: m(0.02286), height: m(0.01016), sections: vec![Section::new(m(0.01), "vacuum")], layers: vec![], strips: vec![], vias: vec![] };
+    /// w.sections.push(Section { width: Some(m(0.01)), ..Section::new(m(0.002), "vacuum") });
+    /// let bodies = w.bodies()?;
+    /// assert_eq!(bodies.len(), 3); // the box and two sections
+    /// assert!(matches!(bodies[0].kind, Kind::Extruded(_)));
+    /// assert_eq!(Waveguide::of_bodies(&bodies), Some(w));
+    /// # Ok::<(), emcraft_model::ModelError>(())
+    /// ```
+    pub fn bodies(&self) -> Result<Vec<Body>> {
+        let (a, b, length) = (self.width, self.height, Metres::named("waveguide length", self.length())?);
+        let body = |shape: Shape, at: Point3, fill: Fill, kind: Kind| Body { shape, at, axis: Axis::Z, fill, kind, name: None };
+        let mut out = vec![body(Shape::Box { size: BoxSize::of(a, b, length) }, Point3::ORIGIN, Fill::Region, Kind::Extruded(Axis::Z))];
+        for (i, (s, z)) in self.sections.iter().zip(self.interfaces()).enumerate() {
+            let [x, y] = self.opening(i);
+            let size = BoxSize::of(s.width.unwrap_or(a), s.height.unwrap_or(b), s.length);
+            out.push(body(Shape::Box { size }, Point3::new(x.start, y.start, z), Fill::Material(s.material.clone()), Kind::Slab(Axis::Z)));
+        }
+        for (l, y) in self.layers.iter().zip(std::iter::once(0.0).chain(self.layer_tops())) {
+            let size = BoxSize::of(a, l.thickness, length);
+            out.push(body(Shape::Box { size }, Point3::new(0.0, y, 0.0), Fill::Material(l.material.clone()), Kind::Slab(Axis::Y)));
+        }
+        for st in &self.strips {
+            // Its own x along z, its own y along x (Axis::Y turns z onto y).
+            let size = [Metres::named("strip length", st.z1 - st.z0)?, st.width];
+            out.push(Body { axis: Axis::Y, ..body(Shape::Sheet { size }, Point3::new(st.x0, st.y, st.z0), Fill::Metal, Kind::Cells) });
+        }
+        for v in &self.vias {
+            let size = BoxSize::of(v.wx, Metres::named("via height", v.y1 - v.y0)?, v.wz);
+            out.push(body(Shape::Box { size }, Point3::new(v.x0, v.y0, v.z0), Fill::Metal, Kind::Cells));
+        }
+        Ok(out)
+    }
+
+    /// The guide the bodies make, when they hold one ([`Waveguide::bodies`]). A section's
+    /// aperture as wide (or high) as the guide, centred, reads back as none given.
+    pub fn of_bodies(bodies: &[Body]) -> Option<Waveguide> {
+        let size = |b: &Body| match b.shape {
+            Shape::Box { size } => Some(size),
+            _ => None,
+        };
+        let outer = bodies.iter().find(|b| b.kind == Kind::Extruded(Axis::Z)).and_then(size)?;
+        let (a, b) = (Metres::new(outer.x).ok()?, Metres::new(outer.y).ok()?);
+        let mut w = Waveguide { width: a, height: b, sections: Vec::new(), layers: Vec::new(), strips: Vec::new(), vias: Vec::new() };
+        let material = |body: &Body| body.material().map(str::to_owned);
+        for body in bodies {
+            match (body.kind, &body.shape) {
+                (Kind::Slab(Axis::Z), Shape::Box { size }) => {
+                    let (wx, hy) = (size.x, size.y);
+                    let width = (wx != a.get()).then(|| Metres::new(wx).ok()).flatten();
+                    let height = (hy != b.get()).then(|| Metres::new(hy).ok()).flatten();
+                    let offset = (body.at.x != (a.get() - wx) / 2.0).then_some(body.at.x);
+                    let offset_y = (body.at.y != (b.get() - hy) / 2.0).then_some(body.at.y);
+                    w.sections.push(Section { length: Metres::new(size.z).ok()?, material: material(body)?, width, offset, height, offset_y });
+                }
+                (Kind::Slab(Axis::Y), Shape::Box { size }) => {
+                    w.layers.push(Layer { thickness: Metres::new(size.y).ok()?, material: material(body)? })
+                }
+                (Kind::Cells, Shape::Sheet { size: [l, width] }) => {
+                    let at = body.at;
+                    w.strips.push(Strip { y: at.y, x0: at.x, width: *width, z0: at.z, z1: at.z + l.get() });
+                }
+                (Kind::Cells, Shape::Box { size }) => {
+                    let at = body.at;
+                    let wx = Metres::new(size.x).ok()?;
+                    let wz = Metres::new(size.z).ok()?;
+                    w.vias.push(Via { x0: at.x, z0: at.z, wx, wz, y0: at.y, y1: at.y + size.y });
+                }
+                _ => {}
+            }
+        }
+        Some(w)
+    }
+}
+
 /// The narrowest gap between two strips on one plane, as a fraction of the guide's width (across
 /// x) or length (along z): a gap narrower is a sliver no mesh resolves.
 pub const MIN_STRIP_GAP: f64 = 1e-4;
@@ -507,5 +592,32 @@ mod tests {
             w.strips = vec![a, bad];
             assert!(w.check(vacuum_only).is_err(), "{bad:?}");
         }
+    }
+
+    /// The bodies read back as the guide they were made of, bit for bit: lengths from the
+    /// boxes' sizes (never from differences of their placements), apertures from their boxes,
+    /// a strip's end and a via's top as placed plus size (exact for these, as for every guide
+    /// the commands and templates make: the gate's waveguides all read back unchanged).
+    #[test]
+    fn bodies_read_back_as_the_guide() {
+        let mut w = guide(vec![
+            sec(None, None),
+            sec(Some(0.0123), Some(0.0031)),
+            Section { height: Some(m(0.004)), offset_y: Some(0.001), ..sec(None, None) },
+        ]);
+        w.sections[0].length = m(0.0137);
+        assert_eq!(Waveguide::of_bodies(&w.bodies().unwrap()), Some(w.clone()));
+        let mut planar = guide(vec![sec(None, None), sec(None, None)]);
+        planar.layers = vec![layer(0.00157, "vacuum"), layer(0.0007, "vacuum")];
+        planar.strips = vec![Strip { y: 0.00157, x0: 0.0071, width: m(0.0029), z0: 0.0013, z1: 0.0177 }];
+        planar.vias = vec![Via { x0: 0.0081, z0: 0.0033, wx: m(0.0004), wz: m(0.0004), y0: 0.0, y1: 0.00157 }];
+        let bodies = planar.bodies().unwrap();
+        assert_eq!(bodies.len(), 1 + 2 + 2 + 1 + 1);
+        assert_eq!(Waveguide::of_bodies(&bodies), Some(planar));
+        // A centred aperture as wide as the guide reads back as none given (the same aperture).
+        let full = guide(vec![sec(Some(0.02), Some(0.0))]);
+        let back = Waveguide::of_bodies(&full.bodies().unwrap()).unwrap();
+        assert_eq!((back.sections[0].width, back.sections[0].offset, back.aperture(0)), (None, None, full.aperture(0)));
+        assert_eq!(Waveguide::of_bodies(&[]), None);
     }
 }

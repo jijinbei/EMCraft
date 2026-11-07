@@ -63,7 +63,7 @@ impl crate::Model {
     /// ```
     pub fn meridian_profile(&self, size: f64) -> Result<MeridianProfile> {
         let solid = self.domain.solid.as_ref().ok_or_else(|| invalid("body of revolution", "needs a solid (geometry.solid)"))?;
-        if self.waveguide.is_some() {
+        if self.waveguide().is_some() {
             return Err(invalid("body of revolution", "not supported yet: a waveguide"));
         }
         let (_, mat) = self.material(&solid.material)?;
@@ -179,6 +179,7 @@ fn outline(shape: &crate::Shape, at: crate::Point3, axis: crate::Axis, size: f64
             lines.extend((0..n).map(|k| ([q(k), q(k + 1)], sagitta)));
         }
         crate::Shape::Box { .. } => return Err("is a box, not a body of revolution".into()),
+        crate::Shape::Sheet { .. } => return Err("is a sheet (no volume to revolve)".into()),
         crate::Shape::Surface { positions, triangles, .. } => {
             if triangles.len() > MAX_SECTION_TRIANGLES {
                 return Err(format!("has more than {MAX_SECTION_TRIANGLES} triangles"));

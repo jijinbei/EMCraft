@@ -261,8 +261,8 @@ fn options(s: &Session, p: &Params) -> Result<(Options, Refine)> {
     } else if s.model.ports.is_empty() {
         return Err(EngineError::failed("adaptive refinement compares S-parameters between passes: the model needs ports (model.port.create)"));
     }
-    let solid = s.model.waveguide.is_none() && s.model.domain.solid.is_some();
-    if !solid && s.model.waveguide.is_none() {
+    let solid = s.model.waveguide().is_none() && s.model.domain.solid.is_some();
+    if !solid && s.model.waveguide().is_none() {
         return Err(EngineError::failed("nothing to mesh: create a waveguide or a solid first"));
     }
     let sizes = crate::meshing::Sizes::read(s, p)?;

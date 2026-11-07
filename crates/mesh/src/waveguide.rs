@@ -177,7 +177,7 @@ pub fn waveguide(model: &Model, size: Metres) -> Result<Mesh> {
 /// grid planes graded like a step's edges, its cells left out like those outside an aperture.
 pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
     let o = o.checked()?;
-    let w = model.waveguide.as_ref().ok_or_else(|| MeshError::Invalid { what: "model".into(), why: "has no waveguide".into() })?;
+    let w = model.waveguide().ok_or_else(|| MeshError::Invalid { what: "model".into(), why: "has no waveguide".into() })?;
     // The cap before any line is made (grading only adds to this count).
     let estimate = [w.width / o.size, w.height / o.size_y.unwrap_or(o.size), w.length() / o.size].iter().map(|n| n.ceil().max(1.0)).product::<f64>()
         * TETS_PER_CELL as f64;

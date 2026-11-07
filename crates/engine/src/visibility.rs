@@ -52,12 +52,12 @@ impl GeometryObject {
 
     pub fn exists(self, m: &Model) -> bool {
         match self {
-            Self::Guide => m.waveguide.is_some(),
+            Self::Guide => m.waveguide().is_some(),
             Self::Solid => m.domain.solid.is_some(),
-            Self::Section(i) => m.waveguide.as_ref().is_some_and(|w| i < w.sections.len()),
-            Self::Layer(i) => m.waveguide.as_ref().is_some_and(|w| i < w.layers.len()),
-            Self::Strip(i) => m.waveguide.as_ref().is_some_and(|w| i < w.strips.len()),
-            Self::Via(i) => m.waveguide.as_ref().is_some_and(|w| i < w.vias.len()),
+            Self::Section(i) => m.waveguide().is_some_and(|w| i < w.sections.len()),
+            Self::Layer(i) => m.waveguide().is_some_and(|w| i < w.layers.len()),
+            Self::Strip(i) => m.waveguide().is_some_and(|w| i < w.strips.len()),
+            Self::Via(i) => m.waveguide().is_some_and(|w| i < w.vias.len()),
             Self::Feature(i) => i < m.features().len(),
             Self::Inclusion(i) => i < m.inclusions().len(),
         }
@@ -67,27 +67,27 @@ impl GeometryObject {
     /// wall shell, so hiding a section also hides the shell outside its material volume.
     pub fn contains(self, m: &Model, p: Point3) -> bool {
         match self {
-            Self::Guide => m.waveguide.is_some(),
+            Self::Guide => m.waveguide().is_some(),
             Self::Solid => m.domain.solid.is_some(),
             Self::Section(i) => m
-                .waveguide
+                .waveguide()
                 .as_ref()
                 .and_then(|w| w.sections.get(i).map(|s| (w.sections[..i].iter().map(|s| s.length.get()).sum::<f64>(), s.length.get())))
                 .is_some_and(|(z, l)| p.z >= z - 1e-10 && p.z <= z + l + 1e-10),
             Self::Layer(i) => m
-                .waveguide
+                .waveguide()
                 .as_ref()
                 .and_then(|w| w.layers.get(i).map(|s| (w.layers[..i].iter().map(|s| s.thickness.get()).sum::<f64>(), s.thickness.get())))
                 .is_some_and(|(y, l)| p.y >= y - 1e-10 && p.y <= y + l + 1e-10),
             Self::Feature(i) => m.features().get(i).is_some_and(|s| s.contains(p)),
             Self::Inclusion(i) => m.inclusions().get(i).is_some_and(|s| s.contains(p)),
             Self::Strip(i) => m
-                .waveguide
+                .waveguide()
                 .as_ref()
                 .and_then(|w| w.strips.get(i))
                 .is_some_and(|s| p.x >= s.x0 && p.x <= s.x0 + s.width && p.z >= s.z0 && p.z <= s.z1 && (p.y - s.y).abs() < 1e-10),
             Self::Via(i) => m
-                .waveguide
+                .waveguide()
                 .as_ref()
                 .and_then(|w| w.vias.get(i))
                 .is_some_and(|s| p.x >= s.x0 && p.x <= s.x0 + s.wx && p.y >= s.y0 && p.y <= s.y1 && p.z >= s.z0 && p.z <= s.z0 + s.wz),

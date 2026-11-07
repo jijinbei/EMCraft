@@ -230,7 +230,7 @@ fn strip_lines_have_their_closed_form_impedances() {
 fn coupled_strips(w: f64, s: f64, b: f64, side: f64, planes: &[emcraft_model::Symmetry]) -> Model {
     let a = 2.0 * (side + w) + s;
     let mut m = stripline(a, b, w, 0.001, 2.2, 0.002);
-    let wg = m.waveguide.clone().unwrap();
+    let wg = m.waveguide().cloned().unwrap();
     let strip = |x0: f64| emcraft_model::Strip { y: b / 2.0, x0, width: metres(w), z0: 0.0, z1: 0.001 };
     m.set_waveguide(emcraft_model::Waveguide { strips: vec![strip(side), strip(side + w + s)], ..wg }).unwrap();
     m.set_symmetry(planes.to_vec()).unwrap();

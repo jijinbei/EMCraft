@@ -289,7 +289,7 @@ fn mesh_port_rims_are_transparent_and_directions_are_world_space() {
     for a in &built.arrows[..2] {
         assert!(a.start[2] < 0.0 && a.end[2] < 0.0, "glyphs must not intersect the start port's face");
     }
-    assert!(built.arrows[2].start[2] > s.model().waveguide.as_ref().unwrap().length());
+    assert!(built.arrows[2].start[2] > s.model().waveguide().unwrap().length());
 
     assert!(built.arrows[0].end[2] > built.arrows[0].start[2], "incident goes into the start port");
     assert!(built.arrows[1].end[2] < built.arrows[1].start[2], "reflected goes out of the start port");
