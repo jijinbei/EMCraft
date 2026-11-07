@@ -1142,6 +1142,21 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::results::eigenmodes,
     },
     CommandSpec {
+        id: "results.cavity",
+        label: "Cavity figures",
+        doc: "An eigenmode as an accelerating cavity, along a straight line (`from`–`to`, the region's axis along z when neither is given): the voltage a particle crossing at speed `beta` c sees, V = |∫ E_z e^{jωz/(βc)} dz|, and the field's own V₀ = |∫ E_z dz| (both for 1 J stored, V); the transit-time factor T = V/V₀; R/Q = V²/(ωU) (Ω, the linac convention); with lossy walls Q₀ and the shunt impedance (R/Q) Q₀ (Ω).",
+        params: &[
+            opt("mode", K::Integer, "the eigenmode, from 1 (default 1)"),
+            opt("from", K::Array, "the line's start [x, y, z]").of(L),
+            opt("to", K::Array, "the line's end [x, y, z]").of(L),
+            opt("beta", K::Number, "the particle's speed over c, above 0 to 1 (default 1)"),
+            opt("points", K::Integer, "intervals along the line, 1 to 20000 (default 400)"),
+        ],
+        effect: Effect::None,
+        invalidates: None,
+        run: crate::results::cavity,
+    },
+    CommandSpec {
         id: "solve.port_modes",
         label: "Port modes",
         doc: "Each port's modes at one frequency, from the meshed model without solving the volume: the closed forms for a whole rectangle or circle of one material, the cross-section solver elsewhere. Per mode: the propagation constant β (radians per length unit), the effective permittivity (β/k₀)² and — for a line with conductors besides the ground (coaxial, strips) — the characteristic impedance by power and current per conductor, 2P/Σ|I|² (Ω), when it propagates (several strips in one dielectric: their TEM modes split into those of orthogonal currents, the even mode then the odd for two coupled strips, Z0e and Z0o); the attenuation (dB per length unit) when it does not.",

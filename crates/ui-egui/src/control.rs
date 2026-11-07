@@ -239,6 +239,9 @@ pub fn inspect(app: &EmcraftApp) -> Value {
     v["pcb"] = json!({"loaded":app.session.model().pcb().is_some(),"report":app.replies.pcb,"selected_net":app.session.views().pcb.net(),"conditions":app.session.views().pcb.conditions().map(|c| c.shown(app.session.display().frequency)),"unconfirmed":app.views.pcb.unconfirmed,"stage":emcraft_engine::pcb::stage(&app.session).id(),"illustration":app.session.views().pcb_illustration});
     v["hidden_geometry"] = json!(app.session.views().hidden_geometry);
     v["hidden_materials"] = json!(app.session.views().hidden_materials);
+    // The eigenmode table's cavity figures per mode (its T, or null).
+    v["eigen_cavity"] =
+        json!(app.views.eigen_table.as_ref().map(|e| e.cavity.iter().map(|c| c.as_ref().map(|c| c["transit"].clone())).collect::<Vec<_>>()));
     v["field"]["db"] = json!(app.field.view.db);
     v["field"]["contours"] = json!(app.field.view.contours);
     v["pattern"] = json!({"cut": app.views.pattern.cut.id(), "angle": app.views.pattern.angle, "component": app.views.pattern.component.id()});

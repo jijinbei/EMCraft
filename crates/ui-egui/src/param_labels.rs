@@ -20,6 +20,7 @@ pub fn param_label(command: &str, name: &'static str) -> &'static str {
         (_, "axis") => t!("Axis").en(),
         (_, "bands") => t!("Bands").en(),
         (_, "below") => t!("Air below").en(),
+        (_, "beta") => t!("Particle speed v/c").en(),
         (_, "body") => t!("Body").en(),
         (_, "capacitance") => t!("Capacitance").en(),
         (_, "cavity") => t!("Cavity length").en(),

@@ -259,3 +259,71 @@ pub fn tdr(s: &mut Session, p: &Params) -> Result<Value> {
         .collect();
     Ok(json!({"port": port, "mode": t.mode.id(), "time_unit": "ns", "resolution": t.resolution * 1e9, "reference": z0, "points": points}))
 }
+
+/// Below this V₀²/(ωU) (Ω) a mode has no field along the line to speak of.
+const MIN_FIELD_R_OVER_Q: f64 = 1e-3;
+
+/// The most intervals `results.cavity` integrates along its line in.
+const MAX_CAVITY_POINTS: usize = 20_000;
+
+/// `results.cavity`: an eigenmode as an accelerating cavity — along a straight line (its
+/// region's axis along z by default), the voltage a particle crossing at speed βc sees,
+/// V = |∫ E_z e^{jωz/(βc)} dz|, against the field's own, V₀ = |∫ E_z dz|; the transit-time
+/// factor T = V/V₀; the stored energy U = ½ ε₀ ∫ εr |E|² dV (the images' through symmetry
+/// planes counted); R/Q = V²/(ωU) (the linac convention) and, with lossy walls, the shunt
+/// impedance R = (R/Q) Q₀ (T. P. Wangler, *RF Linear Accelerators*, 2nd ed., Wiley 2008,
+/// §2.2–2.3). The mode's amplitude is arbitrary: the voltages are given for 1 J stored.
+pub fn cavity(s: &mut Session, p: &Params) -> Result<Value> {
+    let e = s.results.eigen.as_ref().ok_or(EngineError::NotSolved { what: "eigenmodes", run: "solve.eigenmodes" })?;
+    let index = p.integer("mode", 1..=e.modes.len().max(1)).or(1)?;
+    let m = e.modes.get(index - 1).ok_or_else(|| p.error("mode", format!("must be 1 to {}", e.modes.len())))?;
+    if s.model.domain.rotation.is_some() || s.model.domain.periodic.is_some() {
+        return Err(EngineError::failed("not supported yet: a cavity's voltage on a rotational sector or a periodic cell"));
+    }
+    let beta = p.number("beta").or(1.0)?;
+    if !(beta > 0.0 && beta <= 1.0) {
+        return Err(p.error("beta", "must be greater than 0 and at most 1 (v/c)"));
+    }
+    let n = p.integer("points", 1..=MAX_CAVITY_POINTS).or(400)?;
+    let line = match (p.point("from").optional()?, p.point("to").optional()?) {
+        (Some(a), Some(b)) => (a, b),
+        (None, None) => {
+            let b = s.model.bounds().ok_or_else(|| EngineError::failed("no geometry"))?;
+            let (cx, cy) = (0.5 * (b.min.x + b.max.x), 0.5 * (b.min.y + b.max.y));
+            (emcraft_model::Point3::new(cx, cy, b.min.z), emcraft_model::Point3::new(cx, cy, b.max.z))
+        }
+        _ => return Err(p.error("to", "`from` and `to` go together (or neither: the region's axis along z)")),
+    };
+    let driven = e.driven_of(m);
+    let (x, f) = (&m.vector, m.frequency);
+    let omega = 2.0 * std::f64::consts::PI * f;
+    let k = omega / (beta * emcraft_model::units::C0);
+    let field = driven.line_integral(x, f, line, n, |_| C::new(1.0, 0.0))?;
+    let felt = driven.line_integral(x, f, line, n, |z| C::from_polar(1.0, k * z))?;
+    // Each symmetry plane halves the region solved; its image holds as much energy again.
+    let images = 2f64.powi(i32::try_from(s.model.domain.symmetry.len()).unwrap_or(0));
+    let energy = driven.stored_energy(x, f)? * images;
+    if !(energy > 0.0 && energy.is_finite()) {
+        return Err(EngineError::failed("the mode stores no energy"));
+    }
+    let (v0, v) = (field.norm(), felt.norm());
+    let r_over_q = v * v / (omega * energy);
+    let q = m.q();
+    let per_joule = 1.0 / energy.sqrt();
+    let show = |pt: emcraft_model::Point3| json!([s.show_length(pt.x), s.show_length(pt.y), s.show_length(pt.z)]);
+    Ok(json!({
+        "mode": index,
+        "frequency": s.show_frequency(f),
+        "from": show(line.0),
+        "to": show(line.1),
+        "beta": beta,
+        "voltage": v * per_joule,
+        "field_voltage": v0 * per_joule,
+        // A mode with (next to) no field along the line (a TE mode on the axis) has no
+        // transit time: V and V₀ are both its numerical noise there.
+        "transit": (v0 * v0 / (omega * energy) >= MIN_FIELD_R_OVER_Q).then(|| v / v0),
+        "r_over_q": r_over_q,
+        "q": q,
+        "shunt": q.map(|q| r_over_q * q),
+    }))
+}

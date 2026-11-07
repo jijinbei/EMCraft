@@ -68,13 +68,19 @@ impl Parts {
     }
 }
 
+/// The most modes the eigenmode table gives cavity figures for.
+const MAX_CAVITY_ROWS: usize = 12;
+
 /// The eigenmode table (`results.eigenmodes`), read again when the session changed.
 pub(crate) fn prepare_eigenmodes(app: &mut EmcraftApp) {
     if app.views.eigen_table.as_ref().is_some_and(|e| e.revision == app.revision) || app.session.results().eigen.is_none() {
         return;
     }
     let reply = app.session.execute("results.eigenmodes", &json!({})).map_err(|e| e.to_string());
-    app.views.eigen_table = Some(crate::state::EigenTable { revision: app.revision, reply });
+    // The first modes' cavity figures (a line integral and the stored energy each).
+    let count = reply.as_ref().ok().and_then(|r| r["modes"].as_array()).map_or(0, Vec::len).min(MAX_CAVITY_ROWS);
+    let cavity = (1..=count).map(|mode| app.session.execute("results.cavity", &json!({"mode": mode})).ok()).collect();
+    app.views.eigen_table = Some(crate::state::EigenTable { revision: app.revision, reply, cavity });
 }
 
 /// The central card; its rectangle.

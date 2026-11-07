@@ -195,6 +195,9 @@ pub struct ModePicture {
 pub struct EigenTable {
     pub revision: u64,
     pub reply: Result<Value, String>,
+    /// Each mode as an accelerating cavity on the region's axis (`results.cavity`), where it
+    /// reads.
+    pub cavity: Vec<Option<Value>>,
 }
 
 /// A plane kept for the 3D view beside the field view's own: which, its position (display

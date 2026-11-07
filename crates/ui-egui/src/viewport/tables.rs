@@ -135,29 +135,56 @@ pub(super) fn number(v: Option<f64>, digits: usize) -> String {
 
 pub(super) fn eigenmodes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
-    let table = match st.views.eigen_table.as_ref().filter(|e| e.revision == app.revision).map(|e| &e.reply) {
-        Some(Ok(table)) => table,
-        Some(Err(e)) => return empty(ui, e),
-        None => return,
+    let Some(cached) = st.views.eigen_table.as_ref().filter(|e| e.revision == app.revision) else { return };
+    let table = match &cached.reply {
+        Ok(table) => table,
+        Err(e) => return empty(ui, e),
     };
+    let cavity = &cached.cavity;
+    // The cavity's columns when a mode reads as one: T, R/Q and the shunt impedance on the
+    // region's axis (`results.cavity`).
+    let accelerating = cavity.iter().flatten().any(|c| c["voltage"].as_f64().is_some_and(|v| v > 0.0));
     let fu = app.session.display().frequency.symbol();
     let mut open = None;
-    egui::Grid::new("eigen_grid").striped(true).num_columns(4).show(ui, |ui| {
+    let columns = if accelerating { 7 } else { 4 };
+    egui::Grid::new("eigen_grid").striped(true).num_columns(columns).show(ui, |ui| {
         super::dim_if_stale(ui);
-        for h in [tr(t!("Mode")), &format!("f ({fu})"), "Q", ""] {
+        for h in [tr(t!("Mode")), &format!("f ({fu})"), "Q"] {
             ui.text(Style::Strong, Raw(h));
         }
+        if accelerating {
+            for h in ["$T$", "$R/Q$ (Ω)", "$R_{sh}$ (MΩ)"] {
+                ui.label(crate::math::job(h, t.font_body, t.text));
+            }
+        }
+        ui.label("");
         ui.end_row();
         for (i, m) in table.get("modes").and_then(Value::as_array).into_iter().flatten().enumerate() {
             ui.label(format!("{}", i + 1));
             ui.label(num(&m["frequency"], 5));
             ui.label(num(&m["q"], 0));
+            if accelerating {
+                let c = cavity.get(i).and_then(Option::as_ref);
+                let cell = |key: &str, digits: usize, scale: f64| {
+                    c.and_then(|c| c[key].as_f64()).map_or_else(|| "—".to_owned(), |v| format!("{:.digits$}", v * scale))
+                };
+                ui.label(cell("transit", 4, 1.0));
+                ui.label(cell("r_over_q", 2, 1.0));
+                ui.label(cell("shunt", 4, 1e-6));
+            }
             if ui.named(egui::Button::new(tr(t!("Field"))), Handle::EigenField(i + 1)).clicked() {
                 open = Some(i);
             }
             ui.end_row();
         }
     });
+    if accelerating {
+        ui.label(
+            egui::RichText::new(tr(t!("On the region's axis along z, for a particle at the speed of light (results.cavity)")))
+                .size(t.font_small)
+                .color(t.text_dim),
+        );
+    }
     if let Some(exact) = table.get("exact").and_then(Value::as_array) {
         crate::ui_kit::section(ui, t!("Closed form"));
         let list: Vec<String> = exact.iter().take(8).map(|e| format!("{} {}", e["mode"].as_str().unwrap_or(""), num(&e["frequency"], 4))).collect();

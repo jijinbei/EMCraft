@@ -439,6 +439,11 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   modes (`emcraft-solver::zdense`).
 - D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §6.3 and §6.7 — cavity resonances,
   Q by perturbation, the TE101 Q (eq. 6.46).
+- T. P. Wangler, *RF Linear Accelerators*, 2nd ed., Wiley 2008, §2.2–2.3 — an accelerating
+  cavity's figures: the voltage a particle crossing at speed βc sees, the transit-time factor,
+  R/Q and the shunt impedance, and the pillbox's TM010 closed forms (`results.cavity`, the
+  `pillbox-accelerating` oracle); the voltage by composite Gauss–Legendre quadrature along the
+  line (`emcraft-solver::driven::line`).
 
 ## Open problems
 - Z. S. Sacks, D. M. Kingsland, R. Lee, J.-F. Lee, *A perfectly matched anisotropic absorber for

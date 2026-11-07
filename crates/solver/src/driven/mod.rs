@@ -77,6 +77,7 @@ pub mod cyclic;
 mod dofs;
 mod fields;
 mod floquet;
+pub mod line;
 mod losses;
 mod lumped;
 mod media;

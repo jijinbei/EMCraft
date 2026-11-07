@@ -1,0 +1,72 @@
+{
+ "title": "Pillbox accelerating cavity: TM010 of a copper cylinder 10 mm in radius and 13.06 mm long (a half-wave cell), on its axis for a particle at the speed of light",
+ "kind": "theory",
+ "source": "The pillbox's TM010 mode in closed form, E_z = E0 J0(χ01 r/R) (T. P. Wangler, RF Linear Accelerators, 2nd ed., Wiley 2008, §2.3): f = χ01 c/(2πR); the transit-time factor T = sin(x)/x with x = ωL/(2c); the stored energy U = ½ ε0 E0² π R² L J1²(χ01), so R/Q = (E0 L T)²/(ωU) = 2 L T²/(ω ε0 π R² J1²(χ01)); Q0 = (R/δ)/(1 + R/L) with copper's skin depth δ at f; the shunt impedance (R/Q) Q0. Evaluated apart from the code under test",
+ "quantities": [
+  {
+   "id": "frequency",
+   "quantity": "TM010's frequency (GHz)",
+   "measure": {
+    "step": "cavity",
+    "pointer": "/frequency"
+   },
+   "value": 11.474252783521006,
+   "tolerance": {
+    "absolute": 0.0005
+   },
+   "reason": "2 mm tetrahedra at order 2 on a faceted cylinder: +9e-5 GHz (+4e-5 at 1.5 mm)"
+  },
+  {
+   "id": "transit",
+   "quantity": "transit-time factor T",
+   "measure": {
+    "step": "cavity",
+    "pointer": "/transit"
+   },
+   "value": 0.6368002084214663,
+   "tolerance": {
+    "absolute": 0.0001
+   },
+   "reason": "E_z along the axis integrated by three-point Gauss–Legendre on 400 intervals: within 2e-6"
+  },
+  {
+   "id": "r_over_q",
+   "quantity": "R/Q (Ω, the linac convention V²/(ωU))",
+   "measure": {
+    "step": "cavity",
+    "pointer": "/r_over_q"
+   },
+   "value": 195.97250889739422,
+   "tolerance": {
+    "absolute": 0.2
+   },
+   "reason": "the voltage and the stored energy from the same field, its amplitude cancelling: within 2e-3 Ω"
+  },
+  {
+   "id": "q",
+   "quantity": "Q0 with copper walls (σ = 5.8e7 S/m)",
+   "measure": {
+    "step": "cavity",
+    "pointer": "/q"
+   },
+   "value": 9179.942180176487,
+   "tolerance": {
+    "relative": 0.012
+   },
+   "reason": "the wall loss by perturbation over the faceted surface: −0.6 % at 2 mm, −0.4 % at 1.5 mm"
+  },
+  {
+   "id": "shunt",
+   "quantity": "shunt impedance (R/Q) Q0 (Ω)",
+   "measure": {
+    "step": "cavity",
+    "pointer": "/shunt"
+   },
+   "value": 1799016.3005822012,
+   "tolerance": {
+    "relative": 0.012
+   },
+   "reason": "Q0's error, R/Q's being far smaller"
+  }
+ ]
+}

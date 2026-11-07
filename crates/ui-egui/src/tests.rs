@@ -34,6 +34,11 @@ fn scenario_refine_and_planes() {
 }
 
 #[test]
+fn scenario_eigen_cavity() {
+    scenario("eigen_cavity");
+}
+
+#[test]
 fn scenario_field_probes() {
     scenario("field_probes");
 }

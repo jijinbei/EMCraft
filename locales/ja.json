@@ -2,6 +2,8 @@
   "name": "日本語",
   "complete": true,
   "strings": {
+    "Particle speed v/c": "粒子の速さ v/c",
+    "On the region's axis along z, for a particle at the speed of light (results.cavity)": "領域の z 軸上、光速の粒子に対して（results.cavity）",
     "Colours in decibels, down to 40 dB below the peak": "色をデシベルで（ピークから −40 dB まで）",
     "Contours": "等高線",
     "magnitude (M)": "大きさ (M)",
@@ -1079,6 +1081,7 @@
     "Escape or a click on empty space ends it": "Esc か何もない所のクリックで終了"
   },
   "commands": {
+    "results.cavity": {"label": "空洞の諸量", "doc": "固有モードを加速空洞として評価する。直線（`from`–`to`、どちらも省略すると領域の z 軸）に沿って、速さ `beta` c の粒子が感じる電圧 V = |∫ E_z e^{jωz/(βc)} dz| と電界そのものの V₀ = |∫ E_z dz|（ともに蓄積エネルギー 1 J あたり、V）、走行時間係数 T = V/V₀、R/Q = V²/(ωU)（Ω、線形加速器の定義）、損失のある壁では Q₀ とシャント抵抗 (R/Q) Q₀（Ω）。", "params": {"mode": "固有モード（1 から、既定 1）", "from": "直線の始点 [x, y, z]", "to": "直線の終点 [x, y, z]", "beta": "粒子の速さ v/c（0 より大きく 1 以下、既定 1）", "points": "直線の分割数（1〜20000、既定 400）"}},
     "project.setup": {
       "label": "解析設定の確定",
       "doc": "ジョブの解析の種類（または `kind`）の実行設定を、Setup ステップに表示されたとおりに確定する。掃引は帯域（`start`、`stop`）・`points`・要素次数 `order`、時間領域は帯域・`points`・`cell`・励振するポート `excite`、固有モードは `frequency` の近くの `count` 個と `order`、放射解析は `frequency` と `order`。確定するとジョブは実行可能になる：Setup ステップは完了になり、Run（solve.run）がこの設定で実行する。別の種類を選ぶ（project.analysis）と確定は取り消される。帯域は波長基準のメッシュ分割（その上端）とポートモードのプレビューにも使う。元に戻せる。",
