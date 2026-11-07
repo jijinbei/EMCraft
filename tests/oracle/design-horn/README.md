@@ -8,7 +8,9 @@ meet in general position: an air body that went straight on for that millimetre 
 in the walls' front face, which the Boolean could not mesh finer than five elements per
 wavelength). The template opens it with `geometry.import {path: "template:horn.solidcraft",
 materials: {"inside": "vacuum"}, open: true}`, its parameters passed to the design's, in a box
-of air lined with a 10 mm perfectly matched layer; the feed's closed end is a waveguide port.
+of air lined with a 6 mm perfectly matched layer, 8 mm of air between it and the horn (10 mm of
+layer gave 11.543 dBi in 28 s, 6 mm 11.564 in 19 s; 6 mm of air too near: the power balance
+1.4 % off); the feed's closed end is a waveguide port.
 
 Checked at 10 GHz: the directivity on the axis against Balanis' pyramidal-horn formula and the
 power balance. The formula is an approximation (the aperture field only), most accurate for

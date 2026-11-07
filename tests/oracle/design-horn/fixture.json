@@ -2,12 +2,12 @@
   "note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.",
   "values": {
     "directivity_dbi": {
-      "band": 0.001000011543460648,
-      "value": 11.543459648053048
+      "band": 0.0010000115635860282,
+      "value": 11.563585028011419
     },
     "efficiency": {
-      "band": 0.000030001000001,
-      "value": 0.9990838442637816
+      "band": 0.000030001002226066854,
+      "value": 1.00222506685285
     }
   }
 }
