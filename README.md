@@ -14,7 +14,9 @@ cargo run --release -p emcraft-cli -- sample highpass --out pictures  # S-parame
 cargo run --release -p emcraft-cli -- commands                      # every command and its parameters
 ```
 
-On Windows, use the installer: [docs/install-windows.md](docs/install-windows.md).
+On Windows, use the installer: [docs/install-windows.md](docs/install-windows.md). Every push to
+`main` also builds the app and the CLI for Linux (x86_64), Windows (x86_64) and macOS (Apple
+silicon): the **Build** workflow's artifacts (`.github/workflows/build.yml`).
 
 Samples (the start page's templates, their dimensions variables):
 

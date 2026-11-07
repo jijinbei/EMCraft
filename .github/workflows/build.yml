@@ -1,0 +1,84 @@
+name: Build
+
+# The desktop app and the CLI built natively for Linux, Windows and macOS on every push and pull
+# request, each tried once (the CLI lists its commands and solves a small cavity) and kept as the
+# run's artifacts: `emcraft-linux-x86_64`, `emcraft-windows-x86_64`, `emcraft-macos-arm64`, each
+# a folder with `emcraft`, `emcraft-cli` and the licences. The Windows installer is built
+# separately, cross-compiled (release-windows.yml).
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push makes a build of the same branch moot.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Thin LTO in 16 units: the shipped profile's whole-program optimisation (Cargo.toml) would take
+  # several times as long on each push; the results are the same bit for bit (ci.yml).
+  CARGO_PROFILE_RELEASE_DEBUG: "false"
+  CARGO_PROFILE_RELEASE_STRIP: "symbols"
+  CARGO_PROFILE_RELEASE_LTO: "thin"
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux-x86_64
+            exe: ""
+          - os: windows-latest
+            name: windows-x86_64
+            exe: ".exe"
+          - os: macos-latest
+            name: macos-arm64
+            exe: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Free the runner's disk
+        if: runner.os == 'Linux'
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost && df -h /
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # Saved from main only, one cache an OS.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: build-${{ matrix.name }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: System libraries for the desktop app
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libgl1-mesa-dev
+      - name: Build the app and the CLI
+        run: cargo build --release -p emcraft -p emcraft-cli
+      - name: Try the CLI
+        shell: bash
+        run: |
+          cli=target/release/emcraft-cli${{ matrix.exe }}
+          "$cli" commands | head -n 5
+          script="$RUNNER_TEMP/cavity.json"
+          echo '[{"command":"geometry.waveguide","params":{"width":22.86,"height":10.16,"sections":[{"length":30,"material":"vacuum"}]}},{"command":"mesh.generate","params":{"size":5}},{"command":"solve.eigenmodes","params":{"near":8,"count":2,"order":1}}]' > "$script"
+          "$cli" run "$script" | tail -n 5
+      - name: Pack
+        shell: bash
+        run: |
+          dir="emcraft-${{ matrix.name }}"
+          mkdir "$dir"
+          cp target/release/emcraft${{ matrix.exe }} target/release/emcraft-cli${{ matrix.exe }} LICENSE-MIT LICENSE-APACHE "$dir"/
+          ls -l "$dir"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emcraft-${{ matrix.name }}
+          path: emcraft-${{ matrix.name }}
+          if-no-files-found: error
+          retention-days: 14
