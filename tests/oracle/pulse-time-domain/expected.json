@@ -1,0 +1,59 @@
+{
+ "title": "A chirped pulse through 500 mm of WR-90 at 8 GHz (2 ns, 0.8 GHz rising): from the FEM's S21 and directly in the time domain",
+ "kind": "theory",
+ "source": "Pozar, Microwave Engineering, 4th ed., §3.3: the rectangular guide's TE10, β = √(k² − (π/a)²), v_g = c √(1 − (f_c/f)²); Agrawal, Nonlinear Fiber Optics, 5th ed., §3.2: a chirped Gaussian's spectrum; the output y(t) = ∫ A(ν) e^{−jβL} e^{j2πνt} dν evaluated independently (numerical Fourier integrals, 32 768 points over ±2.5 GHz, 1 ps output samples): ×1.5925, 1.2862 ns, group delay 2.9113 ns",
+ "quantities": [
+  {
+   "id": "compression",
+   "quantity": "the output's peak power over the input's, from the FEM's S21",
+   "measure": {
+    "step": "pulse",
+    "pointer": "/compression"
+   },
+   "value": 1.5924784560325975,
+   "tolerance": {
+    "absolute": 0.01
+   },
+   "reason": "S between 140 points 0.02 GHz apart, 4 mm second-order elements over 500 mm"
+  },
+  {
+   "id": "output_width",
+   "quantity": "the output's width at half power (ns)",
+   "measure": {
+    "step": "pulse",
+    "pointer": "/output_width"
+   },
+   "value": 1.2862270471411081,
+   "tolerance": {
+    "absolute": 0.01
+   },
+   "reason": "as the compression"
+  },
+  {
+   "id": "delay",
+   "quantity": "the group delay at 8 GHz, L/v_g (ns)",
+   "measure": {
+    "step": "pulse",
+    "pointer": "/delay"
+   },
+   "value": 2.911315101532809,
+   "tolerance": {
+    "absolute": 0.005
+   },
+   "reason": "β's slope between the sweep's points"
+  },
+  {
+   "id": "agreement",
+   "quantity": "the time domain's compression over the FEM's S21 applied to the same incident wave",
+   "measure": {
+    "step": "direct",
+    "pointer": "/predicted/agreement"
+   },
+   "value": 1.0,
+   "tolerance": {
+    "absolute": 0.03
+   },
+   "reason": "the finite-integration grid's dispersion (1 mm cells; 0.5 mm gives the same 1.76) against the FEM's, and the I/Q envelope's running means"
+  }
+ ]
+}

@@ -466,3 +466,56 @@ fn port_mode_row(m: &emcraft_solver::driven::ModeInfo, k0: f64, per_unit: f64) -
         PortModeRow { attenuation_db: Some(20.0 * LOG10_E * (-m.beta2).sqrt() * per_unit), ..row }
     }
 }
+
+/// `solve.time_domain.pulse`: a chirped Gaussian pulse launched into the guide's port 1 in the
+/// time domain and measured at port 2 — the direct check of `results.pulse`, which makes the
+/// same pulse from the S-parameters.
+pub fn time_domain_pulse(s: &mut Session, p: &Params) -> Result<Value> {
+    let f0 = p.frequency("frequency").required()?;
+    let width = p.number("width").required()?;
+    if !(width.is_finite() && width > 0.0 && width < 1e3) {
+        return Err(p.error("width", "must be a positive number of ns (below 1000)"));
+    }
+    let width = width * 1e-9;
+    let bandwidth = s.display.frequency.to_si(p.number("bandwidth").optional()?.unwrap_or(0.0));
+    if !(bandwidth.is_finite() && bandwidth.abs() < f0) {
+        return Err(p.error("bandwidth", "must be a frequency below the carrier"));
+    }
+    let cell = p.positive_length("cell").or(Length::Millimetre.to_si(1.0))?;
+    let options = emcraft_fdtd::Options::new(cell);
+    if s.model.waveguide().is_none() {
+        return Err(crate::EngineError::failed("not supported yet: a chirped pulse through anything but a waveguide (geometry.waveguide)"));
+    }
+    let run = emcraft_fdtd::chirp_through(&s.model, &options, f0, width, bandwidth / width)?;
+    let m = crate::pulse::measure(run.dt, f0, &run.incident, &run.transmitted)?;
+    let step = m.times.len().div_ceil(crate::results::PULSE_POINTS).max(1);
+    let points: Vec<Value> =
+        (0..m.times.len()).step_by(step).map(|i| json!({"t": (m.times[i] - run.t0) * 1e9, "input": m.input[i], "output": m.output[i]})).collect();
+    // The same incident wave through the solved transmission (a sweep's, when there is one):
+    // what results.pulse would make of it, beside what the time domain gave.
+    let predicted = match crate::results::sdata(s) {
+        Ok((data, source)) => {
+            let (freqs, trans): (Vec<f64>, Vec<_>) = data.curve(1, 0).unzip();
+            let mag: Vec<f64> = trans.iter().map(|c| c.norm()).collect();
+            let (out, outside) = crate::pulse::predict(run.dt, &run.incident, &freqs, &mag, &crate::pulse::unwrapped(&trans))?;
+            let q = crate::pulse::measure(run.dt, f0, &run.incident, &out)?;
+            json!({"source": source, "compression": q.compression, "output_width": q.output_width * 1e9, "delay": q.delay * 1e9, "outside": outside,
+                   "agreement": m.compression / q.compression})
+        }
+        Err(_) => Value::Null,
+    };
+    Ok(json!({
+        "frequency": s.show_frequency(f0),
+        "width": width * 1e9,
+        "bandwidth": s.show_frequency(bandwidth),
+        "predicted": predicted,
+        "compression": m.compression,
+        "input_width": m.input_width * 1e9,
+        "output_width": m.output_width * 1e9,
+        "delay": m.delay * 1e9,
+        "cells": run.cells,
+        "steps": run.incident.len(),
+        "time_unit": "ns",
+        "points": points,
+    }))
+}

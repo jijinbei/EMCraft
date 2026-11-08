@@ -626,6 +626,12 @@ fn pulse(g: &Grid, band: Band) -> Pulse {
 /// When checks may begin: once the pulse has passed and the slowest in-band wave has crossed
 /// the grid three times.
 fn first_check(g: &Grid, band: Band, pulse: Pulse) -> f64 {
+    after(g, band, pulse, 3.0)
+}
+
+/// When the pulse has passed and the slowest in-band wave has crossed the grid `crossings`
+/// times.
+fn after(g: &Grid, band: Band, pulse: Pulse, crossings: f64) -> f64 {
     let v_min = g
         .layers
         .iter()
@@ -634,7 +640,7 @@ fn first_check(g: &Grid, band: Band, pulse: Pulse) -> f64 {
             (band.f0 > fc_l).then(|| C0 / (l.slow * l.mu).sqrt() * (1.0 - (fc_l / band.f0).powi(2)).sqrt())
         })
         .fold(C0, f64::min);
-    pulse.t0 + 4.0 * pulse.tau + 3.0 * (g.z[g.nz()] - g.z[0]) / v_min
+    pulse.t0 + 4.0 * pulse.tau + crossings * (g.z[g.nz()] - g.z[0]) / v_min
 }
 
 /// The Fourier transforms of the TE₁₀ projections at the two planes, accumulated every step.
@@ -683,28 +689,45 @@ pub(crate) fn run(
     mut stop: impl FnMut(&[C], &[C]) -> bool,
 ) -> Result<(Recording, f64)> {
     let band = Band::of(freqs);
-    let sp = Spacing::new(g);
-    let dt = time_step(o.courant, sp.min());
-    check_poles(g.poles.iter().flatten(), dt)?;
-    let coef = Coefficients::new(g, &sp, lattices(g.n()), dt);
-    let cpml = ZCpml::new(g, dt, band.fc);
-    // Source and projections: the TE₁₀ profile of the planes' apertures.
-    let (src, w1, w2) = (Te10::new(g, g.layer(g.source)), Te10::new(g, g.layer(g.plane1)), Te10::new(g, g.layer(g.plane2.saturating_sub(1))));
     let pulse = pulse(g, band);
     let t_min = first_check(g, band, pulse);
+    let dt = time_step(o.courant, Spacing::new(g).min());
     let mut dft = RunningDft::<2>::new(freqs, dt);
-    let mut failed = false;
-    let mut observe = |n: usize, [v1, v2]: [f64; 2]| {
+    let steps = launch(g, o, band.fc, pulse, device, |n, [v1, v2]| {
         let t = (n + 1) as f64 * dt;
         dft.push([v1, v2]);
         let check = (n + 1).is_multiple_of(CHECK) && t > t_min;
         let [d1, d2] = dft.sums();
-        let finished = n + 1 == o.max_steps || (check && stop(d1, d2));
+        n + 1 == o.max_steps || (check && stop(d1, d2))
+    })?;
+    let [d1, d2] = dft.into_sums();
+    Ok((Recording { d1, d2, steps }, dt))
+}
+
+/// Runs `pulse` from the source (its CPML tuned at `fc`), handing `observe` each step's TE₁₀
+/// projections at the two planes until it says to finish; the steps run.
+fn launch(
+    g: &Grid,
+    o: &Options,
+    fc: f64,
+    pulse: Pulse,
+    device: Option<&dyn Stepper>,
+    mut observe: impl FnMut(usize, [f64; 2]) -> bool,
+) -> Result<usize> {
+    let sp = Spacing::new(g);
+    let dt = time_step(o.courant, sp.min());
+    check_poles(g.poles.iter().flatten(), dt)?;
+    let coef = Coefficients::new(g, &sp, lattices(g.n()), dt);
+    let cpml = ZCpml::new(g, dt, fc);
+    // Source and projections: the TE₁₀ profile of the planes' apertures.
+    let (src, w1, w2) = (Te10::new(g, g.layer(g.source)), Te10::new(g, g.layer(g.plane1)), Te10::new(g, g.layer(g.plane2.saturating_sub(1))));
+    let mut failed = false;
+    let mut each = |n: usize, [v1, v2]: [f64; 2]| {
         failed |= !(v1.is_finite() && v2.is_finite());
-        if finished || failed { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
+        if observe(n, [v1, v2]) || failed { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
     };
     let steps = match device {
-        Some(device) => device.leapfrog(&plan(g, &sp, coef, &cpml, [src, w1, w2], pulse), o.max_steps, &mut observe)?,
+        Some(device) => device.leapfrog(&plan(g, &sp, coef, &cpml, [src, w1, w2], pulse), o.max_steps, &mut each)?,
         None => {
             let fields = Fields::new(g.n());
             let psi = Psi::new(&fields);
@@ -721,13 +744,26 @@ pub(crate) fn run(
                         }
                     }
                 }
-                observe(n, [w1.project(ey, g.plane1, &sp), w2.project(ey, g.plane2, &sp)])
+                each(n, [w1.project(ey, g.plane1, &sp), w2.project(ey, g.plane2, &sp)])
             })
         }
     };
     if failed {
         return Err(invalid("run", "the fields diverged"));
     }
-    let [d1, d2] = dft.into_sums();
-    Ok((Recording { d1, d2, steps }, dt))
+    Ok(steps)
+}
+
+/// A chirped pulse's run through the guide: the TE₁₀ projections at the two planes at every
+/// step (s apart), from the pulse launched at t = 0 until it has passed and the slowest of its
+/// band has crossed the grid one and a half times.
+pub(crate) fn chirped(g: &Grid, o: &Options, band: Band, pulse: Pulse, device: Option<&dyn Stepper>) -> Result<(Vec<[f64; 2]>, f64)> {
+    let dt = time_step(o.courant, Spacing::new(g).min());
+    let end = after(g, band, pulse, 1.5);
+    let mut record = Vec::new();
+    launch(g, o, band.fc, pulse, device, |n, v| {
+        record.push(v);
+        n + 1 == o.max_steps || (n + 1) as f64 * dt > end
+    })?;
+    Ok((record, dt))
 }

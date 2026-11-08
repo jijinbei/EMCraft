@@ -344,7 +344,7 @@ pub(crate) fn sdata(s: &Session) -> Result<(crate::sdata::SData, &'static str)> 
 }
 
 /// The most points `results.pulse` lists of each envelope.
-const PULSE_POINTS: usize = 512;
+pub(crate) const PULSE_POINTS: usize = 512;
 
 /// `results.pulse`: a chirped pulse through the two-port ([`crate::pulse`]).
 pub fn pulse(s: &mut Session, p: &Params) -> Result<Value> {

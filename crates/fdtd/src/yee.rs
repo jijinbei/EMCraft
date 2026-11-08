@@ -196,12 +196,14 @@ impl Band {
     }
 }
 
-/// A Gaussian-modulated sine: e^{−((t − t₀)/τ)²} sin(2π f_c (t − t₀)).
+/// A Gaussian-modulated sine, chirped at `rate` (Hz/s; 0 for the solvers' own pulses):
+/// e^{−((t − t₀)/τ)²} sin(2π (f_c (t − t₀) + rate (t − t₀)²/2)).
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Pulse {
     pub(crate) t0: f64,
     pub(crate) tau: f64,
     pub(crate) fc: f64,
+    pub(crate) rate: f64,
 }
 
 impl Pulse {
@@ -222,12 +224,19 @@ impl Pulse {
 
     /// The pulse of width `tau` at `fc`, peaking at t₀ = 4τ.
     pub(crate) fn with_tau(tau: f64, fc: f64) -> Pulse {
-        Pulse { t0: 4.0 * tau, tau, fc }
+        Pulse { t0: 4.0 * tau, tau, fc, rate: 0.0 }
+    }
+
+    /// The pulse of full width at half power `width` (s) at `fc`, chirped at `rate`, peaking at
+    /// t₀ = 4τ (τ = width/√(2 ln 2)).
+    pub(crate) fn chirped(width: f64, fc: f64, rate: f64) -> Pulse {
+        Pulse { rate, ..Pulse::with_tau(width / (2.0 * std::f64::consts::LN_2).sqrt(), fc) }
     }
 
     #[inline]
     pub(crate) fn at(&self, t: f64) -> f64 {
-        (-((t - self.t0) / self.tau).powi(2)).exp() * (angular(self.fc) * (t - self.t0)).sin()
+        let t = t - self.t0;
+        (-(t / self.tau).powi(2)).exp() * (angular(self.fc) * t + PI * self.rate * t * t).sin()
     }
 }
 

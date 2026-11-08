@@ -602,3 +602,24 @@ fn a_sweep_again_reuses_its_system_while_the_model_is_the_same() {
     s.execute("solve.frequency", &json!({"frequencies": [7], "order": 2})).unwrap();
     assert!(!std::sync::Arc::ptr_eq(&second, &s.results.sweep.as_ref().unwrap().driven));
 }
+
+/// A pulse launched into 100 mm of WR-90 in the time domain arrives L/v_g later
+/// (v_g = c √(1 − (f_c/f)²), Pozar §3.3), unchirped and barely spread; hostile pulses are
+/// refused. (The oracle pulse-time-domain checks a chirped one against the FEM's S21.)
+#[test]
+fn a_pulse_in_the_time_domain_arrives_after_the_group_delay() {
+    let mut s = Session::new();
+    s.execute("geometry.waveguide", &json!({"width": 22.86, "height": 10.16, "sections": [{"length": 100, "material": "vacuum"}]})).unwrap();
+    let r = s.execute("solve.time_domain.pulse", &json!({"frequency": 10, "width": 1, "cell": 2})).unwrap();
+    let fc = emcraft_model::units::C0 / (2.0 * 22.86e-3);
+    let delay = 0.1 / (emcraft_model::units::C0 * (1.0 - (fc / 10e9).powi(2)).sqrt()) * 1e9;
+    let measured = r["delay"].as_f64().unwrap();
+    // Within 2 %: the grid's own dispersion on 2 mm cells (1.6 %).
+    assert!((measured - delay).abs() < 0.02 * delay, "{measured} ns against {delay} ns");
+    let c = r["compression"].as_f64().unwrap();
+    assert!(c > 0.9 && c <= 1.01, "{c}");
+    assert!(r["predicted"].is_null());
+    for bad in [json!({"frequency": 10, "width": -1}), json!({"frequency": 10, "width": 1, "bandwidth": 20}), json!({"frequency": 5, "width": 1})] {
+        assert!(s.execute("solve.time_domain.pulse", &bad).is_err(), "{bad}");
+    }
+}

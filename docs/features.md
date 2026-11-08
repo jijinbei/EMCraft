@@ -791,6 +791,17 @@ The S-parameters (port 1 excited) by the time-domain solver: finite integration 
 | `precision` | string |  | no | the fields' floating point on a GPU device: `single` or `double`, default solve.device's; the CPU's threads run in double |
 | `excite` | array |  | no | a solid's ports to excite, by name, one run each (default the first): the columns of S they give |
 
+## `solve.time_domain.pulse` — Pulse in the time domain
+
+A chirped Gaussian pulse launched into a waveguide's port 1 by the time-domain solver and measured at port 2 (both the same guide): the incident and transmitted power envelopes (the incident's peak 1, by I/Q demodulation at the carrier), their widths at half power, the compression and the delay between the peaks. The direct check of results.pulse, which makes a pulse from the S-parameters: with a solved transmission (a sweep's, say) the reply's `predicted` is the same incident wave through it, measured alike, and `agreement` the two compressions' ratio. The pulse's band, the carrier ± (|bandwidth| + 1/width), must lie above the ports' cut-off.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `frequency` | number | frequency | yes | the carrier |
+| `width` | number |  | yes | the input's width at half power, ns |
+| `bandwidth` | number | frequency | no | the band the chirp sweeps over the width, rising (> 0) or falling (< 0); default 0, no chirp |
+| `cell` | number | length | no | the cell size (default 1 mm) |
+
 ## `solve.run` — Run
 
 Runs the job's confirmed settings (project.setup) as their solve runs: solve.frequency, solve.eigenmodes, solve.radiation or solve.time_domain (its reply, with `run` naming the command and parameters). Refused until the settings are confirmed.

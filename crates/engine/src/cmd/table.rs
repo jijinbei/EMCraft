@@ -1057,6 +1057,20 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::solve::time_domain,
     },
     CommandSpec {
+        id: "solve.time_domain.pulse",
+        label: "Pulse in the time domain",
+        doc: "A chirped Gaussian pulse launched into a waveguide's port 1 by the time-domain solver and measured at port 2 (both the same guide): the incident and transmitted power envelopes (the incident's peak 1, by I/Q demodulation at the carrier), their widths at half power, the compression and the delay between the peaks. The direct check of results.pulse, which makes a pulse from the S-parameters: with a solved transmission (a sweep's, say) the reply's `predicted` is the same incident wave through it, measured alike, and `agreement` the two compressions' ratio. The pulse's band, the carrier ± (|bandwidth| + 1/width), must lie above the ports' cut-off.",
+        params: &[
+            req("frequency", K::Number, "the carrier").of(F),
+            req("width", K::Number, "the input's width at half power, ns"),
+            opt("bandwidth", K::Number, "the band the chirp sweeps over the width, rising (> 0) or falling (< 0); default 0, no chirp").of(F),
+            opt("cell", K::Number, "the cell size (default 1 mm)").of(L),
+        ],
+        effect: Effect::None,
+        invalidates: None,
+        run: crate::solve::time_domain_pulse,
+    },
+    CommandSpec {
         id: "solve.run",
         label: "Run",
         doc: "Runs the job's confirmed settings (project.setup) as their solve runs: solve.frequency, solve.eigenmodes, solve.radiation or solve.time_domain (its reply, with `run` naming the command and parameters). Refused until the settings are confirmed.",

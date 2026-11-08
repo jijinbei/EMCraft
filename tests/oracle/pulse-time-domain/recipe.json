@@ -1,0 +1,9 @@
+[
+ {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [{"length": 500, "material": "vacuum"}]}},
+ {"command": "mesh.generate", "params": {"size": 4}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start"}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end"}},
+ {"command": "solve.frequency", "params": {"start": 6.62, "stop": 9.4, "points": 140}},
+ {"command": "results.pulse", "params": {"frequency": 8, "width": 2, "bandwidth": 0.8}, "id": "pulse"},
+ {"command": "solve.time_domain.pulse", "params": {"frequency": 8, "width": 2, "bandwidth": 0.8}, "id": "direct"}
+]

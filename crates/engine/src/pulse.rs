@@ -441,6 +441,112 @@ fn instantaneous(y: &[C], dt: f64, f0: f64) -> Vec<f64> {
         .collect()
 }
 
+/// A pulse measured in the time domain: its power envelopes (the incident's peak 1) at
+/// `times` (s, from the launch), their widths at half power and the delay between their peaks.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Measured {
+    pub times: Vec<f64>,
+    pub input: Vec<f64>,
+    pub output: Vec<f64>,
+    pub input_width: f64,
+    pub output_width: f64,
+    pub compression: f64,
+    pub delay: f64,
+}
+
+/// The power envelope of a signal carried at `f0` (Hz) sampled `dt` (s) apart: the signal
+/// times 2e^{−j2πf₀t}, its double-frequency part taken out by two running means each one
+/// carrier period long (each nulls 2f₀ and its neighbours fall twice as fast), |·|².
+fn envelope(signal: &[f64], dt: f64, f0: f64) -> Vec<f64> {
+    let n = ((1.0 / (f0 * dt)).round() as usize).max(1);
+    let base: Vec<C> = signal.iter().enumerate().map(|(k, &v)| C::from_polar(2.0 * v, -2.0 * PI * f0 * k as f64 * dt)).collect();
+    let mean = |x: &[C]| -> Vec<C> {
+        let mut out = vec![C::new(0.0, 0.0); x.len()];
+        let mut sum = C::new(0.0, 0.0);
+        for k in 0..x.len() {
+            sum += x[k];
+            if k >= n {
+                sum -= x[k - n];
+            }
+            // Centred: the mean of the n samples ending at k belongs to k − n/2.
+            if let Some(o) = out.get_mut(k.saturating_sub(n / 2)) {
+                *o = sum / n as f64;
+            }
+        }
+        out
+    };
+    mean(&mean(&base)).iter().map(C::norm_sqr).collect()
+}
+
+/// The incident and transmitted signals of a time-domain run (`dt` apart, carried at `f0`)
+/// measured as pulses.
+///
+/// ```
+/// use std::f64::consts::PI;
+/// // A 2 ns pulse at 10 GHz, transmitted 3 ns later at half the amplitude.
+/// let (dt, f0) = (1e-12, 10e9);
+/// let wave = |t: f64| (-2.0 * 2f64.ln() * (t / 2e-9).powi(2)).exp() * (2.0 * PI * f0 * t).cos();
+/// let inc: Vec<f64> = (0..20000).map(|k| wave(k as f64 * dt - 5e-9)).collect();
+/// let out: Vec<f64> = (0..20000).map(|k| 0.5 * wave(k as f64 * dt - 8e-9)).collect();
+/// let m = emcraft_engine::pulse::measure(dt, f0, &inc, &out).unwrap();
+/// assert!((m.compression - 0.25).abs() < 1e-3 && (m.delay - 3e-9).abs() < 2e-12);
+/// assert!((m.input_width - 2e-9).abs() < 1e-11);
+/// assert!(emcraft_engine::pulse::measure(dt, f0, &[], &[]).is_err());
+/// ```
+pub fn measure(dt: f64, f0: f64, incident: &[f64], transmitted: &[f64]) -> Result<Measured> {
+    if !(dt > 0.0 && f0 > 0.0 && dt.is_finite() && f0.is_finite()) || incident.len() < 4 || incident.len() != transmitted.len() {
+        return Err(bad("needs two signals of the same length, at least 4 samples"));
+    }
+    let (a, b) = (envelope(incident, dt, f0), envelope(transmitted, dt, f0));
+    let peak = |y: &[f64]| y.iter().enumerate().fold((0, f64::NEG_INFINITY), |m, (k, &v)| if v > m.1 { (k, v) } else { m });
+    let ((ka, pa), (kb, pb)) = (peak(&a), peak(&b));
+    if !(pa > 0.0 && pa.is_finite() && pb.is_finite()) {
+        return Err(bad("the incident signal carries nothing at the carrier"));
+    }
+    // A peak between samples: the parabola through it and its neighbours.
+    let refine = |y: &[f64], k: usize| {
+        if k == 0 || k + 1 >= y.len() {
+            return k as f64 * dt;
+        }
+        let (l, c, r) = (y[k - 1], y[k], y[k + 1]);
+        let d = l - 2.0 * c + r;
+        (k as f64 + if d < 0.0 { 0.5 * (l - r) / d } else { 0.0 }) * dt
+    };
+    let times: Vec<f64> = (0..a.len()).map(|k| k as f64 * dt).collect();
+    let input: Vec<f64> = a.iter().map(|v| v / pa).collect();
+    let output: Vec<f64> = b.iter().map(|v| v / pa).collect();
+    Ok(Measured {
+        input_width: half_width(&times, &input),
+        output_width: half_width(&times, &output),
+        compression: pb / pa,
+        delay: refine(&b, kb) - refine(&a, ka),
+        times,
+        input,
+        output,
+    })
+}
+
+/// The signal `incident` (sampled `dt` apart from 0) through the two-port of transmission
+/// magnitude `mag` and continuous phase `phase` at `freqs` (Hz): its transform on a fine grid
+/// over the sweep's band, times S, back in time (twice the real part: the signal is real). With
+/// the share of its energy outside the band (Parseval), which the answer leaves out.
+pub fn predict(dt: f64, incident: &[f64], freqs: &[f64], mag: &[f64], phase: &[f64]) -> Result<(Vec<f64>, f64)> {
+    let line = Line::new(freqs, mag, phase)?;
+    if !(dt > 0.0 && dt.is_finite()) || incident.is_empty() || !incident.iter().all(|x| x.is_finite()) {
+        return Err(bad("needs a finite signal and a time step > 0"));
+    }
+    let (lo, hi) = line.band();
+    let df = (hi - lo) / (GRID - 1) as f64;
+    let x: Vec<C> = incident.iter().map(|&v| C::new(v, 0.0)).collect();
+    let spectrum: Vec<C> = (0..GRID).map(|i| lo + i as f64 * df).map(|f| evenly(&x, 0.0, dt, -f) * dt).collect();
+    let total: f64 = incident.iter().map(|v| v * v).sum::<f64>() * dt;
+    let inside = 2.0 * spectrum.iter().map(C::norm_sqr).sum::<f64>() * df;
+    let outside = if total > 0.0 { (1.0 - inside / total).max(0.0) } else { 1.0 };
+    let through: Vec<C> = spectrum.iter().enumerate().map(|(i, a)| sample(freqs, mag, phase, lo + i as f64 * df).unwrap_or_default() * a).collect();
+    let out = (0..incident.len()).map(|k| 2.0 * (evenly(&through, lo, df, k as f64 * dt) * df).re).collect();
+    Ok((out, outside))
+}
+
 /// The most passes each golden-section search of [`optimize`] makes.
 const SEARCH_STEPS: usize = 24;
 

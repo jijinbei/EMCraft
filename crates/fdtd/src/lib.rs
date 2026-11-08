@@ -256,8 +256,9 @@ pub fn s_parameters(model: &Model, o: &Options, frequencies: &[f64]) -> Result<T
     s_parameters_with(model, o, frequencies, None)
 }
 
-/// [`s_parameters`] with the leapfrog on `device` (the CPU's threads when `None`).
-pub fn s_parameters_with(model: &Model, o: &Options, frequencies: &[f64], device: Option<&dyn Stepper>) -> Result<TdResult> {
+/// The guide's two ports, checked for a run at `frequencies` (each above both ports' TE₁₀
+/// cut-off), and the losses matched at the band's centre.
+fn ports(model: &Model, o: &Options, frequencies: &[f64]) -> Result<(PortGuide, PortGuide, Losses)> {
     o.validate()?;
     if !frequencies_ok(frequencies) {
         return Err(invalid("frequencies", "must be finite numbers > 0"));
@@ -283,6 +284,13 @@ pub fn s_parameters_with(model: &Model, o: &Options, frequencies: &[f64], device
         }
     };
     let (p1, p2) = (port(0)?, port(w.sections.len().saturating_sub(1))?);
+    Ok((p1, p2, losses))
+}
+
+/// [`s_parameters`] with the leapfrog on `device` (the CPU's threads when `None`).
+pub fn s_parameters_with(model: &Model, o: &Options, frequencies: &[f64], device: Option<&dyn Stepper>) -> Result<TdResult> {
+    let (p1, p2, losses) = ports(model, o, frequencies)?;
+    let below = |f: f64| invalid("frequency", format!("{f} Hz is below a port's TE10 cut-off"));
     // The incident run: the port-1 guide throughout.
     let gr = Grid::new(model, o, true, frequencies)?;
     let mut settling = Settling::new(o.decay);
@@ -318,6 +326,50 @@ pub fn s_parameters_with(model: &Model, o: &Options, frequencies: &[f64], device
         reference_steps: reference.steps,
         converged,
         loss_reference: losses.reference,
+    })
+}
+
+/// A chirped pulse's run through the guide: the TE₁₀ projections (V·m) of the wave launched
+/// at port 1 (its plane in a run of the port-1 guide throughout) and of the wave out of port 2,
+/// `dt` (s) apart from the pulse's launch, its peak at `t0` (s).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChirpRun {
+    pub dt: f64,
+    pub t0: f64,
+    pub incident: Vec<f64>,
+    pub transmitted: Vec<f64>,
+    pub cells: usize,
+}
+
+/// A Gaussian pulse of full width at half power `width` (s) at `f0` (Hz), chirped at `rate`
+/// (Hz/s), through the model's guide in the time domain: the direct check of a pulse made from
+/// the S-parameters (both ports must be the same guide, whose wave the projections compare).
+/// Its band, f₀ ± (|rate| width + 1/width) (the Gaussian's spectrum 10⁻⁶ down past the
+/// sweep), must lie above the ports' cut-off.
+pub fn chirp_through(model: &Model, o: &Options, f0: f64, width: f64, rate: f64) -> Result<ChirpRun> {
+    if !(f0.is_finite() && f0 > 0.0 && width.is_finite() && width > 0.0 && rate.is_finite()) {
+        return Err(invalid("pulse", "the carrier and width must be positive and the chirp finite"));
+    }
+    let half = rate.abs() * width + 1.0 / width;
+    if !(half < f0) {
+        return Err(invalid("pulse", "its band reaches 0 Hz: lengthen it or chirp less"));
+    }
+    let band = [f0 - half, f0, f0 + half];
+    let (p1, p2, _) = ports(model, o, &band)?;
+    if p1.width != p2.width || p1.height != p2.height || p1.material != p2.material {
+        return Err(FdtdError::Unsupported("a chirped pulse between ports of different guides".into()));
+    }
+    let pulse = yee::Pulse::chirped(width, f0, rate);
+    let reference = Grid::new(model, o, true, &band)?;
+    let (incident, dt) = guide::chirped(&reference, o, yee::Band::of(&band), pulse, None)?;
+    let g = Grid::new(model, o, false, &band)?;
+    let (through, _) = guide::chirped(&g, o, yee::Band::of(&band), pulse, None)?;
+    Ok(ChirpRun {
+        dt,
+        t0: pulse.t0,
+        incident: incident.iter().map(|v| v[0]).collect(),
+        transmitted: through.iter().map(|v| v[1]).collect(),
+        cells: g.cells(),
     })
 }
 
