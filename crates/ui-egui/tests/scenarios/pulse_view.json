@@ -10,7 +10,7 @@
   {"call": "engine.execute", "params": {"command": "results.pulse", "params": {"frequency": 12.5, "width": 4, "length": 1000, "chirp": "linear", "bandwidth": 1}}},
   {"until": {"busy": false}},
   {"frames": 3},
-  {"expect": {"view": "pulse", "handles": ["chart:pulse", "pulse:run", "pulse:chirp:optimized", "pulse:show:frequency", "pulse:length"]}},
+  {"expect": {"view": "pulse", "handles": ["chart:pulse", "pulse:run", "pulse:chirp:optimized", "pulse:show:frequency", "pulse:length", "row:result:revolution", "row:result:pulse"]}},
   {"shot": "pulse-power"},
   {"click": "pulse:show:frequency"},
   {"frames": 3},

@@ -752,6 +752,13 @@ fn results(app: &EmcraftApp) -> Vec<Row> {
         let detail = words(t!("{n} modes"), args!(n = e.modes.len()));
         rows.push(node("result:eigenmodes", name(t!("Eigenmodes")), Some(detail), Glyph::Eigen, Act::Show(View::Eigenmodes)));
     }
+    if let Some(rev) = &r.revolution {
+        let detail = words(t!("m = {m} · {n} frequencies"), args!(m = rev.m, n = rev.data.frequencies().len()));
+        rows.push(node("result:revolution", name(t!("Body of revolution")), Some(detail), Glyph::Chart, Act::Show(View::SParameters)));
+        if rev.bloch.is_some() {
+            rows.push(node("result:pulse", name(t!("Pulse")), None, Glyph::KindPulse, Act::Show(View::Pulse)).under());
+        }
+    }
     if let Some(d) = &r.dispersion {
         let detail = words(t!("{n} phases"), args!(n = d.points.len()));
         rows.push(node("result:dispersion", name(t!("Dispersion")), Some(detail), Glyph::Dispersion, Act::Show(View::Dispersion)));
