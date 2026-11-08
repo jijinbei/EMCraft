@@ -26,7 +26,10 @@
 //! The matched chirp follows the delay itself: its instantaneous frequency f(t) is the one that
 //! leaves at t and arrives with all the others, t + s (τ(f) − τ(f₀)) = 0 (stationary phase: each
 //! frequency spends τ(f) in the line), on the monotonic stretch of τ about f₀, held at its ends
-//! past it; s = 1 is the stationary-phase answer and the search tries others. Its spectrum is
+//! past it; s = 1 is the stationary-phase answer and the search tries others. Where it is held
+//! the envelope falls away (within a tenth of the stretch's times): a held frequency arrives all
+//! at once, late, and what the Gaussian still carried there would trail the peak as a tail (a
+//! guide whose delay turns back below a stop band). Its spectrum is
 //! the envelope's transform, taken numerically. [`optimize`] picks, for a given carrier and
 //! width, the linear rate and the matched chirp's s that peak the output highest (golden-section
 //! searches, each bounded), and returns the better of the two.
@@ -240,8 +243,9 @@ impl<'a> Line<'a> {
     }
 
     /// The matched chirp's frequency at each of `times`: the f with t = −s (τ(f) − τ(f₀)) on
-    /// the monotonic stretch of τ about f₀, held at the stretch's ends past it.
-    fn matched(&self, f0: f64, scale: f64, times: &[f64]) -> Vec<f64> {
+    /// the monotonic stretch of τ about f₀, held at the stretch's ends past it; with the times
+    /// the stretch spans.
+    fn matched(&self, f0: f64, scale: f64, times: &[f64]) -> (Vec<f64>, (f64, f64)) {
         let (freqs, tau) = (self.freqs, &self.tau);
         let (tau0, slope) = self.delay_at(f0);
         let k = freqs.partition_point(|x| *x <= f0).clamp(1, freqs.len() - 1);
@@ -259,7 +263,8 @@ impl<'a> Line<'a> {
         let mut table: Vec<(f64, f64)> = (lo..=hi).map(|i| (-scale * (tau[i] - tau0), freqs[i])).collect();
         table.sort_by(|a, b| a.0.total_cmp(&b.0));
         table.dedup_by(|a, b| a.0 == b.0);
-        times
+        let span = (table.first().map_or(0.0, |x| x.0), table.last().map_or(0.0, |x| x.0));
+        let f = times
             .iter()
             .map(|&t| {
                 let j = table.partition_point(|x| x.0 <= t);
@@ -272,9 +277,14 @@ impl<'a> Line<'a> {
                     }
                 }
             })
-            .collect()
+            .collect();
+        (f, span)
     }
 }
+
+/// Past its stretch the matched chirp's envelope falls as e^{−(d/e)²}, d how far past and
+/// e this share of the stretch's times.
+const EDGE: f64 = 0.1;
 
 /// The samples of the matched chirp's envelope taken for its transform, either side of the
 /// peak out to three widths.
@@ -399,7 +409,12 @@ fn evenly(x: &[C], x0: f64, dx: f64, y: f64) -> C {
 /// The matched chirp's envelope at `times`: the Gaussian with the phase 2π ∫ (f(t′) − f₀) dt′
 /// from the peak (t = 0), f the matched frequency.
 fn matched_envelope(line: &Line, f0: f64, width: f64, scale: f64, times: &[f64]) -> Vec<C> {
-    let f = line.matched(f0, scale, times);
+    let (f, (lo, hi)) = line.matched(f0, scale, times);
+    let edge = (EDGE * (hi - lo)).max(f64::MIN_POSITIVE);
+    let taper = |t: f64| {
+        let out = (lo - t).max(t - hi).max(0.0) / edge;
+        (-out * out).exp()
+    };
     // The phase by the trapezoidal rule along the times, then shifted to be 0 at t = 0.
     let mut psi = vec![0.0; times.len()];
     for i in 1..times.len() {
@@ -407,7 +422,7 @@ fn matched_envelope(line: &Line, f0: f64, width: f64, scale: f64, times: &[f64])
     }
     let k = times.partition_point(|t| *t < 0.0).min(times.len().saturating_sub(1));
     let zero = psi.get(k).copied().unwrap_or(0.0);
-    times.iter().zip(&psi).map(|(&t, &p)| C::from_polar(gauss(width, t), p - zero)).collect()
+    times.iter().zip(&psi).map(|(&t, &p)| C::from_polar(gauss(width, t) * taper(t), p - zero)).collect()
 }
 
 /// f₀ + (1/2π) d arg(y)/dt at each sample (central differences of the phase between
@@ -531,6 +546,24 @@ mod tests {
         let exact = through_phase(&freqs, &mag, &straight, Chirp { f0, width, rate: -1.0 / d }).map_or(0.0, |p| p.compression());
         let (_, q) = optimize(&freqs, &mag, &straight, f0, width).unwrap_or_else(|e| panic!("{e}"));
         assert!(q.compression() > 0.97 * exact, "{} against {exact}", q.compression());
+    }
+
+    #[test]
+    fn a_delay_that_turns_back_leaves_no_tail_behind_the_matched_pulse() {
+        // τ = τ₀ + a (ν − ν_m)²: falling below ν_m, rising above it; the carrier above.
+        let (f0, tau0, a, nu_m) = (10e9, 5e-9, 2e-26, -0.3e9);
+        let freqs: Vec<f64> = (0..=2000).map(|k| 9e9 + k as f64 * 1e6).collect();
+        let phase: Vec<f64> =
+            freqs.iter().map(|&f| f - f0).map(|nu| -2.0 * PI * (tau0 * nu + a * ((nu - nu_m).powi(3) - (-nu_m).powi(3)) / 3.0)).collect();
+        let mag = vec![1.0; freqs.len()];
+        let p = through_phase(&freqs, &mag, &phase, Input { f0, width: 20e-9, law: Law::Matched { scale: 1.0 } }).unwrap_or_else(|e| panic!("{e}"));
+        // Its energy within 1.5 widths of the peak.
+        let near = |p: &Pulse| {
+            let all: f64 = p.output.iter().sum();
+            let at: f64 = p.times.iter().zip(&p.output).filter(|(t, _)| (*t - p.output_time).abs() <= 1.5 * p.output_width).map(|(_, y)| y).sum();
+            at / all
+        };
+        assert!(p.compression() > 3.0 && near(&p) > 0.8, "×{} with {} near the peak", p.compression(), near(&p));
     }
 
     #[test]

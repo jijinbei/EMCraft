@@ -280,7 +280,7 @@ pub const TEMPLATES: &[Template] = &[
     },
     Template {
         name: "pulse-compressor",
-        label: "Pulse compressor: one 16 mm cell of a circular guide (radius 12 mm) whose wall waves about its axis, r0 + h sin(2πz/p), a SolidCraft design revolved; its TE11 Bloch wave on the half-plane (solve.revolution.bloch) and a 20 ns chirped pulse through 3 m of it, the chirp matched to the group delay: compressed about ×9",
+        label: "Pulse compressor: one 16 mm cell of a circular guide (radius 12 mm) whose wall waves about its axis, r0 + h sin(2πz/p), a SolidCraft design revolved; its TE11 Bloch wave on the half-plane (solve.revolution.bloch) and a 20 ns chirped pulse through 3 m of it, the chirp matched to the group delay: compressed about ×8, its tail cut",
         script: include_str!("../scripts/pulse-compressor.json"),
         marks: "{}",
         kinds: &[Analysis::Frequency],
