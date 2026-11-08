@@ -122,7 +122,7 @@ impl View {
             View::Model | View::Pcb | View::PortModes | View::Compare => None,
             View::SParameters => Some(t!("No S-parameters yet: Run (step 6).")),
             View::Tdr => Some(t!("No sweep yet: Run (step 6) (a harmonic sweep, f = k Δf, for low pass).")),
-            View::Pulse => Some(t!("No sweep yet: Run (step 6), or a cell's Bloch wave (solve.revolution.bloch).")),
+            View::Pulse => Some(t!("No sweep yet: Run (step 6), or a cell's Bloch wave (solve.bloch, solve.revolution.bloch).")),
             View::Field => Some(t!("No fields yet: solve a sweep, eigenmodes or an open problem first.")),
             View::FarField => Some(t!("No far field yet: Run (step 6) on an open model with sources or lumped ports.")),
             View::Eigenmodes => Some(t!("No eigenmodes yet: Run (step 6).")),
@@ -151,6 +151,7 @@ impl View {
             R::Radiation | R::TdRadiation => View::FarField,
             R::Dispersion => View::Dispersion,
             R::Study => View::Study,
+            R::Bloch => View::Pulse,
         }
     }
 

@@ -101,7 +101,7 @@ pub fn revolution_frequency(s: &mut Session, p: &Params) -> Result<Value> {
     }
     // Kept as the session's result: its charts, its pulse (`results.pulse`), its file.
     let data = crate::sdata::SData::square(freqs.clone(), n, values).map_err(EngineError::failed)?;
-    s.results.revolution = Some(std::sync::Arc::new(crate::Revolution { m, modes: names.clone(), data, unknowns, bloch: None }));
+    s.results.revolution = Some(std::sync::Arc::new(crate::Revolution { m, modes: names.clone(), data, unknowns }));
     Ok(json!({"m": m, "modes": names, "points": rows, "triangles": profile.triangles.len(), "unknowns": unknowns}))
 }
 
@@ -156,7 +156,9 @@ pub fn revolution_bloch(s: &mut Session, p: &Params) -> Result<Value> {
         unknowns = point.unknowns;
     }
     let data = crate::sdata::SData::square(freqs.clone(), 2, values).map_err(EngineError::failed)?;
-    s.results.revolution = Some(std::sync::Arc::new(crate::Revolution { m, modes: names.clone(), data, unknowns, bloch: Some((period, gammas)) }));
+    s.results.revolution = Some(std::sync::Arc::new(crate::Revolution { m, modes: names.clone(), data, unknowns }));
+    let wave = crate::BlochWave { name: format!("m = {m}"), gamma: gammas };
+    s.results.bloch = Some(std::sync::Arc::new(crate::Bloch { period, frequencies: freqs, waves: vec![wave] }));
     Ok(json!({"m": m, "period": s.show_length(period), "modes": names, "points": rows, "triangles": profile.triangles.len(), "unknowns": unknowns}))
 }
 

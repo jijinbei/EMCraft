@@ -1,0 +1,11 @@
+[
+ {"command": "project.variable", "params": {"name": "r0", "label": "guide radius", "value": 14, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "h", "label": "corrugation depth", "value": 1.5, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "p", "label": "helix period", "value": 36, "quantity": "length"}},
+ {"command": "geometry.import", "params": {"path": "template:helical-cell.solidcraft", "parameters": {"r0": "=r0", "h": "=h", "p": "=p"}, "materials": {"guide": "interior"}}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 6}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 6}},
+ {"command": "mesh.generate", "params": {"size": 4}},
+ {"command": "solve.bloch", "params": {"start": 9, "stop": 11, "points": 9, "waves": 3}},
+ {"command": "results.pulse", "params": {"frequency": 9.9, "width": 12, "length": 3000, "wave": 3, "chirp": "optimized"}}
+]

@@ -92,6 +92,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("solve.frequency", Some(t!("Frequency sweep").en()), Some(Glyph::Sweep), true),
     ui("solve.refine", Some(t!("Refine sweep").en()), Some(Glyph::Sweep), true),
     ui("solve.time_domain", Some(t!("Time domain").en()), Some(Glyph::Time), true),
+    ui("solve.bloch", None, Some(Glyph::Periodic), true),
     ui("solve.time_domain.pulse", None, Some(Glyph::KindPulse), true),
     ui("solve.run", None, None, true),
     ui("solve.rerun", None, None, true),

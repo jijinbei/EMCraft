@@ -755,9 +755,11 @@ fn results(app: &EmcraftApp) -> Vec<Row> {
     if let Some(rev) = &r.revolution {
         let detail = words(t!("m = {m} · {n} frequencies"), args!(m = rev.m, n = rev.data.frequencies().len()));
         rows.push(node("result:revolution", name(t!("Body of revolution")), Some(detail), Glyph::Chart, Act::Show(View::SParameters)));
-        if rev.bloch.is_some() {
-            rows.push(node("result:pulse", name(t!("Pulse")), None, Glyph::KindPulse, Act::Show(View::Pulse)).under());
-        }
+    }
+    if let Some(b) = &r.bloch {
+        let detail = words(t!("{n} waves · {frequencies} frequencies"), args!(n = b.waves.len(), frequencies = b.frequencies.len()));
+        rows.push(node("result:bloch", name(t!("Bloch waves")), Some(detail), Glyph::Periodic, Act::Show(View::Pulse)));
+        rows.push(node("result:pulse", name(t!("Pulse")), None, Glyph::KindPulse, Act::Show(View::Pulse)).under());
     }
     if let Some(d) = &r.dispersion {
         let detail = words(t!("{n} phases"), args!(n = d.points.len()));

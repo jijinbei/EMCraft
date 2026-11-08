@@ -366,6 +366,8 @@ pub enum Handle<'a> {
     TdrMode(&'a str),
     PulseChirp(&'a str),
     PulseShow(&'a str),
+    /// Which of a cell's Bloch waves the pulse goes through (from 1): `pulse:wave:2`.
+    PulseWave(usize),
     /// What the S-parameter chart shows: `sparameters:show:phase`.
     SParameters(&'a str),
     /// A chart style's axis field (`label`, `min`, `max`, `log`): `chart:style:x:min`.
@@ -466,6 +468,7 @@ impl fmt::Display for Handle<'_> {
             Handle::StudyAt(name, i) => write!(f, "study:at:{name}:{i}"),
             Handle::TdrMode(mode) => write!(f, "tdr:mode:{mode}"),
             Handle::PulseChirp(c) => write!(f, "pulse:chirp:{c}"),
+            Handle::PulseWave(k) => write!(f, "pulse:wave:{k}"),
             Handle::PulseShow(s) => write!(f, "pulse:show:{s}"),
             Handle::SParameters(what) => write!(f, "sparameters:show:{what}"),
             Handle::StyleAxis(axis, part) => write!(f, "chart:style:{axis}:{part}"),

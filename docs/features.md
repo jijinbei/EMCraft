@@ -791,6 +791,19 @@ The S-parameters (port 1 excited) by the time-domain solver: finite integration 
 | `precision` | string |  | no | the fields' floating point on a GPU device: `single` or `double`, default solve.device's; the CPU's threads run in double |
 | `excite` | array |  | no | a solid's ports to excite, by name, one run each (default the first): the columns of S they give |
 
+## `solve.bloch` — Bloch waves of a cell
+
+The model as one cell of a periodic guide solved in 3D (its two waveguide ports on its two ends, one period apart along z, the same guide on both — a helically corrugated guide, say): at each frequency its generalized scattering matrix between every mode of both ports, the far port's modes written in the near port's basis (their fields compared on the faces), and the transfer matrix's eigenvalues e^{−γp} (Collin §9.2): the first `waves` waves going +z at the first frequency (the propagating ones by ascending β, then the decaying ones by ascending α), each followed along the sweep (its near-end amplitudes most nearly parallel to its last), γ = α + jβ, β continued from its strongest mode's. Kept as the session's Bloch waves: results.pulse takes one (`wave`) over any `length`. The ports' `modes` set how many modes carry the coupling between cells (whole degenerate pairs). The model is left as it is.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `frequencies` | array | frequency | no | the frequencies |
+| `start` | number | frequency | no | first frequency |
+| `stop` | number | frequency | no | last frequency |
+| `points` | integer |  | no | frequencies from start to stop (default 101) |
+| `order` | integer |  | no | element order: 1 (Whitney) or 2 (default) |
+| `waves` | integer |  | no | how many waves to follow, 1 to 16 (default 4) |
+
 ## `solve.time_domain.pulse` — Pulse in the time domain
 
 A chirped Gaussian pulse launched into a waveguide's port 1 by the time-domain solver and measured at port 2 (both the same guide): the incident and transmitted power envelopes (the incident's peak 1, by I/Q demodulation at the carrier), their widths at half power, the compression and the delay between the peaks. The direct check of results.pulse, which makes a pulse from the S-parameters: with a solved transmission (a sweep's, say) the reply's `predicted` is the same incident wave through it, measured alike, and `agreement` the two compressions' ratio. The pulse's band, the carrier ± (|bandwidth| + 1/width), must lie above the ports' cut-off.
@@ -1110,9 +1123,10 @@ A chirped Gaussian pulse through the solved two-port: its transmission S(f) from
 | `frequency` | number | frequency | no | the carrier (default the sweep's middle) |
 | `width` | number |  | yes | the input's width at half power, ns |
 | `bandwidth` | number | frequency | no | the band the chirp sweeps over the width, rising (> 0) or falling (< 0); 0: no chirp; left out: the chirp that compresses best |
-| `length` | number | length | no | a periodic guide this long, from its cell's Bloch wave (solve.revolution.bloch): S = e^{−γ length}, the ends' reflections left out |
+| `length` | number | length | no | a periodic guide this long, from its cell's Bloch wave (solve.bloch, solve.revolution.bloch): S = e^{−γ length}, the ends' reflections left out |
 | `chirp` | string |  | no | `none`, `linear` (by `bandwidth`, else the best, −1/D), `matched` (its frequency following the line's group delay, scaled by `scale`) or `optimized` (the better of the best linear and the best matched; the default without `bandwidth`) |
 | `scale` | number |  | no | the matched chirp's scale on the group delay, 0 to 10 (default 1: stationary phase) |
+| `wave` | integer |  | no | with `length`: which of the cell's Bloch waves, from 1 (default 1) |
 
 ## `view.tdr` — TDR PNG
 

@@ -12,7 +12,7 @@ use crate::{EmcraftApp, View, files, status, steps};
 pub(crate) fn results_view(session: &emcraft_engine::Session) -> View {
     let results = session.results();
     // A periodic cell's project with a pulse of its own (the pulse compressor): its pulse.
-    if session.views().pulse.is_some() && results.revolution.as_ref().is_some_and(|r| r.bloch.is_some()) {
+    if session.views().pulse.is_some() && results.bloch.is_some() {
         return View::Pulse;
     }
     let chosen = emcraft_engine::workflow::spec(session.model().analysis()).results.iter().copied().find(|k| results.has(*k));

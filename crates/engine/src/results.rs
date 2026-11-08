@@ -363,6 +363,9 @@ pub fn pulse(s: &mut Session, p: &Params) -> Result<Value> {
     if let Some(c) = p.string("chirp").optional()? {
         kept.insert("chirp".into(), json!(c));
     }
+    if let Some(w) = p.integer("wave", 1..=64).optional()? {
+        kept.insert("wave".into(), json!(w));
+    }
     s.views.pulse = Some(Value::Object(kept));
     Ok(reply)
 }
@@ -370,12 +373,14 @@ pub fn pulse(s: &mut Session, p: &Params) -> Result<Value> {
 fn pulse_of(s: &Session, p: &Params) -> Result<Value> {
     // A periodic guide `length` long from its cell's Bloch wave, else the solved two-port.
     if let Some(length) = p.positive_length("length").optional()? {
-        let b = s.results.revolution.as_ref().and_then(|r| r.bloch.as_ref().map(|(_, g)| (r.data.frequencies().to_vec(), g.clone())));
-        let (freqs, gammas) = b.ok_or(EngineError::NotSolved { what: "Bloch wave", run: "solve.revolution.bloch" })?;
+        let b = s.results.bloch.as_ref().ok_or(EngineError::NotSolved { what: "Bloch wave", run: "solve.bloch or solve.revolution.bloch" })?;
+        let k = p.integer("wave", 1..=b.waves.len().max(1)).or(1)? - 1;
+        let wave = b.waves.get(k).ok_or_else(|| EngineError::failed("the cell has no Bloch wave"))?;
+        let (freqs, gammas) = (&b.frequencies, &wave.gamma);
         // e^{−γL}: its magnitude and its phase −βL as they are, continuous (β is).
         let mag: Vec<f64> = gammas.iter().map(|g| (-g.re * length).exp()).collect();
         let phase: Vec<f64> = gammas.iter().map(|g| -g.im * length).collect();
-        return pulse_reply(s, p, &freqs, &mag, &phase, "bloch", "1".into(), "2".into());
+        return pulse_reply(s, p, freqs, &mag, &phase, "bloch", "1".into(), "2".into());
     }
     let (data, source) = sdata(s)?;
     let entries = s.sparameter_entries();

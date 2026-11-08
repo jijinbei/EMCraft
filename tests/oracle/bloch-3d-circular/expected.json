@@ -1,0 +1,59 @@
+{
+ "title": "A straight cell of circular guide (radius 10 mm, 16 mm long) solved in 3D: its Bloch waves are the guide's own TE11 and TM01",
+ "kind": "theory",
+ "source": "Pozar, Microwave Engineering, 4th ed., §3.4: the circular guide's TE11 and TM01, β = √(k² − (x/a)²) with x′₁₁ = 1.84118, x₀₁ = 2.40483; below cut-off the decay √((x/a)² − k²)",
+ "quantities": [
+  {
+   "id": "te11_11",
+   "quantity": "TE11's Bloch β at 11 GHz, the first polarization (rad/m)",
+   "measure": {
+    "step": "bloch",
+    "pointer": "/waves/0/points/0/beta"
+   },
+   "value": 138.74608369738166,
+   "tolerance": {
+    "absolute": 0.5
+   },
+   "reason": "2 mm second-order tetrahedra, the circle's facets"
+  },
+  {
+   "id": "te11_13",
+   "quantity": "TE11's Bloch β at 13 GHz, the second polarization (rad/m)",
+   "measure": {
+    "step": "bloch",
+    "pointer": "/waves/1/points/1/beta"
+   },
+   "value": 200.83524155474092,
+   "tolerance": {
+    "absolute": 0.5
+   },
+   "reason": "as at 11 GHz"
+  },
+  {
+   "id": "tm01_decay",
+   "quantity": "TM01's decay below its cut-off, at 11 GHz (1/m)",
+   "measure": {
+    "step": "bloch",
+    "pointer": "/waves/2/points/0/alpha"
+   },
+   "value": 68.4237292274262,
+   "tolerance": {
+    "absolute": 0.7
+   },
+   "reason": "as at 11 GHz"
+  },
+  {
+   "id": "tm01_13",
+   "quantity": "TM01's Bloch β at 13 GHz (rad/m)",
+   "measure": {
+    "step": "bloch",
+    "pointer": "/waves/2/points/1/beta"
+   },
+   "value": 128.072291256158,
+   "tolerance": {
+    "absolute": 0.7
+   },
+   "reason": "as at 11 GHz"
+  }
+ ]
+}

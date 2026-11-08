@@ -623,3 +623,40 @@ fn a_pulse_in_the_time_domain_arrives_after_the_group_delay() {
         assert!(s.execute("solve.time_domain.pulse", &bad).is_err(), "{bad}");
     }
 }
+
+/// A straight cell of circular guide solved in 3D (`solve.bloch`): its Bloch waves are the guide's
+/// own TE11 (both polarizations) and TM01, β = √(k² − (x/a)²) (Pozar §3.4), and below TM01's
+/// cut-off its decay √((x₀₁/a)² − k²). One period on the far port the same guide's modes in
+/// their own basis (written in the near port's).
+#[test]
+fn a_straight_cells_bloch_waves_in_3d_are_the_guides_own() {
+    let mut s = Session::new();
+    for (c, p) in [
+        ("geometry.solid", json!({"shape": "cylinder", "radius": 10, "length": 16})),
+        ("model.port.create", json!({"name": "1", "end": "start", "modes": 4})),
+        ("model.port.create", json!({"name": "2", "end": "end", "modes": 4})),
+        ("mesh.generate", json!({"size": 3})),
+    ] {
+        s.execute(c, &p).unwrap();
+    }
+    let r = s.execute("solve.bloch", &json!({"frequencies": [11, 12, 13, 14], "waves": 3})).unwrap();
+    let k = |f: f64| 2.0 * std::f64::consts::PI * f * 1e9 / emcraft_model::units::C0;
+    let te11 = |f: f64| (k(f).powi(2) - (1.841_183_781 / 0.01f64).powi(2)).sqrt();
+    let tm01 = |f: f64| (2.404_825_558f64 / 0.01).powi(2) - k(f).powi(2);
+    let waves = r["waves"].as_array().unwrap();
+    let at = |w: usize, i: usize, key: &str| waves[w]["points"][i][key].as_f64().unwrap();
+    for w in 0..2 {
+        for (i, f) in [11.0, 12.0, 13.0, 14.0].into_iter().enumerate() {
+            assert!((at(w, i, "beta") - te11(f)).abs() < 0.005 * te11(f), "wave {w} at {f}: {} against {}", at(w, i, "beta"), te11(f));
+        }
+    }
+    // The third: TM01, evanescent at 11 GHz, propagating at 13.
+    assert!((at(2, 0, "alpha") - tm01(11.0).sqrt()).abs() < 0.01 * tm01(11.0).sqrt(), "{}", at(2, 0, "alpha"));
+    assert!((at(2, 2, "beta") - (-tm01(13.0)).sqrt()).abs() < 0.01 * (-tm01(13.0)).sqrt(), "{}", at(2, 2, "beta"));
+    let b = s.results.bloch.as_ref().unwrap();
+    assert!((b.period - 0.016).abs() < 1e-12 && b.waves.len() == 3);
+    // A pulse rides the second wave over a metre.
+    let p = s.execute("results.pulse", &json!({"frequency": 12.5, "width": 4, "length": 1000, "wave": 2, "chirp": "none"})).unwrap();
+    assert!(p["delay"].as_f64().unwrap() > 3.0, "{}", p["delay"]);
+    assert!(s.execute("results.pulse", &json!({"frequency": 12, "width": 2, "length": 1000, "wave": 4})).is_err());
+}

@@ -31,6 +31,7 @@ const _TRANSLATIONS: &[u8] = include_bytes!("../../../locales/ja.json");
 mod adapt;
 pub mod archive;
 mod args;
+pub mod bloch_cell;
 pub mod bodies;
 mod cmd;
 mod elements;
@@ -78,7 +79,7 @@ pub use reply::Wave;
 pub use results::{ComparePoint, Comparison};
 pub use script::Step;
 pub use sdata::SData;
-pub use session::{Change, Limits, ResultKind, Results, Revolution, Session, Sweep};
+pub use session::{Bloch, BlochWave, Change, Limits, ResultKind, Results, Revolution, Session, Sweep};
 pub use solve::{Compute, Device, LinearSolver, PortModeList, PortModeRow, PortModes};
 pub use view::field_view;
 

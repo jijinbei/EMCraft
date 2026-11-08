@@ -12,12 +12,14 @@
     "Matched": "整合",
     "No chirp": "チャープなし",
     "None": "なし",
-    "No sweep yet: Run (step 6), or a cell's Bloch wave (solve.revolution.bloch).": "掃引はまだありません：実行（ステップ 6）、またはセルのブロッホ波（solve.revolution.bloch）。",
+    "No sweep yet: Run (step 6), or a cell's Bloch wave (solve.bloch, solve.revolution.bloch).": "掃引はまだありません：実行（ステップ 6）、またはセルのブロッホ波（solve.bloch、solve.revolution.bloch）。",
     "Optimized": "最適化",
     "Power": "電力",
     "The band the chirp sweeps: rising > 0, falling < 0": "チャープが掃く帯域：上昇は > 0、下降は < 0",
     "The better of the best linear and the best matched chirp": "最良の直線チャープと最良の整合チャープのうち良い方",
     "width": "幅",
+    "wave": "波",
+    "waves": "波の数",
     "bandwidth": "帯域",
     "Hide earlier messages": "以前のメッセージを隠す",
     "Earlier messages": "以前のメッセージ",
@@ -100,6 +102,7 @@
     "Bodies": "物体",
     "Body": "物体",
     "Body material": "物体の材料",
+    "Bloch waves": "ブロッホ波",
     "Body of revolution": "回転体",
     "Boolean": "ブール演算",
     "Boundaries": "境界",
@@ -820,6 +823,7 @@
     "{n} commands that rebuild the model": "モデルを再構築する {n} 個のコマンド",
     "{n} d ago": "{n} 日前",
     "m = {m} · {n} frequencies": "m = {m} · {n} 周波数",
+    "{n} waves · {frequencies} frequencies": "{n} 波 · {frequencies} 周波数",
     "{n} frequencies": "{n} 周波数",
     "{n} h ago": "{n} 時間前",
     "{n} min ago": "{n} 分前",
@@ -1448,6 +1452,18 @@
         "size": "三角形の大きさ"
       }
     },
+    "solve.bloch": {
+      "label": "セルのブロッホ波（3D）",
+      "doc": "モデルを周期導波管の 1 セルとして 3D で解く（両端に導波管ポート、z 方向に 1 周期離れ、両端は同じ導波管——たとえば螺旋状に波打つ導波管）：各周波数で両ポートの全モード間の一般化散乱行列を求め、遠端ポートのモードを近端ポートの基底で表し（面上で界を比べる）、伝達行列の固有値 e^{−γp}（Collin §9.2）を求める。最初の周波数で +z へ進む波のうち最初の `waves` 個（伝搬する波は β の小さい順、次に減衰する波は α の小さい順）を、掃引に沿って追う（近端の振幅が直前と最も平行な波）。γ = α + jβ、β は最も強いモードの β から連続にする。セッションのブロッホ波として残り、results.pulse が任意の `length` で 1 つ（`wave`）を使う。ポートの `modes` がセル間の結合を運ぶモードの数（縮退対はまとめて）。モデルは変えない。",
+      "params": {
+        "frequencies": "解く周波数",
+        "start": "最初の周波数（既定は帯域の始め）",
+        "stop": "最後の周波数（既定は帯域の終わり）",
+        "points": "`start` から `stop` までの周波数の数",
+        "order": "要素の次数：1（Whitney）または 2（既定）",
+        "waves": "追う波の数、1〜16（既定 4）"
+      }
+    },
     "solve.revolution.frequency": {
       "label": "回転体の Sパラメータ",
       "doc": "モデルを z まわりの回転体（solve.revolution と同じ断面）として、最も低い端と最も高い端のポートの間の Sパラメータを、子午面の上で 1 つの方位次数 `m` について求める：各ポートはその次数のモード（円の TE_mp、TM_mp、閉形式）をポート条件にとり、S はそれらの第 1 モードの間（m = 1 なら TE11、全体の主モードのどちらの偏波でも。m = 0 なら TM01）。三角形の大きさは約 `size`（既定は最高周波数での波長の 1/40、断面の 1/20 以下）。モデルは変更しない。",
@@ -1701,7 +1717,8 @@
         "frequency": "搬送波（既定は掃引の中央）",
         "width": "入力の半値幅、ns",
         "bandwidth": "チャープが幅の間に掃く帯域。上昇（> 0）または下降（< 0）、0 でチャープなし、省略時は最もよく圧縮するチャープ",
-        "length": "この長さの周期導波管として、セルのブロッホ波（solve.revolution.bloch）から S = e^{−γ length}。両端の反射は含めない",
+        "length": "この長さの周期導波管として、セルのブロッホ波（solve.bloch、solve.revolution.bloch）から S = e^{−γ length}。両端の反射は含めない",
+        "wave": "`length` とともに：セルのどのブロッホ波か、1 から（既定 1）",
         "chirp": "`none`、`linear`（`bandwidth` で、なければ最良の −1/D）、`matched`（周波数が線路の群遅延に沿い、`scale` 倍）、`optimized`（最良の直線と最良の整合のうち良い方。`bandwidth` を省いたときの既定）",
         "scale": "整合チャープの群遅延への倍率、0〜10（既定 1：停留位相）"
       }
@@ -2407,6 +2424,7 @@
     }
   },
   "samples": {
+    "helical-compressor": "螺旋パルス圧縮器：壁が 3 葉の螺旋 r0 + h cos(3φ − 2πz/p) で回る円形導波管（半径 14 mm）の 1 周期（36 mm）。SolidCraft のねじれ付きスイープ。そのブロッホ波を 3D で解く（solve.bloch、数分）——螺旋は TE11 の一方の回転を遮断付近の TE21 と結合させ、遅延が周波数とともに急に増す波をつくる——そして 3 m を通る 12 ns のチャープパルス。チャープを整合させると尾をほとんど残さず約 10 倍、0.8 ns に圧縮される",
     "pulse-compressor": "パルス圧縮器：軸のまわりに壁が波打つ円形導波管（半径 12 mm、r0 + h sin(2πz/p)、SolidCraft の設計を回転）の 1 セル（16 mm）。半平面上の TE11 のブロッホ波（solve.revolution.bloch）と、その 3 m を通る 20 ns のチャープパルス。チャープを群遅延に整合させると約 8 倍に圧縮され、尾は切られる",
     "highpass": "導波管ハイパスフィルタ：20 mm の空の区間の両側を εr = 2 で満たした WR-90、6.56 GHz 以下で遮断",
     "iris-bandpass": "誘導性アイリスのバンドパスフィルタ：4 枚の 2 mm アイリス（12.75、9.25、9.25、12.75 mm）で区切った 3 つの WR-90 空洞、通過帯域 9.75–10.25 GHz",
@@ -2503,6 +2521,7 @@
     "core radius": "コアの半径",
     "corrugation depth": "波の深さ",
     "corrugation period": "波の周期",
+    "helix period": "螺旋の周期",
     "coupled length": "結合長",
     "coupling gap": "結合ギャップ",
     "dielectric thickness": "誘電体の厚さ",

@@ -47,7 +47,8 @@ fn controls(app: &EmcraftApp, pulse: &mut crate::state::PulseState, ui: &mut egu
     let p = &mut pulse.params;
     let fu = app.session.display().frequency.symbol();
     let lu = app.session.display().length.symbol();
-    let bloch = app.session.results().revolution.as_ref().is_some_and(|r| r.bloch.is_some());
+    let waves: Vec<String> = app.session.results().bloch.as_ref().map(|b| b.waves.iter().map(|w| w.name.clone()).collect()).unwrap_or_default();
+    let bloch = !waves.is_empty();
     ui.horizontal_wrapped(|ui| {
         ui.text(Style::Body, t!("carrier"));
         let mut f = p.frequency.unwrap_or(0.0);
@@ -62,6 +63,15 @@ fn controls(app: &EmcraftApp, pulse: &mut crate::state::PulseState, ui: &mut egu
             let mut l = p.length.unwrap_or(0.0);
             if ui.named(egui::DragValue::new(&mut l).speed(10.0).range(0.0..=1e7).suffix(format!(" {lu}")), Fixed::PulseLength.into()).changed() {
                 p.length = Some(l).filter(|l| *l > 0.0);
+            }
+            // A 3D cell's several waves: the one the pulse rides.
+            if waves.len() > 1 {
+                let now = p.wave.unwrap_or(1);
+                for (k, name) in waves.iter().enumerate() {
+                    if ui.named(egui::Button::selectable(now == k + 1, name.as_str()), Handle::PulseWave(k + 1)).clicked() {
+                        p.wave = Some(k + 1);
+                    }
+                }
             }
         }
         ui.separator();

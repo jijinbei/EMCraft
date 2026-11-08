@@ -1,0 +1,91 @@
+// Writes one period of a circular guide with a helical corrugation of its wall,
+// r(φ, z) = r0 + h cos(n (φ − 2π z / (n p))) = r0 + h cos(nφ − 2πz/p), n = `lobes`, with
+// SolidCraft's document API: the cross-section r = r0 + h cos(nφ) (an equation curve, closed)
+// swept along z for one period p with a twist of 360°/n, so the wall turns one lobe per period.
+// The air inside it is the one body, `guide`.
+//
+// Run outside the EMCraft workspace, in a crate depending on solidcraft-doc, solidcore-record,
+// serde_json and solidcraft-exchange at the commit EMCraft pins (Cargo.toml):
+//   cargo run --bin helix -- crates/templates/designs/helical-cell.solidcraft
+use solidcore_record::{Vec2, Vec3};
+use solidcraft_doc::sketch::{EquationCurve, Sketch, VariableUnit};
+use solidcraft_doc::{Document, Expr, FeatureKind, PlaneRef};
+
+const DEFAULTS: [(&str, f64, &str); 4] = [("r0", 14.0, "mm"), ("h", 1.5, "mm"), ("p", 36.0, "mm"), ("lobes", 3.0, "none")];
+
+/// Points round the cross-section.
+const POINTS: usize = 72;
+
+fn value(name: &str) -> f64 {
+    DEFAULTS.iter().find(|(n, _, _)| *n == name).map(|(_, v, _)| *v).unwrap()
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let mut doc = Document::new("Helically corrugated cell");
+    for (name, v, unit) in DEFAULTS {
+        doc.set_param(name, &v.to_string(), Some(unit), None).unwrap();
+    }
+    let (r0, h, p, m) = (value("r0"), value("h"), value("p"), value("lobes"));
+    // The cross-section on z = 0.
+    let mut sk = Sketch::new();
+    let at: Vec<Vec2> = (0..POINTS)
+        .map(|k| {
+            let t = 2.0 * std::f64::consts::PI * k as f64 / POINTS as f64;
+            let r = r0 + h * (m * t).cos();
+            Vec2 { x: r * t.cos(), y: r * t.sin() }
+        })
+        .collect();
+    let equation = EquationCurve {
+        curve: String::new(),
+        x: Some("(r0 + h * cos(lobes * t)) * cos(t)".into()),
+        y: "(r0 + h * cos(lobes * t)) * sin(t)".into(),
+        start: "0".into(),
+        end: "2 * pi".into(),
+        tolerance: 1e-4,
+        variable_unit: VariableUnit::Number,
+    };
+    sk.add_equation_curve(&at, true, equation).unwrap();
+    let plane = PlaneRef::Placed { origin: [Expr::new("0"), Expr::new("0"), Expr::new("0")], x_dir: Vec3::X, y_dir: Vec3::Y };
+    let section = doc.add_feature(FeatureKind::Sketch { plane, sketch: sk }, Some("section")).unwrap();
+    // The path: z from 0 to p (sketch x along the model's z).
+    let mut path = Sketch::new();
+    let a = path.add_point(Vec2 { x: 0.0, y: 0.0 }, None).unwrap();
+    let b = path.add_point(Vec2 { x: p, y: 0.0 }, None).unwrap();
+    path.points[a].exprs = Some(Box::new(solidcraft_doc::sketch::PointExprs { x: Some("0".into()), y: Some("0".into()) }));
+    path.points[b].exprs = Some(Box::new(solidcraft_doc::sketch::PointExprs { x: Some("p".into()), y: Some("0".into()) }));
+    path.points[a].fixed = true;
+    path.points[b].fixed = true;
+    let line = path.add_line_pts(a, b, None).unwrap();
+    let line_id = path.curves[line].id.clone();
+    let plane = PlaneRef::Placed { origin: [Expr::new("0"), Expr::new("0"), Expr::new("0")], x_dir: Vec3::Z, y_dir: Vec3::X };
+    let axis = doc.add_feature(FeatureKind::Sketch { plane, sketch: path }, Some("axis")).unwrap();
+    let mut json: serde_json::Value = serde_json::from_str(&doc.to_json()).unwrap();
+    let next = json["next_id"].as_u64().unwrap();
+    json["features"].as_array_mut().unwrap().push(serde_json::json!({
+        "id": next, "name": "guide", "suppressed": false, "body_names": ["guide"], "type": "sweep",
+        "sketch": section, "profiles": {"type": "all"}, "path_sketch": axis, "path": [line_id],
+        "orientation": "parallel", "twist": "360 deg / lobes", "operation": "new_body"
+    }));
+    json["next_id"] = serde_json::json!(next + 1);
+    let text = serde_json::to_string_pretty(&json).unwrap();
+    std::fs::write(&args[1], &text).unwrap();
+    let design = solidcraft_exchange::open(text.as_bytes()).unwrap();
+    let snap = design.snapshot(&Default::default()).unwrap();
+    for b in &snap.bodies {
+        let kinds: Vec<String> = b
+            .faces
+            .iter()
+            .map(|f| {
+                let k = match f.surface {
+                    solidcraft_exchange::Surface::Nurbs { .. } => "nurbs",
+                    solidcraft_exchange::Surface::Plane { .. } => "plane",
+                    solidcraft_exchange::Surface::Cylinder { .. } => "cyl",
+                    _ => "other",
+                };
+                format!("{}:{k}", f.name)
+            })
+            .collect();
+        println!("{} faces {} triangles {} {:?}", b.name, b.faces.len(), b.triangle_count(), kinds);
+    }
+}

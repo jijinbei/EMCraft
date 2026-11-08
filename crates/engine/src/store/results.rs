@@ -144,6 +144,8 @@ pub struct StoredSession {
     td_radiation: Option<StoredTdRadiation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     revolution: Option<StoredRevolution>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bloch: Option<StoredBloch>,
 }
 
 /// The bytes the results' field vectors take.
@@ -172,6 +174,7 @@ impl StoredSession {
             radiation: r.radiation.as_deref().map(|o| StoredRadiation::write(o, fields, w)).transpose()?,
             td_radiation: r.td_radiation.as_deref().map(|o| StoredTdRadiation::write(o, w)).transpose()?,
             revolution: r.revolution.as_deref().map(|b| StoredRevolution::write(b, w)).transpose()?,
+            bloch: r.bloch.as_deref().map(|b| StoredBloch::write(b, w)).transpose()?,
         })
     }
 
@@ -196,6 +199,9 @@ impl StoredSession {
         }
         if let Some(x) = self.revolution {
             keep("the body of revolution", x.read(r).map(|v| out.revolution = Some(Arc::new(v))));
+        }
+        if let Some(x) = self.bloch {
+            keep("the Bloch waves", x.read(r).map(|v| out.bloch = Some(Arc::new(v))));
         }
         if let Some(x) = self.dispersion {
             keep("the dispersion", x.read(r).map(|v| out.dispersion = Some(Arc::new(v))));
@@ -877,9 +883,6 @@ struct StoredRevolution {
     ports: usize,
     unknowns: usize,
     numbers: String,
-    /// A cell's period (m), its Bloch wave's γ after S among the numbers.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    period: Option<f64>,
 }
 
 impl StoredRevolution {
@@ -887,9 +890,6 @@ impl StoredRevolution {
         let mut nums = Out::default();
         nums.fs(b.data.frequencies());
         nums.cs(b.data.values());
-        if let Some((_, g)) = &b.bloch {
-            nums.cs(g);
-        }
         Ok(StoredRevolution {
             m: b.m,
             modes: b.modes.clone(),
@@ -897,7 +897,6 @@ impl StoredRevolution {
             ports: b.data.outputs(),
             unknowns: b.unknowns,
             numbers: nums.write(w, "results/revolution/numbers.f64")?,
-            period: b.bloch.as_ref().map(|(p, _)| *p),
         })
     }
 
@@ -909,13 +908,55 @@ impl StoredRevolution {
         let frequencies = nums.fs(self.frequencies)?;
         let count = self.frequencies.checked_mul(self.ports).and_then(|x| x.checked_mul(self.ports)).ok_or("the body of revolution's S overflows")?;
         let s = nums.cs(count)?;
-        let bloch = match self.period {
-            Some(p) if p.is_finite() && p > 0.0 => Some((p, nums.cs(self.frequencies)?)),
-            Some(_) => return Err("the cell's period is not a positive length".into()),
-            None => None,
-        };
         nums.done()?;
         let data = crate::sdata::SData::square(frequencies, self.ports, s)?;
-        Ok(crate::Revolution { m: self.m, modes: self.modes, data, unknowns: self.unknowns, bloch })
+        Ok(crate::Revolution { m: self.m, modes: self.modes, data, unknowns: self.unknowns })
+    }
+}
+
+/// A periodic guide's Bloch waves: the period, the frequencies and each wave's name, its γ
+/// among the numbers after the frequencies, wave by wave.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct StoredBloch {
+    period: f64,
+    frequencies: usize,
+    waves: Vec<String>,
+    numbers: String,
+}
+
+/// The most Bloch waves a project keeps.
+const MAX_BLOCH_WAVES: usize = 64;
+
+impl StoredBloch {
+    fn write(b: &crate::Bloch, w: &mut Writer) -> Result<StoredBloch, String> {
+        let mut nums = Out::default();
+        nums.fs(&b.frequencies);
+        for wave in &b.waves {
+            nums.cs(&wave.gamma);
+        }
+        Ok(StoredBloch {
+            period: b.period,
+            frequencies: b.frequencies.len(),
+            waves: b.waves.iter().map(|w| w.name.clone()).collect(),
+            numbers: nums.write(w, "results/bloch/numbers.f64")?,
+        })
+    }
+
+    fn read(self, r: &mut Reader) -> Result<crate::Bloch, String> {
+        if !(self.period.is_finite() && self.period > 0.0) {
+            return Err("the cell's period is not a positive length".into());
+        }
+        if self.waves.len() > MAX_BLOCH_WAVES || self.waves.iter().any(|n| n.chars().count() > 64) {
+            return Err("the Bloch waves are out of range".into());
+        }
+        let mut nums = In::read(r, &self.numbers, "the Bloch waves")?;
+        let frequencies = nums.fs(self.frequencies)?;
+        let waves = self
+            .waves
+            .into_iter()
+            .map(|name| Ok(crate::BlochWave { name, gamma: nums.cs(self.frequencies)? }))
+            .collect::<Result<Vec<_>, String>>()?;
+        nums.done()?;
+        Ok(crate::Bloch { period: self.period, frequencies, waves })
     }
 }

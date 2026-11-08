@@ -122,6 +122,9 @@ pub struct PulseParams {
     pub chirp: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bandwidth: Option<f64>,
+    /// Which of a cell's Bloch waves (from 1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wave: Option<usize>,
 }
 
 fn default_width() -> f64 {
@@ -130,7 +133,7 @@ fn default_width() -> f64 {
 
 impl Default for PulseParams {
     fn default() -> PulseParams {
-        PulseParams { frequency: None, width: default_width(), length: None, chirp: None, bandwidth: None }
+        PulseParams { frequency: None, width: default_width(), length: None, chirp: None, bandwidth: None, wave: None }
     }
 }
 

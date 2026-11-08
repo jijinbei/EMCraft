@@ -171,10 +171,24 @@ fn a_part_is_inspected_without_importing_it() {
 fn the_pulse_compressor_opens_with_its_bloch_wave_and_compresses_its_pulse() {
     let mut s = Session::new();
     s.execute("file.sample", &json!({"name": "pulse-compressor"})).unwrap();
-    let r = s.results.revolution.as_ref().unwrap();
-    assert!(r.bloch.as_ref().is_some_and(|(p, g)| (p - 0.016).abs() < 1e-9 && g.len() == 121));
+    let b = s.results.bloch.as_ref().unwrap();
+    assert!((b.period - 0.016).abs() < 1e-9 && b.waves.len() == 1 && b.waves[0].gamma.len() == 121);
     let kept = s.views.pulse.clone().unwrap();
     let pulse = s.execute("results.pulse", &kept).unwrap();
     assert!(pulse["compression"].as_f64().unwrap() > 4.0 && pulse["output_width"].as_f64().unwrap() < 2.0, "{}", pulse["compression"]);
     assert_eq!(pulse["chirp"], "matched");
+}
+
+/// The helical compressor: its cell's Bloch waves in 3D, the third (TE11 of one rotation coupled
+/// to TE21 near its cut-off) dispersing strongly; the kept pulse comes out short and clean.
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn the_helical_compressor_opens_with_its_3d_bloch_waves_and_compresses_its_pulse() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "helical-compressor"})).unwrap();
+    let b = s.results.bloch.as_ref().unwrap();
+    assert!((b.period - 0.036).abs() < 1e-9 && b.waves.len() == 3 && b.waves[2].gamma.len() == 9);
+    let kept = s.views.pulse.clone().unwrap();
+    let pulse = s.execute("results.pulse", &kept).unwrap();
+    assert!(pulse["compression"].as_f64().unwrap() > 6.0 && pulse["output_width"].as_f64().unwrap() < 1.2, "{}", pulse["compression"]);
 }

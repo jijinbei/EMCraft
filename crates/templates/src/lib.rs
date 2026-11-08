@@ -286,6 +286,13 @@ pub const TEMPLATES: &[Template] = &[
         kinds: &[Analysis::Frequency],
     },
     Template {
+        name: "helical-compressor",
+        label: "Helical pulse compressor: one 36 mm period of a circular guide (radius 14 mm) whose wall turns as a three-lobed helix, r0 + h cos(3φ − 2πz/p), a SolidCraft sweep with a twist; its Bloch waves solved in 3D (solve.bloch, a few minutes) — the helix couples one rotation of TE11 with TE21 near its cut-off, a wave whose delay rises steeply with frequency — and a 12 ns chirped pulse through 3 m of it, the chirp matched: compressed about ×10 to 0.8 ns with no tail to speak of",
+        script: include_str!("../scripts/helical-compressor.json"),
+        marks: "{}",
+        kinds: &[Analysis::Frequency],
+    },
+    Template {
         name: "termination",
         label: "Matched load: a lossy wedge (εr = 1.5, tan δ = 0.5) 90 mm long, 1 mm clear of the walls, against the short at the end of a WR-90 guide; one port: |S11| below 0.06 over the band",
         script: include_str!("../scripts/termination.json"),
@@ -574,6 +581,7 @@ pub const DESIGNS: &[Design] = &[
     Design { file: "corrugated-h.solidcraft", bytes: include_bytes!("../designs/corrugated-h.solidcraft") },
     Design { file: "corrugated-e.solidcraft", bytes: include_bytes!("../designs/corrugated-e.solidcraft") },
     Design { file: "corrugated-cell.solidcraft", bytes: include_bytes!("../designs/corrugated-cell.solidcraft") },
+    Design { file: "helical-cell.solidcraft", bytes: include_bytes!("../designs/helical-cell.solidcraft") },
 ];
 
 /// The design a path names, `template:<file>`; `None` for any other path (a file of the

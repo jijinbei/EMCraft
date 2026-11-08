@@ -583,7 +583,20 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
 - R. E. Collin, *Foundations for Microwave Engineering*, 2nd ed., McGraw-Hill 1992, §9.2 —
   a periodic structure's Bloch waves as the transfer matrix's eigenvalues e^{−γp}, here of a
   body of revolution's cell with its evanescent modes kept (`emcraft-solver::bor::bloch_lambda`,
-  `solve.revolution.bloch`).
+  `solve.revolution.bloch`), and of a 3D cell's from its generalized scattering matrix between
+  every mode of both ports, the far port's modes written in the near port's basis
+  (`emcraft-solver::Driven::generalized`, `emcraft-engine::bloch_cell`, `solve.bloch`); T. Itoh
+  (ed.), *Numerical Techniques for Microwave and Millimeter-Wave Passive Structures*, Wiley 1989,
+  ch. 9 — the generalized scattering matrix with the evanescent modes that couple neighbouring
+  cells.
+- G. G. Denisov, V. L. Bratman, A. D. R. Phelps, S. V. Samsonov, *Gyro-TWT with a helical
+  operating waveguide: new possibilities to enhance efficiency and frequency bandwidth*, IEEE
+  Trans. Plasma Sci. 26(3):508–518, 1998; S. V. Samsonov et al., *Compression of frequency-modulated
+  pulses using helically corrugated waveguides and its potential for generating
+  multigigawatt rf radiation*, Phys. Rev. Lett. 92(11):118301, 2004 — a guide whose wall turns
+  as cos(nφ − 2πz/p) couples TE11 of one rotation with TE21 near its cut-off, the operating wave's
+  group velocity changing strongly and smoothly with frequency: the helical pulse compressor
+  (template `helical-compressor`, its cell `crates/templates/designs/helical-cell.solidcraft`).
 - G. P. Agrawal, *Nonlinear Fiber Optics*, 5th ed., Academic Press 2013, §3.2 — a chirped
   Gaussian pulse through a dispersive line, compressed when its chirp undoes the group-delay
   slope (`emcraft-engine::pulse`, `results.pulse`; the closed form its test checks).

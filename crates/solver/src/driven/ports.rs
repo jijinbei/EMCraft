@@ -618,84 +618,138 @@ pub const MAX_PATTERN_SIDE: usize = 400;
 /// about `side` points along the face's longer side: the closed form, or the cross-section's
 /// solution (as `port_modes` finds them).
 pub fn port_mode_pattern(model: &Model, order: Order, frequency: f64, port: usize, mode: usize, side: usize) -> Result<ModePattern> {
-    check_frequency(frequency)?;
     let side = side.clamp(8, MAX_PATTERN_SIDE);
-    let p = model.ports.get(port).ok_or_else(|| invalid("port mode", format!("no port {}", port + 1)))?;
-    let grid = |x: (f64, f64), y: (f64, f64)| {
+    let mut grid = (0, 0, (0.0, 0.0), (0.0, 0.0));
+    let sampled = sampled_modes(model, order, frequency, port, Some(mode), |x, y| {
         let (w, h) = (x.1 - x.0, y.1 - y.0);
         let (nx, ny) =
             if w >= h { (side, ((side as f64 * h / w).round() as usize).max(8)) } else { (((side as f64 * w / h).round() as usize).max(8), side) };
-        let points: Vec<(f64, f64)> =
-            (0..ny).flat_map(|j| (0..nx).map(move |i| (x.0 + w * i as f64 / (nx - 1) as f64, y.0 + h * j as f64 / (ny - 1) as f64))).collect();
-        (nx, ny, points)
+        grid = (nx, ny, x, y);
+        (0..ny).flat_map(|j| (0..nx).map(move |i| (x.0 + w * i as f64 / (nx - 1) as f64, y.0 + h * j as f64 / (ny - 1) as f64))).collect()
+    })?;
+    let (nx, ny, x, y) = grid;
+    let (name, beta2, e) = sampled.into_iter().next().ok_or_else(|| invalid("port mode", "none sampled"))?;
+    Ok(ModePattern { name, beta2, x, y, nx, ny, e })
+}
+
+/// Every mode of port `port` at `frequency` (its condition's `modes`, as the driven solve takes
+/// them), each one's transverse E at `points` (the face's own u and v, [`Frame`]: model x and y
+/// on a z face, m), [NaN; 2] outside the cross-section: to compare the modes of two ports.
+pub fn port_mode_fields(model: &Model, order: Order, frequency: f64, port: usize, points: &[(f64, f64)]) -> Result<Vec<Vec<[f64; 2]>>> {
+    if points.len() > MAX_PATTERN_SIDE * MAX_PATTERN_SIDE {
+        return Err(invalid("port mode", format!("at most {} points", MAX_PATTERN_SIDE * MAX_PATTERN_SIDE)));
+    }
+    Ok(sampled_modes(model, order, frequency, port, None, |_, _| points.to_vec())?.into_iter().map(|(_, _, e)| e).collect())
+}
+
+/// Port `port`'s modes at `frequency` (all, or only `only`): each one's name, β² and transverse
+/// E at the points `at` gives for the face's span (u, v ranges).
+fn sampled_modes(
+    model: &Model,
+    order: Order,
+    frequency: f64,
+    port: usize,
+    only: Option<usize>,
+    at: impl FnOnce((f64, f64), (f64, f64)) -> Vec<(f64, f64)>,
+) -> Result<Vec<(String, f64, Vec<[f64; 2]>)>> {
+    check_frequency(frequency)?;
+    let p = model.ports.get(port).ok_or_else(|| invalid("port mode", format!("no port {}", port + 1)))?;
+    let pick = |n: usize| -> Result<std::ops::Range<usize>> {
+        match only {
+            Some(m) if m < n => Ok(m..m + 1),
+            Some(m) => Err(invalid(what(p), format!("has {n} modes, not {}", m + 1))),
+            None => Ok(0..n),
+        }
     };
     let mesh = model.mesh.as_ref().ok_or_else(|| SolveError::NotReady("no mesh".into()))?;
     if let Some(shape) = closed_form_shape(model, p, mesh) {
         let list = port_mode_list(model, p, shape)?;
-        let md = list.get(mode).ok_or_else(|| invalid(what(p), format!("has {} modes, not {}", list.len(), mode + 1)))?;
         let m = model.port_material(p.end)?;
-        let beta2 = if m.is_lossy() {
-            let g = md.gamma_lossy(lossy_k2(m, frequency).0);
-            -(g * g).re
-        } else {
-            let k = wavenumber(frequency) * (m.eps_r.get() * m.mu_r.get()).sqrt();
-            k * k - md.cutoff().powi(2)
-        };
         let (x, y, inside): ((f64, f64), (f64, f64), Box<dyn Fn(f64, f64) -> bool>) = match shape {
             PortShape::Rect { x0, y0, a, b } => ((x0, x0 + a), (y0, y0 + b), Box::new(|_, _| true)),
             PortShape::Circle { cx, cy, r } => {
                 ((cx - r, cx + r), (cy - r, cy + r), Box::new(move |x: f64, y: f64| (x - cx).hypot(y - cy) <= r * (1.0 + 1e-9)))
             }
         };
-        let (nx, ny, points) = grid(x, y);
-        let e = points.iter().map(|&(px, py)| if inside(px, py) { md.field(px, py) } else { [f64::NAN; 2] }).collect();
-        return Ok(ModePattern { name: md.name(), beta2, x, y, nx, ny, e });
+        let points = at(x, y);
+        return pick(list.len())?
+            .map(|k| {
+                let md = &list[k];
+                let beta2 = if m.is_lossy() {
+                    let g = md.gamma_lossy(lossy_k2(m, frequency).0);
+                    -(g * g).re
+                } else {
+                    let k = wavenumber(frequency) * (m.eps_r.get() * m.mu_r.get()).sqrt();
+                    k * k - md.cutoff().powi(2)
+                };
+                let e = points.iter().map(|&(px, py)| if inside(px, py) { md.field(px, py) } else { [f64::NAN; 2] }).collect();
+                Ok((md.name(), beta2, e))
+            })
+            .collect();
     }
     let (section, medium) = cross_section(model, p, mesh, order, &faces_of_port(mesh, p)?)?;
     use crate::driven::terms::LossyModes;
     // Each mode's transverse field at a point of a triangle (a hybrid lossy mode's real part:
     // its phase is fixed so ∫ e_t · e_t is real), and its β² (−Re γ² in a lossy medium).
     type Field<'a> = Box<dyn Fn(usize, Point3) -> Result<Vec3> + 'a>;
-    let (field, md_beta2): (Field, f64) = match crate::driven::terms::lossy_modes(&section, &medium, frequency, p.modes as usize)? {
+    let section = &section;
+    let fields: Vec<(Field, f64)> = match crate::driven::terms::lossy_modes(section, &medium, frequency, p.modes as usize)? {
         Some(LossyModes::Uniform(list)) => {
-            let n = list.len();
-            let lm = list.into_iter().nth(mode).ok_or_else(|| invalid(what(p), format!("has {n} modes, not {}", mode + 1)))?;
-            let b2 = -(lm.gamma * lm.gamma).re;
-            let section = &section;
-            (Box::new(move |t, q| Ok(section.fields(&lm.mode, t, q)?.0)), b2)
+            let range = pick(list.len())?;
+            list.into_iter()
+                .enumerate()
+                .filter(|(k, _)| range.contains(k))
+                .map(|(_, lm)| {
+                    let b2 = -(lm.gamma * lm.gamma).re;
+                    (Box::new(move |t, q| Ok(section.fields(&lm.mode, t, q)?.0)) as Field, b2)
+                })
+                .collect()
         }
         Some(LossyModes::Hybrid(list, _)) => {
-            let n = list.len();
-            let lm = list.into_iter().nth(mode).ok_or_else(|| invalid(what(p), format!("has {n} modes, not {}", mode + 1)))?;
-            let b2 = lm.beta2();
-            let section = &section;
-            (Box::new(move |t, q| Ok(section.fields_lossy(&lm, t, q)?.0.re())), b2)
+            let range = pick(list.len())?;
+            list.into_iter()
+                .enumerate()
+                .filter(|(k, _)| range.contains(k))
+                .map(|(_, lm)| {
+                    let b2 = lm.beta2();
+                    (Box::new(move |t, q| Ok(section.fields_lossy(&lm, t, q)?.0.re())) as Field, b2)
+                })
+                .collect()
         }
         None => {
             let modes = section.modes_split(wavenumber(frequency), p.modes as usize)?;
-            let n = modes.len();
-            let md = modes.into_iter().nth(mode).ok_or_else(|| invalid(what(p), format!("has {n} modes, not {}", mode + 1)))?;
-            let b2 = md.beta2;
-            let section = &section;
-            (Box::new(move |t, q| Ok(section.fields(&md, t, q)?.0)), b2)
+            let range = pick(modes.len())?;
+            modes
+                .into_iter()
+                .enumerate()
+                .filter(|(k, _)| range.contains(k))
+                .map(|(_, md)| {
+                    let b2 = md.beta2;
+                    (Box::new(move |t, q| Ok(section.fields(&md, t, q)?.0)) as Field, b2)
+                })
+                .collect()
         }
     };
+    let first = only.unwrap_or(0);
     let (lo, hi) = section
         .nodes
         .iter()
         .fold(([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]), |(l, h), q| ([l[0].min(q.x), l[1].min(q.y)], [h[0].max(q.x), h[1].max(q.y)]));
-    let (x, y) = ((lo[0], hi[0]), (lo[1], hi[1]));
-    let (nx, ny, points) = grid(x, y);
-    let mut e = Vec::with_capacity(points.len());
-    for &(px, py) in &points {
-        let q = Point3::new(px, py, 0.0);
-        e.push(match section.locate(q) {
-            Some(t) => {
-                let et = field(t, q)?;
-                [et.x, et.y]
-            }
-            None => [f64::NAN; 2],
-        });
-    }
-    Ok(ModePattern { name: format!("mode {}", mode + 1), beta2: md_beta2, x, y, nx, ny, e })
+    let points = at((lo[0], hi[0]), (lo[1], hi[1]));
+    let located: Vec<Option<(usize, Point3)>> =
+        points.iter().map(|&(px, py)| Point3::new(px, py, 0.0)).map(|q| section.locate(q).map(|t| (t, q))).collect();
+    fields
+        .iter()
+        .enumerate()
+        .map(|(k, (field, beta2))| {
+            let e = located
+                .iter()
+                .map(|at| match at {
+                    Some((t, q)) => field(*t, *q).map(|et| [et.x, et.y]),
+                    None => Ok([f64::NAN; 2]),
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok((format!("mode {}", first + k + 1), *beta2, e))
+        })
+        .collect()
 }

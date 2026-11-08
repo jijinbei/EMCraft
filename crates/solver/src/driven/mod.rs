@@ -77,6 +77,7 @@ pub mod cyclic;
 mod dofs;
 mod fields;
 mod floquet;
+mod generalized;
 pub mod line;
 mod losses;
 mod lumped;
@@ -93,13 +94,16 @@ mod terms;
 pub(crate) use assembly::{System, rule_points};
 pub use dofs::Dofs;
 pub use floquet::{FloquetMode, FloquetPort, FloquetTerm};
+pub use generalized::{Generalized, MAX_GENERALIZED_MODES};
 pub(crate) use losses::wall_factor;
 pub use losses::{surface_resistance, wall_impedance};
 pub use lumped::{ElementData, LumpedData};
 pub use periodic::Tie;
 use pml::Layer;
 pub use pml::PML_REFLECTION;
-pub use ports::{MAX_PATTERN_SIDE, ModeInfo, ModePattern, NumericPort, PortData, PortModes, kept_by, port_mode_pattern, port_modes};
+pub use ports::{
+    MAX_PATTERN_SIDE, ModeInfo, ModePattern, NumericPort, PortData, PortModes, kept_by, port_mode_fields, port_mode_pattern, port_modes,
+};
 pub use sparams::ModeTerm;
 pub use terminals::SPort;
 pub use terms::PortTerm;

@@ -94,9 +94,22 @@ pub struct Revolution {
     pub modes: Vec<String>,
     pub data: crate::sdata::SData,
     pub unknowns: usize,
-    /// When the model is one cell of a periodic guide (`solve.revolution.bloch`): its period
-    /// (m) and its Bloch wave's γ = α + jβ (1/m) at each frequency of `data`.
-    pub bloch: Option<(f64, Vec<emcraft_solver::Complex64>)>,
+}
+
+/// A periodic guide's Bloch waves from one cell (`solve.revolution.bloch`, `solve.bloch`): the
+/// period (m), the frequencies (Hz) and each wave going +z, its γ = α + jβ (1/m) at each.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Bloch {
+    pub period: f64,
+    pub frequencies: Vec<f64>,
+    pub waves: Vec<BlochWave>,
+}
+
+/// One Bloch wave: what it is mostly (its strongest port mode at the first frequency) and its γ.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BlochWave {
+    pub name: String,
+    pub gamma: Vec<emcraft_solver::Complex64>,
 }
 
 /// What the solvers made of the model, each from its own command. Each result is shared: the
@@ -121,6 +134,8 @@ pub struct Results {
     /// A body of revolution's S-parameters in one azimuthal order, from
     /// `solve.revolution.frequency`.
     pub revolution: Option<Arc<Revolution>>,
+    /// A periodic guide's Bloch waves from one cell.
+    pub bloch: Option<Arc<Bloch>>,
     /// The kinds held that are stale: the model changed after they were solved (without
     /// making them wrong, which drops them). Only kinds held; each solve makes its own fresh.
     stale: std::collections::BTreeSet<ResultKind>,
@@ -152,6 +167,7 @@ emcraft_macros::named_enum! {
         Dispersion = "dispersion",
         Study = "study",
         Revolution = "revolution",
+        Bloch = "bloch",
     }
 }
 
@@ -170,8 +186,8 @@ impl ResultKind {
         use ResultKind::*;
         match change {
             Change::Geometry => !matches!(self, Study),
-            Change::Walls => matches!(self, Sweep | Eigen | Revolution),
-            Change::Ports => matches!(self, Sweep | TimeDomain | Revolution),
+            Change::Walls => matches!(self, Sweep | Eigen | Revolution | Bloch),
+            Change::Ports => matches!(self, Sweep | TimeDomain | Revolution | Bloch),
             Change::Open => matches!(self, Radiation | TdRadiation),
         }
     }
@@ -191,6 +207,7 @@ impl ResultKind {
             ResultKind::Dispersion => "solve.dispersion",
             ResultKind::Study => "study.sweep",
             ResultKind::Revolution => "solve.revolution.frequency",
+            ResultKind::Bloch => "solve.bloch",
         }
     }
 }
@@ -207,6 +224,7 @@ impl Results {
             ResultKind::Dispersion => self.dispersion.is_some(),
             ResultKind::Study => self.study.is_some(),
             ResultKind::Revolution => self.revolution.is_some(),
+            ResultKind::Bloch => self.bloch.is_some(),
         }
     }
 
@@ -256,6 +274,7 @@ impl Results {
                 ResultKind::Dispersion => same(self.dispersion.as_ref(), before.dispersion.as_ref()),
                 ResultKind::Study => same(self.study.as_ref(), before.study.as_ref()),
                 ResultKind::Revolution => same(self.revolution.as_ref(), before.revolution.as_ref()),
+                ResultKind::Bloch => same(self.bloch.as_ref(), before.bloch.as_ref()),
             };
             if !unchanged {
                 self.stale.remove(&kind);
@@ -275,6 +294,7 @@ impl Results {
             ResultKind::Dispersion => self.dispersion = None,
             ResultKind::Study => self.study = None,
             ResultKind::Revolution => self.revolution = None,
+            ResultKind::Bloch => self.bloch = None,
         }
     }
 
