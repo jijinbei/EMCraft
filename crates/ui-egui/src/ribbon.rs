@@ -84,7 +84,7 @@ pub const TOOLS: &[(RibbonTab, &str, &[Tool])] = &[(RibbonTab::PortsSources, "PO
 
 const APP_BAR_HEIGHT: f32 = 34.0;
 const TAB_ROW_HEIGHT: f32 = 30.0;
-const BUTTON_HEIGHT: f32 = 60.0;
+const BUTTON_HEIGHT: f32 = 68.0;
 const PANEL_LABEL_HEIGHT: f32 = 16.0;
 const BUTTON_MIN_WIDTH: f32 = 58.0;
 /// The search field's least width with its hint; with less room it shows only its key.
@@ -459,7 +459,7 @@ fn button_width(ui: &egui::Ui, text: &str) -> f32 {
     (g.size().x + 14.0).clamp(BUTTON_MIN_WIDTH, BUTTON_MAX_WIDTH)
 }
 
-/// Draws a ribbon button at `at` (60 pt high, its glyph over its label) in the tab's `accent`;
+/// Draws a ribbon button at `at` (68 pt high: two rows of label, its glyph over its label) in the tab's `accent`;
 /// its response and width.
 fn button(ui: &mut egui::Ui, b: Button, at: egui::Pos2, accent: [Color32; 3]) -> (egui::Response, f32) {
     let t = &Tokens::get();
@@ -477,7 +477,7 @@ fn button(ui: &mut egui::Ui, b: Button, at: egui::Pos2, accent: [Color32; 3]) ->
     glyphs::paint(ui.painter(), Rect::from_center_size(pos2(br.center().x, br.top() + 18.0), vec2(26.0, 26.0)), glyph, ink, accent[0]);
     let color = if enabled { if active { accent[1] } else { t.text } } else { t.text_dim };
     let g = label_galley(ui, text, w - 6.0, color);
-    ui.painter().galley(pos2(br.center().x, br.top() + 35.0), g, color);
+    ui.painter().galley(pos2(br.center().x, br.top() + 34.0), g, color);
     (resp, w)
 }
 
