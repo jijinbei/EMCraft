@@ -522,6 +522,8 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
 pub fn undo(s: &mut Session, _: &Params) -> Result<Value> {
     let back = s.undo.pop_back().ok_or_else(|| EngineError::failed("nothing to undo"))?;
     let now = s.swap_snapshot(back);
+    let model = s.model.clone();
+    s.views.follow(&now.model, &model);
     push_undo(&mut s.redo, now);
     Ok(stacks(s))
 }
@@ -529,6 +531,8 @@ pub fn undo(s: &mut Session, _: &Params) -> Result<Value> {
 pub fn redo(s: &mut Session, _: &Params) -> Result<Value> {
     let next = s.redo.pop_back().ok_or_else(|| EngineError::failed("nothing to redo"))?;
     let now = s.swap_snapshot(next);
+    let model = s.model.clone();
+    s.views.follow(&now.model, &model);
     push_undo(&mut s.undo, now);
     Ok(stacks(s))
 }

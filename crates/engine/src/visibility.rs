@@ -114,6 +114,56 @@ impl GeometryObject {
     }
 }
 
+/// Where item `i` of `old` went in `new`: where it still is, else the same item (the same
+/// occurrence of equal ones) where it moved to, else the same place when the count is unchanged
+/// (it was edited); `None` when it is gone.
+fn moved<T: PartialEq>(old: &[T], new: &[T], i: usize) -> Option<usize> {
+    let item = old.get(i)?;
+    if new.get(i) == Some(item) {
+        return Some(i);
+    }
+    let nth = old[..i].iter().filter(|o| *o == item).count();
+    new.iter().enumerate().filter(|(_, n)| *n == item).nth(nth).map(|(j, _)| j).or_else(|| (old.len() == new.len()).then_some(i))
+}
+
+/// A list of the model's waveguide (empty without one).
+fn parts<T>(m: &Model, list: fn(&emcraft_model::Waveguide) -> &Vec<T>) -> &[T] {
+    m.waveguide().map_or(&[], |w| list(w).as_slice())
+}
+
+impl GeometryObject {
+    /// This object after the model changed from `before` to `after`: an indexed object follows
+    /// its own item (a body deleted before it moves it down one), `None` when it is gone.
+    ///
+    /// ```
+    /// use emcraft_engine::visibility::GeometryObject;
+    /// let mut s = emcraft_engine::Session::new();
+    /// s.execute("geometry.waveguide", &serde_json::json!({"width": 20, "height": 10, "sections": [{"length": 10, "material": "vacuum"}, {"length": 20, "material": "vacuum"}]})).unwrap();
+    /// let before = s.model().clone();
+    /// s.execute("geometry.waveguide", &serde_json::json!({"width": 20, "height": 10, "sections": [{"length": 20, "material": "vacuum"}]})).unwrap();
+    /// assert_eq!(GeometryObject::Section(1).follow(&before, s.model()), Some(GeometryObject::Section(0)));
+    /// assert_eq!(GeometryObject::Section(0).follow(&before, s.model()), None);
+    /// ```
+    pub fn follow(self, before: &Model, after: &Model) -> Option<Self> {
+        match self {
+            Self::Guide | Self::Solid | Self::Symmetry(_) => self.exists(after).then_some(self),
+            Self::Section(i) => moved(parts(before, |w| &w.sections), parts(after, |w| &w.sections), i).map(Self::Section),
+            Self::Layer(i) => moved(parts(before, |w| &w.layers), parts(after, |w| &w.layers), i).map(Self::Layer),
+            Self::Strip(i) => moved(parts(before, |w| &w.strips), parts(after, |w| &w.strips), i).map(Self::Strip),
+            Self::Via(i) => moved(parts(before, |w| &w.vias), parts(after, |w| &w.vias), i).map(Self::Via),
+            Self::Feature(i) => moved(before.features(), after.features(), i).map(Self::Feature),
+            Self::Inclusion(i) => moved(before.inclusions(), after.inclusions(), i).map(Self::Inclusion),
+        }
+    }
+}
+
+impl crate::views::Views {
+    /// The hidden geometry carried across a change of the model (see [`GeometryObject::follow`]).
+    pub(crate) fn follow(&mut self, before: &Model, after: &Model) {
+        self.hidden_geometry = std::mem::take(&mut self.hidden_geometry).into_iter().filter_map(|g| g.follow(before, after)).collect();
+    }
+}
+
 impl TryFrom<String> for GeometryObject {
     type Error = String;
 

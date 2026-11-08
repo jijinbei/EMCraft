@@ -403,3 +403,28 @@ fn a_symmetry_planes_eye_hides_and_shows_it() {
     assert!(!read.visible(&plane));
     assert!(serde_json::from_value::<crate::views::Views>(json!({"hidden_geometry": ["nonsense"]})).is_err());
 }
+
+#[test]
+fn a_hidden_body_stays_hidden_when_one_before_it_is_deleted() {
+    use crate::visibility::GeometryObject::Feature;
+    let mut s = crate::Session::new();
+    s.execute("geometry.solid", &json!({"shape": "box", "size": [40, 40, 40]})).unwrap();
+    for x in [5, 15, 25] {
+        s.execute("geometry.body", &json!({"material": "metal", "shape": "cylinder", "radius": 1, "length": 40, "at": [x, 0, 20], "axis": "y"}))
+            .unwrap();
+    }
+    let hide = |s: &mut crate::Session, key: &str| s.execute("view.visibility", &json!({"kind": "geometry", "name": key, "visible": false})).unwrap();
+    hide(&mut s, "feature:1");
+    hide(&mut s, "feature:2");
+    // The first post goes: the hidden ones are now the first and the second.
+    s.execute("geometry.body.delete", &json!({"body": "body 1"})).unwrap();
+    assert_eq!(s.views().hidden_geometry.iter().copied().collect::<Vec<_>>(), [Feature(0), Feature(1)]);
+    // An edit in place keeps it hidden; deleting it forgets it.
+    s.execute("geometry.body.edit", &json!({"body": "body 1", "radius": 2})).unwrap();
+    assert!(s.views().hidden_geometry.contains(&Feature(0)));
+    s.execute("geometry.body.delete", &json!({"body": "body 1"})).unwrap();
+    assert_eq!(s.views().hidden_geometry.iter().copied().collect::<Vec<_>>(), [Feature(0)]);
+    // Undo brings the deleted one back shown; the other stays hidden where it moved to.
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(s.views().hidden_geometry.iter().copied().collect::<Vec<_>>(), [Feature(1)]);
+}

@@ -615,6 +615,10 @@ impl Session {
                 if let Some(change) = spec.invalidates {
                     self.results.invalidate(change);
                 }
+                // What was hidden stays with its own object when others come and go.
+                if spec.invalidates == Some(Change::Geometry) && spec.effect != Effect::Replace {
+                    self.views.follow(&before.state.model, &self.model);
+                }
                 // A recorded change leaves the results it does not drop stale; an adjustment
                 // brings them along, and a replaced session has its own.
                 if spec.effect == Effect::Record {
