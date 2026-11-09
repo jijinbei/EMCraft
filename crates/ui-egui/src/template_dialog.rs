@@ -8,11 +8,13 @@ use serde_json::{Map, Value, json};
 use crate::files::{FileAction, Then};
 use crate::handle::{Fixed, Handle};
 use crate::lang::{Raw, sample_label};
+use crate::pending::Pending;
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, Picture, Style, UiExt, scenario, ui_kit};
 
-/// The preview's size, in points.
+/// The preview's size, in points, and in pixels (drawn at twice it).
 const PREVIEW: [f32; 2] = [520.0, 340.0];
+const PREVIEW_PIXELS: [usize; 2] = [(PREVIEW[0] * 2.0) as usize, (PREVIEW[1] * 2.0) as usize];
 /// The parameters' column and their labels' (labels wrap within it).
 const FIELDS_WIDTH: f32 = 320.0;
 const LABEL_WIDTH: f32 = 160.0;
@@ -48,6 +50,8 @@ pub struct TemplateDialog {
     pub active: Option<String>,
     /// Why the model cannot be built from the fields as they stand.
     pub error: Option<String>,
+    /// The preview being drawn off the frame ([`crate::home::draw_template`]).
+    drawing: Option<Pending<Result<crate::home::Drawing, String>>>,
 }
 
 impl TemplateDialog {
@@ -68,7 +72,17 @@ impl TemplateDialog {
                 name: p.name,
             })
             .collect();
-        Some(TemplateDialog { name: name.to_owned(), fields, preview: None, drawn: None, camera: None, marks: Vec::new(), active: None, error: None })
+        Some(TemplateDialog {
+            name: name.to_owned(),
+            fields,
+            preview: None,
+            drawn: None,
+            camera: None,
+            marks: Vec::new(),
+            active: None,
+            error: None,
+            drawing: None,
+        })
     }
 
     /// The values changed from the template's, by name; an error naming a field that is not a
@@ -84,23 +98,28 @@ impl TemplateDialog {
         Ok(Value::Object(map))
     }
 
-    /// Draws the preview again when the fields or the theme changed since it was drawn.
-    fn refresh(&mut self) {
+    /// Draws the preview again, off the frame, when the fields or the theme changed since it
+    /// was drawn; takes it once drawn.
+    fn refresh(&mut self, ctx: &egui::Context) {
         let key = (self.fields.iter().map(|f| f.text.clone()).collect::<Vec<_>>(), crate::theme::key());
-        if self.drawn.as_ref() == Some(&key) {
-            return;
+        if self.drawn.as_ref() != Some(&key) {
+            self.drawn = Some(key);
+            match self.values() {
+                // A drawing begun before is let go: only the latest fields' picture is shown.
+                Ok(v) => self.drawing = Some(crate::home::draw_template(ctx, &self.name, v, PREVIEW_PIXELS)),
+                Err(e) => {
+                    self.drawing = None;
+                    self.error = Some(e);
+                }
+            }
         }
-        self.drawn = Some(key);
-        let size = [(PREVIEW[0] * 2.0) as usize, (PREVIEW[1] * 2.0) as usize];
-        let drawn = self.values().and_then(|v| {
-            let (p, cam) = crate::home::template_picture(&self.name, &v, size)?;
-            Ok((p, cam, emcraft_engine::template_marks(&self.name, &v).unwrap_or_default()))
-        });
-        match drawn {
-            Ok((p, cam, marks)) => {
-                self.preview = Some(p);
-                self.camera = Some(cam);
-                self.marks = marks;
+        let Some(done) = self.drawing.as_ref().and_then(Pending::take) else { return };
+        self.drawing = None;
+        match done {
+            Ok(d) => {
+                self.preview = Some(Picture::new(&d.canvas));
+                self.camera = Some(d.camera);
+                self.marks = self.values().ok().and_then(|v| emcraft_engine::template_marks(&self.name, &v).ok()).unwrap_or_default();
                 self.error = None;
             }
             // The last good picture stays, with why this one cannot be built.
@@ -116,7 +135,7 @@ impl TemplateDialog {
 
 /// The template's card: its parameters, its preview and Open, Cancel and Reset.
 pub fn show(dlg: &mut TemplateDialog, ctx: &egui::Context, out: &mut Actions) {
-    dlg.refresh();
+    dlg.refresh(ctx);
     let t = &Tokens::get();
     let modal = egui::Modal::new(egui::Id::new("emcraft_template")).frame(t.card(t.dialog_body).inner_margin(16)).show(ctx, |ui| {
         // What it is in brief, its name (the sample `file.sample` opens) in a chip.

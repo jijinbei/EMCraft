@@ -470,3 +470,27 @@ fn a_carved_part_is_drawn_open_before_meshing() {
     assert_eq!(across.count(), 0, "metal across the mouth");
     assert!(b.scene.tris.iter().any(|t| t.tag == walls), "the walls drawn");
 }
+
+/// An imported region's port faces are its own caps on the ports' planes, read from its
+/// triangles (an E-plane step: two rectangles), not a grid of point-in-solid queries — which
+/// took 1.6 s a port on a helical guide of 37 000 triangles and froze the window.
+#[test]
+fn an_imported_regions_port_faces_are_its_own_caps() {
+    let path = format!("{}/../../tests/oracle/imported-step/step.stl", env!("CARGO_MANIFEST_DIR"));
+    let mut s = Session::new();
+    s.execute("geometry.import", &json!({"path": path, "materials": {"step.stl": "interior"}})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end"})).unwrap();
+    let m = s.model();
+    let b = m.bounds().unwrap();
+    for (p, z) in m.ports.iter().zip([b.min.z, b.max.z]) {
+        let face = super::extras::port_face(m, p);
+        // A grid's cells would be thousands; the caps are a few triangles, all on the plane.
+        assert!(!face.is_empty() && face.len() < 50, "{} triangles", face.len());
+        assert!(face.iter().flatten().all(|q| (q[2] - z).abs() < 1e-9), "off the plane");
+        // Facing along the axis, as the grid's cells do.
+        for [a, b, c] in &face {
+            assert!((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) >= 0.0);
+        }
+    }
+}

@@ -16,6 +16,7 @@ use crate::files::{FileAction, Then};
 use crate::glyphs::{self, Glyph};
 use crate::handle::{Fixed, Handle};
 use crate::lang::{Raw, args, sample_label, tr, trf};
+use crate::pending::Pending;
 use crate::scene3d::{self, Overlay};
 use crate::settings::Section;
 use crate::theme::Tokens;
@@ -36,18 +37,64 @@ pub struct Home {
     pub(crate) thumbs: Thumbs,
 }
 
-/// The samples' pictures, by name, with the theme they were drawn in (`None`: the sample
-/// could not be drawn).
-pub type Thumbs = HashMap<&'static str, (crate::theme::ThemeKey, Option<Picture>)>;
+/// The samples' pictures, by name.
+pub type Thumbs = HashMap<&'static str, Thumb>;
 
-/// A sample's model without its mesh or solve, drawn from the corner.
-fn thumbnail(name: &str) -> Option<Picture> {
-    template_picture(name, &Value::Null, [(THUMB[0] * 2.0) as usize, (THUMB[1] * 2.0) as usize]).ok().map(|(p, _)| p)
+/// A sample's picture: the theme it is drawn in, the picture (`None` while drawing the first
+/// time, or when the sample cannot be drawn) and the drawing under way.
+pub struct Thumb {
+    key: crate::theme::ThemeKey,
+    picture: Option<Picture>,
+    drawing: Option<Pending<Result<Drawing, String>>>,
+}
+
+impl Thumb {
+    /// Sample `name`'s picture begun in the current theme.
+    fn start(ctx: &egui::Context, name: &str) -> Thumb {
+        Thumb { key: crate::theme::key(), picture: None, drawing: Some(draw_template(ctx, name, Value::Null, THUMB_PIXELS)) }
+    }
+
+    /// Takes the picture once drawn; drawn again in a new theme, the old one shown meanwhile.
+    fn refresh(&mut self, ctx: &egui::Context, name: &str) {
+        let key = crate::theme::key();
+        if self.key != key {
+            self.key = key;
+            self.drawing = Some(draw_template(ctx, name, Value::Null, THUMB_PIXELS));
+        }
+        if let Some(done) = self.drawing.as_ref().and_then(Pending::take) {
+            self.drawing = None;
+            self.picture = done.ok().map(|d| Picture::new(&d.canvas));
+        }
+    }
+}
+
+/// A sample's picture's size in pixels (twice the card's points).
+const THUMB_PIXELS: [usize; 2] = [(THUMB[0] * 2.0) as usize, (THUMB[1] * 2.0) as usize];
+
+/// A template's model drawn: the picture and the camera it was drawn from.
+pub struct Drawing {
+    pub canvas: emcraft_render::Canvas,
+    pub camera: Camera,
+}
+
+/// [`template_canvas`] on a thread of its own ([`Pending`]), in this thread's theme.
+pub fn draw_template(ctx: &egui::Context, name: &str, values: Value, size: [usize; 2]) -> Pending<Result<Drawing, String>> {
+    let theme = (*crate::theme::current()).clone();
+    let name = name.to_owned();
+    Pending::start(ctx, move || {
+        crate::theme::set(std::rc::Rc::new(theme));
+        template_canvas(&name, &values, size)
+    })
+}
+
+/// [`template_canvas`] as a picture, with its camera.
+pub fn template_picture(name: &str, values: &Value, size: [usize; 2]) -> Result<(Picture, Camera), String> {
+    template_canvas(name, values, size).map(|d| (Picture::new(&d.canvas), d.camera))
 }
 
 /// Template `name`'s model with its parameters changed to `values`, without its mesh or solve,
 /// drawn from the corner `size` pixels, with the camera it was drawn from; why it cannot be built.
-pub fn template_picture(name: &str, values: &Value, size: [usize; 2]) -> Result<(Picture, Camera), String> {
+pub fn template_canvas(name: &str, values: &Value, size: [usize; 2]) -> Result<Drawing, String> {
     let steps: Vec<emcraft_engine::Step> = emcraft_engine::template_steps(name, values)
         .map_err(|e| e.to_string())?
         .into_iter()
@@ -59,7 +106,7 @@ pub fn template_picture(name: &str, values: &Value, size: [usize; 2]) -> Result<
         let t = Tokens::get();
         let rgb = crate::theme::rgb;
         let canvas = emcraft_render::pcb::preview(board, size, rgb(t.panel), rgb(t.panel).mix(rgb(t.success), 0.25), rgb(t.warning))?;
-        return Ok((Picture::new(&canvas), Camera::default()));
+        return Ok(Drawing { canvas, camera: Camera::default() });
     }
     // The model's shape only: its symmetry planes (how it is solved) left out of the picture.
     for axis in s.model().domain.symmetry.iter().map(|q| q.axis).collect::<Vec<_>>() {
@@ -78,7 +125,7 @@ pub fn template_picture(name: &str, values: &Value, size: [usize; 2]) -> Result<
     let rgb = crate::theme::rgb;
     let ground = (rgb(t.viewport_top), rgb(t.viewport_bottom));
     let canvas = crate::gpu3d::scene_picture(&built.scene, &cam, [w as u32, h as u32], ground).map_err(|e| e.to_string())?;
-    Ok((Picture::new(&canvas), cam))
+    Ok(Drawing { canvas, camera: cam })
 }
 
 pub fn show(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {
@@ -330,13 +377,11 @@ fn samples(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut A
             return;
         }
         let s = list[i - offset];
-        // Drawn again in a new theme (the view's ground and the scene's colours are its).
-        let key = crate::theme::key();
-        let slot = thumbs.entry(s.name).or_insert_with(|| (key.clone(), thumbnail(s.name)));
-        if slot.0 != key {
-            *slot = (key, thumbnail(s.name));
-        }
-        let pic = &mut slot.1;
+        // Drawn off the frame, again in a new theme (the view's ground and the scene's colours
+        // are its).
+        let slot = thumbs.entry(s.name).or_insert_with(|| Thumb::start(ui.ctx(), s.name));
+        slot.refresh(ui.ctx(), s.name);
+        let pic = &mut slot.picture;
         // Its description in brief as its name, the rest under it; the whole on hover.
         let about = sample_label(s.name);
         let (title, rest) = title_and_rest(about);

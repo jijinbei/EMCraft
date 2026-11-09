@@ -33,25 +33,63 @@ pub(super) fn port_face(m: &Model, p: &emcraft_model::Port) -> Vec<[[f64; 3]; 3]
             };
             (0..ROUND).map(|k| [on(cx, cy), at(k), at(k + 1)]).collect()
         }
-        Err(_) => {
-            let Some(b) = m.bounds() else { return Vec::new() };
-            // Just inside the body from the end face.
-            let inside = z + port_inward(p) * 1e-6 * (b.max.z - b.min.z).max(1e-9);
-            let (dx, dy) = ((b.max.x - b.min.x) / PORT_CELLS as f64, (b.max.y - b.min.y) / PORT_CELLS as f64);
-            let mut out = Vec::new();
-            for j in 0..PORT_CELLS {
-                for i in 0..PORT_CELLS {
-                    let (x, y) = (b.min.x + dx * i as f64, b.min.y + dy * j as f64);
-                    if m.material_at(emcraft_model::Point3::new(x + dx / 2.0, y + dy / 2.0, inside)).is_some() {
-                        let q = [[x, y, z], [x + dx, y, z], [x + dx, y + dy, z], [x, y + dy, z]];
-                        out.push([q[0], q[1], q[2]]);
-                        out.push([q[0], q[2], q[3]]);
-                    }
-                }
+        Err(_) => surface_face(m, &on, frame.axis.index()).unwrap_or_else(|| grid_face(m, p, z)),
+    }
+}
+
+/// How close to a port's plane (relative to the model's size) an imported surface's vertex
+/// counts as on it.
+const ON_PLANE: f64 = 1e-7;
+
+/// An imported region's own triangles in a port's plane (the opening's cap), each turned to
+/// face along the port's axis as the grid's cells do; `None` unless the region is one surface
+/// with nothing combined into it, or when none lie there. `on` places the port's (u, v) on its
+/// plane, `k` its axis.
+fn surface_face(m: &Model, on: &dyn Fn(f64, f64) -> [f64; 3], k: usize) -> Option<Vec<[[f64; 3]; 3]>> {
+    let solid = m.domain.solid.as_ref()?;
+    let emcraft_model::Shape::Surface { positions, triangles, .. } = &solid.shape else { return None };
+    if !m.features().is_empty() || !m.inclusions().is_empty() {
+        return None;
+    }
+    let b = m.bounds()?;
+    let tol = ON_PLANE * (b.max - b.min).norm();
+    let at = on(0.0, 0.0)[k];
+    let point = |v: u32| positions.get(v as usize).map(|q| p3(*q));
+    let face: Vec<[[f64; 3]; 3]> = triangles
+        .iter()
+        .filter_map(|t| {
+            let [a, b, c] = [point(t[0])?, point(t[1])?, point(t[2])?];
+            if ![a, b, c].iter().all(|q| (q[k] - at).abs() <= tol) {
+                return None;
             }
-            out
+            // (b − a) × (c − a) along the axis: positive keeps the order, else two corners swap.
+            let (i, j) = ((k + 1) % 3, (k + 2) % 3);
+            let normal = (b[i] - a[i]) * (c[j] - a[j]) - (b[j] - a[j]) * (c[i] - a[i]);
+            Some(if normal >= 0.0 { [a, b, c] } else { [a, c, b] })
+        })
+        .collect();
+    (!face.is_empty()).then_some(face)
+}
+
+/// The cells of a grid over a port's end whose centres lie in the body: a face no closed form
+/// describes, where Boolean features reach it.
+fn grid_face(m: &Model, p: &emcraft_model::Port, z: f64) -> Vec<[[f64; 3]; 3]> {
+    let Some(b) = m.bounds() else { return Vec::new() };
+    // Just inside the body from the end face.
+    let inside = z + port_inward(p) * 1e-6 * (b.max.z - b.min.z).max(1e-9);
+    let (dx, dy) = ((b.max.x - b.min.x) / PORT_CELLS as f64, (b.max.y - b.min.y) / PORT_CELLS as f64);
+    let mut out = Vec::new();
+    for j in 0..PORT_CELLS {
+        for i in 0..PORT_CELLS {
+            let (x, y) = (b.min.x + dx * i as f64, b.min.y + dy * j as f64);
+            if m.material_at(emcraft_model::Point3::new(x + dx / 2.0, y + dy / 2.0, inside)).is_some() {
+                let q = [[x, y, z], [x + dx, y, z], [x + dx, y + dy, z], [x, y + dy, z]];
+                out.push([q[0], q[1], q[2]]);
+                out.push([q[0], q[2], q[3]]);
+            }
         }
     }
+    out
 }
 
 /// The edges of a set of triangles that only one of them has: their outline.

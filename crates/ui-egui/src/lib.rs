@@ -74,6 +74,7 @@ pub mod navigation;
 pub mod pack;
 pub mod page;
 mod param_labels;
+pub mod pending;
 pub mod picture;
 pub mod prefs;
 pub mod raster;

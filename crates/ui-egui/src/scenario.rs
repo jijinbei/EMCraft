@@ -128,6 +128,8 @@ impl Default for Harness {
 
 impl Harness {
     pub fn new() -> Harness {
+        // What a step draws off the frame is drawn at once: the next step reads it.
+        crate::pending::inline_here();
         let ctx = egui::Context::default();
         ctx.enable_accesskit();
         let mut h = Harness {
