@@ -106,32 +106,121 @@ const GAUSS: [(f64, f64); 5] = [
 /// assert!(s_parameters(&p, 1, &[BorPort { z: 0.5, modes: 1 }], 12e9).is_err());
 /// ```
 pub fn s_parameters(p: &Profile, m: u32, ports: &[BorPort], frequency: f64) -> Result<BorSweepPoint> {
-    Ok(solved(p, m, ports, frequency, None, None)?.0)
+    Ok(solved(p, m, ports, frequency, None)?.point)
 }
 
 /// The generalized scattering matrix between every mode of every port (row-major, the modes by
 /// port in order), each mode's amplitude its own (unnormalized), with the first modes' point.
 pub fn generalized(p: &Profile, m: u32, ports: &[BorPort], frequency: f64) -> Result<(BorSweepPoint, Vec<C>)> {
-    let mut gsm = Vec::new();
-    let point = solved(p, m, ports, frequency, None, Some(&mut gsm))?.0;
+    let f = factored(p, m, ports, frequency, None)?;
+    // Every mode of every port excited in turn (a unit wave in), each read on every mode: the
+    // generalized scattering matrix, its amplitudes the modes' own (no power normalization).
+    let all: Vec<&Term> = f.terms.iter().flatten().collect();
+    let n = all.len();
+    let mut gsm = vec![C::new(0.0, 0.0); n * n];
+    for (q, tq) in all.iter().enumerate() {
+        let x = f.excite(tq)?;
+        for (pp, tp) in all.iter().enumerate() {
+            let c = tp.read(&x);
+            gsm[pp * n + q] = if pp == q { c - 1.0 } else { c };
+        }
+    }
+    let point = first_modes(&f, ports.len(), frequency)?.point;
     Ok((point, gsm))
 }
 
-/// [`s_parameters`] with the unknowns' numbering and each excitation's solution (port q's first
-/// mode, a unit wave in), the profile lined by `layer` when it is open.
-pub(super) fn solved(
-    p: &Profile,
-    m: u32,
-    ports: &[BorPort],
-    frequency: f64,
-    layer: Option<&super::open::Layer>,
-    gsm: Option<&mut Vec<C>>,
-) -> Result<(BorSweepPoint, Dofs, Vec<Vec<C>>)> {
-    if ports.is_empty() || ports.len() > 16 {
-        return Err(invalid("ports", "1 to 16 ports on the profile's ends"));
+/// A frequency solved on a profile: the S of the ports' first modes, the unknowns' numbering and
+/// each excitation's solution (port q's first mode, a unit wave in).
+pub(super) struct Solved {
+    pub point: BorSweepPoint,
+    pub dofs: Dofs,
+    pub solutions: Vec<Vec<C>>,
+}
+
+/// [`s_parameters`] with the unknowns' numbering and each excitation's solution, the profile
+/// lined by `layer` when it is open.
+pub(super) fn solved(p: &Profile, m: u32, ports: &[BorPort], frequency: f64, layer: Option<&super::open::Layer>) -> Result<Solved> {
+    let f = factored(p, m, ports, frequency, layer)?;
+    let first = first_modes(&f, ports.len(), frequency)?;
+    Ok(Solved { point: first.point, dofs: f.dofs, solutions: first.solutions })
+}
+
+/// A port mode's term: its vector b over the unknowns (the mode's field tested on the port's
+/// edges and nodes), its norm ‖ẽ‖², its κ/μ and its name.
+struct Term {
+    b: Vec<(usize, f64)>,
+    norm: f64,
+    kappa: C,
+    name: String,
+}
+
+impl Term {
+    /// The mode's amplitude in a solution: bᵀx / ‖ẽ‖².
+    fn read(&self, x: &[C]) -> C {
+        self.b.iter().map(|&(i, bi)| bi * x[i]).sum::<C>() / self.norm
     }
-    if p.triangles.is_empty() || p.triangles.len() > MAX_TRIANGLES || p.material.len() != p.triangles.len() || m > 64 {
-        return Err(invalid("profile", format!("must have 1 to {MAX_TRIANGLES} triangles, each with a material, and m at most 64")));
+}
+
+/// The system of a frequency factored, with the ports' mode terms.
+struct Factored {
+    dofs: Dofs,
+    terms: Vec<Vec<Term>>,
+    factor: Ldlt,
+}
+
+impl Factored {
+    /// The solution for a unit wave into `t`'s mode.
+    fn excite(&self, t: &Term) -> Result<Vec<C>> {
+        let mut x = vec![C::new(0.0, 0.0); self.dofs.count];
+        for &(i, bi) in &t.b {
+            x[i] = 2.0 * t.kappa * bi;
+        }
+        self.factor.solve(&mut x)?;
+        Ok(x)
+    }
+}
+
+/// The first modes' S (power-normalized) and each excitation's solution.
+struct FirstModes {
+    point: BorSweepPoint,
+    solutions: Vec<Vec<C>>,
+}
+
+fn first_modes(f: &Factored, n_ports: usize, frequency: f64) -> Result<FirstModes> {
+    let mut s = crate::SMatrix::zeros(n_ports);
+    let first: Vec<&Term> = f.terms.iter().map(|l| &l[0]).collect();
+    let proxy = |t: &Term| t.norm * t.kappa.im;
+    let mut solutions = Vec::with_capacity(n_ports);
+    for (q, tq) in first.iter().enumerate() {
+        let x = f.excite(tq)?;
+        for (pp, tp) in first.iter().enumerate() {
+            let c = tp.read(&x);
+            let direct = if pp == q { c - 1.0 } else { c };
+            let (wp, wq) = (proxy(tp), proxy(tq));
+            s[(pp, q)] = if wp > 0.0 && wq > 0.0 { direct * (wp / wq).sqrt() } else { direct };
+        }
+        solutions.push(x);
+    }
+    let point = BorSweepPoint { frequency, s, modes: first.iter().map(|t| t.name.clone()).collect(), unknowns: f.dofs.count };
+    Ok(FirstModes { point, solutions })
+}
+
+/// The most ports on a profile.
+const MAX_PORTS: usize = 16;
+
+/// The highest azimuthal order a driven profile takes.
+const MAX_ORDER: u32 = 64;
+
+/// The radial samples ‖ẽ‖² is integrated over.
+const NORM_SAMPLES: usize = 400;
+
+/// The profile's system at `frequency` (Hz) in order `m` with its ports' mode terms, factored.
+fn factored(p: &Profile, m: u32, ports: &[BorPort], frequency: f64, layer: Option<&super::open::Layer>) -> Result<Factored> {
+    if ports.is_empty() || ports.len() > MAX_PORTS {
+        return Err(invalid("ports", format!("1 to {MAX_PORTS} ports on the profile's ends")));
+    }
+    if p.triangles.is_empty() || p.triangles.len() > MAX_TRIANGLES || p.material.len() != p.triangles.len() || m > MAX_ORDER {
+        return Err(invalid("profile", format!("must have 1 to {MAX_TRIANGLES} triangles, each with a material, and m at most {MAX_ORDER}")));
     }
     if !p.points.iter().all(|q| q[0].is_finite() && q[1].is_finite() && q[0] >= 0.0)
         || p.triangles.iter().flatten().any(|&n| n as usize >= p.points.len())
@@ -139,85 +228,12 @@ pub(super) fn solved(
         return Err(invalid("profile", "every point must be finite with r ≥ 0, every corner a point"));
     }
     crate::driven::check_frequency(frequency)?;
-    let scale = p.points.iter().map(|q| q[0].abs().max(q[1].abs())).fold(0.0, f64::max).max(1e-300);
-    let tol = 1e-9 * scale;
-    let counts = boundary_edges(p);
-    // Each port's edges (boundary edges on its plane), its radius and its medium.
-    let mut port_edges: Vec<Vec<[u32; 2]>> = Vec::new();
-    for pt in ports {
-        if !(pt.z.is_finite() && (1..=MAX_PORT_MODES).contains(&pt.modes)) {
-            return Err(invalid("ports", format!("a port needs a finite plane and 1 to {MAX_PORT_MODES} modes")));
-        }
-        let on = |n: u32| p.points.get(n as usize).is_some_and(|q| (q[1] - pt.z).abs() <= tol);
-        let edges: Vec<[u32; 2]> = counts.iter().filter(|(e, c)| **c == 1 && on(e[0]) && on(e[1])).map(|(e, _)| *e).collect();
-        if edges.is_empty() {
-            return Err(invalid("ports", format!("no boundary edge of the profile lies on z = {} m", pt.z)));
-        }
-        port_edges.push(edges);
-    }
+    let tol = tolerance(p);
+    let port_edges = ports.iter().map(|pt| port_edges(p, pt, tol)).collect::<Result<Vec<_>>>()?;
     let open: std::collections::BTreeSet<[u32; 2]> = port_edges.iter().flatten().copied().collect();
     let d = numbering_open(p, m, &open);
-    // Each port's vectors b per mode, its support, norms and κ.
     let k0 = 2.0 * PI * frequency / C0;
-    struct Term {
-        b: Vec<(usize, f64)>,
-        norm: f64,
-        kappa: C,
-        name: String,
-    }
-    let mut terms: Vec<Vec<Term>> = Vec::new();
-    for (pt, edges) in ports.iter().zip(&port_edges) {
-        let r_of = |n: u32| p.points.get(n as usize).map_or(0.0, |q| q[0]);
-        let a = edges.iter().flatten().map(|&n| r_of(n)).fold(0.0, f64::max);
-        if !(a > tol) || edges.iter().flatten().map(|&n| r_of(n)).fold(f64::INFINITY, f64::min) > tol {
-            return Err(invalid("ports", format!("the port on z = {} m must reach from the axis out", pt.z)));
-        }
-        // The medium of a triangle on the port.
-        let tri = p.triangles.iter().position(|t| edges.iter().any(|e| t.contains(&e[0]) && t.contains(&e[1]))).unwrap_or(0);
-        let (eps, mu) = p.material.get(tri).copied().unwrap_or((1.0, 1.0));
-        let k = k0 * (eps * mu).sqrt();
-        let mut list = Vec::new();
-        for md in port_modes(a, m, pt.modes) {
-            let mut b: BTreeMap<usize, f64> = BTreeMap::new();
-            for e in edges {
-                let (ra, rb) = (r_of(e[0]), r_of(e[1]));
-                let len = (rb - ra).abs();
-                for &(t, w) in &GAUSS {
-                    let r = ra + t * (rb - ra);
-                    let [er, ephi] = md.field(r);
-                    // The Whitney function along its edge, from e[0] (the lower) to e[1]: 1/len
-                    // along the edge, whose r runs one way or the other.
-                    if let Some(&u) = d.edge.get(e) {
-                        let along = if rb > ra { 1.0 } else { -1.0 } / len;
-                        *b.entry(u).or_default() += w * len * along * er * r;
-                    }
-                    for (n, lam) in [(e[0], 1.0 - t), (e[1], t)] {
-                        if let Some(Some(u)) = d.node.get(n as usize) {
-                            *b.entry(*u).or_default() += w * len * lam * ephi;
-                        }
-                    }
-                }
-            }
-            // ‖ẽ‖² over [0, a], finely.
-            let samples = 400;
-            let norm: f64 = (0..samples)
-                .map(|i| {
-                    let (lo, hi) = (a * i as f64 / samples as f64, a * (i + 1) as f64 / samples as f64);
-                    GAUSS
-                        .iter()
-                        .map(|&(t, w)| {
-                            let r = lo + t * (hi - lo);
-                            let [x, y] = md.field(r);
-                            w * (hi - lo) * (x * x + y * y) * r
-                        })
-                        .sum::<f64>()
-                })
-                .sum();
-            let kappa = md.kappa(k).ok_or_else(|| invalid("frequency", format!("{frequency} Hz is at the cut-off of {}", md.name())))? / mu;
-            list.push(Term { b: b.into_iter().collect(), norm, kappa, name: md.name() });
-        }
-        terms.push(list);
-    }
+    let terms = ports.iter().zip(&port_edges).map(|(pt, edges)| port_terms(p, m, pt, edges, &d, frequency)).collect::<Result<Vec<_>>>()?;
     let support: Vec<Vec<usize>> = terms.iter().map(|l| l.iter().flat_map(|t| t.b.iter().map(|x| x.0)).collect()).collect();
     let (k, mm, _) = assemble_with(p, m, &d, &support, layer.map(|l| (l, k0)))?;
     let mut a = k.clone();
@@ -232,58 +248,83 @@ pub(super) fn solved(
             }
         }
     }
-    let at = |n: u32| p.points.get(n as usize).map_or(Point3::ORIGIN, |q| Point3::new(q[0], q[1], 0.0));
-    let mut xyz = vec![Point3::ORIGIN; d.count];
-    for (e, &u) in &d.edge {
-        xyz[u] = at(e[0]).lerp(at(e[1]), 0.5);
+    let factor = Ldlt::factor(&a, &super::unknown_points(p, &d))?;
+    Ok(Factored { dofs: d, terms, factor })
+}
+
+/// Two coordinates of the profile are the same within this (m): its geometry tolerance of its
+/// largest coordinate.
+fn tolerance(p: &Profile) -> f64 {
+    let scale = p.points.iter().map(|q| q[0].abs().max(q[1].abs())).fold(0.0, f64::max).max(f64::MIN_POSITIVE);
+    crate::GEOMETRY_TOLERANCE * scale
+}
+
+/// A port's edges: the profile's boundary edges on its plane z (within `tol`).
+fn port_edges(p: &Profile, pt: &BorPort, tol: f64) -> Result<Vec<[u32; 2]>> {
+    if !(pt.z.is_finite() && (1..=MAX_PORT_MODES).contains(&pt.modes)) {
+        return Err(invalid("ports", format!("a port needs a finite plane and 1 to {MAX_PORT_MODES} modes")));
     }
-    for (n, u) in d.node.iter().enumerate() {
-        if let Some(u) = u {
-            xyz[*u] = at(n as u32);
-        }
+    let on = |n: u32| p.points.get(n as usize).is_some_and(|q| (q[1] - pt.z).abs() <= tol);
+    let edges: Vec<[u32; 2]> = boundary_edges(p).iter().filter(|(e, c)| **c == 1 && on(e[0]) && on(e[1])).map(|(e, _)| *e).collect();
+    if edges.is_empty() {
+        return Err(invalid("ports", format!("no boundary edge of the profile lies on z = {} m", pt.z)));
     }
-    let factor = Ldlt::factor(&a, &xyz)?;
-    if let Some(out) = gsm {
-        // Every mode of every port excited in turn (a unit wave in), each read on every mode:
-        // the generalized scattering matrix, its amplitudes as the modes' own (no power
-        // normalization), modes by port in order.
-        let all: Vec<&Term> = terms.iter().flatten().collect();
-        let n = all.len();
-        out.clear();
-        out.resize(n * n, C::new(0.0, 0.0));
-        for (q, tq) in all.iter().enumerate() {
-            let mut x = vec![C::new(0.0, 0.0); d.count];
-            for &(i, bi) in &tq.b {
-                x[i] = 2.0 * tq.kappa * bi;
+    Ok(edges)
+}
+
+/// A port's mode terms: each mode's field tested on the port's edges and nodes, its norm and κ
+/// in the medium of the triangle on the port.
+fn port_terms(p: &Profile, m: u32, pt: &BorPort, edges: &[[u32; 2]], d: &Dofs, frequency: f64) -> Result<Vec<Term>> {
+    let (k0, tol) = (2.0 * PI * frequency / C0, tolerance(p));
+    let r_of = |n: u32| p.points.get(n as usize).map_or(0.0, |q| q[0]);
+    let a = edges.iter().flatten().map(|&n| r_of(n)).fold(0.0, f64::max);
+    if !(a > tol) || edges.iter().flatten().map(|&n| r_of(n)).fold(f64::INFINITY, f64::min) > tol {
+        return Err(invalid("ports", format!("the port on z = {} m must reach from the axis out", pt.z)));
+    }
+    // The medium of a triangle on the port.
+    let tri = p.triangles.iter().position(|t| edges.iter().any(|e| t.contains(&e[0]) && t.contains(&e[1]))).unwrap_or(0);
+    let (eps, mu) = p.material.get(tri).copied().unwrap_or((1.0, 1.0));
+    let k = k0 * (eps * mu).sqrt();
+    let mut list = Vec::new();
+    for md in port_modes(a, m, pt.modes) {
+        let mut b: BTreeMap<usize, f64> = BTreeMap::new();
+        for e in edges {
+            let (ra, rb) = (r_of(e[0]), r_of(e[1]));
+            let len = (rb - ra).abs();
+            for &(t, w) in &GAUSS {
+                let r = ra + t * (rb - ra);
+                let [er, ephi] = md.field(r);
+                // The Whitney function along its edge, from e[0] (the lower) to e[1]: 1/len
+                // along the edge, whose r runs one way or the other.
+                if let Some(&u) = d.edge.get(e) {
+                    let along = if rb > ra { 1.0 } else { -1.0 } / len;
+                    *b.entry(u).or_default() += w * len * along * er * r;
+                }
+                for (n, lam) in [(e[0], 1.0 - t), (e[1], t)] {
+                    if let Some(Some(u)) = d.node.get(n as usize) {
+                        *b.entry(*u).or_default() += w * len * lam * ephi;
+                    }
+                }
             }
-            factor.solve(&mut x)?;
-            for (pp, tp) in all.iter().enumerate() {
-                let c: C = tp.b.iter().map(|&(i, bi)| bi * x[i]).sum::<C>() / tp.norm;
-                out[pp * n + q] = if pp == q { c - 1.0 } else { c };
-            }
         }
+        // ‖ẽ‖² over [0, a], finely.
+        let norm: f64 = (0..NORM_SAMPLES)
+            .map(|i| {
+                let (lo, hi) = (a * i as f64 / NORM_SAMPLES as f64, a * (i + 1) as f64 / NORM_SAMPLES as f64);
+                GAUSS
+                    .iter()
+                    .map(|&(t, w)| {
+                        let r = lo + t * (hi - lo);
+                        let [x, y] = md.field(r);
+                        w * (hi - lo) * (x * x + y * y) * r
+                    })
+                    .sum::<f64>()
+            })
+            .sum();
+        let kappa = md.kappa(k).ok_or_else(|| invalid("frequency", format!("{frequency} Hz is at the cut-off of {}", md.name())))? / mu;
+        list.push(Term { b: b.into_iter().collect(), norm, kappa, name: md.name() });
     }
-    let n_ports = ports.len();
-    let mut s = crate::SMatrix::zeros(n_ports);
-    let first: Vec<&Term> = terms.iter().map(|l| &l[0]).collect();
-    let proxy = |t: &Term| t.norm * t.kappa.im;
-    let mut solutions = Vec::with_capacity(n_ports);
-    for (q, tq) in first.iter().enumerate() {
-        let mut x = vec![C::new(0.0, 0.0); d.count];
-        for &(i, bi) in &tq.b {
-            x[i] = 2.0 * tq.kappa * bi;
-        }
-        factor.solve(&mut x)?;
-        for (pp, tp) in first.iter().enumerate() {
-            let c: C = tp.b.iter().map(|&(i, bi)| bi * x[i]).sum::<C>() / tp.norm;
-            let direct = if pp == q { c - 1.0 } else { c };
-            let (wp, wq) = (proxy(tp), proxy(tq));
-            s[(pp, q)] = if wp > 0.0 && wq > 0.0 { direct * (wp / wq).sqrt() } else { direct };
-        }
-        solutions.push(x);
-    }
-    let point = BorSweepPoint { frequency, s, modes: first.iter().map(|t| t.name.clone()).collect(), unknowns: d.count };
-    Ok((point, d, solutions))
+    Ok(list)
 }
 
 #[cfg(test)]

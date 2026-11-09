@@ -106,6 +106,99 @@ impl Walls<'_> {
     pub const NONE: Walls<'static> = Walls { conductors: &[], free: &[], curved: &std::collections::BTreeMap::new() };
 }
 
+/// Refuses a cross-section without triangles, with materials not one per triangle or not
+/// finite and positive, or with a triangle on a missing node or a node not finite.
+fn check_section(nodes: &[Point3], tris: &[[u32; 3]], eps: &[f64], mu: &[f64]) -> Result<()> {
+    if tris.is_empty() || eps.len() != tris.len() || mu.len() != tris.len() {
+        return Err(invalid("port cross-section", "needs triangles, each with its materials"));
+    }
+    if !eps.iter().chain(mu).all(|v| v.is_finite() && *v > 0.0) {
+        return Err(invalid("port cross-section", "materials must be finite and positive (lossless)"));
+    }
+    let nn = nodes.len();
+    if tris.iter().flatten().any(|&v| v as usize >= nn) || !nodes.iter().all(|p| p.is_finite()) {
+        return Err(invalid("port cross-section", "a triangle refers to a missing node, or a node is not finite"));
+    }
+    Ok(())
+}
+
+/// A cross-section's edges, numbered in ascending order of their (ascending) nodes: each one's
+/// number and how many triangles use it, the list, and each triangle's three.
+struct Edges {
+    numbers: std::collections::BTreeMap<[u32; 2], (usize, u32)>,
+    list: Vec<[u32; 2]>,
+    of_tris: Vec<[u32; 3]>,
+}
+
+impl Edges {
+    /// The edges of triangles whose nodes are sorted.
+    fn of(tris: &[[u32; 3]]) -> Edges {
+        let mut numbers: std::collections::BTreeMap<[u32; 2], (usize, u32)> = std::collections::BTreeMap::new();
+        for t in tris {
+            for [i, j] in TRI_EDGES {
+                numbers.entry([t[i], t[j]]).or_insert((0, 0)).1 += 1;
+            }
+        }
+        for (k, v) in numbers.values_mut().enumerate() {
+            v.0 = k;
+        }
+        let list: Vec<[u32; 2]> = numbers.keys().copied().collect();
+        let of_tris = tris.iter().map(|t| TRI_EDGES.map(|[i, j]| numbers.get(&[t[i], t[j]]).map_or(0, |e| e.0 as u32))).collect();
+        Edges { numbers, list, of_tris }
+    }
+
+    /// Which edges are conducting walls: the boundary ones (used once) but `walls.free`, and
+    /// `walls.conductors`.
+    fn on_walls(&self, walls: Walls<'_>) -> Vec<bool> {
+        let mut wall: Vec<bool> = self.numbers.values().map(|&(_, uses)| uses == 1).collect();
+        let place = |c: &[u32; 2]| self.numbers.get(&[c[0].min(c[1]), c[0].max(c[1])]).map(|&(k, _)| k);
+        for k in walls.free.iter().filter_map(place) {
+            wall[k] = false;
+        }
+        for k in walls.conductors.iter().filter_map(place) {
+            wall[k] = true;
+        }
+        wall
+    }
+}
+
+/// The unknowns' numbers: the transverse ones (per edge, then per triangle) and the
+/// longitudinal ones (per node, then per edge at second order), with each unknown's point.
+struct Numbered {
+    t_unknown: Vec<Slot>,
+    z_unknown: Vec<Slot>,
+    points: Vec<Point3>,
+}
+
+/// Numbers the unknowns off the walls: the walls' edges and nodes carry none.
+fn number_unknowns(order: Order, nodes: &[Point3], tris: &[[u32; 3]], edge_list: &[[u32; 2]], wall_edge: &[bool]) -> Numbered {
+    let nn = nodes.len();
+    let mut wall_node = vec![false; nn];
+    for (e, _) in edge_list.iter().zip(wall_edge).filter(|(_, w)| **w) {
+        wall_node[e[0] as usize] = true;
+        wall_node[e[1] as usize] = true;
+    }
+    let ne = edge_list.len();
+    let (pe, pf) = (order.per_edge(), order.per_face());
+    let mid = |e: usize| edge_list.get(e).map_or(Point3::ORIGIN, |[a, b]| nodes[*a as usize].midpoint(nodes[*b as usize]));
+    let centre = |t: usize| Point3::centroid(tris[t].map(|v| nodes[v as usize])).unwrap_or(Point3::ORIGIN);
+    let mut points = Vec::new();
+    let mut number = |free: bool, p: Point3| {
+        if free {
+            points.push(p);
+            Slot::new(points.len() - 1)
+        } else {
+            Slot::NONE
+        }
+    };
+    let mut t_unknown: Vec<Slot> = (0..ne * pe).map(|s| number(!wall_edge[s / pe], mid(s / pe))).collect();
+    t_unknown.extend((0..tris.len() * pf).map(|s| number(true, centre(s / pf))));
+    let scalar_slots = nn + if order == Order::Two { ne } else { 0 };
+    let z_unknown: Vec<Slot> =
+        (0..scalar_slots).map(|s| if s < nn { number(!wall_node[s], nodes[s]) } else { number(!wall_edge[s - nn], mid(s - nn)) }).collect();
+    Numbered { t_unknown, z_unknown, points }
+}
+
 impl CrossSection {
     /// A cross-section of triangles on `nodes` (their z ignored) with εr and μr per triangle.
     /// Its boundary edges and the `walls.conductors` edges inside it are conducting walls, but
@@ -114,17 +207,7 @@ impl CrossSection {
     /// weakly. Edges in `walls.curved` have their midpoints moved there, onto a curved wall:
     /// their triangles are curved ([`Triangle::curved`]).
     pub fn new(order: Order, nodes: Vec<Point3>, tris: Vec<[u32; 3]>, eps: Vec<f64>, mu: Vec<f64>, walls: Walls<'_>) -> Result<CrossSection> {
-        let Walls { conductors, free, curved } = walls;
-        if tris.is_empty() || eps.len() != tris.len() || mu.len() != tris.len() {
-            return Err(invalid("port cross-section", "needs triangles, each with its materials"));
-        }
-        if !eps.iter().chain(&mu).all(|v| v.is_finite() && *v > 0.0) {
-            return Err(invalid("port cross-section", "materials must be finite and positive (lossless)"));
-        }
-        let nn = nodes.len();
-        if tris.iter().flatten().any(|&v| v as usize >= nn) || !nodes.iter().all(|p| p.is_finite()) {
-            return Err(invalid("port cross-section", "a triangle refers to a missing node, or a node is not finite"));
-        }
+        check_section(&nodes, &tris, &eps, &mu)?;
         let tris: Vec<[u32; 3]> = tris
             .into_iter()
             .map(|mut t| {
@@ -132,54 +215,13 @@ impl CrossSection {
                 t
             })
             .collect();
-        // Edges numbered in ascending order of their nodes.
-        let mut edge_set: std::collections::BTreeMap<[u32; 2], (usize, u32)> = std::collections::BTreeMap::new();
-        for t in &tris {
-            for [i, j] in TRI_EDGES {
-                edge_set.entry([t[i], t[j]]).or_insert((0, 0)).1 += 1;
-            }
-        }
-        for (k, v) in edge_set.values_mut().enumerate() {
-            v.0 = k;
-        }
-        let edge_list: Vec<[u32; 2]> = edge_set.keys().copied().collect();
-        let tri_edges: Vec<[u32; 3]> = tris.iter().map(|t| TRI_EDGES.map(|[i, j]| edge_set.get(&[t[i], t[j]]).map_or(0, |e| e.0 as u32))).collect();
-        let mut wall_edge: Vec<bool> = edge_set.values().map(|&(_, uses)| uses == 1).collect();
-        for c in free {
-            let key = [c[0].min(c[1]), c[0].max(c[1])];
-            if let Some(&(k, _)) = edge_set.get(&key) {
-                wall_edge[k] = false;
-            }
-        }
-        for c in conductors {
-            let key = [c[0].min(c[1]), c[0].max(c[1])];
-            if let Some(&(k, _)) = edge_set.get(&key) {
-                wall_edge[k] = true;
-            }
-        }
-        let mut wall_node = vec![false; nn];
-        for (e, _) in edge_list.iter().zip(&wall_edge).filter(|(_, w)| **w) {
-            wall_node[e[0] as usize] = true;
-            wall_node[e[1] as usize] = true;
-        }
+        let curved = walls.curved;
+        let edges = Edges::of(&tris);
+        let wall_edge = edges.on_walls(walls);
+        let edge_list = edges.list;
+        let tri_edges = edges.of_tris;
+        let Numbered { t_unknown, z_unknown, points } = number_unknowns(order, &nodes, &tris, &edge_list, &wall_edge);
         let ne = edge_list.len();
-        let (pe, pf) = (order.per_edge(), order.per_face());
-        let mid = |e: usize| edge_list.get(e).map_or(Point3::ORIGIN, |[a, b]| nodes[*a as usize].midpoint(nodes[*b as usize]));
-        let centre = |t: usize| Point3::centroid(tris[t].map(|v| nodes[v as usize])).unwrap_or(Point3::ORIGIN);
-        let mut points = Vec::new();
-        let mut number = |free: bool, p: Point3| {
-            if free {
-                points.push(p);
-                Slot::new(points.len() - 1)
-            } else {
-                Slot::NONE
-            }
-        };
-        let mut t_unknown: Vec<Slot> = (0..ne * pe).map(|s| number(!wall_edge[s / pe], mid(s / pe))).collect();
-        t_unknown.extend((0..tris.len() * pf).map(|s| number(true, centre(s / pf))));
-        let scalar_slots = nn + if order == Order::Two { ne } else { 0 };
-        let z_unknown: Vec<Slot> =
-            (0..scalar_slots).map(|s| if s < nn { number(!wall_node[s], nodes[s]) } else { number(!wall_edge[s - nn], mid(s - nn)) }).collect();
         let transverse = t_unknown.iter().filter(|u| u.get().is_some()).count();
         let unknowns = points.len();
         if unknowns == 0 {

@@ -322,21 +322,7 @@ fn dot(a: &[f64], b: &[f64]) -> f64 {
 /// assert!(eigenmodes(&p, 0, 1, 1e10).is_err());
 /// ```
 pub fn eigenmodes(p: &Profile, m: u32, count: usize, near: f64) -> Result<Vec<BorMode>> {
-    if p.triangles.is_empty() || p.triangles.len() > MAX_TRIANGLES || p.material.len() != p.triangles.len() {
-        return Err(invalid("profile", format!("must have 1 to {MAX_TRIANGLES} triangles, each with a material")));
-    }
-    if !p.points.iter().all(|q| q[0].is_finite() && q[1].is_finite() && q[0] >= 0.0) {
-        return Err(invalid("profile", "every point must be finite with r ≥ 0 (the half-plane right of the axis)"));
-    }
-    if !p.material.iter().all(|(e, u)| e.is_finite() && u.is_finite() && *e > 0.0 && *u > 0.0) {
-        return Err(invalid("profile", "every material needs finite εr > 0 and μr > 0"));
-    }
-    if p.triangles.iter().flatten().any(|&n| n as usize >= p.points.len()) {
-        return Err(invalid("profile", "a triangle's corner is not a point"));
-    }
-    if !(1..=50).contains(&count) || m > 64 {
-        return Err(invalid("modes", "1 to 50 modes, of order m from 0 to 64"));
-    }
+    check(p, m, count)?;
     crate::driven::check_frequency(near)?;
     let d = numbering(p, m);
     if d.count == 0 {
@@ -344,61 +330,13 @@ pub fn eigenmodes(p: &Profile, m: u32, count: usize, near: f64) -> Result<Vec<Bo
     }
     let (k, mm, gradients) = assemble(p, m, &d)?;
     let sigma = (2.0 * PI * near / C0).powi(2);
-    // A point per unknown for the ordering: an edge's middle, a node.
-    let at = |n: u32| p.points.get(n as usize).map_or(Point3::ORIGIN, |q| Point3::new(q[0], q[1], 0.0));
-    let mut xyz = vec![Point3::ORIGIN; d.count];
-    for (e, &u) in &d.edge {
-        xyz[u] = at(e[0]).lerp(at(e[1]), 0.5);
-    }
-    for (n, u) in d.node.iter().enumerate() {
-        if let Some(u) = u {
-            xyz[*u] = at(n as u32);
-        }
-    }
     let mut shifted = k.clone();
     for (v, w) in shifted.val.iter_mut().zip(&mm.val) {
         *v -= w * sigma;
     }
-    let factor = Ldlt::factor(&shifted, &xyz)?;
-    // GᵀMG, factored for the projection, column by column in sparse form: (M g_c)'s entries
-    // reach only the unknowns next to g_c's, and Gᵀ of them only the gradients there.
-    let mut by_unknown: Vec<Vec<(usize, f64)>> = vec![Vec::new(); d.count];
-    for (j, col) in gradients.iter().enumerate() {
-        for &(i, g) in col {
-            if let Some(r) = by_unknown.get_mut(i) {
-                r.push((j, g));
-            }
-        }
-    }
-    let gtmg = {
-        let mut b = Csr::builder(d.psis);
-        for col in &gradients {
-            let mut mg: BTreeMap<usize, f64> = BTreeMap::new();
-            for &(i, g) in col {
-                for e in mm.row(i) {
-                    *mg.entry(mm.col[e]).or_insert(0.0) += mm.val[e].re * g;
-                }
-            }
-            let mut row: BTreeMap<usize, f64> = BTreeMap::new();
-            for (k, v) in mg {
-                for &(j, g) in by_unknown.get(k).into_iter().flatten() {
-                    *row.entry(j).or_insert(0.0) += g * v;
-                }
-            }
-            b.row(row.into_iter().filter(|(_, v)| *v != 0.0).map(|(j, v)| (j, C::new(v, 0.0))));
-        }
-        b.finish()
-    };
-    let psi_at: Vec<Point3> = {
-        let mut v = vec![Point3::ORIGIN; d.psis];
-        for (n, c) in d.psi.iter().enumerate() {
-            if let Some(c) = c {
-                v[*c] = at(n as u32);
-            }
-        }
-        v
-    };
-    let gfactor = if d.psis > 0 { Some(Ldlt::factor(&gtmg, &psi_at)?) } else { None };
+    let factor = Ldlt::factor(&shifted, &unknown_points(p, &d))?;
+    let gfactor = if d.psis > 0 { Some(Ldlt::factor(&gradient_mass(&gradients, &mm, d.count, d.psis), &psi_points(p, &d))?) } else { None };
+    // x less its gradient part: x − G (GᵀMG)⁻¹ GᵀM x.
     let project = |x: &mut Vec<f64>| -> Result<()> {
         let Some(f) = &gfactor else { return Ok(()) };
         let mx = mul(&mm, x);
@@ -412,20 +350,7 @@ pub fn eigenmodes(p: &Profile, m: u32, count: usize, near: f64) -> Result<Vec<Bo
         Ok(())
     };
     // The subspace: twice the modes wanted, deterministic start vectors.
-    let q = (2 * count).max(count + 4).min(d.count);
-    let mut state = 0x2545_f491_4f6c_dd1du64;
-    let mut basis: Vec<Vec<f64>> = (0..q)
-        .map(|_| {
-            (0..d.count)
-                .map(|_| {
-                    state ^= state << 13;
-                    state ^= state >> 7;
-                    state ^= state << 17;
-                    (state >> 11) as f64 / (1u64 << 53) as f64 - 0.5
-                })
-                .collect()
-        })
-        .collect();
+    let mut basis = start_basis((2 * count).max(count + 4).min(d.count), d.count);
     let mut last: Vec<f64> = Vec::new();
     for _ in 0..MAX_ITERATIONS {
         for x in &mut basis {
@@ -435,42 +360,13 @@ pub fn eigenmodes(p: &Profile, m: u32, count: usize, near: f64) -> Result<Vec<Bo
             *x = real(&y);
             project(x)?;
         }
-        // Rayleigh–Ritz: Kr z = λ Mr z.
-        let kx: Vec<Vec<f64>> = basis.iter().map(|x| mul(&k, x)).collect();
-        let mx: Vec<Vec<f64>> = basis.iter().map(|x| mul(&mm, x)).collect();
-        let n = basis.len();
-        let kr: Vec<f64> = (0..n * n).map(|ij| dot(&basis[ij / n], &kx[ij % n])).collect();
-        let mr: Vec<f64> = (0..n * n).map(|ij| dot(&basis[ij / n], &mx[ij % n])).collect();
-        let chol = Cholesky::new(&mr, n).ok_or_else(|| invalid("BOR eigenmodes", "the subspace lost its independence"))?;
-        // A = L⁻¹ Kr L⁻ᵀ, column by column (Kr symmetric).
-        let cols: Vec<Vec<f64>> = (0..n).map(|j| chol.lower_solve(&(0..n).map(|i| kr[i * n + j]).collect::<Vec<_>>())).collect();
-        let rows: Vec<Vec<f64>> = (0..n).map(|i| chol.lower_solve(&(0..n).map(|j| cols[j][i]).collect::<Vec<_>>())).collect();
-        let a: Vec<f64> = (0..n * n).map(|ij| 0.5 * (rows[ij / n][ij % n] + rows[ij % n][ij / n])).collect();
-        let mut pairs = crate::dense::eigen(&a, n).ok_or_else(|| invalid("BOR eigenmodes", "the projected problem did not converge"))?;
-        pairs.retain(|e| e.im == 0.0 && !e.vector.is_empty());
-        pairs.sort_by(|x, y| (x.re - sigma).abs().total_cmp(&(y.re - sigma).abs()));
-        // The new basis: the Ritz vectors, nearest the shift first.
-        let mut next = Vec::with_capacity(pairs.len());
-        for e in &pairs {
-            let z = chol.upper_solve(&e.vector);
-            let mut x = vec![0.0; d.count];
-            for (zj, b) in z.iter().zip(&basis) {
-                for (xi, bi) in x.iter_mut().zip(b) {
-                    *xi += zj * bi;
-                }
-            }
-            let norm = dot(&x, &mul(&mm, &x)).sqrt();
-            if norm > 0.0 && norm.is_finite() {
-                x.iter_mut().for_each(|v| *v /= norm);
-                next.push(x);
-            }
-        }
-        if next.len() < count {
+        let ritz = rayleigh_ritz(&basis, &k, &mm, sigma)?;
+        if ritz.vectors.len() < count {
             return Err(invalid("BOR eigenmodes", "the subspace lost its independence"));
         }
-        basis = next;
-        let values: Vec<f64> = pairs.iter().take(count).map(|e| e.re).collect();
-        let settled = values.len() == last.len() && values.iter().zip(&last).all(|(a, b)| (a - b).abs() <= 1e-11 * a.abs().max(sigma));
+        basis = ritz.vectors;
+        let values: Vec<f64> = ritz.values.into_iter().take(count).collect();
+        let settled = values.len() == last.len() && values.iter().zip(&last).all(|(a, b)| (a - b).abs() <= crate::CONVERGED * a.abs().max(sigma));
         last = values;
         if settled {
             let mut modes: Vec<BorMode> = last.iter().map(|&k2| BorMode { frequency: k2.max(0.0).sqrt() * C0 / (2.0 * PI), m }).collect();
@@ -479,6 +375,150 @@ pub fn eigenmodes(p: &Profile, m: u32, count: usize, near: f64) -> Result<Vec<Bo
         }
     }
     Err(invalid("BOR eigenmodes", format!("did not converge in {MAX_ITERATIONS} passes")))
+}
+
+/// The most modes one call finds.
+const MAX_MODES: usize = 50;
+
+/// The highest azimuthal order.
+const MAX_ORDER: u32 = 64;
+
+/// Refuses a profile, order or count of modes [`eigenmodes`] cannot take, with why.
+fn check(p: &Profile, m: u32, count: usize) -> Result<()> {
+    if p.triangles.is_empty() || p.triangles.len() > MAX_TRIANGLES || p.material.len() != p.triangles.len() {
+        return Err(invalid("profile", format!("must have 1 to {MAX_TRIANGLES} triangles, each with a material")));
+    }
+    if !p.points.iter().all(|q| q[0].is_finite() && q[1].is_finite() && q[0] >= 0.0) {
+        return Err(invalid("profile", "every point must be finite with r ≥ 0 (the half-plane right of the axis)"));
+    }
+    if !p.material.iter().all(|(e, u)| e.is_finite() && u.is_finite() && *e > 0.0 && *u > 0.0) {
+        return Err(invalid("profile", "every material needs finite εr > 0 and μr > 0"));
+    }
+    if p.triangles.iter().flatten().any(|&n| n as usize >= p.points.len()) {
+        return Err(invalid("profile", "a triangle's corner is not a point"));
+    }
+    if !(1..=MAX_MODES).contains(&count) || m > MAX_ORDER {
+        return Err(invalid("modes", format!("1 to {MAX_MODES} modes, of order m from 0 to {MAX_ORDER}")));
+    }
+    Ok(())
+}
+
+/// A profile point (r, z) placed in the plane z = 0 for the orderings.
+fn plane_point(p: &Profile, n: u32) -> Point3 {
+    p.points.get(n as usize).map_or(Point3::ORIGIN, |q| Point3::new(q[0], q[1], 0.0))
+}
+
+/// A point per unknown for the ordering: an edge's middle, a node.
+fn unknown_points(p: &Profile, d: &Dofs) -> Vec<Point3> {
+    let mut xyz = vec![Point3::ORIGIN; d.count];
+    for (e, &u) in &d.edge {
+        xyz[u] = plane_point(p, e[0]).lerp(plane_point(p, e[1]), 0.5);
+    }
+    for (n, u) in d.node.iter().enumerate() {
+        if let Some(u) = u {
+            xyz[*u] = plane_point(p, n as u32);
+        }
+    }
+    xyz
+}
+
+/// A point per gradient (a scalar node) for its ordering.
+fn psi_points(p: &Profile, d: &Dofs) -> Vec<Point3> {
+    let mut v = vec![Point3::ORIGIN; d.psis];
+    for (n, c) in d.psi.iter().enumerate() {
+        if let Some(c) = c {
+            v[*c] = plane_point(p, n as u32);
+        }
+    }
+    v
+}
+
+/// GᵀMG, column by column in sparse form: (M g_c)'s entries reach only the unknowns next to
+/// g_c's, and Gᵀ of them only the gradients there.
+fn gradient_mass(gradients: &[Vec<(usize, f64)>], mm: &Csr, unknowns: usize, psis: usize) -> Csr {
+    let mut by_unknown: Vec<Vec<(usize, f64)>> = vec![Vec::new(); unknowns];
+    for (j, col) in gradients.iter().enumerate() {
+        for &(i, g) in col {
+            if let Some(r) = by_unknown.get_mut(i) {
+                r.push((j, g));
+            }
+        }
+    }
+    let mut b = Csr::builder(psis);
+    for col in gradients {
+        let mut mg: BTreeMap<usize, f64> = BTreeMap::new();
+        for &(i, g) in col {
+            for e in mm.row(i) {
+                *mg.entry(mm.col[e]).or_insert(0.0) += mm.val[e].re * g;
+            }
+        }
+        let mut row: BTreeMap<usize, f64> = BTreeMap::new();
+        for (k, v) in mg {
+            for &(j, g) in by_unknown.get(k).into_iter().flatten() {
+                *row.entry(j).or_insert(0.0) += g * v;
+            }
+        }
+        b.row(row.into_iter().filter(|(_, v)| *v != 0.0).map(|(j, v)| (j, C::new(v, 0.0))));
+    }
+    b.finish()
+}
+
+/// `q` start vectors of `n` entries in (−½, ½), the same every run (xorshift).
+fn start_basis(q: usize, n: usize) -> Vec<Vec<f64>> {
+    let mut state = 0x2545_f491_4f6c_dd1du64;
+    (0..q)
+        .map(|_| {
+            (0..n)
+                .map(|_| {
+                    state ^= state << 13;
+                    state ^= state >> 7;
+                    state ^= state << 17;
+                    (state >> 11) as f64 / (1u64 << 53) as f64 - 0.5
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// A Rayleigh–Ritz step's eigenvalues k² (nearest the shift first) and its Ritz vectors,
+/// M-normalised.
+struct Ritz {
+    values: Vec<f64>,
+    vectors: Vec<Vec<f64>>,
+}
+
+/// Rayleigh–Ritz on `basis`: Kr z = λ Mr z, the pairs sorted nearest `sigma`.
+fn rayleigh_ritz(basis: &[Vec<f64>], k: &Csr, mm: &Csr, sigma: f64) -> Result<Ritz> {
+    let kx: Vec<Vec<f64>> = basis.iter().map(|x| mul(k, x)).collect();
+    let mx: Vec<Vec<f64>> = basis.iter().map(|x| mul(mm, x)).collect();
+    let n = basis.len();
+    let kr: Vec<f64> = (0..n * n).map(|ij| dot(&basis[ij / n], &kx[ij % n])).collect();
+    let mr: Vec<f64> = (0..n * n).map(|ij| dot(&basis[ij / n], &mx[ij % n])).collect();
+    let chol = Cholesky::new(&mr, n).ok_or_else(|| invalid("BOR eigenmodes", "the subspace lost its independence"))?;
+    // A = L⁻¹ Kr L⁻ᵀ, column by column (Kr symmetric).
+    let cols: Vec<Vec<f64>> = (0..n).map(|j| chol.lower_solve(&(0..n).map(|i| kr[i * n + j]).collect::<Vec<_>>())).collect();
+    let rows: Vec<Vec<f64>> = (0..n).map(|i| chol.lower_solve(&(0..n).map(|j| cols[j][i]).collect::<Vec<_>>())).collect();
+    let a: Vec<f64> = (0..n * n).map(|ij| 0.5 * (rows[ij / n][ij % n] + rows[ij % n][ij / n])).collect();
+    let mut pairs = crate::dense::eigen(&a, n).ok_or_else(|| invalid("BOR eigenmodes", "the projected problem did not converge"))?;
+    pairs.retain(|e| e.im == 0.0 && !e.vector.is_empty());
+    pairs.sort_by(|x, y| (x.re - sigma).abs().total_cmp(&(y.re - sigma).abs()));
+    let unknowns = basis.first().map_or(0, Vec::len);
+    let mut vectors = Vec::with_capacity(pairs.len());
+    for e in &pairs {
+        let z = chol.upper_solve(&e.vector);
+        let mut x = vec![0.0; unknowns];
+        for (zj, b) in z.iter().zip(basis) {
+            for (xi, bi) in x.iter_mut().zip(b) {
+                *xi += zj * bi;
+            }
+        }
+        let norm = dot(&x, &mul(mm, &x)).sqrt();
+        if norm > 0.0 && norm.is_finite() {
+            x.iter_mut().for_each(|v| *v /= norm);
+            vectors.push(x);
+        }
+    }
+    Ok(Ritz { values: pairs.iter().map(|e| e.re).collect(), vectors })
 }
 
 #[cfg(test)]

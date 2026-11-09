@@ -36,6 +36,12 @@ pub const MAX_ALONG: usize = 4000;
 pub const MAX_ACROSS: usize = 64;
 pub const MAX_DEGREE: usize = 10;
 
+/// The most modes at each end.
+pub const MAX_MODES: usize = 64;
+
+/// The most unknowns of one solve.
+const MAX_UNKNOWNS: usize = 4_000_000;
+
 /// How finely [`SmoothGuide::solve`] discretises: elements along the guide (between each pair
 /// of the wall's corners, in proportion to their distance), across it, their degree and the
 /// modes each end's condition carries.
@@ -173,11 +179,87 @@ impl Band {
     }
 }
 
+/// The Gauss–Legendre rule the elements are integrated with, and the degree-p Lagrange basis's
+/// values and derivatives at its points.
+struct Rule {
+    points: Vec<f64>,
+    weights: Vec<f64>,
+    basis: Vec<(Vec<f64>, Vec<f64>)>,
+}
+
+impl Rule {
+    fn new(p: usize) -> Rule {
+        let reference = nodes(p);
+        let (points, weights) = emcraft_fem::quadrature::gauss_legendre(p + 3);
+        let basis = points.iter().map(|&t| lagrange(&reference, t)).collect();
+        Rule { points, weights, basis }
+    }
+}
+
 impl<F: Fn(f64) -> (f64, f64)> SmoothGuide<F> {
     /// S₁₁ and S₂₁ of TE₁₀ at `frequency` (Hz).
     pub fn solve(&self, frequency: f64, d: Discretisation) -> Result<(C, C), TheoryError> {
+        let b0 = self.check(frequency, &d)?;
         let Discretisation { along, across, degree: p, modes } = d;
-        if !(1..=MAX_ALONG).contains(&along) || !(1..=MAX_ACROSS).contains(&across) || !(1..=MAX_DEGREE).contains(&p) || !(1..=64).contains(&modes) {
+        let k0 = 2.0 * std::f64::consts::PI * frequency / 299_792_458.0;
+        let (kt2, dirichlet) = match self.plane {
+            Plane::E { width } => (k0 * k0 * self.eps_r - (std::f64::consts::PI / width).powi(2), false),
+            Plane::H => (k0 * k0 * self.eps_r, true),
+        };
+        // The ends' modes: cos(mπy/b₀) from m = 0, or sin from m = 1.
+        let order = |mi: usize| if dirichlet { mi + 1 } else { mi };
+        let zs = self.element_ends(along);
+        let ny = across * p + 1;
+        let nz = (zs.len() - 1) * p + 1;
+        let n = ny * nz;
+        if n > MAX_UNKNOWNS {
+            return Err(invalid("discretisation: too many unknowns"));
+        }
+        let idx = |iz: usize, iy: usize| iz * ny + iy;
+        let rule = Rule::new(p);
+        let mut m = self.assemble(&zs, across, p, kt2, &rule)?;
+        let proj = end_modes(b0, across, p, modes, dirichlet, &rule);
+        let mut rhs = vec![C::new(0.0, 0.0); n];
+        let beta = |mi: usize| {
+            let x = kt2 - (order(mi) as f64 * std::f64::consts::PI / b0).powi(2);
+            if x >= 0.0 { C::new(x.sqrt(), 0.0) } else { C::new(0.0, -(-x).sqrt()) }
+        };
+        for (mi, v) in proj.iter().enumerate() {
+            let jb = C::new(0.0, 1.0) * beta(mi);
+            for iz in [0, nz - 1] {
+                for (r, &pr) in v.iter().enumerate() {
+                    for (s, &ps) in v.iter().enumerate() {
+                        if let Some(x) = m.at(idx(iz, r), idx(iz, s)) {
+                            *x += jb * pr * ps;
+                        }
+                    }
+                }
+            }
+            if mi == 0 {
+                for (r, &pr) in v.iter().enumerate() {
+                    rhs[idx(0, r)] += 2.0 * jb * pr;
+                }
+            }
+        }
+        if dirichlet {
+            hold_side_walls(&mut m, &mut rhs, nz, ny);
+        }
+        let x = solve_checked(m, &rhs)?;
+        let at = |iz: usize| -> C { proj[0].iter().enumerate().map(|(j, &w)| x[idx(iz, j)] * w).sum() };
+        // S is the transverse E's: an E-plane ψ is H_x, whose reflected wave carries E the other
+        // way round (E_y ∝ ∂ψ/∂z); an H-plane ψ is E_y itself.
+        let reflected = at(0) - 1.0;
+        Ok((if dirichlet { reflected } else { -reflected }, at(nz - 1)))
+    }
+
+    /// Refuses a discretisation, guide, frequency or wall [`SmoothGuide::solve`] cannot take;
+    /// the ends' height b₀ (m).
+    fn check(&self, frequency: f64, d: &Discretisation) -> Result<f64, TheoryError> {
+        let ok = (1..=MAX_ALONG).contains(&d.along)
+            && (1..=MAX_ACROSS).contains(&d.across)
+            && (1..=MAX_DEGREE).contains(&d.degree)
+            && (1..=MAX_MODES).contains(&d.modes);
+        if !ok {
             return Err(invalid("discretisation"));
         }
         if let Plane::E { width } = self.plane
@@ -196,15 +278,12 @@ impl<F: Fn(f64) -> (f64, f64)> SmoothGuide<F> {
         if !(b0 > 0.0 && b0.is_finite()) || (b1 - b0).abs() > 1e-9 * b0 || s0 != 0.0 || s1 != 0.0 {
             return Err(invalid("wall: its ends must be of one height, level"));
         }
-        let k0 = 2.0 * std::f64::consts::PI * frequency / 299_792_458.0;
-        let (kt2, dirichlet) = match self.plane {
-            Plane::E { width } => (k0 * k0 * self.eps_r - (std::f64::consts::PI / width).powi(2), false),
-            Plane::H => (k0 * k0 * self.eps_r, true),
-        };
-        // The ends' modes: cos(mπy/b₀) from m = 0, or sin from m = 1.
-        let order = |mi: usize| if dirichlet { mi + 1 } else { mi };
-        // The element boundaries along z: the ends and the corners, each stretch cut in
-        // proportion to its length.
+        Ok(b0)
+    }
+
+    /// The element boundaries along z: the ends and the corners, each stretch between them cut
+    /// into elements in proportion to its length (`along` over the whole).
+    fn element_ends(&self, along: usize) -> Vec<f64> {
         let mut cuts: Vec<f64> =
             std::iter::once(0.0).chain(self.corners.iter().copied().filter(|z| *z > 0.0 && *z < self.length)).chain([self.length]).collect();
         cuts.sort_by(f64::total_cmp);
@@ -214,21 +293,20 @@ impl<F: Fn(f64) -> (f64, f64)> SmoothGuide<F> {
             let n = ((along as f64 * (w[1] - w[0]) / self.length).round() as usize).max(1);
             zs.extend((1..=n).map(|i| w[0] + (w[1] - w[0]) * i as f64 / n as f64));
         }
-        let ez = zs.len() - 1;
+        zs
+    }
+
+    /// The stiffness less kt² the mass, ∫ (∇ψ·∇v − kt² ψ v), on the guide mapped to a fixed
+    /// height (η = y/b(z): the wall's slope enters the z derivative).
+    fn assemble(&self, zs: &[f64], across: usize, p: usize, kt2: f64, rule: &Rule) -> Result<Band, TheoryError> {
         let ny = across * p + 1;
-        let nz = ez * p + 1;
-        let n = ny * nz;
-        if n > 4_000_000 {
-            return Err(invalid("discretisation: too many unknowns"));
-        }
+        let n = ny * ((zs.len() - 1) * p + 1);
         let idx = |iz: usize, iy: usize| iz * ny + iy;
         let mut m = Band::new(n, p * ny + p);
-        let ref_nodes = nodes(p);
-        let (gx, gw) = emcraft_fem::quadrature::gauss_legendre(p + 3);
-        let tables: Vec<(Vec<f64>, Vec<f64>)> = gx.iter().map(|&t| lagrange(&ref_nodes, t)).collect();
         let he = 1.0 / across as f64;
-        for e in 0..ez {
-            let (za, zb) = (zs[e], zs[e + 1]);
+        let (gx, gw, tables) = (&rule.points, &rule.weights, &rule.basis);
+        for (e, w) in zs.windows(2).enumerate() {
+            let (za, zb) = (w[0], w[1]);
             let hz = zb - za;
             for (qz, &wz) in gw.iter().enumerate() {
                 let z = za + hz * gx[qz];
@@ -265,77 +343,66 @@ impl<F: Fn(f64) -> (f64, f64)> SmoothGuide<F> {
                 }
             }
         }
-        // The ends: each mode's projection P_m(ψ) = ∫ ψ φ_m dy, φ_m = √(ε_m/b₀) cos(mπy/b₀).
-        let mut rhs = vec![C::new(0.0, 0.0); n];
-        let mut proj: Vec<Vec<f64>> = Vec::with_capacity(modes);
-        for mi in 0..modes {
+        Ok(m)
+    }
+}
+
+/// The ends' modes' projections P_m(ψ) = ∫ ψ φ_m dy over the end's nodes, φ_m = √(ε_m/b₀)
+/// cos(mπy/b₀) (sin, from m = 1, with walls of ψ = 0).
+fn end_modes(b0: f64, across: usize, p: usize, modes: usize, dirichlet: bool, rule: &Rule) -> Vec<Vec<f64>> {
+    let order = |mi: usize| if dirichlet { mi + 1 } else { mi };
+    let he = 1.0 / across as f64;
+    (0..modes)
+        .map(|mi| {
             let norm = if order(mi) == 0 { (1.0 / b0).sqrt() } else { (2.0 / b0).sqrt() };
-            let mut v = vec![0.0; ny];
+            let mut v = vec![0.0; across * p + 1];
             for c in 0..across {
-                for (qy, &wy) in gw.iter().enumerate() {
-                    let y = (c as f64 + gx[qy]) * he * b0;
+                for (qy, &wy) in rule.weights.iter().enumerate() {
+                    let y = (c as f64 + rule.points[qy]) * he * b0;
                     let arg = order(mi) as f64 * std::f64::consts::PI * y / b0;
                     let phi = norm * if dirichlet { arg.sin() } else { arg.cos() };
                     for j in 0..=p {
-                        v[c * p + j] += wy * he * b0 * phi * tables[qy].0[j];
+                        v[c * p + j] += wy * he * b0 * phi * rule.basis[qy].0[j];
                     }
                 }
             }
-            proj.push(v);
-        }
-        let beta = |mi: usize| {
-            let x = kt2 - (order(mi) as f64 * std::f64::consts::PI / b0).powi(2);
-            if x >= 0.0 { C::new(x.sqrt(), 0.0) } else { C::new(0.0, -(-x).sqrt()) }
-        };
-        for (mi, v) in proj.iter().enumerate() {
-            let jb = C::new(0.0, 1.0) * beta(mi);
-            for iz in [0, nz - 1] {
-                for (r, &pr) in v.iter().enumerate() {
-                    for (s, &ps) in v.iter().enumerate() {
-                        if let Some(x) = m.at(idx(iz, r), idx(iz, s)) {
-                            *x += jb * pr * ps;
-                        }
-                    }
+            v
+        })
+        .collect()
+}
+
+/// The side walls of an H-plane guide: ψ = 0 there, their rows and columns the identity's.
+fn hold_side_walls(m: &mut Band, rhs: &mut [C], nz: usize, ny: usize) {
+    let n = m.n;
+    for iz in 0..nz {
+        for iy in [0, ny - 1] {
+            let r = iz * ny + iy;
+            for c in r.saturating_sub(m.k)..(r + m.k + 1).min(n) {
+                let v = if c == r { C::new(1.0, 0.0) } else { C::new(0.0, 0.0) };
+                if let Some(x) = m.at(r, c) {
+                    *x = v;
+                }
+                if let Some(x) = m.at(c, r) {
+                    *x = v;
                 }
             }
-            if mi == 0 {
-                for (r, &pr) in v.iter().enumerate() {
-                    rhs[idx(0, r)] += 2.0 * jb * pr;
-                }
-            }
+            rhs[r] = C::new(0.0, 0.0);
         }
-        // The side walls of an H-plane guide: ψ = 0 there, their rows and columns the identity's.
-        if dirichlet {
-            for iz in 0..nz {
-                for iy in [0, ny - 1] {
-                    let r = idx(iz, iy);
-                    for c in r.saturating_sub(m.k)..(r + m.k + 1).min(n) {
-                        let v = if c == r { C::new(1.0, 0.0) } else { C::new(0.0, 0.0) };
-                        if let Some(x) = m.at(r, c) {
-                            *x = v;
-                        }
-                        if let Some(x) = m.at(c, r) {
-                            *x = v;
-                        }
-                    }
-                    rhs[r] = C::new(0.0, 0.0);
-                }
-            }
-        }
-        let scale: f64 = rhs.iter().map(|x| x.norm()).fold(0.0, f64::max);
-        let kept = Band { n: m.n, k: m.k, a: m.a.clone() };
-        let x = m.solve(rhs.clone()).ok_or_else(|| invalid("system: a zero pivot"))?;
-        let r = kept.apply(&x);
-        let res = r.iter().zip(&rhs).map(|(a, b)| (a - b).norm()).fold(0.0, f64::max);
-        if !(res <= 1e-8 * scale) {
-            return Err(invalid(format!("system: residual {res:.2e} of {scale:.2e}")));
-        }
-        let at = |iz: usize| -> C { proj[0].iter().enumerate().map(|(j, &w)| x[idx(iz, j)] * w).sum() };
-        // S is the transverse E's: an E-plane ψ is H_x, whose reflected wave carries E the other
-        // way round (E_y ∝ ∂ψ/∂z); an H-plane ψ is E_y itself.
-        let reflected = at(0) - 1.0;
-        Ok((if dirichlet { reflected } else { -reflected }, at(nz - 1)))
     }
+}
+
+/// The solution of m x = rhs, refused when a pivot is zero or its residual is above 1e-8 of the
+/// right-hand side.
+fn solve_checked(m: Band, rhs: &[C]) -> Result<Vec<C>, TheoryError> {
+    let scale: f64 = rhs.iter().map(|x| x.norm()).fold(0.0, f64::max);
+    let kept = Band { n: m.n, k: m.k, a: m.a.clone() };
+    let x = m.solve(rhs.to_vec()).ok_or_else(|| invalid("system: a zero pivot"))?;
+    let r = kept.apply(&x);
+    let res = r.iter().zip(rhs).map(|(a, b)| (a - b).norm()).fold(0.0, f64::max);
+    if !(res <= 1e-8 * scale) {
+        return Err(invalid(format!("system: residual {res:.2e} of {scale:.2e}")));
+    }
+    Ok(x)
 }
 
 #[cfg(test)]

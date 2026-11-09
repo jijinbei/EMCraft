@@ -237,12 +237,7 @@ pub fn fast_sweep_each<E>(
 where
     E: From<crate::driven::SolveError>,
 {
-    for &f in frequencies {
-        check_frequency(f)?;
-    }
-    if !(o.tolerance.is_finite() && o.tolerance > 0.0) || o.max_solves < 2 {
-        return Err(invalid("sweep options", "the tolerance must be > 0 and at least two frequencies solved in full").into());
-    }
+    check_sweep(frequencies, o)?;
     let nf = frequencies.len();
     let max_full = o.max_solves.min(nf);
     let step = |full: usize, pass_done: usize, pass_total: usize, residual: Option<f64>| SweepStep {
@@ -263,51 +258,130 @@ where
         }
         return Ok(FastSweep { results, full: vec![true; nf], basis: 0, worst_residual: 0.0 });
     }
-    let mut results: Vec<Option<FrequencyResult>> = vec![None; nf];
-    let mut full = vec![false; nf];
-    let mut solved = 0;
-    let mut last: Option<f64> = None;
-    let mut basis = Basis::empty(d.dispersive_mass.len());
-    let solve_full = |i: usize, basis: &mut Basis, results: &mut Vec<Option<FrequencyResult>>, full: &mut Vec<bool>| -> Result<()> {
-        let (r, extra) = d.solve_spanning(frequencies[i], o.moments)?;
-        for x in r.fields.iter().chain(&extra) {
-            basis.add(d, x);
-        }
-        results[i] = Some(r);
-        full[i] = true;
-        Ok(())
+    let mut s = Sweep::new(d, frequencies, o);
+    let Some(ends) = band_ends(frequencies) else {
+        return Ok(FastSweep { results: Vec::new(), full: s.full, basis: 0, worst_residual: 0.0 });
     };
-    // The ends of the band first (each excitation's field adds two vectors).
-    let by = |a: &usize, b: &usize| frequencies[*a].total_cmp(&frequencies[*b]);
-    let (Some(lo), Some(hi)) = ((0..nf).min_by(by), (0..nf).max_by(by)) else {
-        return Ok(FastSweep { results: Vec::new(), full, basis: 0, worst_residual: 0.0 });
-    };
-    for i in if hi != lo { vec![lo, hi] } else { vec![lo] } {
-        each(step(solved, 0, 0, None))?;
-        solve_full(i, &mut basis, &mut results, &mut full)?;
-        solved += 1;
+    for i in ends {
+        each(step(s.solved, 0, 0, None))?;
+        s.solve_full(i)?;
     }
     // The ports' terms at each frequency do not depend on the basis: made once.
     let mut terms: Vec<Option<Vec<Vec<PortTerm<'_>>>>> = (0..nf).map(|_| None).collect();
     let worst_residual = loop {
-        // Every frequency not solved in full, in the basis: each on its own, in parallel in
-        // chunks (`each` hears between them), the worst then found in the frequencies' order, so
-        // the result is the serial one's.
-        let pending: Vec<usize> = (0..nf).filter(|&i| !full[i]).collect();
+        let (solved, last) = (s.solved, s.last);
+        let worst = s.reduced_pass(&mut terms, |done, total| each(step(solved, done, total, last)))?;
+        s.last = worst.map(|(_, w)| w);
+        match worst {
+            Some((i, w)) if w > o.tolerance && s.solved < o.max_solves => {
+                each(step(s.solved, 0, 0, s.last))?;
+                s.forget_reduced();
+                s.solve_full(i)?;
+            }
+            _ => break worst.map_or(0.0, |(_, w)| w),
+        }
+    };
+    let basis = s.basis.v.len();
+    let results = s.results.into_iter().map(|r| r.ok_or_else(|| invalid("sweep", "a frequency was left unsolved"))).collect::<Result<Vec<_>>>()?;
+    Ok(FastSweep { results, full: s.full, basis, worst_residual })
+}
+
+/// Refuses frequencies that are not finite and positive and options that cannot sweep.
+fn check_sweep(frequencies: &[f64], o: &SweepOptions) -> Result<()> {
+    for &f in frequencies {
+        check_frequency(f)?;
+    }
+    if !(o.tolerance.is_finite() && o.tolerance > 0.0) || o.max_solves < 2 {
+        return Err(invalid("sweep options", "the tolerance must be > 0 and at least two frequencies solved in full"));
+    }
+    Ok(())
+}
+
+/// The places of the band's lowest and highest frequencies (one when they are the same),
+/// `None` for no frequencies.
+fn band_ends(frequencies: &[f64]) -> Option<Vec<usize>> {
+    let by = |a: &usize, b: &usize| frequencies[*a].total_cmp(&frequencies[*b]);
+    let nf = frequencies.len();
+    let (lo, hi) = ((0..nf).min_by(by)?, (0..nf).max_by(by)?);
+    Some(if hi != lo { vec![lo, hi] } else { vec![lo] })
+}
+
+/// A reduced-basis sweep under way: each frequency's result so far, which were solved in full,
+/// how many full solves, the last pass's worst residual and the basis.
+struct Sweep<'a> {
+    d: &'a Driven,
+    frequencies: &'a [f64],
+    moments: usize,
+    results: Vec<Option<FrequencyResult>>,
+    full: Vec<bool>,
+    solved: usize,
+    last: Option<f64>,
+    basis: Basis,
+}
+
+impl<'a> Sweep<'a> {
+    fn new(d: &'a Driven, frequencies: &'a [f64], o: &SweepOptions) -> Sweep<'a> {
+        let nf = frequencies.len();
+        Sweep {
+            d,
+            frequencies,
+            moments: o.moments,
+            results: vec![None; nf],
+            full: vec![false; nf],
+            solved: 0,
+            last: None,
+            basis: Basis::empty(d.dispersive_mass.len()),
+        }
+    }
+
+    /// Solves frequency `i` in full (each excitation's field adds two vectors to the basis).
+    fn solve_full(&mut self, i: usize) -> Result<()> {
+        let (r, extra) = self.d.solve_spanning(self.frequencies[i], self.moments)?;
+        for x in r.fields.iter().chain(&extra) {
+            self.basis.add(self.d, x);
+        }
+        self.results[i] = Some(r);
+        self.full[i] = true;
+        self.solved += 1;
+        Ok(())
+    }
+
+    /// Drops the results solved in the basis: the next pass solves them again in the larger
+    /// basis, their fields not kept beside the factorization.
+    fn forget_reduced(&mut self) {
+        for (r, _) in self.results.iter_mut().zip(&self.full).filter(|(_, f)| !**f) {
+            *r = None;
+        }
+    }
+
+    /// Every frequency not solved in full, in the basis: each on its own, in parallel in chunks
+    /// (`each` hears between them with how many are done of how many), the worst (place,
+    /// residual) then found in the frequencies' order, so the result is the serial one's.
+    fn reduced_pass<'t, E>(
+        &mut self,
+        terms: &mut [Option<Vec<Vec<PortTerm<'t>>>>],
+        mut each: impl FnMut(usize, usize) -> std::result::Result<(), E>,
+    ) -> std::result::Result<Option<(usize, f64)>, E>
+    where
+        'a: 't,
+        E: From<crate::driven::SolveError>,
+    {
+        let d: &'t Driven = self.d;
+        let pending: Vec<usize> = (0..self.full.len()).filter(|&i| !self.full[i]).collect();
         for &i in &pending {
             if terms[i].is_none() {
-                terms[i] = Some(d.checked_terms(frequencies[i])?);
+                terms[i] = Some(d.checked_terms(self.frequencies[i])?);
             }
         }
         let mut worst: Option<(usize, f64)> = None;
         let chunk = 4 * rayon::current_num_threads().max(1);
         for (c, part) in pending.chunks(chunk).enumerate() {
-            each(step(solved, c * chunk, pending.len(), last))?;
+            each(c * chunk, pending.len())?;
             let pass: Vec<Result<(FrequencyResult, f64)>> = part
                 .par_iter()
                 .map(|&i| {
                     let t = terms[i].as_ref().ok_or_else(|| invalid("sweep", "a frequency's port terms are missing"))?;
-                    reduced(d, &basis, frequencies[i], t)
+                    reduced(d, &self.basis, self.frequencies[i], t)
                 })
                 .collect();
             for (&i, r) in part.iter().zip(pass) {
@@ -315,26 +389,11 @@ where
                 if worst.is_none_or(|(_, w)| residual > w) {
                     worst = Some((i, residual));
                 }
-                results[i] = Some(r);
+                self.results[i] = Some(r);
             }
         }
-        last = worst.map(|(_, w)| w);
-        match worst {
-            Some((i, w)) if w > o.tolerance && solved < o.max_solves => {
-                each(step(solved, 0, 0, last))?;
-                // The next pass solves them again in the larger basis: their fields are not
-                // kept beside the factorization.
-                for (r, _) in results.iter_mut().zip(&full).filter(|(_, f)| !**f) {
-                    *r = None;
-                }
-                solve_full(i, &mut basis, &mut results, &mut full)?;
-                solved += 1;
-            }
-            _ => break worst.map_or(0.0, |(_, w)| w),
-        }
-    };
-    let results = results.into_iter().map(|r| r.ok_or_else(|| invalid("sweep", "a frequency was left unsolved"))).collect::<Result<Vec<_>>>()?;
-    Ok(FastSweep { results, full, basis: basis.v.len(), worst_residual })
+        Ok(worst)
+    }
 }
 
 /// The system at one frequency in the basis V: the coefficients of its fixed parts, the layer's

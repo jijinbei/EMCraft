@@ -33,13 +33,9 @@ pub fn nested_dissection(xyz: &[Point3], adjacency: &[Vec<usize>]) -> Vec<usize>
 
 /// Nested dissection by planes at `cuts` across the `axes` longest axes of each part.
 fn dissection(xyz: &[Point3], adjacency: &[Vec<usize>], cuts: &[f64], axes: usize) -> Vec<usize> {
-    let most_axes = axes;
     let n = xyz.len();
     let mut order = Vec::with_capacity(n);
-    // 0 = not in the current part, 1 = in it, 3 = its separator.
-    let mut side = vec![0u8; n];
-    // Each one's place in the current part's order along the axis being tried.
-    let mut place = vec![0usize; n];
+    let mut scratch = Scratch { side: vec![0u8; n], place: vec![0usize; n] };
     // An explicit stack instead of recursion: (part, separator to emit after it).
     enum Task {
         Split(Vec<usize>),
@@ -47,7 +43,7 @@ fn dissection(xyz: &[Point3], adjacency: &[Vec<usize>], cuts: &[f64], axes: usiz
     }
     let mut stack = vec![Task::Split((0..n).collect())];
     while let Some(task) = stack.pop() {
-        let mut part = match task {
+        let part = match task {
             Task::Emit(sep) => {
                 order.extend(sep);
                 continue;
@@ -58,100 +54,112 @@ fn dissection(xyz: &[Point3], adjacency: &[Vec<usize>], cuts: &[f64], axes: usiz
             order.extend(part);
             continue;
         }
-        let mut lo = [f64::INFINITY; 3];
-        let mut hi = [f64::NEG_INFINITY; 3];
-        for &v in &part {
-            let p = xyz.get(v).copied().unwrap_or_default();
-            for k in 0..3 {
-                lo[k] = lo[k].min(p[k]);
-                hi[k] = hi[k].max(p[k]);
-            }
-        }
-        // Each axis with an extent, the longest first, cut at each of `CUTS` (fractions of the
-        // part, the median first): the smaller of a cut's two sides' boundaries is its separator,
-        // and the smallest separator wins (the earlier cut on a tie). A junction's middle plane
-        // can cut its arms lengthwise where another axis, or a cut beside a post's fine mesh,
-        // crosses one guide.
-        let mut axes: Vec<usize> = (0..3).filter(|&k| hi[k] > lo[k]).collect();
-        axes.sort_by(|&a, &b| (hi[b] - lo[b]).total_cmp(&(hi[a] - lo[a])).then(a.cmp(&b)));
-        axes.truncate(most_axes);
-        if axes.is_empty() {
-            axes.push(0);
-        }
-        let mut sorted_by: Vec<Vec<usize>> = Vec::with_capacity(axes.len());
-        // (index into `sorted_by`, cut, separator)
-        let mut best: Option<(usize, usize, Vec<usize>)> = None;
-        for &v in &part {
-            if let Some(s) = side.get_mut(v) {
-                *s = 1;
-            }
-        }
-        for &axis in &axes {
-            let key = |v: usize| xyz.get(v).map_or(0.0, |p| p[axis]);
-            let mut sorted = part.clone();
-            sorted.sort_by(|&a, &b| key(a).total_cmp(&key(b)).then(a.cmp(&b)));
-            for (i, &v) in sorted.iter().enumerate() {
-                if let Some(p) = place.get_mut(v) {
-                    *p = i;
-                }
-            }
-            // The first and last places of each one's neighbours in the part: one in front of
-            // a cut touches the side behind it when its last neighbour is behind, and the other
-            // way round; every cut is then read without the graph.
-            let reach: Vec<(usize, usize)> = sorted
-                .iter()
-                .enumerate()
-                .map(|(i, &v)| {
-                    let near = adjacency.get(v).into_iter().flatten().filter(|w| side.get(**w) == Some(&1)).filter_map(|w| place.get(*w).copied());
-                    near.fold((i, i), |(lo, hi), p| (lo.min(p), hi.max(p)))
-                })
-                .collect();
-            for &fraction in cuts {
-                let cut = ((part.len() as f64 * fraction) as usize).clamp(1, part.len() - 1);
-                let left_boundary: Vec<usize> = sorted[..cut].iter().zip(&reach).filter(|(_, r)| r.1 >= cut).map(|(&v, _)| v).collect();
-                let right_boundary: Vec<usize> = sorted[cut..].iter().zip(&reach[cut..]).filter(|(_, r)| r.0 < cut).map(|(&v, _)| v).collect();
-                let separator = if left_boundary.len() <= right_boundary.len() { left_boundary } else { right_boundary };
-                if best.as_ref().is_none_or(|(_, _, b)| separator.len() < b.len()) {
-                    best = Some((sorted_by.len(), cut, separator));
-                }
-            }
-            sorted_by.push(sorted);
-        }
-        let Some((k, half, separator)) = best else {
-            for &v in &part {
-                if let Some(s) = side.get_mut(v) {
-                    *s = 0;
-                }
-            }
+        let Some(Cut { sorted, at, separator }) = best_cut(&part, xyz, adjacency, cuts, axes, &mut scratch) else {
             order.extend(part);
             continue;
         };
-        part = sorted_by.get_mut(k).map(std::mem::take).unwrap_or(part);
-        let (left, right) = part.split_at(half);
-        for &v in &part {
-            if let Some(s) = side.get_mut(v) {
-                *s = 0;
-            }
-        }
-        // Mark the separator so the parts leave it out.
-        for &v in &separator {
-            if let Some(s) = side.get_mut(v) {
-                *s = 3;
-            }
-        }
-        let a: Vec<usize> = left.iter().copied().filter(|v| side.get(*v) != Some(&3)).collect();
-        let b: Vec<usize> = right.iter().copied().filter(|v| side.get(*v) != Some(&3)).collect();
-        for &v in &separator {
-            if let Some(s) = side.get_mut(v) {
-                *s = 0;
-            }
-        }
+        let (left, right) = sorted.split_at(at);
+        // The parts leave the separator out.
+        scratch.mark(&separator, SEPARATOR);
+        let a: Vec<usize> = left.iter().copied().filter(|v| !scratch.is(*v, SEPARATOR)).collect();
+        let b: Vec<usize> = right.iter().copied().filter(|v| !scratch.is(*v, SEPARATOR)).collect();
+        scratch.mark(&separator, OUT);
         // Order: a, then b, then the separator (the stack runs in reverse).
         stack.push(Task::Emit(separator));
         stack.push(Task::Split(b));
         stack.push(Task::Split(a));
     }
     order
+}
+
+/// A node's side while a part is cut: not in it, in it, in its separator.
+const OUT: u8 = 0;
+const IN: u8 = 1;
+const SEPARATOR: u8 = 3;
+
+/// Per-node scratch kept between parts: each node's side ([`OUT`], [`IN`], [`SEPARATOR`]) and its
+/// place in the current part's order along the axis being tried.
+struct Scratch {
+    side: Vec<u8>,
+    place: Vec<usize>,
+}
+
+impl Scratch {
+    fn mark(&mut self, nodes: &[usize], side: u8) {
+        for &v in nodes {
+            if let Some(s) = self.side.get_mut(v) {
+                *s = side;
+            }
+        }
+    }
+
+    fn is(&self, v: usize, side: u8) -> bool {
+        self.side.get(v) == Some(&side)
+    }
+}
+
+/// A part cut: its nodes in the winning axis' order, where they are cut and the separator.
+struct Cut {
+    sorted: Vec<usize>,
+    at: usize,
+    separator: Vec<usize>,
+}
+
+/// The part's best cut: each axis with an extent (the `most_axes` longest, the longest first)
+/// cut at each of `cuts` (fractions of the part, the median first); the smaller of a cut's two
+/// sides' boundaries is its separator, and the smallest separator wins (the earlier cut on a
+/// tie). A junction's middle plane can cut its arms lengthwise where another axis, or a cut
+/// beside a post's fine mesh, crosses one guide. `None` when no cut is found.
+fn best_cut(part: &[usize], xyz: &[Point3], adjacency: &[Vec<usize>], cuts: &[f64], most_axes: usize, scratch: &mut Scratch) -> Option<Cut> {
+    let (lo, hi) = part
+        .iter()
+        .map(|&v| xyz.get(v).copied().unwrap_or_default())
+        .fold(([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]), |(lo, hi), p| ([0, 1, 2].map(|k| lo[k].min(p[k])), [0, 1, 2].map(|k| hi[k].max(p[k]))));
+    let mut axes: Vec<usize> = (0..3).filter(|&k| hi[k] > lo[k]).collect();
+    axes.sort_by(|&a, &b| (hi[b] - lo[b]).total_cmp(&(hi[a] - lo[a])).then(a.cmp(&b)));
+    axes.truncate(most_axes);
+    if axes.is_empty() {
+        axes.push(0);
+    }
+    scratch.mark(part, IN);
+    let mut sorted_by: Vec<Vec<usize>> = Vec::with_capacity(axes.len());
+    // (index into `sorted_by`, cut, separator)
+    let mut best: Option<(usize, usize, Vec<usize>)> = None;
+    for &axis in &axes {
+        let key = |v: usize| xyz.get(v).map_or(0.0, |p| p[axis]);
+        let mut sorted = part.to_vec();
+        sorted.sort_by(|&a, &b| key(a).total_cmp(&key(b)).then(a.cmp(&b)));
+        for (i, &v) in sorted.iter().enumerate() {
+            if let Some(p) = scratch.place.get_mut(v) {
+                *p = i;
+            }
+        }
+        // The first and last places of each one's neighbours in the part: one in front of a cut
+        // touches the side behind it when its last neighbour is behind, and the other way
+        // round; every cut is then read without the graph.
+        let reach: Vec<(usize, usize)> = sorted
+            .iter()
+            .enumerate()
+            .map(|(i, &v)| {
+                let near = adjacency.get(v).into_iter().flatten().filter(|w| scratch.is(**w, IN)).filter_map(|w| scratch.place.get(*w).copied());
+                near.fold((i, i), |(lo, hi), p| (lo.min(p), hi.max(p)))
+            })
+            .collect();
+        for &fraction in cuts {
+            let cut = ((part.len() as f64 * fraction) as usize).clamp(1, part.len() - 1);
+            let left_boundary: Vec<usize> = sorted[..cut].iter().zip(&reach).filter(|(_, r)| r.1 >= cut).map(|(&v, _)| v).collect();
+            let right_boundary: Vec<usize> = sorted[cut..].iter().zip(&reach[cut..]).filter(|(_, r)| r.0 < cut).map(|(&v, _)| v).collect();
+            let separator = if left_boundary.len() <= right_boundary.len() { left_boundary } else { right_boundary };
+            if best.as_ref().is_none_or(|(_, _, b)| separator.len() < b.len()) {
+                best = Some((sorted_by.len(), cut, separator));
+            }
+        }
+        sorted_by.push(sorted);
+    }
+    scratch.mark(part, OUT);
+    let (k, at, separator) = best?;
+    let sorted = sorted_by.get_mut(k).map(std::mem::take)?;
+    Some(Cut { sorted, at, separator })
 }
 
 /// The nested dissection order of the nodes that fills the factor less: by coordinate planes or

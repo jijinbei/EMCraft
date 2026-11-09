@@ -380,7 +380,7 @@ pub fn radiate_ports(
     excitation: usize,
     frequency: f64,
 ) -> Result<(super::BorSweepPoint, Radiated)> {
-    let (point, d, xs) = super::ports::solved(p, m, ports, frequency, Some(layer), None)?;
+    let super::ports::Solved { point, dofs: d, solutions: xs } = super::ports::solved(p, m, ports, frequency, Some(layer))?;
     let x = xs.get(excitation).ok_or_else(|| invalid("excitation", "no such port"))?;
     let huygens = sample(p, &d, layer, x, m, frequency)?;
     Ok((point, Radiated { huygens, m, unknowns: d.count }))

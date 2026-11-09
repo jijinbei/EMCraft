@@ -297,88 +297,16 @@ impl Driven {
     /// the box's own faces or the sphere's (behind the layer, where the scattered field has died
     /// away). Returns the eliminated degrees of freedom's values g (global slot, value).
     fn lift_conductors(&self, model: &Model, k0: f64, direction: Vec3, polarization: Vec3, b: &mut [C]) -> Result<Vec<(usize, C)>> {
-        let node = |n: u32| self.mesh.node(n).unwrap_or(Point3::new(f64::NAN, f64::NAN, f64::NAN));
-        let on_box = |nodes: &[u32; 3]| match model.domain.solid.as_ref().map(|s| &s.shape) {
-            Some(Shape::Box { size }) => {
-                let tol = 1e-9 * size.iter().fold(0.0f64, f64::max);
-                (0..3).any(|d| [0.0, size[d]].iter().any(|c| nodes.iter().all(|n| (node(*n)[d] - c).abs() <= tol)))
-            }
-            Some(Shape::Sphere { radius }) => nodes.iter().all(|n| (node(*n).to_vec().norm() - *radius).abs() <= 1e-9 * *radius),
-            _ => true,
-        };
-        let faces: Vec<(usize, usize)> = self
-            .mesh
-            .boundary
-            .iter()
-            .filter(|f| !on_box(&f.nodes))
-            .filter_map(|f| self.topo.find_face(f.tet as usize, f.nodes).map(|(lf, _)| (f.tet as usize, lf)))
-            .collect();
+        let faces = self.conductor_faces(model);
         if faces.is_empty() {
             return Ok(Vec::new());
         }
-        // The local functions with a tangential trace on local face lf.
-        let order = self.order;
-        let on_face = |lf: usize| -> Vec<usize> {
-            let corners = emcraft_fem::nedelec::LOCAL_FACES[lf];
-            let mut out = Vec::new();
-            for (e, [a, c]) in emcraft_fem::nedelec::LOCAL_EDGES.iter().enumerate() {
-                if corners.contains(a) && corners.contains(c) {
-                    out.push(e);
-                    if order == emcraft_fem::Order::Two {
-                        out.push(6 + e);
-                    }
-                }
-            }
-            if order == emcraft_fem::Order::Two {
-                out.extend([12 + 2 * lf, 13 + 2 * lf]);
-            }
-            out
-        };
-        let mut index: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
-        let mut points = Vec::new();
-        let mut groups: Vec<Vec<usize>> = Vec::with_capacity(faces.len());
-        for &(t, lf) in &faces {
-            let slots: Vec<usize> = self.dofs.slots_of_tet(&self.topo, t).collect();
-            let centroid = self.mesh.centroid(t).unwrap_or(Point3::ORIGIN);
-            groups.push(
-                on_face(lf)
-                    .into_iter()
-                    .map(|li| {
-                        *index.entry(slots[li]).or_insert_with(|| {
-                            points.push(centroid);
-                            points.len() - 1
-                        })
-                    })
-                    .collect(),
-            );
-        }
-        let nb = points.len();
-        let mut m = crate::sparse::Csr::from_groups(nb, groups.iter().map(std::vec::Vec::as_slice));
-        let mut r = vec![C::new(0.0, 0.0); nb];
-        for (&(t, lf), group) in faces.iter().zip(&groups) {
-            let el = self.element_of(t)?;
-            let local = on_face(lf);
-            let corners = emcraft_fem::nedelec::LOCAL_FACES[lf];
-            for (l, w, n) in el.face_rule(corners, 4) {
-                let v = el.values(l);
-                let phase = C::from_polar(1.0, -k0 * direction.dot(el.point(l).to_vec()));
-                let g = polarization.tangential(n) * -phase;
-                let tv: Vec<Vec3> = local.iter().map(|&li| v[li].tangential(n)).collect();
-                for (a, ta) in group.iter().zip(&tv) {
-                    r[*a] += g.dot_real(*ta) * w;
-                    for (bb, tb) in group.iter().zip(&tv) {
-                        m.add(*a, *bb, C::new(w * ta.dot(*tb), 0.0));
-                    }
-                }
-            }
-        }
-        let f = Ldlt::factor(&m, &points)?;
-        let (g, _) = f.solve_refined(&m, &r, 2)?;
+        let trace = self.trace_projection(&faces, k0, direction, polarization)?;
         // Lift: every tetrahedron with a conductor's degree of freedom.
         let in_pml = self.pml_tets();
         for t in 0..self.mesh.tets.len() {
             let known: Vec<(usize, C)> =
-                self.dofs.slots_of_tet(&self.topo, t).enumerate().filter_map(|(li, s)| index.get(&s).map(|&k| (li, g[k]))).collect();
+                self.dofs.slots_of_tet(&self.topo, t).enumerate().filter_map(|(li, s)| trace.index.get(&s).map(|&k| (li, trace.g[k]))).collect();
             if known.is_empty() {
                 continue;
             }
@@ -396,9 +324,95 @@ impl Driven {
                 }
             }
         }
-        let mut values: Vec<(usize, C)> = index.iter().map(|(&slot, &k)| (slot, g.get(k).copied().unwrap_or_default())).collect();
+        let mut values: Vec<(usize, C)> = trace.index.iter().map(|(&slot, &k)| (slot, trace.g.get(k).copied().unwrap_or_default())).collect();
         values.sort_unstable_by_key(|(slot, _)| *slot);
         Ok(values)
+    }
+
+    /// The conductors' boundary faces (tetrahedron, local face): the walls not on the box's own
+    /// faces or the sphere's.
+    fn conductor_faces(&self, model: &Model) -> Vec<(usize, usize)> {
+        let node = |n: u32| self.mesh.node(n).unwrap_or(Point3::new(f64::NAN, f64::NAN, f64::NAN));
+        let on_box = |nodes: &[u32; 3]| match model.domain.solid.as_ref().map(|s| &s.shape) {
+            Some(Shape::Box { size }) => {
+                let tol = crate::GEOMETRY_TOLERANCE * size.iter().fold(0.0f64, f64::max);
+                (0..3).any(|d| [0.0, size[d]].iter().any(|c| nodes.iter().all(|n| (node(*n)[d] - c).abs() <= tol)))
+            }
+            Some(Shape::Sphere { radius }) => nodes.iter().all(|n| (node(*n).to_vec().norm() - *radius).abs() <= crate::GEOMETRY_TOLERANCE * *radius),
+            _ => true,
+        };
+        self.mesh
+            .boundary
+            .iter()
+            .filter(|f| !on_box(&f.nodes))
+            .filter_map(|f| self.topo.find_face(f.tet as usize, f.nodes).map(|(lf, _)| (f.tet as usize, lf)))
+            .collect()
+    }
+
+    /// The local functions with a tangential trace on local face `lf`.
+    fn face_functions(&self, lf: usize) -> Vec<usize> {
+        let corners = emcraft_fem::nedelec::LOCAL_FACES[lf];
+        let two = self.order == emcraft_fem::Order::Two;
+        let mut out = Vec::new();
+        for (e, [a, c]) in emcraft_fem::nedelec::LOCAL_EDGES.iter().enumerate() {
+            if corners.contains(a) && corners.contains(c) {
+                out.push(e);
+                if two {
+                    out.push(6 + e);
+                }
+            }
+        }
+        if two {
+            out.extend([12 + 2 * lf, 13 + 2 * lf]);
+        }
+        out
+    }
+
+    /// The trace −n × E_inc projected on the conductors' faces: their degrees of freedom (global
+    /// slot → place) and their values g, by the L² projection Σ_j ∫ (n × Nᵢ)·(n × Nⱼ) gⱼ =
+    /// −∫ (n × Nᵢ)·(n × E_inc).
+    fn trace_projection(&self, faces: &[(usize, usize)], k0: f64, direction: Vec3, polarization: Vec3) -> Result<Trace> {
+        let mut index: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+        let mut points = Vec::new();
+        let mut groups: Vec<Vec<usize>> = Vec::with_capacity(faces.len());
+        for &(t, lf) in faces {
+            let slots: Vec<usize> = self.dofs.slots_of_tet(&self.topo, t).collect();
+            let centroid = self.mesh.centroid(t).unwrap_or(Point3::ORIGIN);
+            groups.push(
+                self.face_functions(lf)
+                    .into_iter()
+                    .map(|li| {
+                        *index.entry(slots[li]).or_insert_with(|| {
+                            points.push(centroid);
+                            points.len() - 1
+                        })
+                    })
+                    .collect(),
+            );
+        }
+        let nb = points.len();
+        let mut m = crate::sparse::Csr::from_groups(nb, groups.iter().map(std::vec::Vec::as_slice));
+        let mut r = vec![C::new(0.0, 0.0); nb];
+        for (&(t, lf), group) in faces.iter().zip(&groups) {
+            let el = self.element_of(t)?;
+            let local = self.face_functions(lf);
+            let corners = emcraft_fem::nedelec::LOCAL_FACES[lf];
+            for (l, w, n) in el.face_rule(corners, 4) {
+                let v = el.values(l);
+                let phase = C::from_polar(1.0, -k0 * direction.dot(el.point(l).to_vec()));
+                let g = polarization.tangential(n) * -phase;
+                let tv: Vec<Vec3> = local.iter().map(|&li| v[li].tangential(n)).collect();
+                for (a, ta) in group.iter().zip(&tv) {
+                    r[*a] += g.dot_real(*ta) * w;
+                    for (bb, tb) in group.iter().zip(&tv) {
+                        m.add(*a, *bb, C::new(w * ta.dot(*tb), 0.0));
+                    }
+                }
+            }
+        }
+        let f = Ldlt::factor(&m, &points)?;
+        let (g, _) = f.solve_refined(&m, &r, 2)?;
+        Ok(Trace { index, g })
     }
 
     /// The fields on the Huygens box round the model's sources and bodies, for the far field
@@ -448,4 +462,10 @@ pub fn far_fields(h: &Huygens, directions: &[(f64, f64)]) -> Vec<FarField> {
             FarField { theta, phi, e_theta, e_phi }
         })
         .collect()
+}
+
+/// The conductors' degrees of freedom (global slot → place in `g`) and their values.
+struct Trace {
+    index: std::collections::HashMap<usize, usize>,
+    g: Vec<C>,
 }
