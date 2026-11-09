@@ -90,12 +90,12 @@ fn indexed_hits_answer_as_the_scan_does() {
             } else {
                 (rng.range(-10.0, w + 10.0), rng.range(-10.0, h + 10.0))
             };
-            let want = hits(&s, c, x, y, w, h);
-            assert_eq!(c.ray(x, y, w, h).and_then(|r| index.hits(&s, r)), want, "camera {k} pixel ({x}, {y})");
-            if let Some((near, _)) = want {
+            let want = hits(&s, c, crate::view3d::Pixel::new(x, y, w, h));
+            assert_eq!(c.ray(crate::view3d::Pixel::new(x, y, w, h)).and_then(|r| index.hits(&s, r)), want, "camera {k} pixel ({x}, {y})");
+            if let Some(crate::view3d::Hits { nearest: near, .. }) = want {
                 hit_some += 1;
                 // A tie on the grid: another triangle as near.
-                let (o, d) = c.ray(x, y, w, h).unwrap_or_default();
+                let (o, d) = c.ray(crate::view3d::Pixel::new(x, y, w, h)).unwrap_or_default();
                 let at = |i: usize| hit(o, d, &s.tris[i]);
                 let best = at(near.index);
                 ties += usize::from(s.tris.iter().enumerate().any(|(j, t)| j != near.index && t.tag != 0 && at(j) == best));
@@ -135,12 +135,22 @@ fn another_scene_and_hostile_input_are_scanned_or_refused() {
     let mut c = Camera::default();
     c.fit([0.0, 0.0, 0.0], [24.0, 24.0, 20.0], 1.0);
     for (x, y) in [(50.0, 50.0), (30.0, 70.0)] {
-        assert_eq!(c.ray(x, y, 100.0, 100.0).and_then(|r| stale.hits(&s, r)), hits(&s, &c, x, y, 100.0, 100.0));
+        assert_eq!(
+            c.ray(crate::view3d::Pixel::new(x, y, 100.0, 100.0)).and_then(|r| stale.hits(&s, r)),
+            hits(&s, &c, crate::view3d::Pixel::new(x, y, 100.0, 100.0))
+        );
     }
-    assert!(c.ray(50.0, 50.0, 100.0, 100.0).and_then(|r| SceneIndex::new(&Scene::default()).hits(&Scene::default(), r)).is_none());
+    assert!(
+        c.ray(crate::view3d::Pixel::new(50.0, 50.0, 100.0, 100.0))
+            .and_then(|r| SceneIndex::new(&Scene::default()).hits(&Scene::default(), r))
+            .is_none()
+    );
     let index = SceneIndex::new(&s);
     for (x, y) in [(f64::NAN, 1.0), (f64::INFINITY, 0.0), (1e308, -1e308)] {
-        assert_eq!(c.ray(x, y, 100.0, 100.0).and_then(|r| index.hits(&s, r)), hits(&s, &c, x, y, 100.0, 100.0));
+        assert_eq!(
+            c.ray(crate::view3d::Pixel::new(x, y, 100.0, 100.0)).and_then(|r| index.hits(&s, r)),
+            hits(&s, &c, crate::view3d::Pixel::new(x, y, 100.0, 100.0))
+        );
     }
 }
 
@@ -173,14 +183,14 @@ fn bvh_timing() {
     let started = std::time::Instant::now();
     let index = SceneIndex::new(&s);
     let build = started.elapsed().as_secs_f64() * 1e3;
-    let time = |f: &dyn Fn(f64, f64) -> Option<(Hit, Option<Hit>)>| {
+    let time = |f: &dyn Fn(f64, f64) -> Option<crate::view3d::Hits>| {
         let started = std::time::Instant::now();
         for r in 0..rays {
             std::hint::black_box(f(20.0 + (r % 60) as f64, 20.0 + (r / 60) as f64 * 15.0));
         }
         started.elapsed().as_secs_f64() * 1e3 / rays as f64
     };
-    let scan = time(&|x, y| hits(&s, &c, x, y, 100.0, 100.0));
-    let indexed = time(&|x, y| c.ray(x, y, 100.0, 100.0).and_then(|r| index.hits(&s, r)));
+    let scan = time(&|x, y| hits(&s, &c, crate::view3d::Pixel::new(x, y, 100.0, 100.0)));
+    let indexed = time(&|x, y| c.ray(crate::view3d::Pixel::new(x, y, 100.0, 100.0)).and_then(|r| index.hits(&s, r)));
     eprintln!("{} triangles: index built in {build:.1} ms; a pick {scan:.3} ms scanned, {indexed:.4} ms indexed", s.tris.len());
 }

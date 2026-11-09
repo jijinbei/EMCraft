@@ -217,7 +217,7 @@ fn exact_tet_sign(xyz: &[Point3]) -> Option<Sign> {
 pub fn element_validity(kind: ElementKind, xyz: &[Point3]) -> Result<JacobianCheck> {
     let p = local(kind, xyz)?;
     if kind == ElementKind::Hex8
-        && let Some((check, _, _)) = hex8::hex8(&corners(&p)?)
+        && let Some(hex8::Hex8 { check, .. }) = hex8::hex8(&corners(&p)?)
     {
         return Ok(check);
     }
@@ -243,7 +243,7 @@ pub fn element_quality(kind: ElementKind, xyz: &[Point3]) -> Result<ElementQuali
     let p = local(kind, xyz)?;
     if kind == ElementKind::Hex8 {
         let c = corners::<8>(&p)?;
-        if let Some((check, scaled, knupp)) = hex8::hex8(&c) {
+        if let Some(hex8::Hex8 { check, scaled_jacobian: scaled, shape: knupp }) = hex8::hex8(&c) {
             let metrics = vec![
                 (Metric::EdgeRatio, shape::edge_ratio(&c, &jacobian::HEX_EDGES)),
                 (Metric::ScaledJacobian, scaled),

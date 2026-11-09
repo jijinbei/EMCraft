@@ -8,7 +8,7 @@
 
 use emcraft_engine::Session;
 use emcraft_render::Rgb;
-use emcraft_render::view3d::{Camera, Hit, Scene};
+use emcraft_render::view3d::{Camera, Hits, Pixel, Scene};
 
 pub use cache::Cache;
 
@@ -175,26 +175,26 @@ pub struct Built {
 
 impl Built {
     /// [`emcraft_render::view3d::hits`] on its scene, through its index once made.
-    pub fn hits(&self, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> Option<(Hit, Option<Hit>)> {
+    pub fn hits(&self, camera: &Camera, at: Pixel) -> Option<Hits> {
         let found = match self.cache.index(&self.scene) {
-            Some(index) => camera.ray(x, y, w, h).and_then(|r| index.hits(&self.scene, r)),
-            None => emcraft_render::view3d::hits(&self.scene, camera, x, y, w, h),
+            Some(index) => camera.ray(at).and_then(|r| index.hits(&self.scene, r)),
+            None => emcraft_render::view3d::hits(&self.scene, camera, at),
         };
         // An imported part's see-through metal round the region: what it holds is what the
         // pointer means where the ray reaches it (the part itself where it does not).
         let part = |tag: u32| matches!(Pick::from_tag(tag), Some(Pick::Part(_)));
         match found {
-            Some((near, solid)) if part(near.tag) => {
-                let inside = camera.ray(x, y, w, h).and_then(|r| emcraft_render::view3d::nearest_where(&self.scene, r, |t| !part(t)));
-                Some((inside.unwrap_or(near), solid))
+            Some(Hits { nearest, solid }) if part(nearest.tag) => {
+                let inside = camera.ray(at).and_then(|r| emcraft_render::view3d::nearest_where(&self.scene, r, |t| !part(t)));
+                Some(Hits { nearest: inside.unwrap_or(nearest), solid })
             }
             other => other,
         }
     }
 
     /// [`emcraft_render::view3d::pick`] on its scene, through its index once made.
-    pub fn pick(&self, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> Option<u32> {
-        self.hits(camera, x, y, w, h).map(|(any, solid)| solid.unwrap_or(any).tag)
+    pub fn pick(&self, camera: &Camera, at: Pixel) -> Option<u32> {
+        self.hits(camera, at).map(|h| h.picked().tag)
     }
 
     /// What a moving picture draws: its coarser copy when it has one made, else its scene.

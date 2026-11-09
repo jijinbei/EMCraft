@@ -308,7 +308,7 @@ fn picking_finds_what_the_ray_meets() {
     let (mut checked, mut hits) = (0, 0);
     for y in (1..h).step_by(3) {
         for x in (1..w).step_by(3) {
-            let (o, d) = cam.ray(f64::from(x) + 0.5, f64::from(y) + 0.5, f64::from(w), f64::from(h)).unwrap();
+            let (o, d) = cam.ray(emcraft_render::view3d::Pixel::new(f64::from(x) + 0.5, f64::from(y) + 0.5, f64::from(w), f64::from(h))).unwrap();
             let (mut any, mut solid): (Option<(f64, u32)>, Option<(f64, u32)>) = (None, None);
             let mut edge = false;
             for (rx, ry, z, tag, alpha) in rects {

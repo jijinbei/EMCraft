@@ -181,6 +181,15 @@ struct Plane {
     tol: f64,
 }
 
+/// A triangle clipped by a plane: the kept part's corners (a triangle or a quad: the first
+/// `kept` of them) and the points the plane cuts its edges at (the first `cut`).
+struct Clipped {
+    corners: [[f64; 3]; 4],
+    kept: usize,
+    cuts: [[f64; 3]; 2],
+    cut: usize,
+}
+
 impl Plane {
     fn new(s: &Section, tol: f64) -> Result<Plane, SectionError> {
         if !s.normal.iter().all(|v| v.is_finite()) {
@@ -250,9 +259,8 @@ impl Plane {
     }
 
     /// Sutherland–Hodgman against the plane: the kept part of the triangle `p` whose corners
-    /// are `kept` or not (a triangle or a quad: its corners and their count) and the points the
-    /// plane cuts its edges at (and their count).
-    fn clip(&self, p: [[f64; 3]; 3], kept: [bool; 3]) -> ([[f64; 3]; 4], usize, [[f64; 3]; 2], usize) {
+    /// are `kept` or not, and the points the plane cuts its edges at.
+    fn clip(&self, p: [[f64; 3]; 3], kept: [bool; 3]) -> Clipped {
         let (mut poly, mut n) = ([[0.0; 3]; 4], 0);
         let (mut cuts, mut m) = ([[0.0; 3]; 2], 0);
         for i in 0..3 {
@@ -275,7 +283,7 @@ impl Plane {
                 }
             }
         }
-        (poly, n, cuts, m)
+        Clipped { corners: poly, kept: n, cuts, cut: m }
     }
 
     /// `p`'s coordinates on the plane (`+ 0.0` makes -0 into 0, so equal points have equal
@@ -394,7 +402,7 @@ fn section_with(scene: &Scene, s: &Section, lim: Limits) -> Result<Scene, Sectio
             0 => continue,
             _ => {}
         }
-        let (poly, n, cuts, m) = plane.clip(t.p, kept);
+        let Clipped { corners: poly, kept: n, cuts, cut: m } = plane.clip(t.p, kept);
         let poly = &poly[..n];
         if !poly.iter().all(finite) {
             continue;
@@ -943,6 +951,6 @@ mod tests {
         cam.fit(lo, hi, 4.0 / 3.0);
         // The middle of the cut shows the post, picked as itself.
         let c = cam.project([0.5 * 0.02286, 0.005, 0.0275], 640.0, 480.0).unwrap();
-        assert_eq!(pick(&cut, &cam, c[0], c[1], 640.0, 480.0), Some(20));
+        assert_eq!(pick(&cut, &cam, crate::view3d::Pixel::new(c[0], c[1], 640.0, 480.0)), Some(20));
     }
 }

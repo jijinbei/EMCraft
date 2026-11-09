@@ -15,7 +15,9 @@ pub(super) fn zoom_limits((lo, hi): ([f64; 3], [f64; 3])) -> [f64; 2] {
 pub(super) fn zoom_anchor(v: &View3d, rect: Rect, pos: Option<egui::Pos2>) -> Option<[f64; 3]> {
     let at = pos? - rect.min;
     let (x, y, w, h) = (f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height()));
-    v.shown().and_then(|b| view3d::surface_at(&b.scene, &v.camera, x, y, w, h)).or_else(|| v.camera.on_target_plane(x, y, w, h))
+    v.shown()
+        .and_then(|b| view3d::surface_at(&b.scene, &v.camera, emcraft_render::view3d::Pixel::new(x, y, w, h)))
+        .or_else(|| v.camera.on_target_plane(emcraft_render::view3d::Pixel::new(x, y, w, h)))
 }
 
 /// What an orbit beginning with the pointer at `pos` turns about (Settings ▸ 3D view ▸ Orbit
@@ -29,7 +31,11 @@ pub(super) fn pivot(app: &EmcraftApp, v: &View3d, rect: Rect, pos: Option<egui::
             pos.and_then(|p| {
                 let at = p - rect.min;
                 v.shown().and_then(|b| {
-                    view3d::surface_at(&b.scene, &v.camera, f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height()))
+                    view3d::surface_at(
+                        &b.scene,
+                        &v.camera,
+                        emcraft_render::view3d::Pixel::new(f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height())),
+                    )
                 })
             })
             .unwrap_or_else(|| [0, 1, 2].map(|i| 0.5 * (frame.0[i] + frame.1[i]))),

@@ -61,7 +61,7 @@ const TE_SCALAR: f64 = 1e-6;
 /// material's complex k². `None` when the solver mixed a pair of degenerate TE and TM modes
 /// (the port then takes the hybrid lossy modes, [`lossy_modes`]).
 pub(crate) fn lossy_section_modes(section: &CrossSection, m: &Material, frequency: f64, count: usize) -> Result<Option<Vec<LossyMode>>> {
-    let (k2, _) = lossy_k2(m, frequency);
+    let k2 = lossy_k2(m, frequency).k2;
     // The unit filling solved at the medium's wavenumber magnitude: the same modes in order.
     let kp = wavenumber(frequency) * (m.eps_at(frequency) * m.mu_c()).norm().sqrt();
     let kp = if kp.is_finite() && kp > 0.0 { kp } else { wavenumber(frequency) };
@@ -240,7 +240,7 @@ impl Driven {
         let k0 = wavenumber(frequency);
         match &port.modes {
             PortModes::Analytic { medium: Some(m), modes, fraction, .. } => {
-                let (k2, mu) = lossy_k2(m, frequency);
+                let super::ports::LossyMedium { k2, mu } = lossy_k2(m, frequency);
                 modes
                     .iter()
                     .map(|(mode, v): &(Mode, Vec<(usize, C)>)| {
@@ -353,7 +353,7 @@ impl Driven {
                 };
                 let plain: Vec<PortMode> = modes.iter().map(|lm| lm.mode.clone()).collect();
                 let v = self.numeric_vectors(n, &plain, true)?;
-                let (_, mu) = lossy_k2(m, frequency);
+                let mu = lossy_k2(m, frequency).mu;
                 Ok(modes
                     .iter()
                     .zip(v)

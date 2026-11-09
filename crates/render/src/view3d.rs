@@ -203,10 +203,10 @@ impl Camera {
         Projector::new(self, w, h).project(p, 0.0)
     }
 
-    /// The ray through pixel (x, y) of a w × h picture: its origin and unit direction.
-    pub fn ray(&self, x: f64, y: f64, w: f64, h: f64) -> Option<([f64; 3], [f64; 3])> {
-        let pr = Projector::new(self, w, h);
-        let (u, v) = ((x - pr.cx) / pr.scale, (pr.cy - y) / pr.scale);
+    /// The ray through pixel `at`: its origin and unit direction.
+    pub fn ray(&self, at: Pixel) -> Option<([f64; 3], [f64; 3])> {
+        let pr = Projector::new(self, at.width, at.height);
+        let (u, v) = ((at.x - pr.cx) / pr.scale, (pr.cy - at.y) / pr.scale);
         let b = pr.b;
         let along = |o: [f64; 3], d: [f64; 3], k: f64| [o[0] + d[0] * k, o[1] + d[1] * k, o[2] + d[2] * k];
         let (origin, dir) =
@@ -217,17 +217,17 @@ impl Camera {
 }
 
 impl Camera {
-    /// Where the ray through pixel (x, y) of a w × h picture meets the plane through the target
-    /// facing the camera: what a zoom over empty space keeps under the cursor.
+    /// Where the ray through pixel `at` meets the plane through the target facing the camera:
+    /// what a zoom over empty space keeps under the cursor.
     ///
     /// ```
-    /// use emcraft_render::view3d::Camera;
+    /// use emcraft_render::view3d::{Camera, Pixel};
     /// let c = Camera { target: [1.0, 2.0, 3.0], ..Camera::default() };
-    /// let p = c.on_target_plane(50.0, 50.0, 100.0, 100.0).unwrap();
+    /// let p = c.on_target_plane(Pixel::new(50.0, 50.0, 100.0, 100.0)).unwrap();
     /// assert!(p.iter().zip(c.target).all(|(a, b)| (a - b).abs() < 1e-9));
     /// ```
-    pub fn on_target_plane(&self, x: f64, y: f64, w: f64, h: f64) -> Option<[f64; 3]> {
-        let (o, d) = self.ray(x, y, w, h)?;
+    pub fn on_target_plane(&self, at: Pixel) -> Option<[f64; 3]> {
+        let (o, d) = self.ray(at)?;
         let n = self.basis().forward;
         let den = dot(d, n);
         if den.abs() < 1e-9 {
@@ -265,11 +265,41 @@ pub struct Hit {
     pub tag: u32,
 }
 
-/// The tagged triangles under pixel (x, y): the nearest the ray through it meets, and the
-/// nearest of the solid ones (opacity ≥ 200).
+/// A point on a picture (pixels, y down) and the picture's size: where a ray is cast through.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pixel {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+impl Pixel {
+    pub const fn new(x: f64, y: f64, width: f64, height: f64) -> Pixel {
+        Pixel { x, y, width, height }
+    }
+}
+
+/// What a ray meets: the nearest tagged triangle, and the nearest of the solid ones (opacity
+/// ≥ 200) — the same when the nearest is solid, none when every one it meets is see-through.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hits {
+    pub nearest: Hit,
+    pub solid: Option<Hit>,
+}
+
+impl Hits {
+    /// The hit a picker takes: the nearest solid one, else the nearest.
+    pub fn picked(self) -> Hit {
+        self.solid.unwrap_or(self.nearest)
+    }
+}
+
+/// The tagged triangles under pixel `at`: the nearest the ray through it meets, and the nearest
+/// of the solid ones (opacity ≥ 200).
 ///
 /// ```
-/// use emcraft_render::view3d::{Camera, Scene, StandardView, hits};
+/// use emcraft_render::view3d::{Camera, Hits, Pixel, Scene, StandardView, hits};
 /// use emcraft_render::Rgb;
 /// let mut s = Scene::default();
 /// s.tagged(7, |s| s.quad([[-1.0, -1.0, 0.0], [1.0, -1.0, 0.0], [1.0, 1.0, 0.0], [-1.0, 1.0, 0.0]], Rgb(200, 200, 200), 255));
@@ -277,18 +307,18 @@ pub struct Hit {
 /// cam.standard(StandardView::Front);
 /// cam.fit([-1.0, -1.0, 0.0], [1.0, 1.0, 0.0], 1.0);
 /// // The middle pixel of a 100 × 100 picture looks at the quad's middle.
-/// let (near, solid) = hits(&s, &cam, 50.0, 50.0, 100.0, 100.0).unwrap();
-/// assert_eq!((near.tag, solid.map(|h| h.tag)), (7, Some(7)));
-/// assert!(near.at.iter().all(|c| c.abs() < 1e-9));
+/// let Hits { nearest, solid } = hits(&s, &cam, Pixel::new(50.0, 50.0, 100.0, 100.0)).unwrap();
+/// assert_eq!((nearest.tag, solid.map(|h| h.tag)), (7, Some(7)));
+/// assert!(nearest.at.iter().all(|c| c.abs() < 1e-9));
 /// // Off the quad, nothing.
-/// assert!(hits(&s, &cam, 1.0, 1.0, 100.0, 100.0).is_none());
+/// assert!(hits(&s, &cam, Pixel::new(1.0, 1.0, 100.0, 100.0)).is_none());
 /// ```
-pub fn hits(scene: &Scene, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> Option<(Hit, Option<Hit>)> {
-    hits_along(scene, camera.ray(x, y, w, h)?)
+pub fn hits(scene: &Scene, camera: &Camera, at: Pixel) -> Option<Hits> {
+    hits_along(scene, camera.ray(at)?)
 }
 
 /// [`hits`] along the ray `(origin, dir)` (`Camera::ray`), by a scan of every triangle.
-pub fn hits_along(scene: &Scene, (origin, dir): ([f64; 3], [f64; 3])) -> Option<(Hit, Option<Hit>)> {
+pub fn hits_along(scene: &Scene, (origin, dir): ([f64; 3], [f64; 3])) -> Option<Hits> {
     let mut solid: Option<(f64, usize)> = None;
     let mut any: Option<(f64, usize)> = None;
     for (i, t) in scene.tris.iter().enumerate().filter(|(_, t)| t.tag != 0) {
@@ -307,7 +337,7 @@ pub fn hits_along(scene: &Scene, (origin, dir): ([f64; 3], [f64; 3])) -> Option<
         let tag = scene.tris.get(i).map_or(0, |t| t.tag);
         Hit { index: i, at: [origin[0] + dir[0] * d, origin[1] + dir[1] * d, origin[2] + dir[2] * d], tag }
     };
-    any.map(|a| (at(a), solid.map(at)))
+    any.map(|a| Hits { nearest: at(a), solid: solid.map(at) })
 }
 
 /// Every tagged triangle along the ray `(origin, dir)`, nearest first, `most` at most (a scan
@@ -337,24 +367,24 @@ pub fn nearest_where(scene: &Scene, (origin, dir): ([f64; 3], [f64; 3]), keep: i
     best.map(|(d, i)| Hit { index: i, at: [origin[0] + dir[0] * d, origin[1] + dir[1] * d, origin[2] + dir[2] * d], tag: scene.tris[i].tag })
 }
 
-/// The point of the scene under pixel (x, y), for zooming toward it or orbiting about it: where
+/// The point of the scene under pixel `at`, for zooming toward it or orbiting about it: where
 /// the ray through it meets the nearest solid triangle (opacity ≥ 200), else the nearest
 /// see-through one, whatever its tag; `None` over empty space.
 ///
 /// ```
-/// use emcraft_render::view3d::{Camera, Scene, StandardView, surface_at};
+/// use emcraft_render::view3d::{Camera, Pixel, Scene, StandardView, surface_at};
 /// use emcraft_render::Rgb;
 /// let mut s = Scene::default();
 /// s.quad([[-1.0, -1.0, 0.5], [1.0, -1.0, 0.5], [1.0, 1.0, 0.5], [-1.0, 1.0, 0.5]], Rgb(9, 9, 9), 255);
 /// let mut cam = Camera::default();
 /// cam.standard(StandardView::Front);
 /// cam.fit([-1.0, -1.0, 0.0], [1.0, 1.0, 1.0], 1.0);
-/// let p = surface_at(&s, &cam, 50.0, 50.0, 100.0, 100.0).unwrap();
+/// let p = surface_at(&s, &cam, Pixel::new(50.0, 50.0, 100.0, 100.0)).unwrap();
 /// assert!((p[2] - 0.5).abs() < 1e-9);
-/// assert!(surface_at(&s, &cam, 0.0, 0.0, 100.0, 100.0).is_none());
+/// assert!(surface_at(&s, &cam, Pixel::new(0.0, 0.0, 100.0, 100.0)).is_none());
 /// ```
-pub fn surface_at(scene: &Scene, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> Option<[f64; 3]> {
-    let (origin, dir) = camera.ray(x, y, w, h)?;
+pub fn surface_at(scene: &Scene, camera: &Camera, at: Pixel) -> Option<[f64; 3]> {
+    let (origin, dir) = camera.ray(at)?;
     let (mut solid, mut any): (Option<f64>, Option<f64>) = (None, None);
     for t in &scene.tris {
         let Some(d) = hit(origin, dir, t) else { continue };
@@ -371,11 +401,10 @@ pub fn surface_at(scene: &Scene, camera: &Camera, x: f64, y: f64, w: f64, h: f64
     solid.or(any).map(|d| [0, 1, 2].map(|i| origin[i] + dir[i] * d)).filter(|p| p.iter().all(|v| v.is_finite()))
 }
 
-/// The tag under pixel (x, y): the nearest tagged triangle the ray through it meets, the
-/// nearer of the solid ones (opacity ≥ 200) if any, so see-through walls let what is inside be
-/// picked.
-pub fn pick(scene: &Scene, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> Option<u32> {
-    hits(scene, camera, x, y, w, h).map(|(any, solid)| solid.unwrap_or(any).tag)
+/// The tag under pixel `at`: the nearest tagged triangle the ray through it meets, the nearer of
+/// the solid ones (opacity ≥ 200) if any, so see-through walls let what is inside be picked.
+pub fn pick(scene: &Scene, camera: &Camera, at: Pixel) -> Option<u32> {
+    hits(scene, camera, at).map(|h| h.picked().tag)
 }
 
 /// A camera's projection onto one picture size.
@@ -535,16 +564,16 @@ mod tests {
             let b = c.basis();
             // The camera looks along its forward; the square nearer the eye is the solid hit.
             let nearer = if b.forward[2] < 0.0 { 2 } else { 1 };
-            assert_eq!(pick(&s, &c, 50.0, 50.0, 100.0, 100.0), Some(nearer), "{projection:?}");
+            assert_eq!(pick(&s, &c, Pixel::new(50.0, 50.0, 100.0, 100.0)), Some(nearer), "{projection:?}");
             // Off the squares: nothing tagged.
-            assert_eq!(pick(&s, &c, 1.0, 1.0, 100.0, 100.0), None, "{projection:?}");
+            assert_eq!(pick(&s, &c, Pixel::new(1.0, 1.0, 100.0, 100.0)), None, "{projection:?}");
             // The ray through the centre passes the target.
-            let (o, d) = c.ray(50.0, 50.0, 100.0, 100.0).unwrap();
+            let (o, d) = c.ray(Pixel::new(50.0, 50.0, 100.0, 100.0)).unwrap();
             let to = sub(c.target, o);
             let off = sub(to, d.map(|x| x * dot(to, d)));
             assert!(dot(off, off).sqrt() < 1e-9);
         }
-        assert!(Camera::default().ray(f64::NAN, 0.0, 10.0, 10.0).is_none());
+        assert!(Camera::default().ray(Pixel::new(f64::NAN, 0.0, 10.0, 10.0)).is_none());
     }
 
     fn front(projection: Projection) -> Camera {

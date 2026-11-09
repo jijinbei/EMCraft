@@ -251,8 +251,12 @@ impl View3d {
         }
         // The CPU's rays (through the scene's bounding volumes).
         self.picked_by = "cpu";
-        let tag =
-            self.shown().and_then(|b| b.pick(&self.camera, f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height())));
+        let tag = self.shown().and_then(|b| {
+            b.pick(
+                &self.camera,
+                emcraft_render::view3d::Pixel::new(f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height())),
+            )
+        });
         tag.and_then(scene3d::Pick::from_tag)
     }
 
@@ -611,8 +615,12 @@ fn normal(plane: Plane) -> usize {
 fn hover_probe(app: &EmcraftApp, v: &View3d, field: &FieldState, ui: &egui::Ui, rect: Rect, lo: [f64; 3]) -> Option<emcraft_engine::view::Probe> {
     let samples = field.samples.as_ref()?;
     let at = ui.ctx().pointer_hover_pos().filter(|p| rect.contains(*p))?;
-    let (origin, dir) =
-        v.camera.ray(f64::from(at.x - rect.left()), f64::from(at.y - rect.top()), f64::from(rect.width()), f64::from(rect.height()))?;
+    let (origin, dir) = v.camera.ray(emcraft_render::view3d::Pixel::new(
+        f64::from(at.x - rect.left()),
+        f64::from(at.y - rect.top()),
+        f64::from(rect.width()),
+        f64::from(rect.height()),
+    ))?;
     let k = samples.normal_axis();
     let plane = lo[k] + samples.at;
     if dir[k].abs() < 1e-12 {

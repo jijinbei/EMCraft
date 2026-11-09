@@ -147,12 +147,19 @@ pub struct ModeInfo {
     pub gamma: Option<num_complex::Complex64>,
 }
 
-/// k² = k₀² εr(ω) μr(1 − j tan δ_m) (1/m²) and μr(1 − j tan δ_m) of a port's lossy medium at
-/// `frequency` (Hz).
-pub(super) fn lossy_k2(m: &Material, frequency: f64) -> (num_complex::Complex64, num_complex::Complex64) {
+/// A port's lossy medium at a frequency: k² = k₀² εr(ω) μr(1 − j tan δ_m) (1/m²) and the
+/// relative permeability μr(1 − j tan δ_m).
+#[derive(Clone, Copy, Debug)]
+pub(super) struct LossyMedium {
+    pub(super) k2: num_complex::Complex64,
+    pub(super) mu: num_complex::Complex64,
+}
+
+/// The [`LossyMedium`] of material `m` at `frequency` (Hz).
+pub(super) fn lossy_k2(m: &Material, frequency: f64) -> LossyMedium {
     let k0 = wavenumber(frequency);
     let mu = m.mu_c();
-    (m.eps_at(frequency) * mu * (k0 * k0), mu)
+    LossyMedium { k2: m.eps_at(frequency) * mu * (k0 * k0), mu }
 }
 
 /// A port's medium when it absorbs or disperses, `None` when it is lossless.
@@ -552,7 +559,7 @@ pub fn port_modes(model: &Model, order: Order, frequency: f64) -> Result<Vec<(St
                     let m = model.port_material(p.end)?;
                     let modes = port_mode_list(model, p, shape)?;
                     if m.is_lossy() {
-                        let (k2, _) = lossy_k2(m, frequency);
+                        let k2 = lossy_k2(m, frequency).k2;
                         modes.iter().map(|md| lossy_info(md.name(), md.gamma_lossy(k2))).collect()
                     } else {
                         let k = k0 * (m.eps_r.get() * m.mu_r.get()).sqrt();
@@ -676,7 +683,7 @@ fn sampled_modes(
             .map(|k| {
                 let md = &list[k];
                 let beta2 = if m.is_lossy() {
-                    let g = md.gamma_lossy(lossy_k2(m, frequency).0);
+                    let g = md.gamma_lossy(lossy_k2(m, frequency).k2);
                     -(g * g).re
                 } else {
                     let k = wavenumber(frequency) * (m.eps_r.get() * m.mu_r.get()).sqrt();

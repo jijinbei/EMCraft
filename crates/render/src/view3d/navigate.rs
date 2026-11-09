@@ -405,7 +405,7 @@ mod tests {
             let mut c = Camera { target: [0.01, 0.02, -0.03], distance: 0.2, projection, ..Camera::default() };
             let (w, h) = (640.0, 480.0);
             // The point the ray through a pixel meets on the plane through the target.
-            let (o, d) = c.ray(500.0, 120.0, w, h).unwrap();
+            let (o, d) = c.ray(crate::view3d::Pixel::new(500.0, 120.0, w, h)).unwrap();
             let n = c.back();
             let t = dot(sub(c.target, o), n) / dot(d, n);
             let a = [0, 1, 2].map(|i| o[i] + d[i] * t);

@@ -294,14 +294,24 @@ impl Card {
 }
 
 /// A field plane's box in the model (m) and the standard view that faces it.
-pub(super) fn facing_plane(l: emcraft_model::units::Length, lo: [f64; 3], f: Facing) -> ([f64; 3], [f64; 3], StandardView) {
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct Faced {
+    pub(super) lo: [f64; 3],
+    pub(super) hi: [f64; 3],
+    pub(super) view: StandardView,
+}
+
+/// The [`Faced`] box of a field plane: its plot's spans `f` in the display length `length`, the
+/// model's corner `lo` (m).
+pub(super) fn facing_plane(length: emcraft_model::units::Length, lo: [f64; 3], f: Facing) -> Faced {
     let Facing { x: (h0, h1), y: (v0, v1), plane, at } = f;
-    let (h0, h1, v0, v1) = (l.to_si(h0), l.to_si(h1), l.to_si(v0), l.to_si(v1));
-    match plane {
+    let (h0, h1, v0, v1) = (length.to_si(h0), length.to_si(h1), length.to_si(v0), length.to_si(v1));
+    let (lo, hi, view) = match plane {
         Plane::H => ([v0, lo[1] + at, h0], [v1, lo[1] + at, h1], StandardView::Top),
         Plane::E => ([lo[0] + at, v0, h0], [lo[0] + at, v1, h1], StandardView::Right),
         Plane::Cross => ([h0, v0, lo[2] + at], [h1, v1, lo[2] + at], StandardView::Front),
-    }
+    };
+    Faced { lo, hi, view }
 }
 
 impl Built {
@@ -453,7 +463,7 @@ pub(super) fn navigator(cam: &Camera, ui: &mut egui::Ui, rect: Rect, out: &mut A
 /// facing the field's plane (in Results), the section view, perspective or orthographic.
 pub(super) struct NavBar {
     /// The field's plane to face: its box (m) and the view that faces it.
-    pub(super) facing: Option<([f64; 3], [f64; 3], StandardView)>,
+    pub(super) facing: Option<Faced>,
     /// The view stands alone (not inside the Field view, which has its own player and no
     /// section view): it offers both.
     pub(super) standalone: bool,
@@ -526,8 +536,8 @@ impl NavBar {
                     Handle::Fixed(Fixed::View3dSection) => v.section = v.section.is_none().then(|| Cut::middle(0, bounds)),
                     Handle::Tool(tool) => out.push(Action::Tool((on_tool != Some(tool)).then_some(tool))),
                     Handle::Fixed(Fixed::View3dFace) => {
-                        if let Some((lo, hi, side)) = facing {
-                            v.goal = Some(Goal::Face(lo, hi, side));
+                        if let Some(Faced { lo, hi, view }) = facing {
+                            v.goal = Some(Goal::Face(lo, hi, view));
                         }
                     }
                     _ => v.toggle_projection(),

@@ -805,8 +805,9 @@ fn phase_line(runs: &[Vec<(f64, f64)>]) -> Option<Loading> {
     Some(Loading { a, b })
 }
 
-/// Unwraps phases along a run.
-fn unwrap(values: &mut [(f64, f64)]) {
+/// The phases (rad) of a run of (ω, phase) samples, ω ascending, made continuous: each step
+/// brought within ±π by whole turns.
+fn unwrap_phases(values: &mut [(f64, f64)]) {
     let mut offset = 0.0;
     for k in 1..values.len() {
         let step = values[k].1 + offset - values[k - 1].1;
@@ -837,8 +838,8 @@ fn loading_of(omega: &[f64], s: &[C], model: &[C]) -> Loading {
     }
     lower.sort_by(|a, b| a.0.total_cmp(&b.0));
     upper.sort_by(|a, b| a.0.total_cmp(&b.0));
-    unwrap(&mut lower);
-    unwrap(&mut upper);
+    unwrap_phases(&mut lower);
+    unwrap_phases(&mut upper);
     phase_line(&[lower, upper]).map_or_else(Loading::default, |l| Loading { a: l.a / 2.0, b: l.b / 2.0 })
 }
 

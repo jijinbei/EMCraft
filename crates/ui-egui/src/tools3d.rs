@@ -325,7 +325,12 @@ fn snap(face: &Face, hit: Option<[f64; 3]>, cam: &Camera, rect: Rect, at: Pos2) 
     if let Some((_, s)) = best {
         return Some(s);
     }
-    let ray = cam.ray(f64::from(at.x - rect.left()), f64::from(at.y - rect.top()), f64::from(rect.width()), f64::from(rect.height()));
+    let ray = cam.ray(emcraft_render::view3d::Pixel::new(
+        f64::from(at.x - rect.left()),
+        f64::from(at.y - rect.top()),
+        f64::from(rect.width()),
+        f64::from(rect.height()),
+    ));
     let mut edge: Option<(f32, Snap)> = None;
     for (a, b) in &face.edges {
         let (Some(sa), Some(sb)) = (screen(cam, rect, *a), screen(cam, rect, *b)) else { continue };
@@ -425,14 +430,14 @@ fn over(app: &EmcraftApp, v: &View3d, tool: Tool, rect: Rect, at: Option<Pos2>, 
     {
         return Some(Hover { face: last.clone(), snap: s, port: None });
     }
-    let hits = scene.hits(&v.camera, f64::from(p.x - rect.left()), f64::from(p.y - rect.top()), w, h);
+    let hits = scene.hits(&v.camera, emcraft_render::view3d::Pixel::new(f64::from(p.x - rect.left()), f64::from(p.y - rect.top()), w, h));
     let mut face_of = |hit: &view3d::Hit| faces.find(scene, now, hit.index);
     // Points are picked through see-through walls, on what they show inside, as a click selects.
     // A port goes on the face in front when one may go there (a free end, a port's face), else
     // on what shows through it (a body's face inside an open box).
     let hit = match hits {
         None => None,
-        Some((near, solid)) if tool == Tool::Port => {
+        Some(emcraft_render::view3d::Hits { nearest: near, solid }) if tool == Tool::Port => {
             let air = |h: &view3d::Hit| m.domain.open.is_some() && Pick::from_tag(h.tag) == Some(Pick::Solid);
             let mut usable = |h: &view3d::Hit| !air(h) && face_of(h).is_some_and(|f| !matches!(port_target(m, &f), PortTarget::No(_)));
             if usable(&near) {
@@ -440,12 +445,12 @@ fn over(app: &EmcraftApp, v: &View3d, tool: Tool, rect: Rect, at: Option<Pos2>, 
             } else {
                 // Behind see-through faces (a guide's sides in front of its far end): the first
                 // face along the ray a port may go on, else what shows through.
-                let ray = v.camera.ray(f64::from(p.x - rect.left()), f64::from(p.y - rect.top()), w, h);
+                let ray = v.camera.ray(emcraft_render::view3d::Pixel::new(f64::from(p.x - rect.left()), f64::from(p.y - rect.top()), w, h));
                 let behind = ray.map(|r| emcraft_render::view3d::hits_in_order(&scene.scene, r, 32)).unwrap_or_default();
                 Some(behind.into_iter().find(|h| usable(h)).unwrap_or_else(|| solid.unwrap_or(near)))
             }
         }
-        Some((near, solid)) => Some(solid.unwrap_or(near)),
+        Some(h) => Some(h.picked()),
     };
     let face = match hit {
         Some(hit) => face_of(&hit)?,

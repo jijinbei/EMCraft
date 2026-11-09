@@ -342,8 +342,12 @@ fn draw(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, view: Rect, board: 
     let Some(layer) = board.layers.iter().find(|l| l.name == pen.layer) else { return };
     let height = frame.point([0.0, 0.0], layer.z, board)[1];
     let on_layer = |pos: egui::Pos2| -> Option<[f64; 2]> {
-        let (o, d) =
-            v.camera.ray(f64::from(pos.x - view.left()), f64::from(pos.y - view.top()), f64::from(view.width()), f64::from(view.height()))?;
+        let (o, d) = v.camera.ray(emcraft_render::view3d::Pixel::new(
+            f64::from(pos.x - view.left()),
+            f64::from(pos.y - view.top()),
+            f64::from(view.width()),
+            f64::from(view.height()),
+        ))?;
         let t = (height - o[1]) / d[1];
         (d[1].abs() > 1e-12 && t > 0.0).then(|| [o[0] + t * d[0], o[2] + t * d[2]])
     };

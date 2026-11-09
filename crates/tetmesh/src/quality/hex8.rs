@@ -148,10 +148,18 @@ impl Poly {
     }
 }
 
+/// A hex8's certified Jacobian check and its Knupp quality: the scaled Jacobian and the shape
+/// metric.
+pub(crate) struct Hex8 {
+    pub(crate) check: JacobianCheck,
+    pub(crate) scaled_jacobian: f64,
+    pub(crate) shape: f64,
+}
+
 /// The certificate and Knupp's scaled Jacobian and shape of a hex8 with corners `p` (already
 /// translated so the first is at the origin, as the generic path does), when the first bounds of
 /// its determinant settle it; `None` when it needs subdivision or a value is not finite.
-pub(crate) fn hex8(p: &[crate::Point3; 8]) -> Option<(JacobianCheck, f64, f64)> {
+pub(crate) fn hex8(p: &[crate::Point3; 8]) -> Option<Hex8> {
     let mut g = [Poly::zero([1, 1, 1]); 3];
     for (corner, x) in HEX_CORNERS.iter().zip(p) {
         for (poly, c) in g.iter_mut().zip(x.iter()) {
@@ -193,7 +201,7 @@ pub(crate) fn hex8(p: &[crate::Point3; 8]) -> Option<(JacobianCheck, f64, f64)> 
     };
     let centre = at(&|q| q.centre());
     let (scaled, knupp) = HEX_CORNERS.iter().map(|corner| at(&|q| q.at_vertex(*corner))).fold(centre, |(s, k), (s2, k2)| (s.min(s2), k.min(k2)));
-    Some((check, scaled, knupp))
+    Some(Hex8 { check, scaled_jacobian: scaled, shape: knupp })
 }
 
 #[cfg(test)]
@@ -259,7 +267,7 @@ mod tests {
             let checks = (element_validity(ElementKind::Hex8, &x).ok(), generic.as_ref().ok().and_then(|q| q.jacobian));
             assert_eq!(format!("{:?}", checks.0), format!("{:?}", checks.1), "{x:?}");
             let c: [crate::Point3; 8] = p.try_into().unwrap();
-            match hex8(&c).map(|r| r.0.validity) {
+            match hex8(&c).map(|r| r.check.validity) {
                 Some(Validity::Valid) => valid += 1,
                 Some(_) => invalid += 1,
                 None => deferred += 1,

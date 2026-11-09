@@ -71,9 +71,9 @@ impl Face {
         let near = index.filter(|_| t0.tag != 0 && scene.tris.len() <= MAX_TRIS).and_then(|i| i.near_plane(scene, n.to_array(), d, weld.0 * 10.0));
         let tris = joined(scene, at, &in_plane(scene, near.as_deref(), t0.tag, n, d, weld), weld);
         let corners_of = |i: &usize| scene.tris.get(*i).map(|t| t.p);
-        let (centre, lo, hi) = centre_and_box(tris.iter().filter_map(corners_of));
+        let Extent { centre, lo, hi } = centre_and_box(tris.iter().filter_map(corners_of));
         let outline = outline(tris.iter().filter_map(corners_of), weld);
-        let (corners, edges) = runs(&outline, weld);
+        let Runs { corners, edges } = runs(&outline, weld);
         Some(Face { tag: t0.tag, normal: n.to_array(), tris, outline, corners, edges, centre: centre.unwrap_or(t0.p[0]), lo, hi })
     }
 
@@ -127,19 +127,22 @@ fn joined(scene: &Scene, start: usize, by_vertex: &BTreeMap<Key, Vec<usize>>, we
     seen.into_iter().collect()
 }
 
-/// The area-weighted centroid of triangles (`None` for no area) and their box.
-fn centre_and_box(tris: impl Iterator<Item = [[f64; 3]; 3]>) -> (Option<[f64; 3]>, [f64; 3], [f64; 3]) {
-    let (mut area, mut c) = (0.0, Vec3::ZERO);
-    let (mut lo, mut hi) = (Point3::from([f64::INFINITY; 3]), Point3::from([f64::NEG_INFINITY; 3]));
-    for p in tris {
+/// Triangles' area-weighted centroid (`None` for no area) and their box (m).
+struct Extent {
+    centre: Option<[f64; 3]>,
+    lo: [f64; 3],
+    hi: [f64; 3],
+}
+
+/// The [`Extent`] of triangles.
+fn centre_and_box(tris: impl Iterator<Item = [[f64; 3]; 3]>) -> Extent {
+    let start = (0.0, Vec3::ZERO, Point3::from([f64::INFINITY; 3]), Point3::from([f64::NEG_INFINITY; 3]));
+    let (area, moment, lo, hi) = tris.fold(start, |(area, moment, lo, hi), p| {
         let [a, b, q] = p.map(Point3::from);
         let w = 0.5 * (b - a).cross(q - a).norm();
-        area += w;
-        c += (a.to_vec() + b.to_vec() + q.to_vec()) * w / 3.0;
-        lo = lo.min(a).min(b).min(q);
-        hi = hi.max(a).max(b).max(q);
-    }
-    ((area > 0.0).then(|| (c / area).to_array()), lo.to_array(), hi.to_array())
+        (area + w, moment + (a.to_vec() + b.to_vec() + q.to_vec()) * w / 3.0, lo.min(a).min(b).min(q), hi.max(a).max(b).max(q))
+    });
+    Extent { centre: (area > 0.0).then(|| (moment / area).to_array()), lo: lo.to_array(), hi: hi.to_array() }
 }
 
 /// The edges only one of these triangles has.
@@ -155,9 +158,14 @@ fn outline(tris: impl Iterator<Item = [[f64; 3]; 3]>, weld: Weld) -> Vec<([f64; 
     count.into_values().filter(|e| e.2 == 1).map(|(a, b, _)| (a, b)).collect()
 }
 
-/// The outline's corners (where it turns, or branches) and its straight runs between them.
-#[allow(clippy::type_complexity)]
-fn runs(outline: &[([f64; 3], [f64; 3])], weld: Weld) -> (Vec<[f64; 3]>, Vec<([f64; 3], [f64; 3])>) {
+/// An outline's corners (where it turns, or branches) and its straight runs between them.
+struct Runs {
+    corners: Vec<[f64; 3]>,
+    edges: Vec<([f64; 3], [f64; 3])>,
+}
+
+/// The [`Runs`] of an outline.
+fn runs(outline: &[([f64; 3], [f64; 3])], weld: Weld) -> Runs {
     let mut at: BTreeMap<Key, ([f64; 3], Vec<Key>)> = BTreeMap::new();
     for &(a, b) in outline {
         let (ka, kb) = (weld.key(a), weld.key(b));
@@ -197,7 +205,7 @@ fn runs(outline: &[([f64; 3], [f64; 3])], weld: Weld) -> (Vec<[f64; 3]>, Vec<([f
             }
         }
     }
-    (corners.iter().filter_map(point).collect(), edges)
+    Runs { corners: corners.iter().filter_map(point).collect(), edges }
 }
 #[cfg(test)]
 mod tests {

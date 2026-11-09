@@ -71,15 +71,16 @@ impl crate::Model {
         if !(size.is_finite() && size > 0.0) {
             return Err(invalid("body of revolution", "the size must be finite and > 0"));
         }
-        let mut lines: Vec<Line> = Vec::new();
-        outline(&solid.shape, crate::Point3::ORIGIN, crate::Axis::Z, size, &mut lines)
+        let mut lines: Vec<Line> = outline(&solid.shape, crate::Point3::ORIGIN, crate::Axis::Z, size)
             .map_err(|why| invalid("body of revolution", format!("the solid {why}")))?;
         for (i, f) in self.features().iter().enumerate() {
-            outline(&f.shape, f.at, f.axis, size, &mut lines).map_err(|why| invalid("body of revolution", format!("feature {} {why}", i + 1)))?;
+            lines.extend(outline(&f.shape, f.at, f.axis, size).map_err(|why| invalid("body of revolution", format!("feature {} {why}", i + 1)))?);
         }
         for (i, inc) in self.inclusions().iter().enumerate() {
-            outline(&inc.shape, inc.at, crate::Axis::Z, size, &mut lines)
-                .map_err(|why| invalid("body of revolution", format!("inclusion {} {why}", i + 1)))?;
+            lines.extend(
+                outline(&inc.shape, inc.at, crate::Axis::Z, size)
+                    .map_err(|why| invalid("body of revolution", format!("inclusion {} {why}", i + 1)))?,
+            );
         }
         if lines.len() >= MAX_PROFILE_POINTS {
             return Err(invalid("body of revolution", format!("its outline takes more than {MAX_PROFILE_POINTS} segments: a larger size")));
@@ -154,8 +155,9 @@ impl crate::Model {
 }
 
 /// A body's outline on the half-plane φ = 0, its frame placed at `at` with its own z along
-/// `axis`, appended to `lines`; why it is not a body of revolution about the z axis.
-fn outline(shape: &crate::Shape, at: crate::Point3, axis: crate::Axis, size: f64, lines: &mut Vec<Line>) -> std::result::Result<(), String> {
+/// `axis`; or why it is not a body of revolution about the z axis (the caller names the body).
+fn outline(shape: &crate::Shape, at: crate::Point3, axis: crate::Axis, size: f64) -> std::result::Result<Vec<Line>, String> {
+    let mut lines: Vec<Line> = Vec::new();
     let near_axis = |x: f64, y: f64| x.abs() <= 1e-12 && y.abs() <= 1e-12;
     match shape {
         crate::Shape::Cylinder { radius, length } => {
@@ -186,8 +188,7 @@ fn outline(shape: &crate::Shape, at: crate::Point3, axis: crate::Axis, size: f64
             }
             let place = |p: crate::Point3| at + axis.turn(p.to_vec());
             let points: Vec<crate::Point3> = positions.iter().copied().map(place).collect();
-            let mut own = Vec::new();
-            section(&points, triangles, &mut own);
+            let own = section(&points, triangles);
             if own.is_empty() {
                 return Err("does not meet the half-plane φ = 0".into());
             }
@@ -197,8 +198,7 @@ fn outline(shape: &crate::Shape, at: crate::Point3, axis: crate::Axis, size: f64
             for phi in [1.0f64, 2.3, 4.1] {
                 let (c, s) = (phi.cos(), phi.sin());
                 let turned: Vec<crate::Point3> = points.iter().map(|p| crate::Point3::new(p.x * c + p.y * s, p.y * c - p.x * s, p.z)).collect();
-                let mut other = Vec::new();
-                section(&turned, triangles, &mut other);
+                let other = section(&turned, triangles);
                 let off = other.iter().flatten().find(|q| own.iter().all(|s| distance(**q, s) > tol));
                 if let Some(q) = off {
                     return Err(format!(
@@ -210,13 +210,14 @@ fn outline(shape: &crate::Shape, at: crate::Point3, axis: crate::Axis, size: f64
             lines.extend(own.into_iter().map(|s| (s, 0.0)));
         }
     }
-    Ok(())
+    Ok(lines)
 }
 
 /// The section of a closed surface by the half-plane y = 0, x ≥ 0: per triangle crossing the
 /// plane, the segment between its two crossing edges (a vertex on the plane counted above it,
 /// so neighbours agree), clipped to x ≥ 0, as (r, z) = (x, z).
-fn section(points: &[crate::Point3], triangles: &[[u32; 3]], lines: &mut Vec<Segment>) {
+fn section(points: &[crate::Point3], triangles: &[[u32; 3]]) -> Vec<Segment> {
+    let mut lines = Vec::new();
     let above = |p: &crate::Point3| p.y >= 0.0;
     for t in triangles {
         let Some(v) = t.iter().map(|&i| points.get(i as usize)).collect::<Option<Vec<_>>>() else { continue };
@@ -246,6 +247,7 @@ fn section(points: &[crate::Point3], triangles: &[[u32; 3]], lines: &mut Vec<Seg
             lines.push(clipped);
         }
     }
+    lines
 }
 
 /// The distance from `q` to the segment `s`.

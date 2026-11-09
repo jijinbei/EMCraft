@@ -158,9 +158,9 @@ fn picking_through_the_index_answers_as_the_scan_does() {
         for c in views(&b, w, h) {
             for k in 0..300 {
                 let (x, y) = ((k * 37 % 300) as f64 + 0.25, (k * 23 % 200) as f64 * 0.5 + 50.0);
-                let want = hits(&b.scene, &c, x, y, w, h);
-                assert_eq!(b.hits(&c, x, y, w, h), want, "{o:?} ({x}, {y})");
-                if let Some((near, _)) = want {
+                let want = hits(&b.scene, &c, emcraft_render::view3d::Pixel::new(x, y, w, h));
+                assert_eq!(b.hits(&c, emcraft_render::view3d::Pixel::new(x, y, w, h)), want, "{o:?} ({x}, {y})");
+                if let Some(emcraft_render::view3d::Hits { nearest: near, .. }) = want {
                     picked += 1;
                     if k % 10 == 0 {
                         assert_eq!(faces::Face::of_indexed(&b.scene, Some(index), near.index), faces::Face::of(&b.scene, near.index));
@@ -209,9 +209,9 @@ fn a_large_scene_moves_coarser_and_is_picked_in_full() {
     c.standard(StandardView::Iso);
     c.fit([0.0; 3], [0.01; 3], 1.5);
     for (x, y) in [(150.0, 100.0), (120.0, 80.0), (190.0, 130.0)] {
-        let got = b.hits(&c, x, y, 300.0, 200.0);
+        let got = b.hits(&c, emcraft_render::view3d::Pixel::new(x, y, 300.0, 200.0));
         assert!(got.is_some());
-        assert_eq!(got, hits(&b.scene, &c, x, y, 300.0, 200.0));
+        assert_eq!(got, hits(&b.scene, &c, emcraft_render::view3d::Pixel::new(x, y, 300.0, 200.0)));
     }
     let copy = b.clone();
     assert!(format!("{:?}", copy.cache).contains("index: false"));
@@ -245,12 +245,17 @@ fn pick_timings() {
             t.elapsed().as_secs_f64() * 1e3 / pixels.len() as f64
         };
         let scan = time(&|x, y| {
-            std::hint::black_box(hits(&b.scene, &c, x, y, w, h));
+            std::hint::black_box(hits(&b.scene, &c, emcraft_render::view3d::Pixel::new(x, y, w, h)));
         });
         let indexed = time(&|x, y| {
-            std::hint::black_box(b.hits(&c, x, y, w, h));
+            std::hint::black_box(b.hits(&c, emcraft_render::view3d::Pixel::new(x, y, w, h)));
         });
-        let under: Vec<usize> = pixels.iter().filter_map(|&(x, y)| b.hits(&c, x, y, w, h)).map(|(n, _)| n.index).take(40).collect();
+        let under: Vec<usize> = pixels
+            .iter()
+            .filter_map(|&(x, y)| b.hits(&c, emcraft_render::view3d::Pixel::new(x, y, w, h)))
+            .map(|h| h.nearest.index)
+            .take(40)
+            .collect();
         let face = |idx: Option<&emcraft_render::view3d::SceneIndex>| {
             let t = std::time::Instant::now();
             under.iter().for_each(|&i| {

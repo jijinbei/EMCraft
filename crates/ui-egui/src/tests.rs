@@ -703,7 +703,11 @@ fn on_screen(h: &Harness, rect: egui::Rect, p: [f64; 3]) -> egui::Pos2 {
 fn under(h: &Harness, rect: egui::Rect, at: egui::Pos2) -> Option<[f64; 3]> {
     let q = at - rect.min;
     let scene = &h.app.view3d.shown()?.scene;
-    emcraft_render::view3d::surface_at(scene, &h.app.view3d.camera, f64::from(q.x), f64::from(q.y), f64::from(rect.width()), f64::from(rect.height()))
+    emcraft_render::view3d::surface_at(
+        scene,
+        &h.app.view3d.camera,
+        emcraft_render::view3d::Pixel::new(f64::from(q.x), f64::from(q.y), f64::from(rect.width()), f64::from(rect.height())),
+    )
 }
 
 /// The wheel, a pinch and Ctrl+wheel zoom toward the point under the cursor: it stays put.
@@ -714,7 +718,16 @@ fn zooming_keeps_the_point_under_the_cursor() {
     for at in [rect.center() + egui::vec2(40.0, -15.0), rect.left_top() + egui::vec2(60.0, 60.0)] {
         let anchor = under(&h, rect, at).unwrap_or_else(|| {
             let q = at - rect.min;
-            h.app.view3d.camera.on_target_plane(f64::from(q.x), f64::from(q.y), f64::from(rect.width()), f64::from(rect.height())).unwrap()
+            h.app
+                .view3d
+                .camera
+                .on_target_plane(emcraft_render::view3d::Pixel::new(
+                    f64::from(q.x),
+                    f64::from(q.y),
+                    f64::from(rect.width()),
+                    f64::from(rect.height()),
+                ))
+                .unwrap()
         });
         let before = h.app.view3d.camera.distance;
         for params in [json!({"delta": 2}), json!({"zoom": 1.5}), json!({"delta": -1, "ctrl": true}), json!({"delta": -3})] {
