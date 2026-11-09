@@ -40,6 +40,24 @@ pub const MAX_PER_FRAME: usize = 64;
 /// Synthetic events queued at most.
 pub const MAX_EVENTS: usize = 10_000;
 
+/// The farthest a point given to a request may lie (points, either side of the origin).
+const MAX_POINT: f64 = 1e6;
+
+/// The longest path a request may give (bytes).
+const MAX_PATH: usize = 4096;
+
+/// The longest autosave interval (s): a day.
+const MAX_AUTOSAVE: f64 = 86_400.0;
+
+/// The most commands one script request runs.
+const MAX_SCRIPT: usize = 10_000;
+
+/// The pinch factors a zoom request may give.
+const PINCH: std::ops::RangeInclusive<f64> = 0.05..=20.0;
+
+/// The largest side a rendered window may have (points).
+const MAX_WINDOW: f64 = 4096.0;
+
 fn ok(v: Value) -> Outcome {
     Outcome::Done(json!({"ok": true, "result": v}))
 }
@@ -103,10 +121,10 @@ fn point(p: &Value, x: &str, y: &str) -> Result<egui::Pos2, String> {
     if let Some(h) = p.get("handle").and_then(Value::as_str) {
         return scenario::handle_at(h).ok_or_else(|| format!("no handle `{}` on screen", clip(h, 100)));
     }
-    let f = |k: &str| p.get(k).and_then(Value::as_f64).filter(|v| v.is_finite() && v.abs() <= 1e6);
+    let f = |k: &str| p.get(k).and_then(Value::as_f64).filter(|v| v.is_finite() && v.abs() <= MAX_POINT);
     match (f(x), f(y)) {
         (Some(x), Some(y)) => Ok(egui::pos2(x as f32, y as f32)),
-        _ => Err(format!("`{x}` and `{y}` must be numbers within ±1000000 (or give `handle`)")),
+        _ => Err(format!("`{x}` and `{y}` must be numbers within ±{MAX_POINT} (or give `handle`)")),
     }
 }
 
@@ -374,7 +392,7 @@ pub fn handle(app: &mut EmcraftApp, ctx: &egui::Context, req: &ControlRequest) -
             if app.control.dropped.len() >= 16 {
                 return err("too many files dropped at once");
             }
-            app.control.dropped.push(clip(path, 4096).into());
+            app.control.dropped.push(clip(path, MAX_PATH).into());
             Ok(ok(Value::Null))
         }
         "ui.handles" => {
@@ -420,7 +438,7 @@ fn autosave(app: &mut EmcraftApp, a: Args) -> Handled {
             app.autosave.dir = None;
             app.autosave.found.clear();
         }
-        Some(Value::String(d)) if !d.trim().is_empty() && d.len() <= 4096 => {
+        Some(Value::String(d)) if !d.trim().is_empty() && d.len() <= MAX_PATH => {
             let dir = std::path::PathBuf::from(d);
             app.autosave.found = crate::autosave::scan(&dir);
             app.autosave.dir = Some(dir);
@@ -428,10 +446,13 @@ fn autosave(app: &mut EmcraftApp, a: Args) -> Handled {
                 app.apply(Action::Show(crate::page::Tab::Start)).map_err(|e| e.to_string())?;
             }
         }
-        Some(_) => return Err("`dir` must be a folder's path (at most 4096 bytes) or null".into()),
+        Some(_) => return Err(format!("`dir` must be a folder's path (at most {MAX_PATH} bytes) or null")),
     }
     if let Some(v) = a.get("every") {
-        app.autosave.every = v.as_f64().filter(|s| s.is_finite() && (0.0..=86_400.0).contains(s)).ok_or("`every` must be 0 to 86400 s")?;
+        app.autosave.every = v
+            .as_f64()
+            .filter(|s| s.is_finite() && (0.0..=MAX_AUTOSAVE).contains(s))
+            .ok_or_else(|| format!("`every` must be 0 to {MAX_AUTOSAVE} s"))?;
     }
     if a.bool("now") == Some(true) {
         app.autosave_now()?;
@@ -469,8 +490,8 @@ fn replay(app: &mut EmcraftApp, a: Args) -> Handled {
 fn crashes(app: &mut EmcraftApp, a: Args) -> Handled {
     match a.get("dir") {
         None => {}
-        Some(Value::String(d)) if !d.trim().is_empty() && d.len() <= 4096 => app.keep_crash_reports(std::path::PathBuf::from(d), false),
-        Some(_) => return Err("`dir` must be a folder's path (at most 4096 bytes)".into()),
+        Some(Value::String(d)) if !d.trim().is_empty() && d.len() <= MAX_PATH => app.keep_crash_reports(std::path::PathBuf::from(d), false),
+        Some(_) => return Err(format!("`dir` must be a folder's path (at most {MAX_PATH} bytes)")),
     }
     let reports = app.crashes.dir.as_deref().map(crate::crash::list).unwrap_or_default();
     Ok(ok(json!({
@@ -488,8 +509,8 @@ fn engine_execute(app: &mut EmcraftApp, req: &ControlRequest, a: Args) -> Handle
 
 fn engine_script(app: &mut EmcraftApp, req: &ControlRequest, a: Args) -> Handled {
     let steps = a.get("commands").and_then(Value::as_array).ok_or("`commands` must be an array of {command, params}")?;
-    if steps.len() > 10_000 {
-        return Err("at most 10000 commands".into());
+    if steps.len() > MAX_SCRIPT {
+        return Err(format!("at most {MAX_SCRIPT} commands"));
     }
     app.run_script(Value::Array(steps.clone())).map_err(|e| e.to_string())?;
     Ok(if a.bool("wait").unwrap_or(true) { after_job(app, req, Value::Null) } else { ok(Value::Null) })
@@ -746,8 +767,8 @@ fn scroll(app: &mut EmcraftApp, a: Args) -> Handled {
     let wheel = |phase, delta| egui::Event::MouseWheel { unit, delta, modifiers, phase };
     let mut ev = vec![egui::Event::ModifiersChanged(modifiers), egui::Event::PointerMoved(pos)];
     if let Some(z) = a.num("zoom") {
-        if !(z.is_finite() && (0.05..=20.0).contains(&z)) {
-            return Err("`zoom` must be a pinch factor within 0.05–20".into());
+        if !(z.is_finite() && PINCH.contains(&z)) {
+            return Err(format!("`zoom` must be a pinch factor within {}–{}", PINCH.start(), PINCH.end()));
         }
         ev.push(egui::Event::Zoom(z as f32));
         ev.push(egui::Event::PointerMoved(pos));
@@ -785,7 +806,7 @@ fn key(app: &mut EmcraftApp, a: Args) -> Handled {
 
 /// The whole window drawn on the CPU, written to `path` or measured.
 fn render(app: &mut EmcraftApp, a: Args) -> Handled {
-    let size = egui::vec2(a.clamped("width", 1500.0, 320.0, 4096.0) as f32, a.clamped("height", 960.0, 240.0, 4096.0) as f32);
+    let size = egui::vec2(a.clamped("width", 1500.0, 320.0, MAX_WINDOW) as f32, a.clamped("height", 960.0, 240.0, MAX_WINDOW) as f32);
     let canvas = crate::raster::render_app(app, size, a.clamped("scale", 1.0, 0.5, 2.0) as f32);
     let png = canvas.png().ok_or("could not encode the picture")?;
     let reply = json!({"width": canvas.w, "height": canvas.h, "bytes": png.len(), "renderer": "cpu"});

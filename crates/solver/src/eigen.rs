@@ -206,7 +206,7 @@ impl Arithmetic for Real {
     }
 
     fn settled(now: f64, before: f64) -> bool {
-        (now - before).abs() <= 1e-11 * now.abs()
+        (now - before).abs() <= crate::CONVERGED * now.abs()
     }
 
     fn frequency(value: f64) -> f64 {
@@ -277,7 +277,7 @@ impl Arithmetic for Complex {
     }
 
     fn settled(now: C, before: C) -> bool {
-        (now - before).norm() <= 1e-11 * now.norm()
+        (now - before).norm() <= crate::CONVERGED * now.norm()
     }
 
     /// ω = c k, the root with Re > 0; under e^{jωt} a decaying mode has Im ω > 0.

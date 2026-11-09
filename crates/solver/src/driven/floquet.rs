@@ -34,6 +34,9 @@ use super::sparams::{ModeTerm, read_s};
 use super::{Driven, FrequencyResult, Result, invalid, wavenumber};
 use crate::sparse::Csr;
 
+/// A Floquet wavevector shorter than this fraction of k is none: the plane wave along the axis.
+const NO_WAVE: f64 = 1e-10;
+
 /// Harmonic orders searched for a port's modes: |m|, |n| up to this.
 const MAX_ORDER: i32 = 6;
 
@@ -90,7 +93,7 @@ impl FloquetMode {
     /// κ with n̂ × ∇ × E_t = κ E_t for the mode leaving the port: γ (TE), −k²/γ (TM).
     fn kappa(&self, k: f64) -> Option<C> {
         let g = self.gamma();
-        if !(g.norm() > 1e-10 * k) {
+        if !(g.norm() > NO_WAVE * k) {
             return None;
         }
         Some(match self.polarization {
@@ -147,7 +150,7 @@ pub(super) fn prepare(model: &Model, periodic: &Periodic, p: &Port, faces: &[usi
         emcraft_model::End::End => w.sections.last(),
     }
     .ok_or_else(|| invalid("waveguide", "has no sections"))?;
-    if !(full(sec.width.map(f64::from)) || sec.width.is_some_and(|x| (x - w.width).abs() <= 1e-9 * w.width))
+    if !(full(sec.width.map(f64::from)) || sec.width.is_some_and(|x| (x - w.width).abs() <= crate::GEOMETRY_TOLERANCE * w.width))
         || !(full(sec.height.map(f64::from)) || sec.height.is_some_and(|y| (y - w.height).abs() <= 1e-9 * w.height))
     {
         return Err(invalid(what(), "a Floquet port needs the whole cell's cross-section at its end"));

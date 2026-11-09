@@ -14,6 +14,9 @@ use crate::{EngineError, Params, Result, Session, Step};
 
 pub use emcraft_theory::pcb::{Code, Pair, near};
 
+/// A reflection within this of +1 is an open circuit: its impedance is not shown.
+const OPEN: f64 = 1e-9;
+
 emcraft_macros::named_enum! {
     /// PCB workspace stages, saved with the project by `view.pcb`.
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -543,7 +546,7 @@ fn line(report: &Report, stop: f64, points: usize, reference: f64, frequency: Fr
         rows.push(LinePoint { frequency: frequency.from_si(f), s11: crate::reply::Wave::of(r), s21: crate::reply::Wave::of(t) });
     }
     let tdr = crate::tdr::transform(&freqs, &waves, crate::tdr::Mode::LowPass)?;
-    let impedance = |r: f64| ((1.0 - r).abs() > 1e-9).then(|| reference * (1.0 + r) / (1.0 - r));
+    let impedance = |r: f64| ((1.0 - r).abs() > OPEN).then(|| reference * (1.0 + r) / (1.0 - r));
     Ok(Line {
         method: "analytical_transmission_line".to_owned(),
         delay_s: report.sections.iter().map(|v| v.delay).sum::<f64>(),

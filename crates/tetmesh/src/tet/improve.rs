@@ -43,7 +43,7 @@ pub struct ImproveOptions {
 
 impl Default for ImproveOptions {
     fn default() -> Self {
-        ImproveOptions { max_passes: 10, max_insertions: 50_000, good: SIN_40, target: 0.5 }
+        ImproveOptions { max_passes: DEFAULT_PASSES, max_insertions: DEFAULT_INSERTIONS, good: SIN_40, target: SIN_30 }
     }
 }
 
@@ -70,6 +70,14 @@ pub const SIN_DEG: [f64; 7] = [
     0.573_576_436_351_046,
     std::f64::consts::FRAC_1_SQRT_2,
 ];
+
+/// The schedule's default bounds: passes, and vertices inserted over all of them (a mesh that
+/// still improves after these is pathological; the caller sees `stopped`).
+pub const DEFAULT_PASSES: usize = 10;
+pub const DEFAULT_INSERTIONS: usize = 50_000;
+
+/// sin 30°: the default target quality (dihedral angles between 30° and 150°).
+pub const SIN_30: f64 = 0.5;
 
 /// Most tetrahedra one insertion pass tries (the worst first).
 pub const MAX_INSERTION_LIST: usize = 2000;

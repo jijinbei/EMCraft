@@ -6,6 +6,9 @@ use emcraft_render::chart::{Chart, Series, Style};
 use emcraft_render::{Axis, Pen};
 use serde_json::Value;
 
+/// The chart's time axis spans where the power is above this fraction of its peak.
+const TAIL: f64 = 1e-3;
+
 /// The chart of `results.pulse`'s reply `r`: power (`frequency` false) or instantaneous
 /// frequency in `unit` against time in ns, the output moved back by its delay so the two lie
 /// together.
@@ -29,7 +32,7 @@ pub fn chart(r: &Value, frequency: bool, unit: &str) -> Chart {
     let (lo, hi) = if frequency { (lo, hi) } else { (0.0, hi) };
     let pad = 0.08 * (hi - lo).max(1e-9);
     // The time the two take, padded a little.
-    let (t0, t1) = all.filter(|p| frequency || p[1] > 1e-3 * hi).fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), p| (a.min(p[0]), b.max(p[0])));
+    let (t0, t1) = all.filter(|p| frequency || p[1] > TAIL * hi).fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), p| (a.min(p[0]), b.max(p[0])));
     let (t0, t1) = if t1 > t0 { (t0 - 0.1 * (t1 - t0), t1 + 0.1 * (t1 - t0)) } else { (-1.0, 1.0) };
     Chart::new(
         title,

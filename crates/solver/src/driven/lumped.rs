@@ -11,6 +11,14 @@ use num_complex::Complex64 as C;
 use super::assembly::Space;
 use super::{Result, invalid};
 
+/// A gap's line is inside a tetrahedron where every barycentric coordinate is above −this, and
+/// two cuts along the line (fractions of its length) closer than this are one.
+const BARYCENTRIC: f64 = 1e-12;
+
+/// A barycentric coordinate changing by less than this along the line is constant on it (the
+/// line runs parallel to that face).
+const PARALLEL: f64 = 1e-15;
+
 /// A lumped port prepared for solving.
 #[derive(Clone, Debug)]
 pub struct LumpedData {
@@ -184,11 +192,11 @@ fn line_vector(space: &Space, a: Point3, b: Point3) -> Result<Vec<(usize, f64)>>
         };
         let (la, lb) = (bary(a), bary(b));
         let (mut t0, mut t1) = (0.0f64, 1.0f64);
-        let tol = 1e-12;
+        let tol = BARYCENTRIC;
         for i in 0..4 {
             let (u, v) = (la[i], lb[i]);
             // u + t (v − u) ≥ −tol.
-            if (v - u).abs() < 1e-15 {
+            if (v - u).abs() < PARALLEL {
                 if u < -tol {
                     t1 = -1.0;
                 }
@@ -197,13 +205,13 @@ fn line_vector(space: &Space, a: Point3, b: Point3) -> Result<Vec<(usize, f64)>>
                 if v > u { t0 = t0.max(t) } else { t1 = t1.min(t) }
             }
         }
-        if t1 - t0 > 1e-12 {
+        if t1 - t0 > BARYCENTRIC {
             pieces.push(Piece { from: t0.max(0.0), to: t1.min(1.0), tet: t });
         }
     }
     let mut cuts: Vec<f64> = pieces.iter().flat_map(|p| [p.from, p.to]).collect();
     cuts.sort_by(f64::total_cmp);
-    cuts.dedup_by(|x, y| (*x - *y).abs() < 1e-12);
+    cuts.dedup_by(|x, y| (*x - *y).abs() < BARYCENTRIC);
     let (x, w) = emcraft_fem::quadrature::gauss_legendre(4);
     let mut out: std::collections::BTreeMap<usize, f64> = std::collections::BTreeMap::new();
     for win in cuts.windows(2) {

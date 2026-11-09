@@ -5,6 +5,9 @@ use crate::{EngineError, Params, Result, Session};
 use emcraft_solver::SMatrix;
 use serde_json::{Value, json};
 
+/// A port's γ is lossy when its real part is above this fraction of its imaginary one.
+const LOSSY: f64 = 1e-9;
+
 /// The fractions of the incident power at each port for excitation `excitation`: one column of a
 /// power-wave S matrix, |S[p, q]|².
 ///
@@ -48,7 +51,7 @@ pub fn at(s: &Session, frequency: f64, excitation: usize) -> Result<Value> {
         }
         let terms = sw.driven.port_terms(entry.port, frequency)?;
         let gamma = terms.first().ok_or_else(|| EngineError::failed("port has no mode"))?.gamma;
-        if gamma.im <= 0.0 || (entry.reference.is_none() && gamma.re.abs() > 1e-9 * gamma.im.abs().max(1.0)) {
+        if gamma.im <= 0.0 || (entry.reference.is_none() && gamma.re.abs() > LOSSY * gamma.im.abs().max(1.0)) {
             return Err(EngineError::failed("not supported yet: real power fractions for evanescent or lossy-port pseudo-waves"));
         }
     }

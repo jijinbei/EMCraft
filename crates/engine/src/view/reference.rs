@@ -246,8 +246,8 @@ pub fn section_cutoffs(session: &Session) -> Vec<(f64, String)> {
     for (i, sec) in w.sections.iter().enumerate() {
         let (Ok((_, m)), Some(emcraft_model::Span { width, .. })) = (session.model.material(&sec.material), w.aperture(i)) else { continue };
         let fc = te10_cutoff(width, m.eps_r.get(), m.mu_r.get());
-        if !out.iter().any(|(x, _)| (x - fc).abs() < 1e-6 * fc) {
-            let name = if (width - w.width).abs() <= 1e-9 * w.width {
+        if !out.iter().any(|(x, _)| (x - fc).abs() < crate::numbers::SAME_MARK * fc) {
+            let name = if (width - w.width).abs() <= crate::numbers::GEOMETRY_TOLERANCE * w.width {
                 sec.material.clone()
             } else {
                 format!("{} {}", emcraft_render::axes::format(lu.from_si(width)), lu.symbol())

@@ -24,6 +24,9 @@ use emcraft_solver::dense::Cholesky;
 
 use crate::{EngineError, Result};
 
+/// An output whose spread is below this fraction of its mean is constant: it keeps a unit scale.
+const CONSTANT_OUTPUT: f64 = 1e-12;
+
 /// The most points a surrogate is fitted to (the order of its matrix).
 pub const MAX_DATA: usize = 500;
 /// The most variables a surrogate spans.
@@ -174,7 +177,7 @@ fn standardize(y: &[Vec<f64>], q: usize) -> (Vec<(f64, f64)>, Vec<Vec<f64>>) {
             let mean = y.iter().map(|r| r[j]).sum::<f64>() / n;
             let var = y.iter().map(|r| (r[j] - mean).powi(2)).sum::<f64>() / n;
             // A constant output keeps a unit scale: its column is zero.
-            let scale = if var.sqrt() > 1e-12 * mean.abs().max(1.0) { var.sqrt() } else { 1.0 };
+            let scale = if var.sqrt() > CONSTANT_OUTPUT * mean.abs().max(1.0) { var.sqrt() } else { 1.0 };
             ((mean, scale), y.iter().map(|r| (r[j] - mean) / scale).collect())
         })
         .unzip()
@@ -377,7 +380,7 @@ pub fn expected_improvement(best: f64, mean: f64, sigma: f64) -> f64 {
     if !(gain.is_finite() && sigma.is_finite()) {
         return 0.0;
     }
-    if sigma <= 1e-300 {
+    if sigma <= f64::MIN_POSITIVE {
         return gain.max(0.0);
     }
     let z = gain / sigma;

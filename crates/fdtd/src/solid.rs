@@ -41,6 +41,16 @@ use crate::open::{BoxCoefficients, BoxCpml, BoxPsi, OpenKernel, Steps};
 use crate::yee::{Band, Cpml, Fields, Grading, Pulse, Settling, index, lattices, leapfrog, time_step};
 use crate::{FdtdError, Losses, MAX_CELLS, Options, PortGuide, Result, TdResult, frequencies_ok, invalid, transmission};
 
+/// A port face's inside is sampled this fraction of its size off the face, inward.
+const INWARD: f64 = 1e-7;
+
+/// A grid line within this (m) of a port's span is on it.
+const ON_SPAN: f64 = 1e-12;
+
+/// The least group-velocity factor 1 − (f_c/f₀)² a guide's speed is taken at: a band centred at
+/// a cut-off still gets a finite run time.
+const SLOWEST_GROUP: f64 = 1e-4;
+
 /// The most ports a closed solid may excite in one solve.
 pub const MAX_EXCITED: usize = 16;
 
@@ -161,7 +171,7 @@ fn slowest(model: &Model, guides: &[PortGuide], band: Band) -> f64 {
     guides.iter().fold(C0 / slow_material, |v, g| {
         let n = (g.material.eps_r.get() * g.material.mu_r.get()).sqrt();
         let r = cutoff(g) / band.f0;
-        v.min(C0 / n * (1.0 - r * r).max(1e-4).sqrt())
+        v.min(C0 / n * (1.0 - r * r).max(SLOWEST_GROUP).sqrt())
     })
 }
 
@@ -205,7 +215,7 @@ impl FacePort {
         };
         let size = (b.max - b.min).norm();
         let face = if high { b.max[axis] } else { b.min[axis] };
-        if (at - face).abs() > 1e-9 * size {
+        if (at - face).abs() > crate::GEOMETRY_TOLERANCE * size {
             return refuse("its face must lie on the solid's bounding box, its guide outside");
         }
         let (u, v) = others(axis);
@@ -216,12 +226,12 @@ impl FacePort {
         if !(lu > 0.0 && lv > 0.0) {
             return refuse("its rectangle lies off the solid's face");
         }
-        if (lu - lv).abs() <= 1e-9 * lu.max(lv) {
+        if (lu - lv).abs() <= crate::GEOMETRY_TOLERANCE * lu.max(lv) {
             return refuse("a square rectangle (TE10 and TE01 are degenerate)");
         }
         let (broad, narrow) = if lu > lv { (u, v) } else { (v, u) };
         // The rectangle must be one material just inside the face: TE₁₀ of a filled rectangle.
-        let inward = if high { -1e-7 } else { 1e-7 } * size;
+        let inward = if high { -INWARD } else { INWARD } * size;
         let mut material = None;
         for i in 0..7 {
             for j in 0..7 {
@@ -338,7 +348,8 @@ impl SolidGrid {
         if count > MAX_CELLS {
             return Err(FdtdError::TooLarge { cells: count, limit: MAX_CELLS });
         }
-        let node = |d: usize, x: f64| lines[d].iter().position(|y| (y - x).abs() <= 1e-9 * size[d].max(f64::MIN_POSITIVE)).unwrap_or(0);
+        let node =
+            |d: usize, x: f64| lines[d].iter().position(|y| (y - x).abs() <= crate::GEOMETRY_TOLERANCE * size[d].max(f64::MIN_POSITIVE)).unwrap_or(0);
         let planes: Vec<usize> = ports.iter().map(|p| node(p.axis, p.at)).collect();
         let sources = ports
             .iter()
@@ -388,7 +399,7 @@ impl SolidGrid {
                 let first = if p.high { p.at - beyond as f64 * step } else { p.at - ext as f64 * step };
                 (0..=ext + beyond).map(|i| first + i as f64 * step).collect()
             } else {
-                g.lines[d].iter().copied().filter(|&x| x >= p.span[d].0 - 1e-12 && x <= p.span[d].1 + 1e-12).collect()
+                g.lines[d].iter().copied().filter(|&x| x >= p.span[d].0 - ON_SPAN && x <= p.span[d].1 + ON_SPAN).collect()
             }
         });
         let n = lines.each_ref().map(|x| x.len().saturating_sub(1));

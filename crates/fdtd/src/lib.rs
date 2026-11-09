@@ -82,6 +82,20 @@ pub const MAX_CELLS: usize = 20_000_000;
 /// The most time steps a run may take.
 pub const MAX_STEPS: usize = 2_000_000;
 
+/// A guide run's defaults: PML cells at each end (reflecting below −60 dB for TE10 above
+/// cut-off), feed cells between a port and the structure, the time step as a fraction of the
+/// stability limit, the settling a transform must reach (a fraction of the incident wave's in a
+/// check interval), and the most steps before giving up.
+pub const DEFAULT_PML: usize = 16;
+pub const DEFAULT_FEED: usize = 12;
+pub const DEFAULT_COURANT: f64 = 0.99;
+pub const DEFAULT_DECAY: f64 = 1e-5;
+pub const DEFAULT_MAX_STEPS: usize = 200_000;
+
+/// Two coordinates are the same within this fraction of the length they are measured on (a
+/// grid's span, a face's size): far above the round-off of metres from display units.
+pub(crate) const GEOMETRY_TOLERANCE: f64 = 1e-9;
+
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum FdtdError {
     #[error("the model is not ready: {0}")]
@@ -132,7 +146,7 @@ pub struct Options {
 
 impl Options {
     pub fn new(cell: f64) -> Options {
-        Options { cell, pml: 16, feed: 12, courant: 0.99, decay: 1e-5, max_steps: 200_000 }
+        Options { cell, pml: DEFAULT_PML, feed: DEFAULT_FEED, courant: DEFAULT_COURANT, decay: DEFAULT_DECAY, max_steps: DEFAULT_MAX_STEPS }
     }
 
     /// The settings checked: a finite cell > 0, a Courant number in (0, 1), at least 4 PML and

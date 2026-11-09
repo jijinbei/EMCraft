@@ -15,6 +15,20 @@ use crate::theme::Tokens;
 use crate::view3d::Cut;
 use crate::{EmcraftApp, scenario};
 
+/// The least span (m) a section's outline or dimension is drawn for: a flat model still draws.
+const MIN_SPAN: f64 = 1e-12;
+
+/// A cut's outline reaches this fraction of the model's widest side beyond it.
+const OUTLINE_PAD: f64 = 0.25;
+
+/// A dimension line sits this fraction of the section's larger side off its edge.
+const DIMENSION_GAP: f64 = 0.08;
+
+/// A dimension's label sits this far (points) beyond its arrow's tip, its half size and a
+/// margin more.
+const LABEL_OFFSET: f32 = 10.0;
+const LABEL_MARGIN: f32 = 4.0;
+
 /// Most dimensions drawn on one cut (a long iris filter's apertures beyond it are left out).
 const MAX_DIMS: usize = 24;
 
@@ -52,7 +66,7 @@ fn across(k: usize) -> (usize, usize) {
 /// else the model's box flattened onto the plane.
 pub fn outline(scene: &Scene, cut: Cut, bounds: ([f64; 3], [f64; 3])) -> ([f64; 3], [f64; 3]) {
     let k = cut.axis.min(2);
-    let size = (0..3).map(|d| (bounds.1[d] - bounds.0[d]).abs()).fold(0.0, f64::max).max(1e-12);
+    let size = (0..3).map(|d| (bounds.1[d] - bounds.0[d]).abs()).fold(0.0, f64::max).max(MIN_SPAN);
     let eps = 1e-7 * size;
     let mut lo = [f64::INFINITY; 3];
     let mut hi = [f64::NEG_INFINITY; 3];
@@ -120,7 +134,7 @@ pub fn look(cut: Cut, outline: ([f64; 3], [f64; 3])) -> Option<crate::view3d::Go
     // the view's bars.
     let k = cut.axis.min(2);
     let (mut lo, mut hi) = outline;
-    let pad = 0.25 * (0..3).filter(|d| *d != k).map(|d| hi[d] - lo[d]).fold(0.0, f64::max);
+    let pad = OUTLINE_PAD * (0..3).filter(|d| *d != k).map(|d| hi[d] - lo[d]).fold(0.0, f64::max);
     for d in (0..3).filter(|d| *d != k) {
         lo[d] -= pad;
         hi[d] += pad;
@@ -160,7 +174,7 @@ pub fn notes(
     let c = cut.at;
     let (u, v) = across(k);
     let (lo, hi) = outline;
-    let gap = 0.08 * (hi[u] - lo[u]).abs().max((hi[v] - lo[v]).abs()).max(1e-12);
+    let gap = DIMENSION_GAP * (hi[u] - lo[u]).abs().max((hi[v] - lo[v]).abs()).max(MIN_SPAN);
     let len = |x: f64| format!("{} {}", crate::steps::fmt(l.from_si(x)), l.symbol());
     let at = |pu: f64, pv: f64| {
         let mut p = [0.0; 3];
@@ -310,7 +324,7 @@ pub fn annotate(app: &EmcraftApp, v: &crate::view3d::View3d, p: &egui::Painter, 
         let dir = (last - first).normalized();
         let dir = if dir.is_finite() { dir } else { vec2(0.0, -1.0) };
         let g = p.layout_no_wrap(m.text.clone(), font.clone(), t.text);
-        let reach = 10.0 + 0.5 * (g.size().x * dir.x.abs() + g.size().y * dir.y.abs()) + 4.0;
+        let reach = LABEL_OFFSET + 0.5 * (g.size().x * dir.x.abs() + g.size().y * dir.y.abs()) + LABEL_MARGIN;
         let at = last + dir * reach;
         p.line_segment([last, last + dir * 8.0], Stroke::new(1.0, port));
         let r = label(p, at, &m.text, t.text, port);

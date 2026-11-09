@@ -4,7 +4,7 @@
 //! `super::grid`; turned and shifted by a hair), then combined; a union sharing planes with the
 //! region that no move of a face keeps ([`crate::clip`]) grown past them, united and cut back.
 
-use emcraft_model::{Aabb, Axis, Combine, Feature, Point3, Shape, Vec3};
+use emcraft_model::{Aabb, Axis, Combine, Feature, Point3, Shape};
 use emcraft_tetmesh::tet::geometry::AnalyticSurface;
 
 use super::grid::{self, Planes};
@@ -16,8 +16,17 @@ use crate::{MeshError, Result};
 /// How far flush faces move (a tenth of the element size) and within what they count as flush
 /// (`crate::flush`).
 pub(super) fn gaps(size: f64) -> crate::flush::Gaps {
-    crate::flush::Gaps { step: 0.1 * size, flush: 1e-5 * size, mm: 1e3 }
+    crate::flush::Gaps { step: STEP * size, flush: FLUSH * size }
 }
+
+/// How far a flush face moves, in element sizes.
+const STEP: f64 = 0.1;
+
+/// Faces within this many element sizes of another surface's plane are flush.
+const FLUSH: f64 = 1e-5;
+
+/// How far each feature is moved off general alignment, in element sizes (`crate::flush::general_position`).
+const JITTER: f64 = 1e-6;
 
 fn triangles(t: &Tessellation) -> Triangles<'_> {
     Triangles { positions: &t.surface.positions, triangles: &t.surface.triangles }
@@ -93,7 +102,7 @@ fn tool(shape: &Shape, at: Point3, axis: Axis, k: usize, size: f64, others: &Pla
     }
     // Each feature by its own amount (the fractional parts of multiples of irrational numbers),
     // so two features' grids that line up exactly do not stay lined up.
-    let jitter = Vec3::new(0.618_033_988_75, 0.414_213_562_37, 0.732_050_807_57).map(|v| ((k + 1) as f64 * v).fract() * 1e-6 * size);
+    let jitter = crate::flush::general_position(k, JITTER * size);
     let mut tool = transformed(own, axis, at + jitter);
     grid::keep_off(&mut tool.surface.positions, grid_axes(shape, axis), others, grid::NEAR * size);
     tool

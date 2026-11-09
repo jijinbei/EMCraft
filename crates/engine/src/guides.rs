@@ -44,6 +44,9 @@ const GUIDES: [(&str, f64, u32, u32); 22] = [
 
 const INCH: f64 = 0.0254;
 
+/// A filling index within this of one is an empty guide: the standard bands apply.
+const EMPTY: f64 = 1e-9;
+
 /// The standard air-filled guide whose broad wall is `width` metres (within 1 %), with its band.
 ///
 /// ```
@@ -105,7 +108,7 @@ pub fn bands(s: &Session) -> Vec<GuideBand> {
     }
     let mut out: Vec<GuideBand> = Vec::new();
     for (a, n) in widths {
-        let band = if (n - 1.0).abs() < 1e-9 { standard(a).or_else(|| te10_band(a, n)) } else { te10_band(a, n) };
+        let band = if (n - 1.0).abs() < EMPTY { standard(a).or_else(|| te10_band(a, n)) } else { te10_band(a, n) };
         if let Some(b) = band.filter(|b| !out.iter().any(|o| o.name == b.name)) {
             out.push(b);
         }

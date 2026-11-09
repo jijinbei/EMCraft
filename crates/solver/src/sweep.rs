@@ -140,7 +140,7 @@ impl Basis {
                 });
             }
             let len = dot_rr(&u, &u).sqrt();
-            if !(len > 1e-10 * start) {
+            if !(len > crate::BREAKDOWN * start) {
                 continue;
             }
             u.iter_mut().for_each(|p| *p /= len);

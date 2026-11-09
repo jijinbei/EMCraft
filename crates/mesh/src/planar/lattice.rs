@@ -2,8 +2,10 @@
 //! lower corner. On it every coordinate is a whole number, exact in a double, so the same input
 //! gives the same points bit for bit, and the predicates decide on exact values.
 
+use crate::GEOMETRY_TOLERANCE;
+
 /// The lattice's step: 1 nm, far below any copper feature and any element.
-pub const STEP: f64 = 1e-9;
+pub const STEP: f64 = GEOMETRY_TOLERANCE;
 
 /// The longest side a region may have: 1 m, 10⁹ steps (whole numbers stay exact through the
 /// predicates' products).

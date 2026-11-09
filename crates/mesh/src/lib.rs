@@ -97,6 +97,12 @@ fn too_large(estimate: f64) -> Result<()> {
 /// built on it is meaningful.
 pub const MIN_TET_SHAPE: f64 = 1e-12;
 
+/// Two coordinates, or a coordinate and a plane, are the same within this fraction of the
+/// length they are measured on (the model, a span, an aperture): far above the round-off of
+/// metres converted from display units (about 1e-15), far below any element (1e-4 of the model
+/// at the finest).
+pub const GEOMETRY_TOLERANCE: f64 = 1e-9;
+
 /// Checks a mesh from outside the mesher (a project file's) for a model of `materials`
 /// materials: its sizes, indices and numbers ([`Mesh::check`]) and its tetrahedra's shapes
 /// ([`check_tetrahedra`]) — what any mesh the solvers take must pass.
@@ -179,7 +185,7 @@ pub fn locate(mesh: &Mesh, p: Point3) -> Option<(usize, [f64; 4])> {
     let span = |l: &[f64]| (l.first().copied().unwrap_or(0.0), l.last().copied().unwrap_or(0.0));
     for (l, v) in [(&g.x, p.x), (&g.y, p.y), (&g.z, p.z)] {
         let (lo, hi) = span(l);
-        let tol = 1e-9 * (hi - lo).abs();
+        let tol = GEOMETRY_TOLERANCE * (hi - lo).abs();
         if !(v >= lo - tol && v <= hi + tol) {
             return None;
         }
@@ -189,7 +195,7 @@ pub fn locate(mesh: &Mesh, p: Point3) -> Option<(usize, [f64; 4])> {
     let near = |lines: &[f64], v: f64| -> Option<Vec<usize>> {
         let c = cell_index(lines, v)?;
         let n = lines.len() - 1;
-        let tol = 1e-9 * (lines[n] - lines[0]).abs();
+        let tol = GEOMETRY_TOLERANCE * (lines[n] - lines[0]).abs();
         let mut out = vec![c];
         if c > 0 && (v - lines[c]).abs() <= tol {
             out.push(c - 1);
@@ -238,7 +244,7 @@ impl Best {
     /// The best tetrahedron and `p`'s barycentric coordinates in it, when `p` lies inside it
     /// (within 10⁻⁹).
     fn inside(self) -> Option<(usize, [f64; 4])> {
-        self.0.filter(|b| b.2 >= -1e-9).map(|(t, l, _)| (t, l))
+        self.0.filter(|b| b.2 >= -GEOMETRY_TOLERANCE).map(|(t, l, _)| (t, l))
     }
 }
 
@@ -250,7 +256,7 @@ fn locate_in_buckets(mesh: &Mesh, p: Point3) -> Option<(usize, [f64; 4])> {
     }
     for d in 0..3 {
         let f = (p[d] - b.lo[d]) / b.step[d];
-        if !(f >= -1e-9 && f <= b.dims[d] as f64 + 1e-9) {
+        if !(f >= -GEOMETRY_TOLERANCE && f <= b.dims[d] as f64 + GEOMETRY_TOLERANCE) {
             return None;
         }
     }

@@ -21,6 +21,10 @@ use emcraft_solver::Complex64 as C;
 
 use crate::{EngineError, Result};
 
+/// A sweep is harmonic (f = f₀ + k Δf) when each frequency is within this fraction of Δf of its
+/// place: a sweep written in display units and read back stays one.
+const EVEN_STEP: f64 = 1e-6;
+
 emcraft_macros::named_enum! {
     /// The transform's kind.
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,7 +58,7 @@ pub fn spacing(freqs: &[f64]) -> Option<(f64, bool)> {
         return None;
     }
     let df = (freqs[n - 1] - freqs[0]) / (n - 1) as f64;
-    let even = df > 0.0 && freqs.iter().enumerate().all(|(k, f)| (f - (freqs[0] + k as f64 * df)).abs() <= 1e-6 * df);
+    let even = df > 0.0 && freqs.iter().enumerate().all(|(k, f)| (f - (freqs[0] + k as f64 * df)).abs() <= EVEN_STEP * df);
     even.then_some((df, (freqs[0] - df).abs() <= 1e-6 * df))
 }
 

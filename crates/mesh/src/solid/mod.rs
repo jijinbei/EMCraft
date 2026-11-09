@@ -22,6 +22,7 @@ use emcraft_model::{
 };
 use emcraft_tetmesh::size::{LocalSize, Region};
 
+use crate::GEOMETRY_TOLERANCE;
 use crate::{MeshError, Result, too_large};
 use combine::combined;
 use curved::bend;
@@ -282,7 +283,7 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
 fn halved(model: &Model, shape: &Shape) -> Result<(Shape, Vec<Feature>)> {
     let Some(bounds) = model.bounds() else { return Ok((shape.clone(), Vec::new())) };
     let around = bounds.grown(0.1 * (bounds.max - bounds.min).norm());
-    let tol = 1e-9 * (bounds.max - bounds.min).norm();
+    let tol = GEOMETRY_TOLERANCE * (bounds.max - bounds.min).norm();
     let mut shape = shape.clone();
     let mut cuts = Vec::new();
     for plane in &model.domain.symmetry {
@@ -328,7 +329,7 @@ fn shortened(shape: &Shape, d: usize, at: f64, tol: f64) -> Option<Shape> {
 /// The boundary faces the symmetry planes cut (every corner on a plane, to a billionth of the
 /// size) tagged as the plane's wall.
 fn tag_symmetry_planes(mesh: &mut Mesh, model: &Model, size: f64) {
-    let tol = 1e-9 * size.max(model.bounds().map_or(0.0, |b| (b.max - b.min).norm()));
+    let tol = GEOMETRY_TOLERANCE * size.max(model.bounds().map_or(0.0, |b| (b.max - b.min).norm()));
     for plane in &model.domain.symmetry {
         let d = plane.axis.index();
         let on = |n: &u32| mesh.nodes.get(*n as usize).is_some_and(|q| (q[d] - plane.at).abs() <= tol);
@@ -553,7 +554,7 @@ impl Body<'_> {
     fn join(&self, regions: &Regions) -> Result<Mesh> {
         // The shell, when there is one, is region 1.
         let shell = self.shell.then_some(1);
-        let mut nodes = Nodes::new(1e-9 * self.size);
+        let mut nodes = Nodes::new(GEOMETRY_TOLERANCE * self.size);
         let mut tets = Vec::new();
         let mut tet_material = Vec::new();
         let mut boundary = Vec::new();

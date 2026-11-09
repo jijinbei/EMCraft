@@ -30,6 +30,27 @@ use crate::dense::Lu;
 /// The highest filter order synthesised or extracted.
 pub const MAX_ORDER: usize = 16;
 
+/// A root, a matrix entry or a coordinate within this of zero (relative to its scale) is zero:
+/// E's roots on the axis, the round-off left where the folded form has zeros.
+const ON_AXIS: f64 = 1e-12;
+
+/// A Householder column shorter than this (its columns scaled to one) leaves the least-squares
+/// system rank deficient.
+const RANK_DEFICIENT: f64 = 1e-14;
+
+/// The smallest ε the magnitude fit starts from (its logarithm is the parameter).
+const SMALLEST_EPS: f64 = 1e-6;
+
+/// Levenberg–Marquardt's starting damping μ, the floor of μ and of the weights and diagonal it
+/// scales, its finite-difference step (relative, with an absolute floor), and the relative
+/// fall in cost below which it stops (Madsen, Nielsen & Tingleff 2004, §3.2).
+const LM_DAMPING: f64 = 1e-3;
+const LM_FLOOR: f64 = 1e-12;
+const LM_STEP: f64 = 1e-7;
+const LM_STEP_FLOOR: f64 = 1e-3;
+const LM_PROGRESS: f64 = 1e-15;
+const LM_COST_FLOOR: f64 = 1e-30;
+
 const ZERO: C = C::new(0.0, 0.0);
 const ONE: C = C::new(1.0, 0.0);
 const J: C = C::new(0.0, 1.0);
@@ -166,7 +187,7 @@ pub fn characteristic(order: usize, reflection: &[f64], transmission: &[f64], ep
     r.sort_by(|a, b| b.im.total_cmp(&a.im));
     let upper: Vec<C> = r.into_iter().take(order).collect();
     let scale = upper.iter().fold(1.0f64, |m, x| m.max(x.norm()));
-    if upper.iter().any(|x| x.im <= 1e-12 * scale) || !(lead > 0.0) {
+    if upper.iter().any(|x| x.im <= ON_AXIS * scale) || !(lead > 0.0) {
         return Err("the response is not realisable (E has roots on the axis)".into());
     }
     let e = from_roots(&upper.iter().map(|w| J * w).collect::<Vec<_>>());
@@ -341,7 +362,7 @@ impl Coupling {
         // Clean the round-off left where the form has zeros.
         for i in 0..n {
             for j in 0..n {
-                if !folded_place(i, j, last) && m.m[i * n + j].abs() < 1e-12 {
+                if !folded_place(i, j, last) && m.m[i * n + j].abs() < ON_AXIS {
                     m.m[i * n + j] = 0.0;
                 }
             }
@@ -446,7 +467,7 @@ fn least_squares(mut a: Vec<C>, rows: usize, cols: usize, mut b: Vec<C>) -> Opti
     }
     for k in 0..cols {
         let alpha = (k..rows).map(|i| a[i * cols + k].norm_sqr()).sum::<f64>().sqrt();
-        if alpha <= 1e-14 {
+        if alpha <= RANK_DEFICIENT {
             return None;
         }
         let x0 = a[k * cols + k];
@@ -600,7 +621,7 @@ pub fn fit_magnitude(omega: &[f64], s11: &[C], s21: &[C], order: usize, zeros: u
     // Sanathanan–Koerner: each row weighted by 1/(A + B) of the last fit, so the residual is
     // the error in |S|² (not in |S11|²/|S21|², which the stop bands would rule); first by
     // |S21|² (A + B = B/|S21|², B taken as one).
-    let mut weights: Vec<f64> = s21.iter().map(|x| x.norm_sqr().max(1e-12)).collect();
+    let mut weights: Vec<f64> = s21.iter().map(|x| x.norm_sqr().max(LM_FLOOR)).collect();
     let mut big_a = Vec::new();
     let mut big_b = Vec::new();
     for _ in 0..6 {
@@ -643,7 +664,7 @@ pub fn fit_magnitude(omega: &[f64], s11: &[C], s21: &[C], order: usize, zeros: u
     let mut best: Option<(f64, Vec<f64>)> = None;
     for r0 in starts {
         let mut x0: Vec<f64> = r0.into_iter().chain(transmission.iter().copied()).collect();
-        x0.push(ratio.max(1e-6).ln());
+        x0.push(ratio.max(SMALLEST_EPS).ln());
         let x = levenberg_marquardt(&x0, |x| magnitude_residuals(omega, &m11, &m21, x, order, zeros));
         let cost: f64 = magnitude_residuals(omega, &m11, &m21, &x, order, zeros).iter().map(|r| r * r).sum();
         if best.as_ref().is_none_or(|(c, _)| cost < *c) {
@@ -687,7 +708,7 @@ fn levenberg_marquardt(x0: &[f64], r: impl Fn(&[f64]) -> Vec<f64>) -> Vec<f64> {
     let mut res = r(&x);
     let cost = |v: &[f64]| v.iter().map(|e| e * e).sum::<f64>();
     let mut c = cost(&res);
-    let mut mu = 1e-3;
+    let mut mu = LM_DAMPING;
     for _ in 0..200 {
         if !c.is_finite() {
             break;
@@ -695,7 +716,7 @@ fn levenberg_marquardt(x0: &[f64], r: impl Fn(&[f64]) -> Vec<f64>) -> Vec<f64> {
         let m = res.len();
         let mut jac = vec![0.0; m * n];
         for j in 0..n {
-            let h = 1e-7 * x[j].abs().max(1e-3);
+            let h = LM_STEP * x[j].abs().max(LM_STEP_FLOOR);
             let mut xp = x.clone();
             let mut xm = x.clone();
             xp[j] += h;
@@ -720,7 +741,7 @@ fn levenberg_marquardt(x0: &[f64], r: impl Fn(&[f64]) -> Vec<f64>) -> Vec<f64> {
         for _ in 0..12 {
             let mut lhs = jtj.clone();
             for a in 0..n {
-                lhs[a * n + a] += mu * jtj[a * n + a].max(1e-12);
+                lhs[a * n + a] += mu * jtj[a * n + a].max(LM_FLOOR);
             }
             let Some(lu) = Lu::new(lhs, n) else {
                 mu *= 10.0;
@@ -735,8 +756,8 @@ fn levenberg_marquardt(x0: &[f64], r: impl Fn(&[f64]) -> Vec<f64>) -> Vec<f64> {
                 x = xn;
                 res = rn;
                 c = cn;
-                mu = (mu / 3.0).max(1e-12);
-                improved = gain > 1e-15 * c.max(1e-30);
+                mu = (mu / 3.0).max(LM_FLOOR);
+                improved = gain > LM_PROGRESS * c.max(LM_COST_FLOOR);
                 break;
             }
             mu *= 4.0;

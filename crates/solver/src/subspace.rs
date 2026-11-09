@@ -15,6 +15,12 @@ use crate::ldlt::{Analysis, Ldlt, memory_budget};
 use crate::lu::Lu;
 use crate::sparse::Csr;
 
+/// A node's gradient column is kept when one of its entries is above this (it touches an edge
+/// the system keeps), and within it entries above the smaller one (the rest round-off of the
+/// projections).
+const NODE_COLUMN: f64 = 1e-12;
+const NODE_ENTRY: f64 = 1e-14;
+
 /// The scalars of the gradients' coefficients: real for a cavity (ZᵀMZ symmetric, factored by
 /// LDLᵀ), complex for a periodic cell (ZᴴMZ Hermitian, factored by LU).
 pub(crate) trait Coefficient: Scalar {
@@ -172,8 +178,8 @@ pub(crate) fn gradients<T: Coefficient>(
     let mut out = Vec::new();
     let mut points = Vec::new();
     for (n, col) in columns.into_iter().enumerate() {
-        if !blocked[n] && !col.is_empty() && col.values().any(|v| v.norm() > 1e-12) {
-            out.push(col.into_iter().filter(|(_, v)| v.norm() > 1e-14).collect());
+        if !blocked[n] && !col.is_empty() && col.values().any(|v| v.norm() > NODE_COLUMN) {
+            out.push(col.into_iter().filter(|(_, v)| v.norm() > NODE_ENTRY).collect());
             points.push(mesh.nodes[n]);
         }
     }

@@ -239,7 +239,7 @@ fn whole_section(model: &Model, p: &Port, mesh: &Mesh, faces: &[usize], shape: P
 /// several times larger.
 pub(super) fn tangential_trace(values: &[Vec3], frame: Frame) -> Vec<bool> {
     let scale = values.iter().map(|v| v.norm()).fold(0.0, f64::max);
-    values.iter().map(|v| frame.across(*v) > 1e-9 * scale).collect()
+    values.iter().map(|v| frame.across(*v) > crate::GEOMETRY_TOLERANCE * scale).collect()
 }
 
 /// A port's boundary faces: those tagged for its end, or those on its face's rectangle (all
@@ -422,7 +422,7 @@ pub fn kept_by(mode: &Mode, planes: &[Symmetry]) -> bool {
             SymmetryKind::Magnetic => -1.0,
             SymmetryKind::Electric => 1.0,
         };
-        pairs.iter().all(|(e, r)| (0..2).all(|k| (r[k] - if k == d { normal } else { -normal } * e[k]).abs() <= 1e-9 * scale))
+        pairs.iter().all(|(e, r)| (0..2).all(|k| (r[k] - if k == d { normal } else { -normal } * e[k]).abs() <= crate::GEOMETRY_TOLERANCE * scale))
     })
 }
 
@@ -668,7 +668,7 @@ fn sampled_modes(
         let (x, y, inside): ((f64, f64), (f64, f64), Box<dyn Fn(f64, f64) -> bool>) = match shape {
             PortShape::Rect { x0, y0, a, b } => ((x0, x0 + a), (y0, y0 + b), Box::new(|_, _| true)),
             PortShape::Circle { cx, cy, r } => {
-                ((cx - r, cx + r), (cy - r, cy + r), Box::new(move |x: f64, y: f64| (x - cx).hypot(y - cy) <= r * (1.0 + 1e-9)))
+                ((cx - r, cx + r), (cy - r, cy + r), Box::new(move |x: f64, y: f64| (x - cx).hypot(y - cy) <= r * (1.0 + crate::GEOMETRY_TOLERANCE)))
             }
         };
         let points = at(x, y);

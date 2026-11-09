@@ -14,6 +14,7 @@
 
 use emcraft_model::{Aabb, Point3};
 
+use crate::GEOMETRY_TOLERANCE;
 use crate::csg::Surface;
 use crate::flush::Triangles;
 use crate::shared::corners;
@@ -59,7 +60,7 @@ fn behind(s: Triangles, axis: usize, at: f64, outward: f64, tol: f64) -> bool {
             return true;
         }
         let n = (q[1] - q[0]).cross(q[2] - q[0]);
-        n[axis].abs() <= 1e-9 * n.norm()
+        n[axis].abs() <= GEOMETRY_TOLERANCE * n.norm()
     })
 }
 

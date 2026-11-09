@@ -43,6 +43,10 @@ use emcraft_solver::Complex64 as C;
 
 use crate::{EngineError, Result};
 
+/// Below this fraction of the peak power a pulse's phase is noise: its instantaneous frequency is
+/// not read there.
+const FAINT: f64 = 1e-2;
+
 /// The fine frequency grid's points and the output's time samples.
 pub const GRID: usize = 4096;
 pub const TIMES: usize = 1024;
@@ -432,7 +436,7 @@ fn instantaneous(y: &[C], dt: f64, f0: f64) -> Vec<f64> {
     (0..y.len())
         .map(|k| {
             let (i, j) = (k.saturating_sub(1), (k + 1).min(y.len() - 1));
-            if y[k].norm_sqr() < 1e-2 * peak || i == j {
+            if y[k].norm_sqr() < FAINT * peak || i == j {
                 return f64::NAN;
             }
             let turn = (y[j] * y[i].conj()).arg();

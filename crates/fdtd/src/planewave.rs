@@ -61,7 +61,7 @@ pub(crate) fn of(model: &Model) -> Result<Option<(usize, bool, usize, f64)>> {
     let along = |v: emcraft_model::Vec3| {
         let a = v.dominant_axis();
         let n = v.norm();
-        ((0..3).all(|q| q == a || v[q].abs() <= 1e-9 * n)).then_some((a, v[a].signum()))
+        ((0..3).all(|q| q == a || v[q].abs() <= crate::GEOMETRY_TOLERANCE * n)).then_some((a, v[a].signum()))
     };
     let (Some((a, up)), Some((p, sign))) = (along(k), along(e)) else {
         return Err(FdtdError::Unsupported(
@@ -150,7 +150,7 @@ impl PlaneWave {
         }
         // The split's faces in vacuum: the corrections assume its plain, lossless update.
         let (ve, vh) = (dt / EPS0, dt / MU0);
-        let off = |x: f64, v: f64| (x / v - 1.0).abs() > 1e-9;
+        let off = |x: f64, v: f64| (x / v - 1.0).abs() > crate::GEOMETRY_TOLERANCE;
         if on_e.iter().any(|c| off(coef.ce[c.comp][c.id], ve) || coef.dispersion[c.comp].has(c.id))
             || on_h.iter().any(|c| off(coef.ch[c.comp][c.id], vh))
         {

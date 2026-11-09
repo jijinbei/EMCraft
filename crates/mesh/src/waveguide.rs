@@ -11,11 +11,12 @@
 use emcraft_model::mesh::TETS_PER_CELL;
 use emcraft_model::{Aabb, Boundary, BoundaryFace, Grid, Mesh, Metres, Model, Point3, Span, Strip, Symmetry, Via, Waveguide};
 
+use crate::GEOMETRY_TOLERANCE;
 use crate::{MAX_TETS, MeshError, Result, Topology, too_large};
 
 /// Divisions of a length by a target element size: at least `min`.
 fn divisions(length: f64, size: f64, min: usize) -> usize {
-    let n = (length / size * (1.0 - 1e-9)).ceil();
+    let n = (length / size * (1.0 - GEOMETRY_TOLERANCE)).ceil();
     if n.is_finite() && n >= 1.0 { (n as usize).max(min) } else { min }
 }
 
@@ -238,7 +239,7 @@ impl Axis<'_> {
     /// narrower aperture's edge strictly inside its neighbour's), the strips' edges and the vias'
     /// faces.
     fn lines(&self, w: &Waveguide, aperture: &dyn Fn(usize) -> Option<Span>, o: &Options) -> Result<Vec<f64>> {
-        let (span, tol) = (self.span, 1e-9 * self.span);
+        let (span, tol) = (self.span, GEOMETRY_TOLERANCE * self.span);
         let inside = |v: &f64| *v > tol && *v < span - tol;
         let mut breaks = vec![0.0, span];
         breaks.extend(self.planes.iter().chain(self.strip_edges).chain(self.via_faces).copied().filter(inside));
@@ -285,7 +286,7 @@ fn aperture_steps(w: &Waveguide, aperture: &dyn Fn(usize) -> Option<Span>, tol: 
 /// The lines up to a symmetry plane at `at` (the last one moved onto it); all of them without one.
 fn below(mut lines: Vec<f64>, at: Option<f64>, span: f64) -> Vec<f64> {
     if let Some(at) = at {
-        lines.retain(|v| *v <= at + 1e-9 * span);
+        lines.retain(|v| *v <= at + GEOMETRY_TOLERANCE * span);
         if let Some(last) = lines.last_mut() {
             *last = at;
         }
@@ -320,12 +321,12 @@ struct AlongZ {
 /// on the number of tetrahedra, checked before the lines are made.
 fn along_z(model: &Model, w: &Waveguide, o: &Options, features: &Features, cross: [usize; 2]) -> Result<AlongZ> {
     // A step: the aperture changes across x or across y.
-    let steps_x = aperture_steps(w, &|i| w.aperture(i), 1e-9 * w.width);
-    let steps_y = aperture_steps(w, &|i| w.aperture_y(i), 1e-9 * w.height);
+    let steps_x = aperture_steps(w, &|i| w.aperture(i), GEOMETRY_TOLERANCE * w.width);
+    let steps_y = aperture_steps(w, &|i| w.aperture_y(i), GEOMETRY_TOLERANCE * w.height);
     let mut sharp_z: Vec<bool> = steps_x.iter().zip(&steps_y).map(|(x, y)| x.is_some() || y.is_some()).collect();
     sharp_z.push(false);
     let ends = w.interfaces();
-    let tolz = 1e-9 * w.length();
+    let tolz = GEOMETRY_TOLERANCE * w.length();
     let (strip_z, via_z) = (&features.strip_z, &features.via_z);
     let near = |list: &[f64], z: f64| list.iter().any(|e| (e - z).abs() <= tolz);
     // A strip's end inside the guide is an edge; a section's aperture change or a via's face, a
@@ -403,10 +404,10 @@ fn structured(mut grid: Grid, cells: &Cells) -> Result<Mesh> {
 /// plane its wall, elsewhere a perfect conductor.
 fn tag_boundary(mesh: &Mesh, length: f64, cuts: &[Symmetry]) -> Vec<BoundaryFace> {
     let topo = Topology::new(mesh);
-    let tol = 1e-9 * length.max(f64::MIN_POSITIVE);
+    let tol = GEOMETRY_TOLERANCE * length.max(f64::MIN_POSITIVE);
     let on_cut = |f: &[u32; 3], p: &Symmetry| {
         let (d, at) = (p.axis.index(), p.at);
-        f.iter().all(|n| (mesh.nodes[*n as usize][d] - at).abs() <= 1e-9 * at.abs().max(f64::MIN_POSITIVE))
+        f.iter().all(|n| (mesh.nodes[*n as usize][d] - at).abs() <= GEOMETRY_TOLERANCE * at.abs().max(f64::MIN_POSITIVE))
     };
     topo.faces
         .iter()
@@ -436,7 +437,7 @@ fn add_strips(mesh: &mut Mesh, strips: &[Strip], height: f64) {
     if strips.is_empty() {
         return;
     }
-    let tol = 1e-9 * height;
+    let tol = GEOMETRY_TOLERANCE * height;
     let on = |mesh: &Mesh, f: &[u32; 3]| {
         let p = f.map(|n| mesh.nodes[n as usize]);
         Point3::centroid(p).is_some_and(|c| {

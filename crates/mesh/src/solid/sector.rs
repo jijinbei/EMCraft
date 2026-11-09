@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use emcraft_model::{Point3, Rotation};
 
 use super::tessellation::Tessellation;
+use crate::GEOMETRY_TOLERANCE;
 use crate::{MeshError, Result};
 
 fn fail(why: impl Into<String>) -> MeshError {
@@ -165,7 +166,7 @@ fn clip(t: &mut crate::csg::Surface, d: &dyn Fn(Point3) -> f64, onto: &dyn Fn(Po
 /// second's `base + T..base + 2T`, triangle i of the one the turn of triangle i of the other.
 /// `size` is the element size, `scale` the model's (its box's diagonal).
 pub(super) fn sector(t: Tessellation, rot: &Rotation, size: f64, scale: f64, bodies: &[Tessellation]) -> Result<(Tessellation, u32, Vec<Cut>)> {
-    let tol = 1e-9 * scale;
+    let tol = GEOMETRY_TOLERANCE * scale;
     let halves = [Half::new(rot, rot.start(), tol), Half::new(rot, rot.start() + rot.angle(), tol)];
     let mut t = with_bodies(t, bodies);
     // Inside the sector: past the first plane towards +φ, short of the second.
@@ -251,7 +252,7 @@ fn close(
     inner: &[[f64; 2]],
     bodies: usize,
 ) -> Result<(Tessellation, u32, Vec<Cut>)> {
-    let tol = 1e-9 * scale;
+    let tol = GEOMETRY_TOLERANCE * scale;
     let merge = 1e-7 * scale;
     let halves = [Half::new(rot, rot.start(), tol), Half::new(rot, rot.start() + rot.angle(), tol)];
     // Cut first (not taking a mesher's points back): each outline thinned to the size.

@@ -110,8 +110,25 @@ pub(crate) struct Gaps {
     pub(crate) step: f64,
     /// Faces within this of the other surface's plane are flush.
     pub(crate) flush: f64,
-    /// A length shown in messages: display millimetres.
-    pub(crate) mm: f64,
+}
+
+/// A length (m) as the messages show it: millimetres.
+fn mm(metres: f64) -> f64 {
+    emcraft_model::units::Length::Millimetre.from_si(metres)
+}
+
+/// A normal's component along an axis counts when it is above this fraction of its length (a
+/// face slanted by more than a micro-radian).
+const SLANT: f64 = 1e-6;
+
+/// A plane a corner keeps is new when its normal leaves more than this fraction of its length
+/// outside the planes already kept (and its offset more than this fraction of the step).
+const INDEPENDENT: f64 = 1e-6;
+
+/// The fractions of a body's position each body is moved by (the fractional parts of multiples
+/// of the golden ratio's, √2's and √3's): no two bodies' corners land on each other's edges.
+pub(crate) fn general_position(k: usize, amount: f64) -> emcraft_model::Vec3 {
+    emcraft_model::Vec3::new(0.618_033_988_75, 0.414_213_562_37, 0.732_050_807_57).map(|v| ((k + 1) as f64 * v).fract() * amount)
 }
 
 /// A triangulated surface, borrowed: its corners and triangles.
@@ -292,7 +309,7 @@ impl Flush<'_> {
                     let side = if inside_matters { "inside" } else { "outside" };
                     return Err(fail(format!(
                         "`{name}`: not supported yet: its face at {axis} = {:.6} mm lies partly against another surface and partly {side} the region (let the bodies overlap instead of touching, or join them into one body in the CAD tool)",
-                        f.at * g.mm
+                        mm(f.at)
                     )));
                 }
             }
@@ -336,7 +353,7 @@ impl Flush<'_> {
             let n = (q[1] - q[0]).cross(q[2] - q[0]);
             for v in t {
                 let m = vertex_move[*v as usize];
-                if (0..3).any(|d| m[d] != 0.0 && moved_with[k] != Some(d) && n[d].abs() > 1e-6 * n.norm())
+                if (0..3).any(|d| m[d] != 0.0 && moved_with[k] != Some(d) && n[d].abs() > SLANT * n.norm())
                     && let Some(u) = n.normalized()
                     && let Some(list) = keep.get_mut(*v as usize)
                 {
@@ -358,7 +375,7 @@ impl Flush<'_> {
                 fail(format!(
                     "`{name}`: not supported yet: its face flush with another surface at {} = {:.6} mm meets {what} (let the body reach through the other surface instead)",
                     ["x", "y", "z"][axis],
-                    p[axis] * g.mm
+                    mm(p[axis])
                 ))
             };
             // The planes the corner keeps: its flush faces' (moved by their steps), and every
@@ -489,9 +506,9 @@ fn slide(rows: &[(Vec3, f64)], step: f64) -> Option<Vec3> {
             rhs -= k * qc;
         }
         let len = r.norm();
-        if len > 1e-6 {
+        if len > INDEPENDENT {
             basis.push((r / len, rhs / len));
-        } else if rhs.abs() > 1e-6 * step {
+        } else if rhs.abs() > INDEPENDENT * step {
             return None;
         }
     }
@@ -518,7 +535,7 @@ mod tests {
         Triangles { positions, triangles }
     }
 
-    const G: Gaps = Gaps { step: 0.1, flush: 1e-9, mm: 1.0 };
+    const G: Gaps = Gaps { step: 0.1, flush: 1e-9 };
 
     #[test]
     fn a_plate_on_three_walls_moves_out_of_them() {

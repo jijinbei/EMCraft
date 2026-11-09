@@ -33,6 +33,11 @@ use crate::ldlt::Analysis;
 use crate::lu::Lu;
 use crate::subspace::{Deflation, gradients, start_vectors};
 
+/// A band's frequencies have converged when two successive estimates agree to this fraction:
+/// looser than the cavity solver's (`crate::CONVERGED`), the Floquet phase's complex system
+/// rounding more.
+const CONVERGED: f64 = 1e-10;
+
 /// The most bands one diagram may ask for.
 pub const MAX_BANDS: usize = 20;
 /// The most phases one diagram may sweep.
@@ -215,7 +220,7 @@ fn bands_at(d: &Driven, tie: &Tie, an: &Analysis, psi: [f64; 3], bands: usize, s
         (lambdas, x) = pairs.into_iter().unzip();
         let wanted = lowest(&lambdas, null, bands);
         let converged =
-            wanted.len() == bands && previous.len() == bands && wanted.iter().zip(&previous).all(|(a, b)| (a - b).abs() <= 1e-10 * a.abs());
+            wanted.len() == bands && previous.len() == bands && wanted.iter().zip(&previous).all(|(a, b)| (a - b).abs() <= CONVERGED * a.abs());
         previous = wanted;
         if converged {
             break;

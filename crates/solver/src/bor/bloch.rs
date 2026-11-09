@@ -23,6 +23,10 @@ use super::Profile;
 use super::ports::{BorPort, generalized};
 use crate::driven::{Result, invalid};
 
+/// A transfer-matrix eigenvalue within this of the unit circle is a propagating wave's: the
+/// cell's generalized S is computed to about this.
+const UNIT_CIRCLE: f64 = 1e-6;
+
 /// The Bloch wave of the cell between its ports `near` and `far` (one period apart) at
 /// `frequency` in order `m`: λ = e^{−γ p}, the one taken as the module says.
 pub fn bloch_lambda(p: &Profile, m: u32, near: BorPort, far: BorPort, frequency: f64) -> Result<C> {
@@ -59,11 +63,11 @@ pub fn bloch_lambda(p: &Profile, m: u32, near: BorPort, far: BorPort, frequency:
     }
     let pairs = crate::zdense::eigen(&t, w).ok_or_else(|| invalid("Bloch wave", "the transfer matrix's eigenproblem did not converge"))?;
     // Forward or decaying: |λ| ≤ 1, the first mode carrying power +z when |λ| is 1.
-    let unit = |l: &C| (l.norm() - 1.0).abs() < 1e-6;
+    let unit = |l: &C| (l.norm() - 1.0).abs() < UNIT_CIRCLE;
     let forward = |v: &[C]| v[0].norm_sqr() > v[n].norm_sqr();
     pairs
         .iter()
-        .filter(|(l, v)| l.norm() <= 1.0 + 1e-6 && (!unit(l) || forward(v)))
+        .filter(|(l, v)| l.norm() <= 1.0 + UNIT_CIRCLE && (!unit(l) || forward(v)))
         .max_by(|a, b| a.0.norm().total_cmp(&b.0.norm()))
         .map(|(l, _)| *l)
         .ok_or_else(|| invalid("Bloch wave", "no wave goes through the cell"))

@@ -2,6 +2,9 @@
 use crate::{Canvas, Rgb};
 use emcraft_model::pcb::{Board, MAX_VERTICES};
 
+/// The fraction of the picture's width or height the board fills, a margin round it.
+const FILL: f64 = 0.88;
+
 /// Even-odd polygon spans at `y`, in the input coordinates' units. Invalid/excessive input
 /// yields no spans. Repeated bridge edges allow filled polygons to describe holes.
 /// ```
@@ -37,7 +40,8 @@ pub fn preview(board: &Board, size: [usize; 2], bg: Rgb, copper: Rgb, signal: Rg
         return Err("PCB preview size or geometry exceeds drawing limits".into());
     }
     let (lo, hi) = board.bounds().ok_or("empty PCB")?;
-    let scale = ((w as f64 * 0.88) / (hi[0] - lo[0]).max(1e-12)).min((h as f64 * 0.88) / (hi[1] - lo[1]).max(1e-12));
+    let fit = |pixels: usize, extent: f64| pixels as f64 * FILL / extent.max(crate::view3d::MIN_SCENE);
+    let scale = fit(w, hi[0] - lo[0]).min(fit(h, hi[1] - lo[1]));
     let at = |p: [f64; 2]| [(p[0] - (lo[0] + hi[0]) / 2.) * scale + w as f64 / 2., (p[1] - (lo[1] + hi[1]) / 2.) * scale + h as f64 / 2.];
     let mut canvas = Canvas::new(w, h, bg);
     for c in &board.copper {

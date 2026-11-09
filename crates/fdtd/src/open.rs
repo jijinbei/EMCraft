@@ -40,6 +40,23 @@ use crate::dispersion::{Dispersion, Poles, Term, check_poles, exponential_fit, m
 use crate::yee::{Band, Cpml, Field, Fields, Grading, Kernel, Pulse, Settling, decay, index, lattices, layer_profile, leapfrog, time_step};
 use crate::{FdtdError, Losses, MAX_CELLS, MAX_STEPS, Result, frequencies_ok, invalid};
 
+/// An open run's defaults: the settling its far field must reach (looser than a guide's: the
+/// Huygens box's transforms settle slowly) and the most steps before giving up.
+const OPEN_DECAY: f64 = 1e-4;
+const OPEN_MAX_STEPS: usize = 100_000;
+
+/// The most frequencies an open run transforms at.
+const MAX_FREQUENCIES: usize = 64;
+
+/// The excitation's spectrum: its −40 dB points this fraction of the band beyond its edges
+/// (`Pulse::over`).
+const PULSE_SPREAD: f64 = 0.4;
+
+/// The least time a run takes before it may stop: the pulse past (this many widths after its
+/// centre) and this many transits of the box's longest side.
+const PULSE_WIDTHS: f64 = 4.0;
+const TRANSITS: f64 = 3.0;
+
 /// Run settings of an open problem.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct OpenOptions {
@@ -53,7 +70,7 @@ pub struct OpenOptions {
 
 impl OpenOptions {
     pub fn new(cell: f64) -> OpenOptions {
-        OpenOptions { cell, courant: 0.99, decay: 1e-4, max_steps: 100_000 }
+        OpenOptions { cell, courant: crate::DEFAULT_COURANT, decay: OPEN_DECAY, max_steps: OPEN_MAX_STEPS }
     }
 
     /// The settings checked: a finite cell > 0, a Courant number in (0, 1), 1 to [`MAX_STEPS`]
@@ -1014,8 +1031,8 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
         return Ok(run);
     }
     o.validate()?;
-    if !frequencies_ok(frequencies) || frequencies.len() > 64 {
-        return Err(invalid("frequencies", "1 to 64 finite numbers > 0"));
+    if !frequencies_ok(frequencies) || frequencies.len() > MAX_FREQUENCIES {
+        return Err(invalid("frequencies", format!("1 to {MAX_FREQUENCIES} finite numbers > 0")));
     }
     let grid = BoxGrid::new(model, o.cell)?;
     let band = Band::of(frequencies);
@@ -1045,7 +1062,7 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
     }
     let cpml = BoxCpml::new(&grid, dt, band.fc);
     // The pulse: Gaussian-modulated over the band.
-    let pulse = Pulse::over(band, 0.4);
+    let pulse = Pulse::over(band, PULSE_SPREAD);
     // A plane wave: the total-field box round the bodies, the Huygens box two cells outside it.
     let split = match wave {
         Some(_) => {
@@ -1071,7 +1088,7 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
     let device = if wave.is_some() || !model.elements.is_empty() { None } else { device };
 
     let mut tr = Transforms::new(frequencies, dt, ports.len(), hbox.samples.len());
-    let t_min = pulse.t0 + 4.0 * pulse.tau + 3.0 * grid.size.iter().fold(0.0f64, f64::max) / C0;
+    let t_min = pulse.t0 + PULSE_WIDTHS * pulse.tau + TRANSITS * grid.size.iter().fold(0.0f64, f64::max) / C0;
     let mut checks = Checks { dt, t_min, settling: Settling::new(o.decay), converged: false, diverged: false };
     let steps = match device {
         Some(device) => {

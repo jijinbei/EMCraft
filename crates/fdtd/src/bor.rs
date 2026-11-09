@@ -60,6 +60,27 @@ pub struct Ringdown {
 /// The most periods of the band's middle a ring-down may run.
 pub const MAX_PERIODS: f64 = 20_000.0;
 
+/// The highest azimuthal order rung.
+const MAX_ORDER: u32 = 64;
+
+/// The fewest periods of the band's middle a run lasts: enough to tell resonances apart.
+const MIN_PERIODS: f64 = 10.0;
+
+/// The time step as a fraction of the stability bound (see the module docs: 0.98 of it, held
+/// lower for the axis' update).
+const COURANT: f64 = 0.7;
+
+/// Where the source (the first) and the probes sit, as fractions of the grid's (r, z): off
+/// every symmetry and node line of the lowest modes.
+const PROBE_SPOTS: [(f64, f64); 3] = [(0.37, 0.29), (0.61, 0.73), (0.83, 0.47)];
+
+/// The pulse's centre this many widths after the start; the probes recorded from as many
+/// widths after it.
+const PULSE_WIDTHS: f64 = 4.0;
+
+/// A spectral peak below this fraction of the strongest is noise, not a resonance.
+const PEAK_FLOOR: f64 = 1e-3;
+
 impl BorGrid {
     fn cell(&self, i: isize, j: isize) -> Option<(f64, f64)> {
         if i < 0 || j < 0 || i as usize >= self.nr || j as usize >= self.nz {
@@ -129,14 +150,14 @@ pub fn ring(grid: &BorGrid, m: u32, (start, stop): (f64, f64), periods: f64) -> 
     if cells > MAX_CELLS {
         return Err(FdtdError::TooLarge { cells, limit: MAX_CELLS });
     }
-    if m > 64 {
-        return Err(invalid("order", "m from 0 to 64"));
+    if m > MAX_ORDER {
+        return Err(invalid("order", format!("m from 0 to {MAX_ORDER}")));
     }
     if !(start > 0.0 && stop > start && stop.is_finite()) {
         return Err(invalid("band", "needs 0 < start < stop"));
     }
-    if !(10.0..=MAX_PERIODS).contains(&periods) {
-        return Err(invalid("periods", format!("10 to {MAX_PERIODS}")));
+    if !(MIN_PERIODS..=MAX_PERIODS).contains(&periods) {
+        return Err(invalid("periods", format!("{MIN_PERIODS} to {MAX_PERIODS}")));
     }
     if grid.cells.iter().flatten().any(|&(e, u)| !(e.is_finite() && u.is_finite() && e > 0.0 && u > 0.0)) {
         return Err(invalid("grid", "every filling needs finite εr > 0 and μr > 0"));
@@ -145,7 +166,7 @@ pub fn ring(grid: &BorGrid, m: u32, (start, stop): (f64, f64), periods: f64) -> 
     let slowest = grid.cells.iter().flatten().map(|&(e, u)| e * u).fold(f64::INFINITY, f64::min).min(1.0);
     let speed = C0 / slowest.sqrt();
     let k = if m == 0 { 2f64.sqrt() } else { f64::from(m + 1) };
-    let dt = 0.7 * 2f64.sqrt() / (k * speed * (1.0 / (dr * dr) + 1.0 / (dz * dz)).sqrt());
+    let dt = COURANT * 2f64.sqrt() / (k * speed * (1.0 / (dr * dr) + 1.0 / (dz * dz)).sqrt());
     let mid = 0.5 * (start + stop);
     let steps = (periods / (mid * dt)).ceil() as usize;
     if steps > MAX_STEPS {
@@ -202,7 +223,7 @@ pub fn ring(grid: &BorGrid, m: u32, (start, stop): (f64, f64), periods: f64) -> 
             i.abs_diff(ti).pow(2) + j.abs_diff(tj).pow(2)
         })
     };
-    let spots = [(0.37, 0.29), (0.61, 0.73), (0.83, 0.47)];
+    let spots = PROBE_SPOTS;
     let source: Vec<(usize, usize)> = [(0usize, &er, nz + 1), (1, &ep, nz + 1), (2, &ez, nz)]
         .iter()
         .filter_map(|&(which, f, h)| near(f, h, spots[0].0, spots[0].1).map(|k| (which, k)))
@@ -217,9 +238,9 @@ pub fn ring(grid: &BorGrid, m: u32, (start, stop): (f64, f64), periods: f64) -> 
     }
     let band = stop - start;
     let tau = 4.0 / (PI * band);
-    let t0 = 4.0 * tau;
+    let t0 = PULSE_WIDTHS * tau;
     let pulse = |t: f64| (-((t - t0) / tau).powi(2)).exp() * (2.0 * PI * mid * (t - t0)).sin();
-    let quiet = ((t0 + 4.0 * tau) / dt).ceil() as usize;
+    let quiet = ((t0 + PULSE_WIDTHS * tau) / dt).ceil() as usize;
     let mut record: Vec<Vec<f64>> = vec![Vec::with_capacity(steps.saturating_sub(quiet)); probes.len()];
     for n in 0..steps {
         // H from n − ½ to n + ½.
@@ -358,7 +379,7 @@ fn peaks(records: &[Vec<f64>], dt: f64, (start, stop): (f64, f64)) -> Vec<f64> {
     let mut out = Vec::new();
     for q in 1..count.saturating_sub(1) {
         let (a, b, c) = (power[q - 1], power[q], power[q + 1]);
-        if b > a && b >= c && b > 1e-3 * strongest && a > 0.0 && c > 0.0 {
+        if b > a && b >= c && b > PEAK_FLOOR * strongest && a > 0.0 && c > 0.0 {
             let (la, lb, lc) = (a.ln(), b.ln(), c.ln());
             let den = la - 2.0 * lb + lc;
             let shift = if den < 0.0 { 0.5 * (la - lc) / den } else { 0.0 };

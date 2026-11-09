@@ -274,6 +274,7 @@ impl Default for Player {
 impl Player {
     /// Seconds a period takes at speed 1.
     pub const PERIOD: f64 = 3.0;
+    /// The playback speeds offered, as multiples of speed 1 (a period in [`Player::PERIOD`] s).
     pub const SPEEDS: [f64; 4] = [0.25, 0.5, 1.0, 2.0];
 
     /// The phase (radians) `dt` seconds later.
@@ -294,6 +295,9 @@ pub fn player(ui: &mut Ui, player: &mut Player, phase: &mut f64, handle: Fixed) 
 /// The player's width: play, the timeline, the phase and the speed.
 const PLAYER_WIDTH: f32 = 380.0;
 
+/// The play/pause button's size (points): its triangle or bars and a margin round them.
+const PLAY_BUTTON: egui::Vec2 = vec2(26.0, 22.0);
+
 /// In a row that wraps, a new row unless `width` more fits in this one (a group of widgets
 /// that a row would otherwise run past the card's edge with).
 pub fn wrap_before(ui: &mut Ui, width: f32) {
@@ -306,7 +310,7 @@ fn player_parts(ui: &mut Ui, player: &mut Player, phase: &mut f64, handle: Fixed
     use std::f64::consts::TAU;
     let t = &Tokens::get();
     // Play / pause.
-    let (r, resp) = ui.allocate_exact_size(vec2(26.0, 22.0), Sense::click());
+    let (r, resp) = ui.allocate_exact_size(PLAY_BUTTON, Sense::click());
     if resp.hovered() {
         ui.painter().rect_filled(r, t.radius_sm, t.hover);
     }

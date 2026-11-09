@@ -70,7 +70,7 @@ fn orthonormal(mut v: Vec<Vec<C>>) -> Option<Vec<Vec<C>>> {
             }
         }
         let len = hdot(&v[i], &v[i]).re.sqrt();
-        if !(len > 1e-10 * start && len.is_finite()) {
+        if !(len > crate::BREAKDOWN * start && len.is_finite()) {
             return None;
         }
         v[i].iter_mut().for_each(|c| *c /= len);
@@ -176,7 +176,7 @@ impl CrossSection {
             ritz.sort_by(|p, r| r.0.norm().total_cmp(&p.0.norm()));
             let wanted: Vec<C> =
                 ritz.iter().take(count).map(|(th, _)| if th.norm() > 0.0 { sigma + 1.0 / th } else { C::new(f64::INFINITY, 0.0) }).collect();
-            let done = previous.len() == count && wanted.iter().zip(&previous).all(|(a, b)| (a - b).norm() <= 1e-11 * k2 * index2);
+            let done = previous.len() == count && wanted.iter().zip(&previous).all(|(a, b)| (a - b).norm() <= crate::CONVERGED * k2 * index2);
             previous = wanted;
             if done {
                 let small = cluster_vectors(&op, m, &ritz).ok_or_else(|| invalid("port modes", "the projected eigenvectors did not converge"))?;

@@ -16,6 +16,9 @@ use serde_json::{Value, json};
 use crate::meshing::Sizes;
 use crate::{EngineError, Params, Result, Session};
 
+/// Two board points within this (m) are one: a nanometre, far below any trace.
+const SAME_POINT: f64 = 1e-9;
+
 /// The air over and under a board when `pcb.region` leaves it out: this many thicknesses of the
 /// thinnest outer dielectric (the outer traces' fields reach that far).
 const AIR: f64 = 5.0;
@@ -234,7 +237,7 @@ impl Copper {
         // A trace fed by a sheet port at an end stops there: no round end beyond the feed.
         let fed = |q: [f64; 2]| {
             let q = at(q);
-            lumped.iter().any(|l| l.across.is_some() && (l.to.x - q[0]).hypot(l.to.z - q[1]) <= 1e-9)
+            lumped.iter().any(|l| l.across.is_some() && (l.to.x - q[0]).hypot(l.to.z - q[1]) <= SAME_POINT)
         };
         let mut fine = Vec::with_capacity(board.segments.len() + 2 * board.vias.len());
         for g in &board.segments {
@@ -489,7 +492,7 @@ fn inside(polygon: &[[f64; 2]], p: [f64; 2]) -> bool {
 /// ```
 pub fn route_ends(board: &Board, net: &str) -> Vec<(String, End)> {
     let route: Vec<_> = board.segments.iter().filter(|g| g.net == net).collect();
-    let meets = |q: [f64; 2]| route.iter().flat_map(|g| [g.start, g.end]).filter(|r| emcraft_model::pcb::distance(*r, q) <= 1e-9).count();
+    let meets = |q: [f64; 2]| route.iter().flat_map(|g| [g.start, g.end]).filter(|r| emcraft_model::pcb::distance(*r, q) <= SAME_POINT).count();
     route
         .iter()
         .flat_map(|g| [End::Start, End::End].map(|e| (g, g.at(e), e)))

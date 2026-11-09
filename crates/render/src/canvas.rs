@@ -3,6 +3,15 @@
 
 use crate::text;
 
+/// The farthest a drawn coordinate may lie off the picture (pixels): a hostile or runaway point
+/// beyond it is left out rather than looped over.
+pub const MAX_PIXEL: f64 = 1e7;
+
+/// Whether a pixel coordinate is finite and within [`MAX_PIXEL`].
+fn drawable(v: f64) -> bool {
+    v.is_finite() && v.abs() < MAX_PIXEL
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Rgb(pub u8, pub u8, pub u8);
 
@@ -81,7 +90,7 @@ impl Canvas {
 
     /// An anti-aliased segment `width` pixels wide with round caps.
     pub fn line(&mut self, a: [f64; 2], b: [f64; 2], width: f64, c: Rgb) {
-        if !a.iter().chain(&b).all(|v| v.is_finite() && v.abs() < 1e7) || !(width > 0.0) {
+        if !a.iter().chain(&b).all(|v| drawable(*v)) || !(width > 0.0) {
             return;
         }
         let r = width / 2.0;
@@ -102,7 +111,7 @@ impl Canvas {
 
     /// An anti-aliased filled triangle.
     pub fn triangle(&mut self, p: [[f64; 2]; 3], c: Rgb) {
-        if !p.iter().flatten().all(|v| v.is_finite() && v.abs() < 1e7) {
+        if !p.iter().flatten().all(|v| drawable(*v)) {
             return;
         }
         let area = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[2][0] - p[0][0]) * (p[1][1] - p[0][1]);
@@ -156,7 +165,7 @@ impl Canvas {
 
     /// Draws `text` with the top-left corner of its box at (x, y).
     pub fn text(&mut self, x: f64, y: f64, text: &str, scale: usize, c: Rgb) {
-        if !(x.is_finite() && y.is_finite() && x.abs() < 1e7 && y.abs() < 1e7) {
+        if !(drawable(x) && drawable(y)) {
             return;
         }
         let (x0, y0) = (x.round() as i64, y.round() as i64);
@@ -166,7 +175,7 @@ impl Canvas {
     /// Text drawn rotated a quarter turn anticlockwise, reading upwards from (x, y) (its
     /// bottom-left corner).
     pub fn text_up(&mut self, x: f64, y: f64, text: &str, scale: usize, c: Rgb) {
-        if !(x.is_finite() && y.is_finite() && x.abs() < 1e7 && y.abs() < 1e7) {
+        if !(drawable(x) && drawable(y)) {
             return;
         }
         let (x0, y0) = (x.round() as i64, y.round() as i64);

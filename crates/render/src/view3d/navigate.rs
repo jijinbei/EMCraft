@@ -114,7 +114,7 @@ impl Camera {
         let hi = if limits[1].is_finite() { limits[1].clamp(lo, MAX_DISTANCE) } else { MAX_DISTANCE };
         let nd = (c.distance * factor.clamp(0.05, 20.0)).clamp(lo, hi);
         let k = nd / c.distance;
-        if let Some(a) = anchor.filter(|a| a.iter().all(|v| v.is_finite() && v.abs() < 1e12)) {
+        if let Some(a) = anchor.filter(|a| a.iter().all(|v| v.is_finite() && v.abs() < crate::view3d::MAX_SCENE)) {
             self.target = [0, 1, 2].map(|i| a[i] + (c.target[i] - a[i]) * k);
         }
         self.distance = nd;
@@ -358,8 +358,8 @@ impl Drag {
             *self = Drag::new(*camera, self.pivot);
         }
         if dx.is_finite() && dy.is_finite() {
-            self.dx = (self.dx + dx).clamp(-1e7, 1e7);
-            self.dy = (self.dy + dy).clamp(-1e7, 1e7);
+            self.dx = (self.dx + dx).clamp(-crate::canvas::MAX_PIXEL, crate::canvas::MAX_PIXEL);
+            self.dy = (self.dy + dy).clamp(-crate::canvas::MAX_PIXEL, crate::canvas::MAX_PIXEL);
         }
         let mut c = self.start;
         match self.pivot {

@@ -532,7 +532,7 @@ impl PlaneSamples {
         self.plane == view.plane
             && self.mode == view.mode
             && self.excitation == view.excitation
-            && (view.mode.is_some() || (self.frequency - view.frequency).abs() <= 1e-9 * self.frequency)
+            && (view.mode.is_some() || crate::numbers::same_frequency(self.frequency, view.frequency))
             && (self.at - at).abs() <= 1e-12
     }
 

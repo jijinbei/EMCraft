@@ -3,6 +3,9 @@ use crate::{EngineError, Params, Result, Session};
 use emcraft_model::{Axis, Model, Point3};
 use serde_json::{Value, json};
 
+/// A point within this (m) of a section's end plane is in the section: a tenth of a nanometre.
+const ON_PLANE: f64 = 1e-10;
+
 /// A geometry tree object, identified independently of the viewport's GPU tags. Written in
 /// project files and commands as its key (`section:2`, `symmetry:z`), read back checked.
 ///
@@ -90,7 +93,7 @@ impl GeometryObject {
                 .waveguide()
                 .as_ref()
                 .and_then(|w| w.sections.get(i).map(|s| (w.sections[..i].iter().map(|s| s.length.get()).sum::<f64>(), s.length.get())))
-                .is_some_and(|(z, l)| p.z >= z - 1e-10 && p.z <= z + l + 1e-10),
+                .is_some_and(|(z, l)| p.z >= z - ON_PLANE && p.z <= z + l + ON_PLANE),
             Self::Layer(i) => m
                 .waveguide()
                 .as_ref()

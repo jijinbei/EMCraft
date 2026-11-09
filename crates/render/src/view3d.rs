@@ -19,6 +19,11 @@ pub use bvh::SceneIndex;
 pub use navigate::{CameraAnim, Drag, cube_directions, ease_in_out};
 pub use section::{Keep, Section, SectionError};
 
+/// The largest and smallest scene lengths a view takes (a target's coordinates, a camera's
+/// distance, m): beyond them a hostile view is reset rather than drawn.
+pub const MAX_SCENE: f64 = 1e12;
+pub const MIN_SCENE: f64 = 1e-12;
+
 /// Most triangles or lines drawn from one scene (the rest are left out).
 pub const MAX_PRIMITIVES: usize = 4_000_000;
 
@@ -111,8 +116,8 @@ impl Camera {
     pub fn sanitized(self) -> Camera {
         let d = Camera::default();
         let fin = |v: f64, alt: f64| if v.is_finite() { v } else { alt };
-        let target = if self.target.iter().all(|v| v.is_finite() && v.abs() < 1e12) { self.target } else { d.target };
-        let distance = if self.distance.is_finite() && self.distance > 0.0 { self.distance.clamp(1e-12, 1e12) } else { d.distance };
+        let target = if self.target.iter().all(|v| v.is_finite() && v.abs() < MAX_SCENE) { self.target } else { d.target };
+        let distance = if self.distance.is_finite() && self.distance > 0.0 { self.distance.clamp(MIN_SCENE, MAX_SCENE) } else { d.distance };
         Camera {
             target,
             yaw: fin(self.yaw, d.yaw).rem_euclid(std::f64::consts::TAU),
@@ -188,7 +193,7 @@ impl Camera {
     /// Zooms by `steps` (positive closer); each step is 10 %.
     pub fn zoom(&mut self, steps: f64) {
         if steps.is_finite() {
-            self.distance = (self.distance * (-0.1 * steps.clamp(-100.0, 100.0)).exp()).clamp(1e-12, 1e12);
+            self.distance = (self.distance * (-0.1 * steps.clamp(-100.0, 100.0)).exp()).clamp(MIN_SCENE, MAX_SCENE);
         }
     }
 

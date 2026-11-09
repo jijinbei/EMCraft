@@ -286,7 +286,7 @@ pub fn cutoffs(s: &Session) -> Vec<Cutoff> {
         if !(frequency.is_finite() && frequency > 0.0) {
             return;
         }
-        match out.iter_mut().find(|c| (c.frequency - frequency).abs() <= 1e-6 * frequency && c.label.starts_with(mode)) {
+        match out.iter_mut().find(|c| (c.frequency - frequency).abs() <= crate::numbers::SAME_MARK * frequency && c.label.starts_with(mode)) {
             Some(c) if c.label.starts_with(&format!("{mode} port ")) && owner.starts_with("port ") => {
                 let _ = write!(c.label, ", {}", owner.trim_start_matches("port "));
             }
@@ -313,7 +313,7 @@ pub fn cutoffs(s: &Session) -> Vec<Cutoff> {
         }
     }
     for (fc, name) in crate::view::section_cutoffs(s) {
-        if !out.iter().any(|c| (c.frequency - fc).abs() <= 1e-6 * fc) {
+        if !out.iter().any(|c| (c.frequency - fc).abs() <= crate::numbers::SAME_MARK * fc) {
             out.push(Cutoff { frequency: fc, label: format!("TE10 {name}"), first: false });
         }
     }

@@ -82,7 +82,7 @@ impl Sweep {
     /// The result at a frequency (Hz) solved within 10⁻⁹ of it, or the nearest when `nearest`.
     pub fn at(&self, frequency: f64, nearest: bool) -> Option<&FrequencyResult> {
         let best = self.results.iter().min_by(|a, b| (a.frequency - frequency).abs().total_cmp(&(b.frequency - frequency).abs()))?;
-        if nearest || (best.frequency - frequency).abs() <= 1e-9 * frequency.abs() { Some(best) } else { None }
+        if nearest || crate::numbers::same_frequency(best.frequency, frequency) { Some(best) } else { None }
     }
 }
 

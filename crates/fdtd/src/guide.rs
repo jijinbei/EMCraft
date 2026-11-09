@@ -17,7 +17,7 @@ use crate::{FdtdError, Losses, MAX_CELLS, Options, Result, invalid};
 
 /// Divisions of `len` into steps of at most `h`.
 fn steps(len: f64, h: f64) -> usize {
-    ((len / h) * (1.0 - 1e-9)).ceil().max(1.0) as usize
+    ((len / h) * (1.0 - crate::GEOMETRY_TOLERANCE)).ceil().max(1.0) as usize
 }
 
 /// Grid lines from the first break to the last through every break in `breaks` (positions along
@@ -25,7 +25,7 @@ fn steps(len: f64, h: f64) -> usize {
 /// of at most `h`.
 pub(crate) fn lines(mut breaks: Vec<f64>, len: f64, h: f64) -> Vec<f64> {
     breaks.sort_by(f64::total_cmp);
-    breaks.dedup_by(|a, b| (*a - *b).abs() <= 1e-9 * len);
+    breaks.dedup_by(|a, b| (*a - *b).abs() <= crate::GEOMETRY_TOLERANCE * len);
     let mut x: Vec<f64> = breaks.first().copied().into_iter().collect();
     for b in breaks.windows(2) {
         let n = steps(b[1] - b[0], h);

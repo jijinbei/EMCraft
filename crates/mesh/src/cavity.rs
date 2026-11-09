@@ -18,7 +18,18 @@
 //! (`crate::crease`), so the result is the air's own faces, the box's only where the air reaches
 //! it.
 
-use emcraft_model::{Combine, Point3, Vec3};
+use emcraft_model::{Combine, Point3};
+
+/// How far a body's flush faces move, as a fraction of the part's size: small enough not to
+/// reach through a thin wall into air beyond it.
+const STEP: f64 = 1e-4;
+
+/// Faces within this fraction of the part's size are flush: well above the bodies' jitter.
+const FLUSH: f64 = 1e-6;
+
+/// How far each body is moved off general alignment, as a fraction of the part's size
+/// (`crate::flush::general_position`): far below any mesh, far above rounding.
+const JITTER: f64 = 1e-7;
 
 use crate::csg::{Op, Surface, combine_simplified};
 use crate::flush::{Gaps, moved};
@@ -83,7 +94,7 @@ pub fn cavity(bodies: &[(String, Surface)], keep: Keep) -> Result<Cavity> {
     // Moved faces end up outside the air whatever the step; a small one cannot reach through a
     // thin wall into air beyond it. Faces within a millionth of the part's size are flush: well
     // above the bodies' moves below.
-    let gaps = Gaps { step: 1e-4 * scale, flush: 1e-6 * scale, mm: 1e3 };
+    let gaps = Gaps { step: STEP * scale, flush: FLUSH * scale };
     let mut air = bounding_box(Point3::from(lo), Point3::from(hi));
     for (k, (name, body)) in bodies.iter().enumerate() {
         let positions = moved(name, body.into(), (&air).into(), Combine::Subtract, gaps)?;
@@ -91,7 +102,7 @@ pub fn cavity(bodies: &[(String, Surface)], keep: Keep) -> Result<Cavity> {
         // part's size (the fractional parts of multiples of irrational numbers), so that no
         // corner of one lies exactly on an edge or a diagonal of another — far below any mesh,
         // far above rounding.
-        let jitter = Vec3::new(0.618_033_988_75, 0.414_213_562_37, 0.732_050_807_57).map(|v| ((k + 1) as f64 * v).fract() * 1e-7 * scale);
+        let jitter = crate::flush::general_position(k, JITTER * scale);
         let positions = positions.into_iter().map(|p| p + jitter).collect();
         let tool = Surface { positions, triangles: body.triangles.clone(), tags: body.tags.clone() };
         let base = air.tags.iter().map(|t| t + 1).max().unwrap_or(0).max(6);

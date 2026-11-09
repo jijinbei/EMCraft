@@ -17,11 +17,12 @@ use std::collections::BTreeSet;
 
 use emcraft_model::{Point3, Vec3};
 
+use crate::GEOMETRY_TOLERANCE;
 use crate::csg::Surface;
 
 /// Normals within this angle (radians, about) are one plane; points within it of a line are
 /// on it. Far above rounding of the Boolean's crossing points, far below any modelled angle.
-const FLAT: f64 = 1e-9;
+const FLAT: f64 = GEOMETRY_TOLERANCE;
 
 /// Passes over the candidates, each removing what it can (a cap; one or two do it).
 const MAX_PASSES: usize = 8;

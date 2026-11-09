@@ -408,7 +408,7 @@ fn measurement<'s>(s: &'s Session, p: &Params, key: &str) -> Result<&'s Measured
 pub fn interpolate(data: &SData, p: usize, q: usize, f: f64) -> Option<C> {
     let fs = data.frequencies();
     let k = fs.partition_point(|x| *x < f);
-    if k < fs.len() && (fs[k] - f).abs() <= 1e-12 * f.abs() {
+    if k < fs.len() && crate::numbers::same_frequency(fs[k], f) {
         return data.get(k, p, q);
     }
     if k == 0 || k >= fs.len() {

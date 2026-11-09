@@ -41,6 +41,9 @@ pub use self::sweep::sweep;
 pub use self::variables::{delete, list, variable};
 pub use crate::view::study::{Slice, chart};
 
+/// The least |S| a study's goal reads (−300 dB): a perfect null stays a finite number to minimise.
+const MAGNITUDE_FLOOR: f64 = 1e-15;
+
 /// The most variables a session holds.
 pub const MAX_VARIABLES: usize = 200;
 /// The most values one variable of a sweep takes.
@@ -295,7 +298,7 @@ impl Study {
 }
 
 fn db(c: C) -> f64 {
-    decibels(c.norm().max(1e-15))
+    decibels(c.norm().max(MAGNITUDE_FLOOR))
 }
 
 /// Whether `name` names an S-parameter as replies do: `s` and port numbers (`s11`, `s21`).

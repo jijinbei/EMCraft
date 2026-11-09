@@ -361,7 +361,7 @@ impl CrossSection {
                 continue;
             }
             let wanted: Vec<f64> = lambdas.iter().take(count).copied().collect();
-            let done = previous.len() == count && wanted.iter().zip(&previous).all(|(a, b)| (a - b).abs() <= 1e-11 * k2 * self.max_index2);
+            let done = previous.len() == count && wanted.iter().zip(&previous).all(|(a, b)| (a - b).abs() <= crate::CONVERGED * k2 * self.max_index2);
             previous = wanted;
             if done {
                 result = Some((previous.clone(), vectors.into_iter().take(count).collect()));
@@ -594,7 +594,7 @@ fn orthonormal(mut v: Vec<Vec<f64>>) -> Option<Vec<Vec<f64>>> {
             }
         }
         let len = dot(&v[i], &v[i]).sqrt();
-        if !(len > 1e-10 * start && len.is_finite()) {
+        if !(len > crate::BREAKDOWN * start && len.is_finite()) {
             return None;
         }
         v[i].iter_mut().for_each(|c| *c /= len);

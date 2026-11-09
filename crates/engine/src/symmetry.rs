@@ -10,6 +10,9 @@ use crate::solve::frequencies;
 use crate::view::commands::write_plot;
 use crate::{EngineError, Params, Result, Session, args};
 
+/// A unit direction is along the axis when its x and y parts are below this.
+const AXIAL: f64 = 1e-12;
+
 /// `solve.revolution`.
 pub fn revolution(s: &mut Session, p: &Params) -> Result<Value> {
     let ring = p.pairs("points", emcraft_model::symmetry::meridian::MAX_PROFILE_POINTS).optional()?;
@@ -125,7 +128,12 @@ pub fn revolution_bloch(s: &mut Session, p: &Params) -> Result<Value> {
     let (near, far) = (emcraft_solver::bor::BorPort { modes, ..*near }, emcraft_solver::bor::BorPort { modes, ..*far });
     let period = (far.z - near.z).abs();
     // The guide's radius at the near end: the profile's widest point on that plane.
-    let radius = profile.points.iter().filter(|q| (q[1] - near.z).abs() <= 1e-9 * period.max(1e-300)).map(|q| q[0]).fold(0.0, f64::max);
+    let radius = profile
+        .points
+        .iter()
+        .filter(|q| (q[1] - near.z).abs() <= crate::numbers::GEOMETRY_TOLERANCE * period.max(f64::MIN_POSITIVE))
+        .map(|q| q[0])
+        .fold(0.0, f64::max);
     // The smooth guide's first mode of order m: TE_m1 (the first zero of J_m′), TM01 for m = 0.
     let x = if m == 0 {
         2.404_825_557_695_773
@@ -227,7 +235,7 @@ pub fn revolution_radiation(s: &mut Session, p: &Params) -> Result<Value> {
     // The source and the turn of the wave's polarization from x̂ (the far field's φ shifts by it).
     let (source, turn) = match s.model.sources.as_slice() {
         [emcraft_model::Source::Dipole { at, direction, length, current }] => {
-            if at.x.abs() > tol || at.y.abs() > tol || direction.x.abs() > 1e-12 || direction.y.abs() > 1e-12 {
+            if at.x.abs() > tol || at.y.abs() > tol || direction.x.abs() > AXIAL || direction.y.abs() > AXIAL {
                 return Err(EngineError::failed(
                     "not supported yet: a dipole off the axis or across it (a body of revolution takes one on the axis along z)",
                 ));
@@ -235,7 +243,7 @@ pub fn revolution_radiation(s: &mut Session, p: &Params) -> Result<Value> {
             (BorSource::AxialDipole { z: at.z, moment: current * length.get() * direction.z.signum() }, 0.0)
         }
         [emcraft_model::Source::PlaneWave { direction, polarization }] => {
-            if direction.x.abs() > 1e-12 || direction.y.abs() > 1e-12 {
+            if direction.x.abs() > AXIAL || direction.y.abs() > AXIAL {
                 return Err(EngineError::failed("not supported yet: a plane wave off the axis (a body of revolution takes one along ±z)"));
             }
             (BorSource::PlaneWave { up: direction.z > 0.0 }, polarization.y.atan2(polarization.x))

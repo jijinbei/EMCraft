@@ -2,6 +2,7 @@
 //! (quadratic geometry), interface vertices snapped onto them, and tetrahedra that would fold
 //! straightened again.
 
+use crate::GEOMETRY_TOLERANCE;
 use emcraft_model::{Aabb, Axis, FaceSurface, Mesh, Model, Point3, Shape, Vec3};
 
 /// A curved surface of the model: the edges on it are bent onto it.
@@ -113,7 +114,7 @@ fn fitted(shape: &Shape, at: Point3, axis: Axis) -> Vec<Curved> {
             corners.extend([a, b, c]);
         }
         let Some(b) = Aabb::around(corners.into_iter().map(place)) else { continue };
-        let within = b.grown(0.15 * longest + 1e-9 * b.size().norm());
+        let within = b.grown(0.15 * longest + GEOMETRY_TOLERANCE * b.size().norm());
         let surface = match f.clone() {
             FaceSurface::Nurbs(n) => {
                 out.push(Curved::Patch { projector: Box::new(n.mapped(place).projector()), within });

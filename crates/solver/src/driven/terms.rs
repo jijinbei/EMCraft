@@ -46,6 +46,14 @@ pub(crate) struct LossyMode {
 /// Relative tolerance on a numerical mode's scalar part when telling TE (or TEM) from TM.
 const KIND_TOLERANCE: f64 = 0.05;
 
+/// A lossy mode is at its cut-off when |γ|² is below this fraction of |k²|: its port term would
+/// divide by γ.
+const AT_CUT_OFF: f64 = 1e-20;
+
+/// A mode is TE when its axial part is below this fraction of the TM's (round-off of the
+/// cross-section's eigenvector).
+const TE_SCALAR: f64 = 1e-6;
+
 /// The `count` lowest modes of `section` (solved with a unit filling) in the lossy material
 /// `m` at `frequency`. With one material across the section a mode is TE or TEM (no scalar
 /// part, D = ‖e‖² = 1) or TM (∇φ = (k_c²/β′²) e_t, so D − 1 = k_c²/β′² at the unit filling's
@@ -63,12 +71,12 @@ pub(crate) fn lossy_section_modes(section: &CrossSection, m: &Material, frequenc
         let kc2 = kp * kp - mode.beta2;
         let g = (C::new(kc2, 0.0) - k2).sqrt();
         let gamma = if g.re < 0.0 || (g.re == 0.0 && g.im < 0.0) { -g } else { g };
-        if !(gamma.norm_sqr() > 1e-20 * k2.norm()) {
+        if !(gamma.norm_sqr() > AT_CUT_OFF * k2.norm()) {
             return Err(invalid("frequency", format!("{frequency} Hz is at the cut-off of mode {} of a lossy port", i + 1)));
         }
         let scalar = mode.d - 1.0;
         let tm = kc2 / mode.beta2;
-        let kappa = if scalar.abs() <= 1e-6 * tm.abs().max(1.0) {
+        let kappa = if scalar.abs() <= TE_SCALAR * tm.abs().max(1.0) {
             gamma
         } else if (scalar - tm).abs() <= KIND_TOLERANCE * tm.abs() {
             -k2 / gamma

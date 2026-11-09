@@ -9,6 +9,7 @@ use emcraft_tetmesh::tet::geometry::AnalyticSurface;
 
 use super::grid::Planes;
 use super::mesher::{MPoint, MVec, RegionFace, RegionMesh, mesher_point, mesher_vec, model_point, model_vec};
+use crate::GEOMETRY_TOLERANCE;
 use crate::csg::Surface;
 use crate::{MeshError, Result};
 
@@ -374,7 +375,7 @@ pub(super) fn feature_body(f: &Feature, solid: &Shape, size: f64) -> Result<(Sha
     let step = 0.1 * size;
     let base = flat_faces(solid, Point3::ORIGIN, Axis::Z);
     let scale = solid.bounds().max.iter().fold(0.0f64, |m, v| m.max(v.abs())).max(size);
-    let tol = 1e-9 * scale;
+    let tol = GEOMETRY_TOLERANCE * scale;
     // Box: the lo/hi planes along each axis in place; a cylinder: its caps along its axis.
     let (shape, at) = (f.shape.clone(), f.at);
     let mut lo_hi = flat_faces(&shape, at, f.axis);
@@ -547,7 +548,7 @@ pub(super) fn joined(features: &[Feature], solid: &Shape, size: f64) -> Result<V
         return Err(MeshError::Invalid { what: "features".into(), why: format!("{}; the limit is {MAX_FEATURES}", features.len()) });
     }
     let scale = solid.bounds().max.iter().fold(0.0f64, |m, v| m.max(v.abs())).max(size);
-    let tol = 1e-9 * scale;
+    let tol = GEOMETRY_TOLERANCE * scale;
     // (feature number, feature).
     let mut out: Vec<(usize, Feature)> = features.iter().cloned().enumerate().collect();
     // Whether features i and j (and every one between them) are all added or all subtracted.
@@ -634,7 +635,7 @@ fn planes_of(shape: &Shape, at: Point3, axis: Axis) -> Planes {
             for t in triangles {
                 let Some(q) = crate::shared::corners(&placed, t) else { continue };
                 for (d, list) in out.iter_mut().enumerate() {
-                    if (q[0][d] - q[1][d]).abs() <= 1e-9 * scale && (q[0][d] - q[2][d]).abs() <= 1e-9 * scale {
+                    if (q[0][d] - q[1][d]).abs() <= GEOMETRY_TOLERANCE * scale && (q[0][d] - q[2][d]).abs() <= GEOMETRY_TOLERANCE * scale {
                         list.push(q[0][d]);
                     }
                 }
@@ -753,7 +754,7 @@ pub(super) fn same_triangles(a: &Tessellation, b: &Tessellation, size: f64) -> b
     if a.surface.triangles.len() != b.surface.triangles.len() {
         return false;
     }
-    let q = 1e-9 * size;
+    let q = GEOMETRY_TOLERANCE * size;
     let keys = |t: &Tessellation| -> std::collections::BTreeSet<[[i64; 3]; 3]> {
         t.surface
             .triangles
