@@ -248,11 +248,8 @@ fn parse_model(xml: &[u8]) -> Result<Model> {
     let mut rd = NsReader::from_reader(xml);
     rd.config_mut().trim_text(true);
     let mut buf = Vec::new();
-    let mut m = Model { unit: 1e-3, ..Default::default() };
+    let mut p = Parse { m: Model { unit: 1e-3, ..Default::default() }, ..Default::default() };
     let mut depth = 0usize;
-    let mut cur: Option<(u32, Object)> = None;
-    let (mut vertices, mut triangles) = (0usize, 0usize);
-    let mut seen_model = false;
     loop {
         buf.clear();
         let (ns, ev) = rd.read_resolved_event_into(&mut buf).map_err(|e| invalid(format!("model XML: {e}")))?;
@@ -264,9 +261,9 @@ fn parse_model(xml: &[u8]) -> Result<Model> {
                 depth = depth.saturating_sub(1);
                 if ns == Ns::Core
                     && end.local_name().as_ref() == "object"
-                    && let Some((id, o)) = cur.take()
+                    && let Some((id, o)) = p.cur.take()
                 {
-                    m.add(id, o)?;
+                    p.m.add(id, o)?;
                 }
                 continue;
             }
@@ -283,84 +280,119 @@ fn parse_model(xml: &[u8]) -> Result<Model> {
             continue;
         }
         let a = attrs(&rd, &e)?;
-        match e.local_name().as_ref() {
-            "model" => {
-                seen_model = true;
-                if let Some(u) = get(&a, Ns::Core, "unit") {
-                    m.unit = unit_m(u).ok_or_else(|| invalid(format!("unknown unit `{u}`")))?;
-                }
-            }
-            "object" => {
-                if cur.is_some() {
-                    return bad("an object inside an object");
-                }
-                let id = int(&a, Ns::Core, "id", "object")?.ok_or_else(|| invalid("object without id"))?;
-                if m.objects.contains_key(&id) {
-                    return bad(format!("two objects with id {id}"));
-                }
-                let faces = int(&a, Ns::FaceTags, "faces", "object")?;
-                if faces == Some(0) {
-                    return bad(format!("object {id} has ft:faces=\"0\""));
-                }
-                let o = Object { name: get(&a, Ns::Core, "name").unwrap_or_default().trim().to_string(), faces, ..Default::default() };
-                if empty {
-                    m.add(id, o)?;
-                } else {
-                    cur = Some((id, o));
-                }
-            }
-            "vertex" => {
-                let Some((_, o)) = cur.as_mut() else { return bad("vertex outside an object") };
-                vertices += 1;
-                if vertices > MAX_ELEMENTS {
-                    return bad(format!("more than {MAX_ELEMENTS} vertices"));
-                }
-                o.positions.push(Point3::new(coord(&a, "x")?, coord(&a, "y")?, coord(&a, "z")?));
-            }
-            "triangle" => {
-                let Some((id, o)) = cur.as_mut() else { return bad("triangle outside an object") };
-                triangles += 1;
-                if triangles > MAX_ELEMENTS {
-                    return bad(format!("more than {MAX_ELEMENTS} triangles"));
-                }
-                let mut t = [0u32; 3];
-                for (slot, k) in t.iter_mut().zip(["v1", "v2", "v3"]) {
-                    *slot = int(&a, Ns::Core, k, "triangle")?.ok_or_else(|| invalid(format!("triangle without `{k}`")))?;
-                }
-                if let Some(f) = int(&a, Ns::FaceTags, "face", "triangle")? {
-                    if let Some(n) = o.faces.filter(|n| f >= *n) {
-                        return bad(format!("object {id}: face tag {f} is not below ft:faces=\"{n}\""));
-                    }
-                    o.tags.push(f);
-                }
-                o.triangles.push(t);
-            }
-            "component" => {
-                let Some((id, o)) = cur.as_mut() else { return bad("component outside an object") };
-                if o.components.len() >= MAX_COMPONENTS {
-                    return bad(format!("object {id} has more than {MAX_COMPONENTS} components"));
-                }
-                let target = int(&a, Ns::Core, "objectid", "component")?.ok_or_else(|| invalid("component without objectid"))?;
-                o.components.push(Component { id: target, xf: parse_xf(get(&a, Ns::Core, "transform"))?, path: path_attr(&a)? });
-            }
-            "item" => {
-                if m.build.len() >= MAX_BUILD_ITEMS {
-                    return bad(format!("more than {MAX_BUILD_ITEMS} build items"));
-                }
-                let target = int(&a, Ns::Core, "objectid", "build item")?.ok_or_else(|| invalid("build item without objectid"))?;
-                m.build.push(Component { id: target, xf: parse_xf(get(&a, Ns::Core, "transform"))?, path: path_attr(&a)? });
-            }
-            _ => {}
-        }
+        p.element(e.local_name().as_ref(), &a, empty)?;
     }
-    if !seen_model {
+    if !p.seen_model {
         return bad("no <model> element");
     }
-    if cur.is_some() {
+    if p.cur.is_some() {
         return bad("the model ends inside an object");
     }
-    m.elements = vertices.max(triangles);
-    Ok(m)
+    p.m.elements = p.vertices.max(p.triangles);
+    Ok(p.m)
+}
+
+/// A model part being read: the model so far, the object open (id, object), the vertices and
+/// triangles counted, and whether `<model>` was seen.
+#[derive(Default)]
+struct Parse {
+    m: Model,
+    cur: Option<(u32, Object)>,
+    vertices: usize,
+    triangles: usize,
+    seen_model: bool,
+}
+
+impl Parse {
+    /// One core element with its attributes; `empty` when it closes itself.
+    fn element(&mut self, name: &str, a: &Attrs, empty: bool) -> Result<()> {
+        match name {
+            "model" => {
+                self.seen_model = true;
+                if let Some(u) = get(a, Ns::Core, "unit") {
+                    self.m.unit = unit_m(u).ok_or_else(|| invalid(format!("unknown unit `{u}`")))?;
+                }
+                Ok(())
+            }
+            "object" => self.object(a, empty),
+            "vertex" => self.vertex(a),
+            "triangle" => self.triangle(a),
+            "component" => self.component(a),
+            "item" => self.item(a),
+            _ => Ok(()),
+        }
+    }
+
+    fn object(&mut self, a: &Attrs, empty: bool) -> Result<()> {
+        if self.cur.is_some() {
+            return bad("an object inside an object");
+        }
+        let id = int(a, Ns::Core, "id", "object")?.ok_or_else(|| invalid("object without id"))?;
+        if self.m.objects.contains_key(&id) {
+            return bad(format!("two objects with id {id}"));
+        }
+        let faces = int(a, Ns::FaceTags, "faces", "object")?;
+        if faces == Some(0) {
+            return bad(format!("object {id} has ft:faces=\"0\""));
+        }
+        let o = Object { name: get(a, Ns::Core, "name").unwrap_or_default().trim().to_string(), faces, ..Default::default() };
+        if empty {
+            self.m.add(id, o)?;
+        } else {
+            self.cur = Some((id, o));
+        }
+        Ok(())
+    }
+
+    fn vertex(&mut self, a: &Attrs) -> Result<()> {
+        let Some((_, o)) = self.cur.as_mut() else { return bad("vertex outside an object") };
+        self.vertices += 1;
+        if self.vertices > MAX_ELEMENTS {
+            return bad(format!("more than {MAX_ELEMENTS} vertices"));
+        }
+        o.positions.push(Point3::new(coord(a, "x")?, coord(a, "y")?, coord(a, "z")?));
+        Ok(())
+    }
+
+    fn triangle(&mut self, a: &Attrs) -> Result<()> {
+        let Some((id, o)) = self.cur.as_mut() else { return bad("triangle outside an object") };
+        self.triangles += 1;
+        if self.triangles > MAX_ELEMENTS {
+            return bad(format!("more than {MAX_ELEMENTS} triangles"));
+        }
+        let mut t = [0u32; 3];
+        for (slot, k) in t.iter_mut().zip(["v1", "v2", "v3"]) {
+            *slot = int(a, Ns::Core, k, "triangle")?.ok_or_else(|| invalid(format!("triangle without `{k}`")))?;
+        }
+        if let Some(f) = int(a, Ns::FaceTags, "face", "triangle")? {
+            if let Some(n) = o.faces.filter(|n| f >= *n) {
+                return bad(format!("object {id}: face tag {f} is not below ft:faces=\"{n}\""));
+            }
+            o.tags.push(f);
+        }
+        o.triangles.push(t);
+        Ok(())
+    }
+
+    fn component(&mut self, a: &Attrs) -> Result<()> {
+        let Some((id, o)) = self.cur.as_mut() else { return bad("component outside an object") };
+        if o.components.len() >= MAX_COMPONENTS {
+            return bad(format!("object {id} has more than {MAX_COMPONENTS} components"));
+        }
+        let target = int(a, Ns::Core, "objectid", "component")?.ok_or_else(|| invalid("component without objectid"))?;
+        o.components.push(Component { id: target, xf: parse_xf(get(a, Ns::Core, "transform"))?, path: path_attr(a)? });
+        Ok(())
+    }
+
+    /// A build item: an object placed in the build.
+    fn item(&mut self, a: &Attrs) -> Result<()> {
+        if self.m.build.len() >= MAX_BUILD_ITEMS {
+            return bad(format!("more than {MAX_BUILD_ITEMS} build items"));
+        }
+        let target = int(a, Ns::Core, "objectid", "build item")?.ok_or_else(|| invalid("build item without objectid"))?;
+        self.m.build.push(Component { id: target, xf: parse_xf(get(a, Ns::Core, "transform"))?, path: path_attr(a)? });
+        Ok(())
+    }
 }
 
 /// The production extension's `p:path` (a model part of the same package), checked.

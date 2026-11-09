@@ -855,6 +855,21 @@ impl GradedSize {
     pub fn new(global: f64, samples: &[(Point3, f64)], locals: &[LocalSize], lo: Point3, hi: Point3, grading: f64) -> GradedSize {
         let diag = lo.distance(hi).max(f64::MIN_POSITIVE);
         let finest = samples.iter().map(|s| s.1).chain(locals.iter().map(|l| l.size)).filter(|h| *h > 0.0).fold(global, f64::min).max(diag * 1e-4);
+        let mut size = GradedSize::grid(global, lo, hi, finest);
+        let g = grading.max(0.0);
+        size.seed_samples(samples, g);
+        size.seed_locals(locals, g);
+        if g > 0.0 {
+            size.sweep(g);
+        }
+        size
+    }
+
+    /// The background grid over `lo`–`hi` (a cell beyond on every side), every node at
+    /// `global`: cells half the finest size (at least 1/128 of the diagonal), widened until
+    /// the grid has at most [`MAX_GRID_NODES`].
+    fn grid(global: f64, lo: Point3, hi: Point3, finest: f64) -> GradedSize {
+        let diag = lo.distance(hi).max(f64::MIN_POSITIVE);
         let mut cell = finest.max(diag / 64.0) * 0.5;
         let dims_for = |c: f64| [0, 1, 2].map(|k| (((hi[k] - lo[k]) / c).ceil().max(1.0) as usize) + 2);
         let mut dims = dims_for(cell);
@@ -863,57 +878,54 @@ impl GradedSize {
             dims = dims_for(cell);
         }
         let lo = lo.map(|v| v - cell);
-        let n = dims.iter().product::<usize>();
-        let mut values = vec![global; n];
-        let idx = |i: usize, j: usize, k: usize| (k * dims[1] + j) * dims[0] + i;
-        let g = grading.max(0.0);
-        // Seed: each sample's cell corners.
+        GradedSize { global, lo, cell, dims, values: vec![global; dims.iter().product::<usize>()] }
+    }
+
+    /// The place of grid node (i, j, k) in `values`.
+    fn index(&self, i: usize, j: usize, k: usize) -> usize {
+        (k * self.dims[1] + j) * self.dims[0] + i
+    }
+
+    /// The point of grid node (i, j, k).
+    fn node(&self, i: usize, j: usize, k: usize) -> Point3 {
+        Point3::new(self.lo.x + i as f64 * self.cell, self.lo.y + j as f64 * self.cell, self.lo.z + k as f64 * self.cell)
+    }
+
+    /// Lowers node (i, j, k) to `v` when it is above it.
+    fn lower(&mut self, i: usize, j: usize, k: usize, v: f64) {
+        let at = self.index(i, j, k);
+        if let Some(s) = self.values.get_mut(at) {
+            *s = s.min(v);
+        }
+    }
+
+    /// Seeds each sample's cell corners at its size plus `g` times their distance.
+    fn seed_samples(&mut self, samples: &[(Point3, f64)], g: f64) {
         for &(x, h) in samples {
             if !(h > 0.0 && h.is_finite()) {
                 continue;
             }
-            let c = [0, 1, 2].map(|k| ((x[k] - lo[k]) / cell).floor().max(0.0) as usize);
+            let c = [0, 1, 2].map(|k| ((x[k] - self.lo[k]) / self.cell).floor().max(0.0) as usize);
             for dk in 0..2 {
                 for dj in 0..2 {
                     for di in 0..2 {
                         let (i, j, k) = (c[0] + di, c[1] + dj, c[2] + dk);
-                        if i >= dims[0] || j >= dims[1] || k >= dims[2] {
+                        if i >= self.dims[0] || j >= self.dims[1] || k >= self.dims[2] {
                             continue;
                         }
-                        let node = Point3::new(lo.x + i as f64 * cell, lo.y + j as f64 * cell, lo.z + k as f64 * cell);
-                        let v = h + g * node.distance(x);
-                        if let Some(s) = values.get_mut(idx(i, j, k)) {
-                            *s = s.min(v);
-                        }
+                        let v = h + g * self.node(i, j, k).distance(x);
+                        self.lower(i, j, k, v);
                     }
                 }
             }
         }
-        // Seed: the grid nodes near each local region.
-        let reach = cell * 3f64.sqrt();
-        let range = |a: f64, b: f64, k: usize| -> (usize, usize) {
-            let first = ((a - reach - lo[k]) / cell).ceil().max(0.0);
-            let last = ((b + reach - lo[k]) / cell).floor().min((dims[k] - 1) as f64);
-            if first.is_finite() && last.is_finite() && first <= last { (first as usize, last as usize) } else { (1, 0) }
-        };
-        let mut seed_near = |a: Point3, b: Point3, h: f64, distance: &dyn Fn(Point3) -> f64| {
-            let r = [0, 1, 2].map(|k| range(a[k], b[k], k));
-            for k in r[2].0..=r[2].1 {
-                for j in r[1].0..=r[1].1 {
-                    for i in r[0].0..=r[0].1 {
-                        let node = Point3::new(lo.x + i as f64 * cell, lo.y + j as f64 * cell, lo.z + k as f64 * cell);
-                        let d = distance(node);
-                        if d <= reach
-                            && let Some(s) = values.get_mut(idx(i, j, k))
-                        {
-                            *s = s.min(h + g * d);
-                        }
-                    }
-                }
-            }
-        };
+    }
+
+    /// Seeds the grid nodes within a cell's diagonal of each local region finer than the global
+    /// size.
+    fn seed_locals(&mut self, locals: &[LocalSize], g: f64) {
         for l in locals {
-            if !(l.size > 0.0 && l.size.is_finite() && l.size < global) {
+            if !(l.size > 0.0 && l.size.is_finite() && l.size < self.global) {
                 continue;
             }
             match &l.region {
@@ -921,50 +933,73 @@ impl GradedSize {
                     for t in tris {
                         let a = t[0].min(t[1]).min(t[2]);
                         let b = t[0].max(t[1]).max(t[2]);
-                        seed_near(a, b, l.size, &|p| p.distance(closest_on_triangle(p, t[0], t[1], t[2])));
+                        self.seed_near(a, b, l.size, g, &|p| p.distance(closest_on_triangle(p, t[0], t[1], t[2])));
                     }
                 }
                 region => {
                     let (a, b) = region.bounds();
-                    seed_near(a, b, l.size, &|p| region.distance(p));
+                    self.seed_near(a, b, l.size, g, &|p| region.distance(p));
                 }
             }
         }
-        // Fast sweeping: eight sweep orders, each relaxing against the three axis neighbours
-        // behind the sweep direction (and diagonals through them over passes).
-        if g > 0.0 {
-            for _ in 0..2 {
-                for dir in 0..8 {
-                    let rev = [dir & 1 != 0, dir & 2 != 0, dir & 4 != 0];
-                    for kk in 0..dims[2] {
-                        let k = if rev[2] { dims[2] - 1 - kk } else { kk };
-                        for jj in 0..dims[1] {
-                            let j = if rev[1] { dims[1] - 1 - jj } else { jj };
-                            for ii in 0..dims[0] {
-                                let i = if rev[0] { dims[0] - 1 - ii } else { ii };
-                                let mut best = values.get(idx(i, j, k)).copied().unwrap_or(global);
-                                let back = |x: usize, r: bool, n: usize| -> Option<usize> {
-                                    if r { (x + 1 < n).then_some(x + 1) } else { x.checked_sub(1) }
-                                };
-                                if let Some(pi) = back(i, rev[0], dims[0]) {
-                                    best = best.min(values.get(idx(pi, j, k)).copied().unwrap_or(global) + g * cell);
-                                }
-                                if let Some(pj) = back(j, rev[1], dims[1]) {
-                                    best = best.min(values.get(idx(i, pj, k)).copied().unwrap_or(global) + g * cell);
-                                }
-                                if let Some(pk) = back(k, rev[2], dims[2]) {
-                                    best = best.min(values.get(idx(i, j, pk)).copied().unwrap_or(global) + g * cell);
-                                }
-                                if let Some(s) = values.get_mut(idx(i, j, k)) {
-                                    *s = best;
-                                }
+    }
+
+    /// Seeds the nodes near the box `a`–`b` within reach of `distance` at `h` plus `g` times it.
+    fn seed_near(&mut self, a: Point3, b: Point3, h: f64, g: f64, distance: &dyn Fn(Point3) -> f64) {
+        let reach = self.cell * 3f64.sqrt();
+        let range = |a: f64, b: f64, k: usize| -> (usize, usize) {
+            let first = ((a - reach - self.lo[k]) / self.cell).ceil().max(0.0);
+            let last = ((b + reach - self.lo[k]) / self.cell).floor().min((self.dims[k] - 1) as f64);
+            if first.is_finite() && last.is_finite() && first <= last { (first as usize, last as usize) } else { (1, 0) }
+        };
+        let r = [0, 1, 2].map(|k| range(a[k], b[k], k));
+        for k in r[2].0..=r[2].1 {
+            for j in r[1].0..=r[1].1 {
+                for i in r[0].0..=r[0].1 {
+                    let d = distance(self.node(i, j, k));
+                    if d <= reach {
+                        self.lower(i, j, k, h + g * d);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Fast sweeping: eight sweep orders, twice, each relaxing against the three axis neighbours
+    /// behind the sweep direction (and diagonals through them over passes).
+    fn sweep(&mut self, g: f64) {
+        let dims = self.dims;
+        let step = g * self.cell;
+        let back = |x: usize, r: bool, n: usize| -> Option<usize> { if r { (x + 1 < n).then_some(x + 1) } else { x.checked_sub(1) } };
+        for _ in 0..2 {
+            for dir in 0..8 {
+                let rev = [dir & 1 != 0, dir & 2 != 0, dir & 4 != 0];
+                for kk in 0..dims[2] {
+                    let k = if rev[2] { dims[2] - 1 - kk } else { kk };
+                    for jj in 0..dims[1] {
+                        let j = if rev[1] { dims[1] - 1 - jj } else { jj };
+                        for ii in 0..dims[0] {
+                            let i = if rev[0] { dims[0] - 1 - ii } else { ii };
+                            let value = |s: &GradedSize, i, j, k| s.values.get(s.index(i, j, k)).copied().unwrap_or(s.global);
+                            let mut best = value(self, i, j, k);
+                            if let Some(pi) = back(i, rev[0], dims[0]) {
+                                best = best.min(value(self, pi, j, k) + step);
+                            }
+                            if let Some(pj) = back(j, rev[1], dims[1]) {
+                                best = best.min(value(self, i, pj, k) + step);
+                            }
+                            if let Some(pk) = back(k, rev[2], dims[2]) {
+                                best = best.min(value(self, i, j, pk) + step);
+                            }
+                            let at = self.index(i, j, k);
+                            if let Some(s) = self.values.get_mut(at) {
+                                *s = best;
                             }
                         }
                     }
                 }
             }
         }
-        GradedSize { global, lo, cell, dims, values }
     }
 
     fn at(&self, i: usize, j: usize, k: usize) -> f64 {

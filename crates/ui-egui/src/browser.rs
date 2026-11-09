@@ -390,11 +390,23 @@ fn body_glyph(material: &str, region: &str) -> Glyph {
 /// What the model is made of: the waveguide (its sections, layers, strips and vias under it),
 /// an imported part's walls and region, and the bodies placed, each with its material.
 fn bodies(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
-    let (mm, lu) = (|x| f.len(x), f.unit());
     let region = m.domain.solid.as_ref().map_or("vacuum", |s| s.material.as_str());
+    let mut rows = waveguide_bodies(m, f);
+    // A board solved by the finite elements (a board's PCB analysis has its own tree, above):
+    // a row like the other bodies, the 3D view kept (its route view is the PCB analysis').
+    if let Some(board) = m.pcb() {
+        rows.push(node("board", words(t!("PCB"), &[]), Some(own(&board.name)), Glyph::Part, Act::None));
+    }
+    rows.extend(part_bodies(m));
+    rows.extend(placed_bodies(m, region));
+    rows
+}
+
+/// A waveguide's bodies: its box, then under it each section, layer, strip and via, in the
+/// order placed.
+fn waveguide_bodies(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
+    let (mm, lu) = (|x| f.len(x), f.unit());
     let mut rows = Vec::new();
-    // A waveguide's bodies: its box, then under it each section, layer, strip and via, in
-    // the order placed.
     let edit = || Act::Edit("geometry.waveguide");
     let mut count = [0usize; 4];
     for body in m.bodies().iter().filter(|b| b.is_extruded()) {
@@ -454,12 +466,12 @@ fn bodies(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         };
         rows.push(row);
     }
-    // A board solved by the finite elements (a board's PCB analysis has its own tree, above):
-    // a row like the other bodies, the 3D view kept (its route view is the PCB analysis').
-    if let Some(board) = m.pcb() {
-        rows.push(node("board", words(t!("PCB"), &[]), Some(own(&board.name)), Glyph::Part, Act::None));
-    }
-    // An imported part's walls and region body: a double-click gives them another material.
+    rows
+}
+
+/// An imported part's walls and region body: a double-click gives them another material.
+fn part_bodies(m: &emcraft_model::Model) -> Vec<Row> {
+    let mut rows = Vec::new();
     for (i, b) in emcraft_engine::bodies::parts(m).into_iter().enumerate() {
         let (detail, glyph) = if b.material == emcraft_engine::bodies::METAL {
             (words(t!("metal · imported"), &[]), Glyph::Part)
@@ -469,7 +481,13 @@ fn bodies(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         let item = Item::new("geometry.body.material", "", "body", serde_json::json!(b.name));
         rows.push(node(format!("body:{}", b.name), own(&b.name), Some(detail), glyph, Act::None).picks(Pick::Part(i)).item(item));
     }
-    // The bodies placed, by what they are made of; a double-click changes it.
+    rows
+}
+
+/// The bodies placed, by what they are made of (hatched when the region's own); a
+/// double-click changes it.
+fn placed_bodies(m: &emcraft_model::Model, region: &str) -> Vec<Row> {
+    let mut rows = Vec::new();
     for b in emcraft_engine::bodies::bodies(m) {
         let pick = match b.at {
             emcraft_engine::bodies::BodyRef::Feature(i) => Pick::Feature(i),

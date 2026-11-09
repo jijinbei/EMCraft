@@ -979,8 +979,43 @@ impl TetComplex {
         if old.is_empty() || change.new.is_empty() {
             return Ok(None);
         }
-        let n_pts = self.pts.len() as u32;
-        // Old region: its outside faces, keyed by sorted vertices.
+        let Some(OldRegion { mut outside, edges: old_edges }) = self.old_region(old)? else {
+            return Ok(None);
+        };
+        let neighbours: Vec<u32> = outside.values().map(|o| o.neighbour).filter(|&n| n != NONE).collect();
+        if !self.admissible(&change.new)? {
+            return Ok(None);
+        }
+        if self.live - old.len() + change.new.len() > self.max_tets {
+            return Err(Error::Limit(format!("more than {} tetrahedra", self.max_tets)));
+        }
+        let Some(MatchedFaces { links, skin_made }) = self.match_faces(change, &mut outside) else {
+            return Ok(None);
+        };
+        if self.folds_made_edges(&change.new, &old_edges) {
+            return Ok(None);
+        }
+        // What is left outside must be boundary faces the change removes, and none frozen.
+        if outside.values().any(|o| o.neighbour != NONE || self.is_frozen(o.tag)) || (!outside.is_empty() && change.new_boundary.is_empty()) {
+            return Ok(None);
+        }
+        if self.loses_curves(change, &old_edges) || self.strands_vertices(old, &change.new)? {
+            return Ok(None);
+        }
+        // Its new boundary faces meet the rest of the skin, and each other, properly.
+        if !skin_made.is_empty() && self.skin.is_some() {
+            let mut removed: Vec<[u32; 3]> = outside.keys().copied().collect();
+            removed.sort_unstable();
+            if self.skin_crossed(&skin_made, None, &removed)? {
+                return Ok(None);
+            }
+        }
+        Ok(Some(Matched { links, neighbours }))
+    }
+
+    /// The old region's outside faces, keyed by sorted vertices, and its edges; `None` when a
+    /// tetrahedron is dead or listed twice, or a face is outside twice. Marks the region visited.
+    fn old_region(&mut self, old: &[u32]) -> Result<Option<OldRegion>> {
         self.next_epoch();
         for &t in old {
             if !self.is_live(t) || self.visited(t) {
@@ -988,16 +1023,14 @@ impl TetComplex {
             }
             self.visit(t);
         }
-        // key -> (neighbour outside or NONE, the neighbour's slot pointing back, boundary tag,
-        // the face as the old tetrahedron saw it)
-        let mut outside: IdMap<[u32; 3], (u32, usize, u32, [u32; 3])> = IdMap::default();
-        let mut old_edges: Vec<(u32, u32)> = Vec::new();
+        let mut outside: IdMap<[u32; 3], Outside> = IdMap::default();
+        let mut edges: Vec<(u32, u32)> = Vec::new();
         for &t in old {
             let vs = self.tet(t)?;
             let ns = self.adj(t)?;
             let tg = self.tags(t)?;
             for &(i, j) in &EDGES {
-                old_edges.push(sorted2(vs[i], vs[j]));
+                edges.push(sorted2(vs[i], vs[j]));
             }
             for k in 0..4 {
                 let n = ns[k];
@@ -1012,30 +1045,38 @@ impl TetComplex {
                     let nn = self.adj(n)?;
                     (0..4).find(|&j| nn[j] == t && sorted3(face_toward(nv, j)) == key).ok_or_else(|| corrupt("neighbour does not point back"))?
                 };
-                if outside.insert(key, (n, back, tg[k], face_toward(vs, k))).is_some() {
+                if outside.insert(key, Outside { neighbour: n, back, tag: tg[k], seen: face_toward(vs, k) }).is_some() {
                     return Ok(None);
                 }
             }
         }
-        let neighbours: Vec<u32> = outside.values().map(|e| e.0).filter(|&n| n != NONE).collect();
-        // New tetrahedra: positive, distinct vertices.
-        for vs in &change.new {
+        Ok(Some(OldRegion { outside, edges }))
+    }
+
+    /// Whether the new tetrahedra have existing, distinct vertices and are positive and well
+    /// shaped.
+    fn admissible(&self, new: &[[u32; 4]]) -> Result<bool> {
+        let n_pts = self.pts.len() as u32;
+        for vs in new {
             if vs.iter().any(|&v| v >= n_pts) || (0..4).any(|i| (i + 1..4).any(|j| vs[i] == vs[j])) {
-                return Ok(None);
+                return Ok(false);
             }
             if self.orient(*vs)? != Sign::Positive || !(normalized_jacobian(&tet4_jacobian(&self.coords(*vs)?)) > ADMISSIBLE_MARGIN) {
-                return Ok(None);
+                return Ok(false);
             }
         }
-        if self.live - old.len() + change.new.len() > self.max_tets {
-            return Err(Error::Limit(format!("more than {} tetrahedra", self.max_tets)));
-        }
-        // Match the new faces.
+        Ok(true)
+    }
+
+    /// The new tetrahedra's faces matched: to each other (opposite sides of a shared face), to
+    /// the old region's outside faces (taken out of `outside`), or to the declared new boundary
+    /// faces; `None` when a face matches none, on the wrong side, or a declared face is unused.
+    fn match_faces(&self, change: &Change, outside: &mut IdMap<[u32; 3], Outside>) -> Option<MatchedFaces> {
         let mut inner: IdMap<[u32; 3], (usize, usize)> = IdMap::default();
         let mut links: Vec<(usize, usize, Link)> = Vec::with_capacity(change.new.len() * 4);
         let declared: IdMap<[u32; 3], ([u32; 3], u32)> = change.new_boundary.iter().map(|(f, tag)| (sorted3(*f), (*f, *tag))).collect();
         if declared.len() != change.new_boundary.len() {
-            return Ok(None);
+            return None;
         }
         let mut used_declared = 0usize;
         // The boundary faces it makes, as the new tetrahedra see them.
@@ -1046,14 +1087,11 @@ impl TetComplex {
                 if let Some((j, l)) = inner.remove(&key) {
                     // Two tetrahedra on opposite sides of their shared face.
                     let other = change.new.get(j).map_or([NONE; 3], |u| face_toward(*u, l));
-                    if !same_cycle(face_toward(*vs, k), [other[0], other[2], other[1]]) {
-                        return Ok(None);
+                    if !same_cycle(face_toward(*vs, k), [other[0], other[2], other[1]]) || self.held_outside(&key) {
+                        return None;
                     }
                     links.push((i, k, Link::New(j)));
                     links.push((j, l, Link::New(i)));
-                    if self.held_outside(&key) {
-                        return Ok(None);
-                    }
                     continue;
                 }
                 inner.insert(key, (i, k));
@@ -1065,63 +1103,60 @@ impl TetComplex {
             let face = change.new.get(i).map_or([NONE; 3], |vs| face_toward(*vs, k));
             let declared_face = declared.get(&key).copied();
             used_declared += usize::from(declared_face.is_some());
-            if let Some((n, back, tag, seen)) = outside.remove(&key) {
+            if let Some(Outside { neighbour: n, back, tag, seen }) = outside.remove(&key) {
                 // The new tetrahedron lies on the side of the face the old one did.
                 if !same_cycle(face, seen) || (n == NONE && self.is_frozen(tag) && declared_face.is_some_and(|d| d.1 != tag)) {
-                    return Ok(None);
+                    return None;
                 }
                 links.push((i, k, if n == NONE { Link::Boundary(declared_face.map_or(tag, |d| d.1)) } else { Link::Old(n, back) }));
             } else if let Some((oriented, tag)) = declared_face {
                 // A new boundary face, oriented as declared (into the mesh).
-                if !same_cycle(face, oriented) || self.is_frozen(tag) {
-                    return Ok(None);
-                }
-                if self.held_outside(&key) {
-                    return Ok(None);
+                if !same_cycle(face, oriented) || self.is_frozen(tag) || self.held_outside(&key) {
+                    return None;
                 }
                 links.push((i, k, Link::Boundary(tag)));
                 skin_made.push(face);
             } else {
-                return Ok(None);
+                return None;
             }
         }
-        if used_declared != declared.len() {
-            return Ok(None);
-        }
-        // Nor an edge it makes (above, a face): one the mesh has outside the old region already
-        // folds it over itself (an edge removal or flip triangulating across it, a collapse
-        // laying an edge onto it). Every check above is local to the region and passes that.
-        let mut old_sorted = old_edges.clone();
+        (used_declared == declared.len()).then_some(MatchedFaces { links, skin_made })
+    }
+
+    /// Whether an edge the change makes is one the mesh has outside the old region already
+    /// (as a face is above): that folds it over itself (an edge removal or flip triangulating
+    /// across it, a collapse laying an edge onto it). Every other check is local to the region
+    /// and passes that.
+    fn folds_made_edges(&self, new: &[[u32; 4]], old_edges: &[(u32, u32)]) -> bool {
+        let mut old_sorted = old_edges.to_vec();
         old_sorted.sort_unstable();
-        let mut made_edges: Vec<(u32, u32)> = change
-            .new
+        let mut made_edges: Vec<(u32, u32)> = new
             .iter()
             .flat_map(|vs| EDGES.iter().map(move |&(i, j)| sorted2(vs[i], vs[j])))
             .filter(|e| old_sorted.binary_search(e).is_err())
             .collect();
         made_edges.sort_unstable();
         made_edges.dedup();
-        if made_edges.iter().any(|e| self.held_outside(&[e.0, e.1])) {
-            return Ok(None);
+        made_edges.iter().any(|e| self.held_outside(&[e.0, e.1]))
+    }
+
+    /// Whether a feature edge strictly inside the old region is lost (neither kept nor the
+    /// split one).
+    fn loses_curves(&self, change: &Change, old_edges: &[(u32, u32)]) -> bool {
+        if self.curves.is_empty() {
+            return false;
         }
-        // What is left outside must be boundary faces the change removes, and none frozen.
-        if outside.values().any(|(n, _, tag, _)| *n != NONE || self.is_frozen(*tag)) || (!outside.is_empty() && change.new_boundary.is_empty()) {
-            return Ok(None);
-        }
-        // Feature edges strictly inside the old region must survive (or be the split one).
-        if !self.curves.is_empty() {
-            let mut kept: Vec<(u32, u32)> = change.new.iter().flat_map(|vs| EDGES.iter().map(move |&(i, j)| sorted2(vs[i], vs[j]))).collect();
-            kept.sort_unstable();
-            for e in &old_edges {
-                if self.curves.contains_key(e) && !change.drop_curves.iter().any(|&(a, b)| sorted2(a, b) == *e) && kept.binary_search(e).is_err() {
-                    return Ok(None);
-                }
-            }
-        }
-        // A vertex the change removes (in no new tetrahedron) must have every tetrahedron around
-        // it in the old region; otherwise a tetrahedron outside would keep a vertex whose faces
-        // were taken away.
-        let mut kept_vertices: Vec<u32> = change.new.iter().flatten().copied().collect();
+        let mut kept: Vec<(u32, u32)> = change.new.iter().flat_map(|vs| EDGES.iter().map(move |&(i, j)| sorted2(vs[i], vs[j]))).collect();
+        kept.sort_unstable();
+        old_edges
+            .iter()
+            .any(|e| self.curves.contains_key(e) && !change.drop_curves.iter().any(|&(a, b)| sorted2(a, b) == *e) && kept.binary_search(e).is_err())
+    }
+
+    /// Whether a vertex the change removes (in no new tetrahedron) has a tetrahedron around it
+    /// outside the old region: that one would keep a vertex whose faces were taken away.
+    fn strands_vertices(&mut self, old: &[u32], new: &[[u32; 4]]) -> Result<bool> {
+        let mut kept_vertices: Vec<u32> = new.iter().flatten().copied().collect();
         kept_vertices.sort_unstable();
         kept_vertices.dedup();
         let mut gone: Vec<u32> = Vec::new();
@@ -1132,25 +1167,16 @@ impl TetComplex {
                 }
             }
         }
-        if !gone.is_empty() {
-            let region: IdSet<u32> = old.iter().copied().collect();
-            for v in gone {
-                for t in self.star(v)? {
-                    if !region.contains(&t) {
-                        return Ok(None);
-                    }
-                }
+        if gone.is_empty() {
+            return Ok(false);
+        }
+        let region: IdSet<u32> = old.iter().copied().collect();
+        for v in gone {
+            if self.star(v)?.iter().any(|t| !region.contains(t)) {
+                return Ok(true);
             }
         }
-        // Its new boundary faces meet the rest of the skin, and each other, properly.
-        if !skin_made.is_empty() && self.skin.is_some() {
-            let mut removed: Vec<[u32; 3]> = outside.keys().copied().collect();
-            removed.sort_unstable();
-            if self.skin_crossed(&skin_made, None, &removed)? {
-                return Ok(None);
-            }
-        }
-        Ok(Some(Matched { links, neighbours }))
+        Ok(false)
     }
 
     /// Makes the replacement [`Self::matched`] checked: the old tetrahedra out, the new ones in,
@@ -1594,6 +1620,29 @@ enum Link {
 struct Matched {
     links: Vec<(usize, usize, Link)>,
     neighbours: Vec<u32>,
+}
+
+/// An old region's face toward the outside: the neighbour there (or `NONE` on the boundary),
+/// the neighbour's slot pointing back, the boundary tag, and the face as the old tetrahedron saw
+/// it.
+#[derive(Clone, Copy)]
+struct Outside {
+    neighbour: u32,
+    back: usize,
+    tag: u32,
+    seen: [u32; 3],
+}
+
+/// A replacement's old region: its outside faces by sorted vertices, and its edges.
+struct OldRegion {
+    outside: IdMap<[u32; 3], Outside>,
+    edges: Vec<(u32, u32)>,
+}
+
+/// The new tetrahedra's faces matched: each one's link, and the boundary faces made.
+struct MatchedFaces {
+    links: Vec<(usize, usize, Link)>,
+    skin_made: Vec<[u32; 3]>,
 }
 
 /// The ring around an edge ([`TetComplex::edge_ring`]).

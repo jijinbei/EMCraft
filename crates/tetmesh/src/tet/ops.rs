@@ -525,10 +525,59 @@ enum Plan {
 
 /// Plan the fill of a cavity from `p`.
 fn plan_cavity(cx: &TetComplex, cavity: &[u32], p: &ExactPoint3, site: Site, root_faces: &[[u32; 3]]) -> Result<Plan> {
+    let CavityFaces { bfaces, outer } = cavity_faces(cx, cavity)?;
+    // Removed boundary faces D (only for boundary sites).
+    let mut removed: Vec<usize> = Vec::new();
+    if !matches!(site, Site::Interior(_)) {
+        let Some(grown) = grow_removed(cx, &bfaces, p, root_faces)? else {
+            return Ok(Plan::Fail);
+        };
+        removed = grown;
+        if deletes_vertices(cx, &bfaces, &outer, &removed) {
+            return Ok(Plan::Fail);
+        }
+    }
+    let new = match kept_faces(cx, &bfaces, &outer, &removed, p)? {
+        Kept::Seen(new) => new,
+        Kept::Hidden(t) => return Ok(Plan::Drop(t)),
+    };
+    // The outline of D becomes new boundary, fanned to p.
+    let mut new_boundary = Vec::new();
+    if !removed.is_empty() {
+        let Some(edges) = outline(&bfaces, &removed, site) else {
+            return Ok(Plan::Fail);
+        };
+        new_boundary = edges;
+    }
+    // A cavity whose tetrahedra all go must still leave something to fill.
+    if new.is_empty() {
+        return Ok(Plan::Fail);
+    }
+    Ok(Plan::Ready { new, new_boundary })
+}
+
+/// A cavity tetrahedron's boundary face: as the tetrahedron sees it, sorted, its tag and the
+/// tetrahedron.
+#[derive(Clone, Copy)]
+struct BoundaryFace {
+    oriented: [u32; 3],
+    sorted: [u32; 3],
+    tag: u32,
+    tet: u32,
+}
+
+/// A cavity's faces: on the boundary (candidates for removal at a boundary site), and toward
+/// the rest of the mesh (oriented, owning tetrahedron).
+struct CavityFaces {
+    bfaces: Vec<BoundaryFace>,
+    outer: Vec<([u32; 3], u32)>,
+}
+
+/// The faces of `cavity` toward the boundary and the rest of the mesh.
+fn cavity_faces(cx: &TetComplex, cavity: &[u32]) -> Result<CavityFaces> {
     let inset: IdSet<u32> = cavity.iter().copied().collect();
-    // Boundary faces of cavity tetrahedra: candidates for removal (only for boundary sites).
-    let mut bfaces: Vec<([u32; 3], [u32; 3], u32, u32)> = Vec::new(); // (oriented, sorted, tag, tet)
-    let mut outer: Vec<([u32; 3], u32)> = Vec::new(); // (oriented face, owning tet)
+    let mut bfaces: Vec<BoundaryFace> = Vec::new();
+    let mut outer: Vec<([u32; 3], u32)> = Vec::new();
     for &t in cavity {
         let vs = cx.tet(t)?;
         let ns = cx.adj(t)?;
@@ -540,138 +589,137 @@ fn plan_cavity(cx: &TetComplex, cavity: &[u32], p: &ExactPoint3, site: Site, roo
             }
             let f = face_toward(vs, k);
             if n == NONE {
-                bfaces.push((f, sorted3(f), tags[k], t));
+                bfaces.push(BoundaryFace { oriented: f, sorted: sorted3(f), tag: tags[k], tet: t });
             } else {
                 outer.push((f, t));
             }
         }
     }
-    // Removed boundary faces D: for a boundary site, the root faces plus faces connected to them
-    // across non-feature edges, on the same tag, whose circumcircle contains p (approximately:
-    // the diametral sphere of the triangle).
-    let mut removed: Vec<usize> = Vec::new();
-    if !matches!(site, Site::Interior(_)) {
-        let mut queue: Vec<usize> = bfaces.iter().enumerate().filter(|(_, f)| root_faces.contains(&f.1)).map(|(i, _)| i).collect();
-        if queue.len() != root_faces.len() {
-            return Ok(Plan::Fail);
+    Ok(CavityFaces { bfaces, outer })
+}
+
+/// The removed boundary faces D at a boundary site (places in `bfaces`): the root faces plus
+/// faces connected to them across non-feature edges, on the same tag, whose circumcircle
+/// contains p (approximately: the diametral sphere of the triangle). `None` when a root face
+/// is not on the cavity's boundary.
+fn grow_removed(cx: &TetComplex, bfaces: &[BoundaryFace], p: &ExactPoint3, root_faces: &[[u32; 3]]) -> Result<Option<Vec<usize>>> {
+    let mut queue: Vec<usize> = bfaces.iter().enumerate().filter(|(_, f)| root_faces.contains(&f.sorted)).map(|(i, _)| i).collect();
+    if queue.len() != root_faces.len() {
+        return Ok(None);
+    }
+    let px = p.point();
+    let mut taken = vec![false; bfaces.len()];
+    for &i in &queue {
+        if let Some(s) = taken.get_mut(i) {
+            *s = true;
         }
-        let px = p.point();
-        let mut taken = vec![false; bfaces.len()];
-        for &i in &queue {
-            if let Some(s) = taken.get_mut(i) {
-                *s = true;
+    }
+    let mut qi = 0;
+    while let Some(&i) = queue.get(qi) {
+        qi += 1;
+        let Some(&BoundaryFace { oriented: f, tag, .. }) = bfaces.get(i) else { continue };
+        for e in 0..3 {
+            let (u, w) = (f[e], f[(e + 1) % 3]);
+            if cx.curve(u, w).is_some() {
+                continue;
             }
-        }
-        let mut qi = 0;
-        while let Some(&i) = queue.get(qi) {
-            qi += 1;
-            let Some(&(f, _, tag, _)) = bfaces.get(i) else { continue };
-            for e in 0..3 {
-                let (u, w) = (f[e], f[(e + 1) % 3]);
-                if cx.curve(u, w).is_some() {
+            for (j, g) in bfaces.iter().enumerate() {
+                if taken.get(j).copied().unwrap_or(true) || g.tag != tag || !(g.oriented.contains(&u) && g.oriented.contains(&w)) {
                     continue;
                 }
-                for (j, g) in bfaces.iter().enumerate() {
-                    if taken.get(j).copied().unwrap_or(true) || g.2 != tag || !(g.0.contains(&u) && g.0.contains(&w)) {
-                        continue;
+                let [ga, gb, gc] = [cx.xyz(g.oriented[0])?, cx.xyz(g.oriented[1])?, cx.xyz(g.oriented[2])?];
+                let Some(o) = measure::triangle_circumcenter(ga, gb, gc) else { continue };
+                let r = o.distance(ga);
+                if o.distance(px) < r {
+                    if let Some(s) = taken.get_mut(j) {
+                        *s = true;
                     }
-                    let [ga, gb, gc] = [cx.xyz(g.0[0])?, cx.xyz(g.0[1])?, cx.xyz(g.0[2])?];
-                    let Some(o) = measure::triangle_circumcenter(ga, gb, gc) else { continue };
-                    let r = o.distance(ga);
-                    if o.distance(px) < r {
-                        if let Some(s) = taken.get_mut(j) {
-                            *s = true;
-                        }
-                        queue.push(j);
-                    }
+                    queue.push(j);
                 }
             }
         }
-        removed = queue;
-        // Vertices strictly inside D would be deleted: only allowed for face vertices of the
-        // same tag that no kept face uses.
-        let mut in_kept: IdSet<u32> = IdSet::default();
-        for (j, g) in bfaces.iter().enumerate() {
-            if !removed.contains(&j) {
-                for v in g.0 {
-                    in_kept.insert(v);
-                }
-            }
-        }
-        for &(f, _) in &outer {
-            for v in f {
+    }
+    Ok(Some(queue))
+}
+
+/// Whether removing D would delete a vertex strictly inside it that may not go: only face
+/// vertices of the same tag (and interior ones) that no kept face uses may.
+fn deletes_vertices(cx: &TetComplex, bfaces: &[BoundaryFace], outer: &[([u32; 3], u32)], removed: &[usize]) -> bool {
+    let mut in_kept: IdSet<u32> = IdSet::default();
+    for (j, g) in bfaces.iter().enumerate() {
+        if !removed.contains(&j) {
+            for v in g.oriented {
                 in_kept.insert(v);
             }
         }
-        for &i in &removed {
-            if let Some(g) = bfaces.get(i) {
-                for v in g.0 {
-                    if !in_kept.contains(&v) && !matches!(cx.kind(v), VertexKind::Face(_) | VertexKind::Interior) {
-                        return Ok(Plan::Fail);
-                    }
-                }
-            }
+    }
+    for &(f, _) in outer {
+        for v in f {
+            in_kept.insert(v);
         }
     }
-    // Every kept face must see p strictly.
+    removed
+        .iter()
+        .filter_map(|&i| bfaces.get(i))
+        .flat_map(|g| g.oriented)
+        .any(|v| !in_kept.contains(&v) && !matches!(cx.kind(v), VertexKind::Face(_) | VertexKind::Interior))
+}
+
+/// The kept faces, each to be joined to p, or the first tetrahedron whose face does not see p.
+enum Kept {
+    Seen(Vec<[u32; 3]>),
+    Hidden(u32),
+}
+
+/// Every kept face must see p strictly.
+fn kept_faces(cx: &TetComplex, bfaces: &[BoundaryFace], outer: &[([u32; 3], u32)], removed: &[usize], p: &ExactPoint3) -> Result<Kept> {
     let mut new = Vec::with_capacity(outer.len() + bfaces.len());
-    for &(f, t) in &outer {
+    let kept = bfaces.iter().enumerate().filter(|(j, _)| !removed.contains(j)).map(|(_, g)| (g.oriented, g.tet));
+    for (f, t) in outer.iter().copied().chain(kept) {
         if cx.orient_with(f, p)? != Sign::Positive {
-            return Ok(Plan::Drop(t));
+            return Ok(Kept::Hidden(t));
         }
         new.push(f);
     }
-    for (j, &(f, _, _, t)) in bfaces.iter().enumerate() {
-        if removed.contains(&j) {
-            continue;
+    Ok(Kept::Seen(new))
+}
+
+/// The outline of D (edges in exactly one removed face, as the face runs, with its tag) but the
+/// split edge, sorted; `None` when D is not a disk.
+fn outline(bfaces: &[BoundaryFace], removed: &[usize], site: Site) -> Option<Vec<((u32, u32), u32)>> {
+    let mut count: IdMap<(u32, u32), ((u32, u32), u32, usize)> = IdMap::default();
+    for &i in removed {
+        let Some(&BoundaryFace { oriented: f, tag, .. }) = bfaces.get(i) else { continue };
+        for e in 0..3 {
+            let (u, w) = (f[e], f[(e + 1) % 3]);
+            let c = count.entry(sorted2(u, w)).or_insert(((u, w), tag, 0));
+            c.2 += 1;
         }
-        if cx.orient_with(f, p)? != Sign::Positive {
-            return Ok(Plan::Drop(t));
-        }
-        new.push(f);
     }
-    // The outline of D (edges in exactly one removed face) becomes new boundary, fanned to p.
-    let mut new_boundary = Vec::new();
-    if !removed.is_empty() {
-        let mut count: IdMap<(u32, u32), ((u32, u32), u32, usize)> = IdMap::default();
-        for &i in &removed {
-            let Some(&(f, _, tag, _)) = bfaces.get(i) else { continue };
-            for e in 0..3 {
-                let (u, w) = (f[e], f[(e + 1) % 3]);
-                let c = count.entry(sorted2(u, w)).or_insert(((u, w), tag, 0));
-                c.2 += 1;
-            }
-        }
-        let split = match site {
-            Site::Edge(a, b) => Some(sorted2(a, b)),
-            _ => None,
-        };
-        // D must be a disk, its outline one loop. Grown face by face, it can close around a
-        // kept boundary face whose circumcircle misses p: the fan over that inner loop and the
-        // kept face would enclose tetrahedra joined to the mesh by vertices alone. D is
-        // connected by construction; with Euler characteristic 1 and every outline vertex on two
-        // outline edges, it is a disk.
-        let mut vertices: Vec<u32> = removed.iter().filter_map(|&i| bfaces.get(i)).flat_map(|g| g.0).collect();
-        vertices.sort_unstable();
-        vertices.dedup();
-        let euler = vertices.len() as i64 - count.len() as i64 + removed.len() as i64;
-        let mut degree: IdMap<u32, usize> = IdMap::default();
-        for c in count.values().filter(|c| c.2 == 1) {
-            *degree.entry(c.0.0).or_default() += 1;
-            *degree.entry(c.0.1).or_default() += 1;
-        }
-        if euler != 1 || degree.values().any(|&d| d != 2) {
-            return Ok(Plan::Fail);
-        }
-        let mut edges: Vec<((u32, u32), u32)> = count.into_iter().filter(|(k, c)| c.2 == 1 && Some(*k) != split).map(|(_, c)| (c.0, c.1)).collect();
-        edges.sort_unstable();
-        new_boundary = edges;
+    let split = match site {
+        Site::Edge(a, b) => Some(sorted2(a, b)),
+        _ => None,
+    };
+    // D must be a disk, its outline one loop. Grown face by face, it can close around a kept
+    // boundary face whose circumcircle misses p: the fan over that inner loop and the kept face
+    // would enclose tetrahedra joined to the mesh by vertices alone. D is connected by
+    // construction; with Euler characteristic 1 and every outline vertex on two outline edges,
+    // it is a disk.
+    let mut vertices: Vec<u32> = removed.iter().filter_map(|&i| bfaces.get(i)).flat_map(|g| g.oriented).collect();
+    vertices.sort_unstable();
+    vertices.dedup();
+    let euler = vertices.len() as i64 - count.len() as i64 + removed.len() as i64;
+    let mut degree: IdMap<u32, usize> = IdMap::default();
+    for c in count.values().filter(|c| c.2 == 1) {
+        *degree.entry(c.0.0).or_default() += 1;
+        *degree.entry(c.0.1).or_default() += 1;
     }
-    // A cavity whose tetrahedra all go must still leave something to fill.
-    if new.is_empty() {
-        return Ok(Plan::Fail);
+    if euler != 1 || degree.values().any(|&d| d != 2) {
+        return None;
     }
-    Ok(Plan::Ready { new, new_boundary })
+    let mut edges: Vec<((u32, u32), u32)> = count.into_iter().filter(|(k, c)| c.2 == 1 && Some(*k) != split).map(|(_, c)| (c.0, c.1)).collect();
+    edges.sort_unstable();
+    Some(edges)
 }
 
 /// The tetrahedra of `cavity` connected to the roots through faces inside the cavity.

@@ -316,20 +316,10 @@ impl EmcraftApp {
                 None => self.open_dialog(&id)?,
             },
             Action::DialogOk => return self.dialog_ok(),
-            Action::SetDock(on) => {
-                self.dock_dialogs = on;
-                if let Some(d) = self.ui_state.dialog_mut() {
-                    d.docked = on;
-                }
-            }
+            Action::SetDock(on) => self.set_dock(on),
             Action::SetView(v) => self.place = self.place.show(v),
             // Home's tab is step 0.
-            Action::ShowView(v) => {
-                self.place = self.place.show(v);
-                if v == View::PortModes && self.replies.port_modes.is_none() && self.session.model().mesh.is_some() && !self.busy() {
-                    self.open_dialog("solve.port_modes")?;
-                }
-            }
+            Action::ShowView(v) => self.show_view(v)?,
             Action::SetTab(t) => self.tab = t,
             Action::OpenStep(step) => crate::steps::open_step(self, step),
             Action::Fix(command) => crate::steps::fix(self, &command)?,
@@ -343,19 +333,8 @@ impl EmcraftApp {
                 self.report_bug()?;
                 self.show_reports()?;
             }
-            Action::EditSelected => {
-                let row = self.ui_state.selection().single().and_then(|p| crate::browser::rows_of(self, &[p]).into_iter().next());
-                if let Some(a) = row.and_then(|(_, r)| r.edit_action()) {
-                    return self.apply(a);
-                }
-            }
-            Action::Fold(section) => {
-                if self.browser.folded.contains(&section) {
-                    self.browser.folded.retain(|f| *f != section);
-                } else {
-                    self.browser.folded.push(section);
-                }
-            }
+            Action::EditSelected => return self.edit_selected(),
+            Action::Fold(section) => self.fold(section),
             Action::Hover(pick) => self.view3d.hover = Some(pick),
             Action::FocusMode(focus) => self.workflow.mode_focus = Some(focus),
             Action::Undo => return self.run("edit.undo", json!({})),
@@ -370,87 +349,143 @@ impl EmcraftApp {
             | Action::Click(_)
             | Action::Select { .. }
             | Action::SelectBox { .. } => {}
-            Action::Close(layer) => {
-                if let Some(then) = crate::layers::close(self, layer) {
-                    return self.apply(then);
-                }
-            }
+            Action::Close(layer) => return self.close_layer(layer),
             Action::Purpose(kind) => self.home.purpose = kind,
-            Action::Template(name) => {
-                if let Some(card) = name.and_then(|n| crate::template_dialog::TemplateDialog::new(self, &n)) {
-                    self.ui_state.open_template(card);
-                }
-            }
+            Action::Template(name) => self.show_template(name),
             Action::OpenTemplate(name, values) => crate::template_dialog::open(self, name, values),
             Action::Pref(p) => self.set_pref(p),
             Action::File(f) => crate::files::apply(self, f),
             Action::EditItem(item) => self.open_item_dialog(&item)?,
-            Action::DeleteItems(items) => {
-                // What was selected is going.
-                self.ui_state.select(crate::selection::Selection::default());
-                let mut replies = Vec::with_capacity(items.len());
-                // An imported part's walls are not deleted: their material changes.
-                for item in items.into_iter().filter(|i| !i.delete.is_empty()) {
-                    replies.push(self.run(item.delete, item.params())?);
-                }
-                return Ok(if replies.len() == 1 { replies.swap_remove(0) } else { Value::Array(replies) });
-            }
+            Action::DeleteItems(items) => return self.delete_items(items),
             Action::DismissRecovery(i) => self.dismiss_recovery(i),
             Action::AskExport => self.ui_state.set_ask(crate::files::Ask::Export("emcraft-history.json".into())),
             Action::ExportHistory(path) => self.export_history(path),
             Action::ConfirmSetup => return crate::steps::confirm_setup(self),
             Action::ProposeSetup(v) => self.workflow.fields.load(&v),
             Action::StartRun => return crate::steps::start_run(self),
-            Action::PreviewPortModes => {
-                if self.session.model().job.range().is_some() {
-                    return self.run("solve.port_modes", json!({}));
-                }
-                self.open_dialog("solve.port_modes")?;
-            }
-            Action::CheckResults => {
-                let v = self.run("results.check", json!({}))?;
-                self.workflow.check = Some((self.revision, v.clone()));
-                return Ok(v);
-            }
+            Action::PreviewPortModes => return self.preview_port_modes(),
+            Action::CheckResults => return self.check_results(),
             Action::ExportTouchstone => crate::steps::export_touchstone(self),
-            Action::SetDevice { device, precision } => {
-                if let Err(e) = self.run("solve.device", json!({"device": device.id(), "precision": precision.id()})) {
-                    self.failure = Some(crate::Failure { command: "solve.device".into(), error: e.to_string() });
-                }
-            }
+            Action::SetDevice { device, precision } => self.set_device(device, precision),
             Action::StandardView(v) => self.view3d.standard(v),
             Action::SetPlaying(on) => self.field.player.playing = on,
-            Action::Tool(tool) => {
-                self.ui_state.set_tool(tool);
-                self.view3d.tools.reset(tool);
-                if tool.is_some() {
-                    self.place = self.place.show(View::Model);
-                    self.ui_state.page.show(crate::page::Tab::Project);
-                }
-                if tool.is_some_and(crate::tools3d::Tool::ports) && self.place.step() != Some(crate::steps::Step::Excitation) {
-                    crate::steps::open_step(self, Some(crate::steps::Step::Excitation));
-                }
-            }
-            Action::Pen(pen) => {
-                self.ui_state.set_drawing(pen.is_some());
-                // A line begun goes with the pen.
-                self.views.pcb.pen = pen.unwrap_or_else(|| crate::state::Pen { from: None, ..std::mem::take(&mut self.views.pcb.pen) });
-            }
-            Action::Measure(picks) => {
-                let params = crate::tools3d::measure_params(self.session.display().length, picks);
-                let reply = self.run("geometry.measure", params)?;
-                self.view3d.tools.measured = Some(crate::tools3d::Measured { picks, reply: reply.clone() });
-                return Ok(reply);
-            }
-            Action::Message { text, error } => {
-                if error {
-                    self.error(text);
-                } else {
-                    self.info(text);
-                }
-            }
+            Action::Tool(tool) => self.set_tool(tool),
+            Action::Pen(pen) => self.set_pen(pen),
+            Action::Measure(picks) => return self.measure(picks),
+            Action::Message { text, error: true } => self.error(text),
+            Action::Message { text, error: false } => self.info(text),
         }
         Ok(Value::Null)
+    }
+
+    fn set_dock(&mut self, on: bool) {
+        self.dock_dialogs = on;
+        if let Some(d) = self.ui_state.dialog_mut() {
+            d.docked = on;
+        }
+    }
+
+    /// Shows view `v`; the port modes' view, with no modes yet and a mesh, opens their dialog.
+    fn show_view(&mut self, v: View) -> Result<(), UiError> {
+        self.place = self.place.show(v);
+        if v == View::PortModes && self.replies.port_modes.is_none() && self.session.model().mesh.is_some() && !self.busy() {
+            self.open_dialog("solve.port_modes")?;
+        }
+        Ok(())
+    }
+
+    /// Edits the one row selected, as its double-click does.
+    fn edit_selected(&mut self) -> Result<Value, UiError> {
+        let row = self.ui_state.selection().single().and_then(|p| crate::browser::rows_of(self, &[p]).into_iter().next());
+        match row.and_then(|(_, r)| r.edit_action()) {
+            Some(a) => self.apply(a),
+            None => Ok(Value::Null),
+        }
+    }
+
+    /// Folds the browser's `section`, or unfolds it when folded.
+    fn fold(&mut self, section: String) {
+        if self.browser.folded.contains(&section) {
+            self.browser.folded.retain(|f| *f != section);
+        } else {
+            self.browser.folded.push(section);
+        }
+    }
+
+    fn close_layer(&mut self, layer: crate::ui_state::Layer) -> Result<Value, UiError> {
+        match crate::layers::close(self, layer) {
+            Some(then) => self.apply(then),
+            None => Ok(Value::Null),
+        }
+    }
+
+    /// Shows the template's card (none for no name or an unknown one).
+    fn show_template(&mut self, name: Option<String>) {
+        if let Some(card) = name.and_then(|n| crate::template_dialog::TemplateDialog::new(self, &n)) {
+            self.ui_state.open_template(card);
+        }
+    }
+
+    /// Deletes the items (the selection goes with them): one reply, or a list of them. An
+    /// imported part's walls are not deleted: their material changes.
+    fn delete_items(&mut self, items: Vec<crate::browser::Item>) -> Result<Value, UiError> {
+        self.ui_state.select(crate::selection::Selection::default());
+        let mut replies = Vec::with_capacity(items.len());
+        for item in items.into_iter().filter(|i| !i.delete.is_empty()) {
+            replies.push(self.run(item.delete, item.params())?);
+        }
+        Ok(if replies.len() == 1 { replies.swap_remove(0) } else { Value::Array(replies) })
+    }
+
+    /// Solves the port modes when the band is set, else opens their dialog.
+    fn preview_port_modes(&mut self) -> Result<Value, UiError> {
+        if self.session.model().job.range().is_some() {
+            return self.run("solve.port_modes", json!({}));
+        }
+        self.open_dialog("solve.port_modes")?;
+        Ok(Value::Null)
+    }
+
+    /// Checks the results, the reply kept with the revision checked.
+    fn check_results(&mut self) -> Result<Value, UiError> {
+        let v = self.run("results.check", json!({}))?;
+        self.workflow.check = Some((self.revision, v.clone()));
+        Ok(v)
+    }
+
+    /// Chooses the solver's device and precision; a refusal shows as a failure.
+    fn set_device(&mut self, device: emcraft_engine::Device, precision: emcraft_engine::Precision) {
+        if let Err(e) = self.run("solve.device", json!({"device": device.id(), "precision": precision.id()})) {
+            self.failure = Some(crate::Failure { command: "solve.device".into(), error: e.to_string() });
+        }
+    }
+
+    /// Takes up a 3D tool (or puts it down): the model shown, and the excitation step for the
+    /// port tools.
+    fn set_tool(&mut self, tool: Option<crate::tools3d::Tool>) {
+        self.ui_state.set_tool(tool);
+        self.view3d.tools.reset(tool);
+        if tool.is_some() {
+            self.place = self.place.show(View::Model);
+            self.ui_state.page.show(crate::page::Tab::Project);
+        }
+        if tool.is_some_and(crate::tools3d::Tool::ports) && self.place.step() != Some(crate::steps::Step::Excitation) {
+            crate::steps::open_step(self, Some(crate::steps::Step::Excitation));
+        }
+    }
+
+    /// Takes up the board's pen (or puts it down: a line begun goes with it).
+    fn set_pen(&mut self, pen: Option<crate::state::Pen>) {
+        self.ui_state.set_drawing(pen.is_some());
+        self.views.pcb.pen = pen.unwrap_or_else(|| crate::state::Pen { from: None, ..std::mem::take(&mut self.views.pcb.pen) });
+    }
+
+    /// Measures between the picks; the reply kept to draw.
+    fn measure(&mut self, picks: [crate::tools3d::Snap; 2]) -> Result<Value, UiError> {
+        let params = crate::tools3d::measure_params(self.session.display().length, picks);
+        let reply = self.run("geometry.measure", params)?;
+        self.view3d.tools.measured = Some(crate::tools3d::Measured { picks, reply: reply.clone() });
+        Ok(reply)
     }
 
     fn set_pref(&mut self, p: Pref) {

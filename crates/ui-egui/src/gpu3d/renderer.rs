@@ -208,6 +208,197 @@ fn uniform_entry(binding: u32, visibility: wgpu::ShaderStages, size: u64) -> wgp
     }
 }
 
+fn uint_texture_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Uint,
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled: false,
+        },
+        count: None,
+    }
+}
+
+/// A uniform buffer of `size` bytes, written from the CPU.
+fn uniform_buffer(device: &wgpu::Device, label: &str, size: u64) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
+}
+
+/// The scene's pipelines into the frame: the ground, opaque triangles, lines, glass (blended,
+/// or into the order-independent targets), glass's depth and stencil, and the lines in front
+/// of glass.
+struct ScenePipelines {
+    ground: wgpu::RenderPipeline,
+    opaque: wgpu::RenderPipeline,
+    lines: wgpu::RenderPipeline,
+    glass: wgpu::RenderPipeline,
+    glass_depth: wgpu::RenderPipeline,
+    front_lines: wgpu::RenderPipeline,
+}
+
+fn scene_pipelines(
+    device: &wgpu::Device,
+    scene: &wgpu::ShaderModule,
+    layout: &wgpu::PipelineLayout,
+    caps: Caps,
+    multisample: wgpu::MultisampleState,
+) -> ScenePipelines {
+    let none = wgpu::StencilState::default();
+    let frame = |blend: Option<wgpu::BlendState>, write_mask| [Some(wgpu::ColorTargetState { format: FRAME, blend, write_mask })];
+    let pipeline = |label: &str,
+                    vs: &str,
+                    buffers: &[Option<wgpu::VertexBufferLayout<'_>>],
+                    fs: &str,
+                    targets: &[Option<wgpu::ColorTargetState>],
+                    depth_stencil: Option<wgpu::DepthStencilState>| {
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(label),
+            layout: Some(layout),
+            vertex: wgpu::VertexState { module: scene, entry_point: Some(vs), buffers, compilation_options: Default::default() },
+            primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
+            depth_stencil,
+            multisample,
+            fragment: Some(wgpu::FragmentState { module: scene, entry_point: Some(fs), targets, compilation_options: Default::default() }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    use wgpu::CompareFunction::{Always, Equal, Less, LessEqual};
+    let all = wgpu::ColorWrites::ALL;
+    let ground = pipeline("emcraft_view3d_ground", "vs_ground", &[], "fs_ground", &frame(None, all), depth(false, Always, none.clone()));
+    let opaque = pipeline("emcraft_view3d_opaque", "vs_tri", &[Some(tri_layout())], "fs_opaque", &frame(None, all), depth(true, Less, none.clone()));
+    let lines = pipeline(
+        "emcraft_view3d_lines",
+        "vs_line",
+        &[Some(line_layout())],
+        "fs_line",
+        &frame(Some(alpha_over()), all),
+        depth(false, LessEqual, none.clone()),
+    );
+    let glass = if caps.oit {
+        let add =
+            wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add };
+        let keep = wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::Zero,
+            dst_factor: wgpu::BlendFactor::OneMinusSrc,
+            operation: wgpu::BlendOperation::Add,
+        };
+        let targets = [
+            Some(wgpu::ColorTargetState { format: ACCUM, blend: Some(wgpu::BlendState { color: add, alpha: add }), write_mask: all }),
+            Some(wgpu::ColorTargetState {
+                format: REVEAL,
+                blend: Some(wgpu::BlendState { color: keep, alpha: keep }),
+                write_mask: wgpu::ColorWrites::RED,
+            }),
+        ];
+        pipeline("emcraft_view3d_oit", "vs_tri", &[Some(tri_layout())], "fs_oit", &targets, depth(false, LessEqual, none))
+    } else {
+        pipeline("emcraft_view3d_glass", "vs_tri", &[Some(tri_layout())], "fs_blend", &frame(Some(alpha_over()), all), depth(false, LessEqual, none))
+    };
+    let glass_depth = pipeline(
+        "emcraft_view3d_glass_depth",
+        "vs_tri",
+        &[Some(tri_layout())],
+        "fs_none",
+        &frame(None, wgpu::ColorWrites::empty()),
+        depth(true, Less, stencil(Always, wgpu::StencilOperation::Replace)),
+    );
+    let front_lines = pipeline(
+        "emcraft_view3d_front_lines",
+        "vs_line",
+        &[Some(line_layout())],
+        "fs_line",
+        &frame(Some(alpha_over()), all),
+        depth(false, LessEqual, stencil(Equal, wgpu::StencilOperation::Keep)),
+    );
+    ScenePipelines { ground, opaque, lines, glass, glass_depth, front_lines }
+}
+
+/// The order-independent transparency's composite onto the frame, and its textures' layout.
+fn composite_pipeline(
+    device: &wgpu::Device,
+    module: &wgpu::ShaderModule,
+    multisample: wgpu::MultisampleState,
+) -> (wgpu::RenderPipeline, wgpu::BindGroupLayout) {
+    let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("emcraft_view3d_composite"),
+        entries: &[texture_entry(0), texture_entry(1)],
+    });
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("emcraft_view3d_composite"),
+        bind_group_layouts: &[Some(&bgl)],
+        immediate_size: 0,
+    });
+    let p = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("emcraft_view3d_composite"),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState { module, entry_point: Some("vs"), buffers: &[], compilation_options: Default::default() },
+        primitive: Default::default(),
+        depth_stencil: depth(false, wgpu::CompareFunction::Always, wgpu::StencilState::default()),
+        multisample,
+        fragment: Some(wgpu::FragmentState {
+            module,
+            entry_point: Some("fs_composite"),
+            targets: &[Some(wgpu::ColorTargetState { format: FRAME, blend: Some(alpha_over()), write_mask: wgpu::ColorWrites::ALL })],
+            compilation_options: Default::default(),
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    (p, bgl)
+}
+
+/// The show pass's layout: the frame, its uniform, depth and the two pick textures.
+fn show_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("emcraft_view3d_show"),
+        entries: &[
+            texture_entry(0),
+            uniform_entry(1, wgpu::ShaderStages::FRAGMENT, SHOW_BYTES),
+            texture_entry(2),
+            uint_texture_entry(3),
+            uint_texture_entry(4),
+        ],
+    })
+}
+
+/// The show pass onto the window (single-sampled, no depth).
+fn show_pipeline(
+    device: &wgpu::Device,
+    module: &wgpu::ShaderModule,
+    layout: &wgpu::BindGroupLayout,
+    window: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("emcraft_view3d_show"),
+        bind_group_layouts: &[Some(layout)],
+        immediate_size: 0,
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("emcraft_view3d_show"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState { module, entry_point: Some("vs"), buffers: &[], compilation_options: Default::default() },
+        primitive: Default::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        fragment: Some(wgpu::FragmentState {
+            module,
+            entry_point: Some("fs_show"),
+            targets: &[Some(wgpu::ColorTargetState { format: window, blend: None, write_mask: wgpu::ColorWrites::ALL })],
+            compilation_options: Default::default(),
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
 impl Renderer {
     /// The pipelines for a window of `window` format (its pass single-sampled, no depth).
     pub fn new(device: &wgpu::Device, caps: Caps, window: wgpu::TextureFormat) -> Result<Renderer, Gpu3dError> {
@@ -225,12 +416,7 @@ impl Renderer {
             label: Some("emcraft_view3d"),
             entries: &[uniform_entry(0, wgpu::ShaderStages::VERTEX_FRAGMENT, UNIFORM_BYTES as u64)],
         });
-        let uniform = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("emcraft_view3d"),
-            size: UNIFORM_BYTES as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let uniform = uniform_buffer(device, "emcraft_view3d", UNIFORM_BYTES as u64);
         let uniform_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("emcraft_view3d"),
             layout: &uniform_layout,
@@ -240,12 +426,7 @@ impl Renderer {
             label: Some("emcraft_view3d_field"),
             entries: &[uniform_entry(0, wgpu::ShaderStages::VERTEX_FRAGMENT, super::field::FIELD_BYTES as u64), texture_entry(1), texture_entry(2)],
         });
-        let field_uniform = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("emcraft_view3d_field"),
-            size: super::field::FIELD_BYTES as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let field_uniform = uniform_buffer(device, "emcraft_view3d_field", super::field::FIELD_BYTES as u64);
         let field_bind = field_textures(device, &field_layout, &field_uniform, [1, 1]).1;
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("emcraft_view3d"),
@@ -253,170 +434,11 @@ impl Renderer {
             immediate_size: 0,
         });
         let multisample = wgpu::MultisampleState { count: caps.samples, mask: !0, alpha_to_coverage_enabled: false };
-        let none = wgpu::StencilState::default();
-        let frame = |blend: Option<wgpu::BlendState>, write_mask| [Some(wgpu::ColorTargetState { format: FRAME, blend, write_mask })];
-        let pipeline = |label: &str,
-                        vs: &str,
-                        buffers: &[Option<wgpu::VertexBufferLayout<'_>>],
-                        fs: &str,
-                        targets: &[Option<wgpu::ColorTargetState>],
-                        depth_stencil: Option<wgpu::DepthStencilState>| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(label),
-                layout: Some(&layout),
-                vertex: wgpu::VertexState { module: &scene, entry_point: Some(vs), buffers, compilation_options: Default::default() },
-                primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
-                depth_stencil,
-                multisample,
-                fragment: Some(wgpu::FragmentState { module: &scene, entry_point: Some(fs), targets, compilation_options: Default::default() }),
-                multiview_mask: None,
-                cache: None,
-            })
-        };
-        use wgpu::CompareFunction::{Always, Equal, Less, LessEqual};
-        let all = wgpu::ColorWrites::ALL;
-        let ground = pipeline("emcraft_view3d_ground", "vs_ground", &[], "fs_ground", &frame(None, all), depth(false, Always, none.clone()));
-        let opaque =
-            pipeline("emcraft_view3d_opaque", "vs_tri", &[Some(tri_layout())], "fs_opaque", &frame(None, all), depth(true, Less, none.clone()));
-        let lines = pipeline(
-            "emcraft_view3d_lines",
-            "vs_line",
-            &[Some(line_layout())],
-            "fs_line",
-            &frame(Some(alpha_over()), all),
-            depth(false, LessEqual, none.clone()),
-        );
-        let glass = if caps.oit {
-            let add =
-                wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add };
-            let keep = wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::Zero,
-                dst_factor: wgpu::BlendFactor::OneMinusSrc,
-                operation: wgpu::BlendOperation::Add,
-            };
-            let targets = [
-                Some(wgpu::ColorTargetState { format: ACCUM, blend: Some(wgpu::BlendState { color: add, alpha: add }), write_mask: all }),
-                Some(wgpu::ColorTargetState {
-                    format: REVEAL,
-                    blend: Some(wgpu::BlendState { color: keep, alpha: keep }),
-                    write_mask: wgpu::ColorWrites::RED,
-                }),
-            ];
-            pipeline("emcraft_view3d_oit", "vs_tri", &[Some(tri_layout())], "fs_oit", &targets, depth(false, LessEqual, none))
-        } else {
-            pipeline(
-                "emcraft_view3d_glass",
-                "vs_tri",
-                &[Some(tri_layout())],
-                "fs_blend",
-                &frame(Some(alpha_over()), all),
-                depth(false, LessEqual, none),
-            )
-        };
-        let glass_depth = pipeline(
-            "emcraft_view3d_glass_depth",
-            "vs_tri",
-            &[Some(tri_layout())],
-            "fs_none",
-            &frame(None, wgpu::ColorWrites::empty()),
-            depth(true, Less, stencil(Always, wgpu::StencilOperation::Replace)),
-        );
-        let front_lines = pipeline(
-            "emcraft_view3d_front_lines",
-            "vs_line",
-            &[Some(line_layout())],
-            "fs_line",
-            &frame(Some(alpha_over()), all),
-            depth(false, LessEqual, stencil(Equal, wgpu::StencilOperation::Keep)),
-        );
-        let composite = caps.oit.then(|| {
-            let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("emcraft_view3d_composite"),
-                entries: &[texture_entry(0), texture_entry(1)],
-            });
-            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("emcraft_view3d_composite"),
-                bind_group_layouts: &[Some(&bgl)],
-                immediate_size: 0,
-            });
-            let p = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("emcraft_view3d_composite"),
-                layout: Some(&layout),
-                vertex: wgpu::VertexState {
-                    module: &composite_module,
-                    entry_point: Some("vs"),
-                    buffers: &[],
-                    compilation_options: Default::default(),
-                },
-                primitive: Default::default(),
-                depth_stencil: depth(false, Always, wgpu::StencilState::default()),
-                multisample,
-                fragment: Some(wgpu::FragmentState {
-                    module: &composite_module,
-                    entry_point: Some("fs_composite"),
-                    targets: &frame(Some(alpha_over()), all),
-                    compilation_options: Default::default(),
-                }),
-                multiview_mask: None,
-                cache: None,
-            });
-            (p, bgl)
-        });
-        let show_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("emcraft_view3d_show"),
-            entries: &[
-                texture_entry(0),
-                uniform_entry(1, wgpu::ShaderStages::FRAGMENT, SHOW_BYTES),
-                texture_entry(2),
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Uint,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Uint,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-            ],
-        });
-        let show_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("emcraft_view3d_show"),
-            bind_group_layouts: &[Some(&show_layout)],
-            immediate_size: 0,
-        });
-        let show = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("emcraft_view3d_show"),
-            layout: Some(&show_pipeline_layout),
-            vertex: wgpu::VertexState { module: &show_module, entry_point: Some("vs"), buffers: &[], compilation_options: Default::default() },
-            primitive: Default::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &show_module,
-                entry_point: Some("fs_show"),
-                targets: &[Some(wgpu::ColorTargetState { format: window, blend: None, write_mask: all })],
-                compilation_options: Default::default(),
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
-        let show_uniform = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("emcraft_view3d_show"),
-            size: SHOW_BYTES,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let ScenePipelines { ground, opaque, lines, glass, glass_depth, front_lines } = scene_pipelines(device, &scene, &layout, caps, multisample);
+        let composite = caps.oit.then(|| composite_pipeline(device, &composite_module, multisample));
+        let show_layout = show_layout(device);
+        let show = show_pipeline(device, &show_module, &show_layout, window);
+        let show_uniform = uniform_buffer(device, "emcraft_view3d_show", SHOW_BYTES);
         let g = gbuffer::Pipelines::new(device, &scene, &layout, &[Some(tri_layout())]);
         Renderer {
             field_layout,

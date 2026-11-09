@@ -19,33 +19,13 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
     let id = p.string("command").required()?;
     let spec = find_command(id).ok_or_else(|| p.error("command", format!("names no command: `{}`", crate::text::clip(id, 100))))?;
     let m = &s.model;
-    let l = |x: f64| s.display.length.from_si(x);
-    let pt = |q: emcraft_model::Point3| json!([l(q.x), l(q.y), l(q.z)]);
     let v = match spec.id {
         "project.setup" => crate::job::setup_reply(s),
         "project.analysis" => m.job.chosen().map_or_else(|| json!({}), |a| json!({"kind": a.id()})),
         "units.set" => crate::reply::units(s.display),
         "solve.device" => json!({"device": s.compute.device().id(), "precision": s.compute.precision.id()}),
-        "model.walls" => {
-            let mut v = json!({});
-            if let Some(c) = m.domain.wall_conductivity {
-                v["conductivity"] = json!(c);
-            }
-            if let Some(t) = m.domain.wall_thickness {
-                v["thickness"] = json!(l(t.get()));
-            }
-            v
-        }
-        "model.open" => match m.domain.open {
-            None => json!({}),
-            Some(o) => {
-                let mut v = json!({"thickness": l(o.thickness.get()), "shape": o.shape.id()});
-                if let Some(r) = o.reflection {
-                    v["reflection"] = json!(r);
-                }
-                v
-            }
-        },
+        "model.walls" => walls(m, s.display),
+        "model.open" => open(m, s.display),
         "model.symmetry" => {
             let axis = p.string("axis").optional()?;
             match m.domain.symmetry.iter().find(|q| axis.is_none_or(|a| q.axis.id() == a)) {
@@ -76,82 +56,12 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
             _ => json!({}),
         },
         "mesh.generate" | "mesh.adapt" => last_step(s, spec.id)?,
-        "model.material.edit" => {
-            let (_, mat) = material_named(m, p, "name")?;
-            let mut v = json!({
-                "name": mat.name, "eps_r": mat.eps_r, "mu_r": mat.mu_r,
-                "loss_tangent": mat.loss_tangent, "magnetic_loss_tangent": mat.magnetic_loss_tangent,
-            });
-            for kind in crate::geometry::POLE_KINDS {
-                let poles = shown_poles(mat, kind, s.display);
-                if !poles.is_empty() {
-                    v[kind] = json!(poles);
-                }
-            }
-            v
-        }
-        "model.port.edit" => {
-            let (_, port) = port_named(m, p, "name")?;
-            let mut v = json!({
-                "name": port.name, "end": port.end, "modes": port.modes, "mode_solver": port.mode_solver,
-                "deembed": l(port.deembed), "terminals": port.terminals,
-            });
-            if let Some(face) = port.face {
-                v["face"] = json!(face.values().map(l));
-                v["axis"] = json!(face.axis.id());
-            }
-            if let Some(r) = port.reference {
-                v["impedance"] = json!(r);
-            }
-            v
-        }
-        "model.port.lumped.edit" => {
-            let (_, port) = lumped_named(m, p, "name")?;
-            let (voltage, phase) = polar(port.voltage);
-            json!({
-                "name": port.name, "from": pt(port.from), "to": pt(port.to), "impedance": port.impedance,
-                "voltage": voltage, "phase": phase, "radius": l(port.radius),
-            })
-        }
-        "source.edit" => {
-            let (i, src) = source_numbered(m, p)?;
-            match src {
-                Source::Dipole { at, direction, length, current } => {
-                    json!({"index": i + 1, "at": pt(at), "direction": [direction.x, direction.y, direction.z], "length": l(length.get()), "current": current})
-                }
-                Source::PlaneWave { direction, polarization } => json!({
-                    "index": i + 1, "direction": [direction.x, direction.y, direction.z],
-                    "polarization": [polarization.x, polarization.y, polarization.z],
-                }),
-            }
-        }
-        "geometry.body.edit" => {
-            let b = crate::bodies::body_named(m, p)?;
-            let (body_shape, at, axis) = crate::bodies::placement(m, b.at).ok_or_else(|| EngineError::failed("the body is gone from the model"))?;
-            let mut v = shape(&body_shape, s.display);
-            v["body"] = json!(b.name);
-            v["at"] = pt(at);
-            v["axis"] = json!(axis.id());
-            // An intersection (`clip`) has no material to give; a conducting inclusion is metal.
-            let material = match b.at {
-                BodyRef::Inclusion(i) => m.inclusions().get(i).map(|inc| inc.material.clone().unwrap_or_else(|| METAL.to_owned())),
-                BodyRef::Feature(_) => (b.material != "clip").then(|| b.material.clone()),
-            };
-            if let Some(mat) = material {
-                v["material"] = json!(mat);
-            }
-            v
-        }
-        "geometry.body.material" => {
-            let wanted = p.string("body").required()?;
-            match crate::bodies::parts(m).into_iter().find(|b| b.name == wanted) {
-                Some(b) => json!({"body": b.name, "material": b.material}),
-                None => {
-                    let b = crate::bodies::body_named(m, p)?;
-                    json!({"body": b.name, "material": b.material})
-                }
-            }
-        }
+        "model.material.edit" => material(m, p, s.display)?,
+        "model.port.edit" => port(m, p, s.display)?,
+        "model.port.lumped.edit" => lumped(m, p, s.display)?,
+        "source.edit" => source(m, p, s.display)?,
+        "geometry.body.edit" => body(m, p, s.display)?,
+        "geometry.body.material" => body_material(m, p)?,
         _ if spec.effect == crate::Effect::Solve => match s.runs.iter().find(|r| r.command == spec.id) {
             Some(run) => crate::runs::shown(s, run)?,
             None => json!({}),
@@ -159,6 +69,128 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
         _ => json!({}),
     };
     Ok(v)
+}
+
+/// A point in display units.
+fn point(q: emcraft_model::Point3, d: Display) -> Value {
+    let l = |x: f64| d.length.from_si(x);
+    json!([l(q.x), l(q.y), l(q.z)])
+}
+
+/// model.walls: the walls' conductivity and thickness, where set.
+fn walls(m: &Model, d: Display) -> Value {
+    let mut v = json!({});
+    if let Some(c) = m.domain.wall_conductivity {
+        v["conductivity"] = json!(c);
+    }
+    if let Some(t) = m.domain.wall_thickness {
+        v["thickness"] = json!(d.length.from_si(t.get()));
+    }
+    v
+}
+
+/// model.open: the layer's thickness, shape and reflection, when the model is open.
+fn open(m: &Model, d: Display) -> Value {
+    match m.domain.open {
+        None => json!({}),
+        Some(o) => {
+            let mut v = json!({"thickness": d.length.from_si(o.thickness.get()), "shape": o.shape.id()});
+            if let Some(r) = o.reflection {
+                v["reflection"] = json!(r);
+            }
+            v
+        }
+    }
+}
+
+/// model.material.edit: the named material's properties and poles.
+fn material(m: &Model, p: &Params, d: Display) -> Result<Value> {
+    let (_, mat) = material_named(m, p, "name")?;
+    let mut v = json!({
+        "name": mat.name, "eps_r": mat.eps_r, "mu_r": mat.mu_r,
+        "loss_tangent": mat.loss_tangent, "magnetic_loss_tangent": mat.magnetic_loss_tangent,
+    });
+    for kind in crate::geometry::POLE_KINDS {
+        let poles = shown_poles(mat, kind, d);
+        if !poles.is_empty() {
+            v[kind] = json!(poles);
+        }
+    }
+    Ok(v)
+}
+
+/// model.port.edit: the named waveguide port, its face and reference impedance where set.
+fn port(m: &Model, p: &Params, d: Display) -> Result<Value> {
+    let l = |x: f64| d.length.from_si(x);
+    let (_, port) = port_named(m, p, "name")?;
+    let mut v = json!({
+        "name": port.name, "end": port.end, "modes": port.modes, "mode_solver": port.mode_solver,
+        "deembed": l(port.deembed), "terminals": port.terminals,
+    });
+    if let Some(face) = port.face {
+        v["face"] = json!(face.values().map(l));
+        v["axis"] = json!(face.axis.id());
+    }
+    if let Some(r) = port.reference {
+        v["impedance"] = json!(r);
+    }
+    Ok(v)
+}
+
+/// model.port.lumped.edit: the named lumped port.
+fn lumped(m: &Model, p: &Params, d: Display) -> Result<Value> {
+    let (_, port) = lumped_named(m, p, "name")?;
+    let (voltage, phase) = polar(port.voltage);
+    Ok(json!({
+        "name": port.name, "from": point(port.from, d), "to": point(port.to, d), "impedance": port.impedance,
+        "voltage": voltage, "phase": phase, "radius": d.length.from_si(port.radius),
+    }))
+}
+
+/// source.edit: the numbered source, a dipole or a plane wave.
+fn source(m: &Model, p: &Params, d: Display) -> Result<Value> {
+    let (i, src) = source_numbered(m, p)?;
+    Ok(match src {
+        Source::Dipole { at, direction, length, current } => json!({
+            "index": i + 1, "at": point(at, d), "direction": [direction.x, direction.y, direction.z],
+            "length": d.length.from_si(length.get()), "current": current,
+        }),
+        Source::PlaneWave { direction, polarization } => json!({
+            "index": i + 1, "direction": [direction.x, direction.y, direction.z],
+            "polarization": [polarization.x, polarization.y, polarization.z],
+        }),
+    })
+}
+
+/// geometry.body.edit: the named body's shape, placement and material.
+fn body(m: &Model, p: &Params, d: Display) -> Result<Value> {
+    let b = crate::bodies::body_named(m, p)?;
+    let (body_shape, at, axis) = crate::bodies::placement(m, b.at).ok_or_else(|| EngineError::failed("the body is gone from the model"))?;
+    let mut v = shape(&body_shape, d);
+    v["body"] = json!(b.name);
+    v["at"] = point(at, d);
+    v["axis"] = json!(axis.id());
+    // An intersection (`clip`) has no material to give; a conducting inclusion is metal.
+    let material = match b.at {
+        BodyRef::Inclusion(i) => m.inclusions().get(i).map(|inc| inc.material.clone().unwrap_or_else(|| METAL.to_owned())),
+        BodyRef::Feature(_) => (b.material != "clip").then(|| b.material.clone()),
+    };
+    if let Some(mat) = material {
+        v["material"] = json!(mat);
+    }
+    Ok(v)
+}
+
+/// geometry.body.material: an imported part's body or a placed one, with its material.
+fn body_material(m: &Model, p: &Params) -> Result<Value> {
+    let wanted = p.string("body").required()?;
+    Ok(match crate::bodies::parts(m).into_iter().find(|b| b.name == wanted) {
+        Some(b) => json!({"body": b.name, "material": b.material}),
+        None => {
+            let b = crate::bodies::body_named(m, p)?;
+            json!({"body": b.name, "material": b.material})
+        }
+    })
 }
 
 /// A primitive's `shape` and dimensions, as geometry.solid and geometry.body take them; an

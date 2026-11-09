@@ -102,21 +102,44 @@ emcraft_macros::named_enum! {
 }
 
 /// A box's three faces seen from the front, the top and the right (a glyph's square).
-fn box_faces() -> ([(f32, f32); 4], [(f32, f32); 4], [(f32, f32); 4]) {
-    (
-        [(0.15, 0.35), (0.6, 0.35), (0.6, 0.85), (0.15, 0.85)],
-        [(0.15, 0.35), (0.4, 0.15), (0.85, 0.15), (0.6, 0.35)],
-        [(0.6, 0.35), (0.85, 0.15), (0.85, 0.65), (0.6, 0.85)],
-    )
+struct BoxFaces {
+    front: [(f32, f32); 4],
+    top: [(f32, f32); 4],
+    side: [(f32, f32); 4],
 }
+
+const BOX_FACES: BoxFaces = BoxFaces {
+    front: [(0.15, 0.35), (0.6, 0.35), (0.6, 0.85), (0.15, 0.85)],
+    top: [(0.15, 0.35), (0.4, 0.15), (0.85, 0.15), (0.6, 0.35)],
+    side: [(0.6, 0.35), (0.85, 0.15), (0.85, 0.65), (0.6, 0.85)],
+};
 
 /// Paints `glyph` in `r`.
 pub fn paint(p: &Painter, r: Rect, glyph: Glyph, ink: Color32, accent: Color32) {
     let pen = Pen::new(p, r);
-    let (s, c) = (pen.s, pen.c);
     let w = pen.w();
-    let line = Stroke::new(w, ink);
-    let bold = Stroke::new(w * 1.4, accent);
+    let k = Kit { p, pen, s: pen.s, c: pen.c, w, line: Stroke::new(w, ink), bold: Stroke::new(w * 1.4, accent), ink, accent };
+    let _ = paint_model(&k, glyph) || paint_setup(&k, glyph) || paint_results(&k, glyph) || paint_app(&k, glyph) || paint_tools(&k, glyph);
+}
+
+/// What a glyph is drawn with: the painter and its pen, the square's side and centre, the line
+/// width, the plain and bold strokes, and the two colours.
+#[derive(Clone, Copy)]
+struct Kit<'a> {
+    p: &'a Painter,
+    pen: Pen<'a>,
+    s: f32,
+    c: Pos2,
+    w: f32,
+    line: Stroke,
+    bold: Stroke,
+    ink: Color32,
+    accent: Color32,
+}
+
+/// The model's bodies, materials and walls. `false` for a glyph of another group.
+fn paint_model(k: &Kit<'_>, glyph: Glyph) -> bool {
+    let Kit { p, pen, s, c, w, line, bold, ink, accent } = *k;
     match glyph {
         // A rectangular guide in perspective with its TE10 field line.
         Glyph::Waveguide => {
@@ -158,7 +181,7 @@ pub fn paint(p: &Painter, r: Rect, glyph: Glyph, ink: Color32, accent: Color32) 
         }
         // The region: a dashed box, faintly filled.
         Glyph::Region => {
-            let (front, top, side) = box_faces();
+            let BoxFaces { front, top, side } = BOX_FACES;
             pen.fill(&front, accent.gamma_multiply(0.15), Stroke::NONE);
             for face in [&front[..], &top[..], &side[..]] {
                 let pts = pen.points(face);
@@ -170,14 +193,14 @@ pub fn paint(p: &Painter, r: Rect, glyph: Glyph, ink: Color32, accent: Color32) 
         }
         // A metal body: a box with its faces filled in the ink.
         Glyph::Metal => {
-            let (front, top, side) = box_faces();
+            let BoxFaces { front, top, side } = BOX_FACES;
             pen.fill(&front, ink.gamma_multiply(0.55), line);
             pen.fill(&top, ink.gamma_multiply(0.3), line);
             pen.fill(&side, ink.gamma_multiply(0.75), line);
         }
         // A dielectric body: a box, its front hatched in the accent.
         Glyph::Dielectric => {
-            let (front, top, side) = box_faces();
+            let BoxFaces { front, top, side } = BOX_FACES;
             pen.fill(&front, accent.gamma_multiply(0.25), line);
             pen.closed(&top, line);
             pen.closed(&side, line);
@@ -230,6 +253,15 @@ pub fn paint(p: &Painter, r: Rect, glyph: Glyph, ink: Color32, accent: Color32) 
             pen.open(&[(0.42, 0.32), (0.86, 0.32)], Stroke::new(w * 0.7, ink));
             pen.open(&[(0.42, 0.68), (0.86, 0.68)], Stroke::new(w * 0.7, ink));
         }
+        _ => return false,
+    }
+    true
+}
+
+/// Excitations, mesh, analyses and solves. `false` for a glyph of another group.
+fn paint_setup(k: &Kit<'_>, glyph: Glyph) -> bool {
+    let Kit { p, pen, s, line, bold, accent, .. } = *k;
+    match glyph {
         // A wave into an end face.
         Glyph::Port => {
             pen.frame(pen.rect(0.58, 0.18, 0.86, 0.82), 1.0, line);
@@ -335,6 +367,15 @@ pub fn paint(p: &Painter, r: Rect, glyph: Glyph, ink: Color32, accent: Color32) 
                 pen.open(&[(x, 0.5 - h), (x, 0.5 + h)], bold);
             }
         }
+        _ => return false,
+    }
+    true
+}
+
+/// Results and probes. `false` for a glyph of another group.
+fn paint_results(k: &Kit<'_>, glyph: Glyph) -> bool {
+    let Kit { p, pen, s, c, w, line, bold, ink, accent } = *k;
+    match glyph {
         // A chart.
         Glyph::Chart => {
             pen.open(&[(0.12, 0.12), (0.12, 0.88), (0.9, 0.88)], line);
@@ -406,6 +447,15 @@ pub fn paint(p: &Painter, r: Rect, glyph: Glyph, ink: Color32, accent: Color32) 
             pen.open(&[(0.2, 0.8), (0.62, 0.38)], line);
             p.circle_stroke(pen.at(0.68, 0.32), 0.14 * s, bold);
         }
+        _ => return false,
+    }
+    true
+}
+
+/// Files, views and the app. `false` for a glyph of another group.
+fn paint_app(k: &Kit<'_>, glyph: Glyph) -> bool {
+    let Kit { p, pen, s, c, line, bold, accent, .. } = *k;
+    match glyph {
         Glyph::Script => {
             pen.frame(pen.rect(0.18, 0.12, 0.82, 0.88), 2.0, line);
             for (y, x1) in [(0.3, 0.7), (0.45, 0.6), (0.6, 0.72), (0.75, 0.5)] {
@@ -497,6 +547,15 @@ pub fn paint(p: &Painter, r: Rect, glyph: Glyph, ink: Color32, accent: Color32) 
                 pen.open(&[(0.54, y), (0.7, y)], line);
             }
         }
+        _ => return false,
+    }
+    true
+}
+
+/// Planes, symmetry, tools, editing and the kinds of project. `false` for a glyph of another group.
+fn paint_tools(k: &Kit<'_>, glyph: Glyph) -> bool {
+    let Kit { p, pen, s, c, w, line, bold, ink, accent } = *k;
+    match glyph {
         // A plane with a plus: keep it.
         Glyph::KeepPlane => {
             pen.fill(&[(0.1, 0.35), (0.6, 0.2), (0.6, 0.8), (0.1, 0.95)], accent.gamma_multiply(0.3), line);
@@ -633,10 +692,13 @@ pub fn paint(p: &Painter, r: Rect, glyph: Glyph, ink: Color32, accent: Color32) 
         Glyph::Blank => {
             pen.frame(pen.rect(0.2, 0.2, 0.8, 0.8), 3.0, line);
         }
+        _ => return false,
     }
+    true
 }
 
 /// Draws in a unit square centred on the glyph's rectangle, y down.
+#[derive(Clone, Copy)]
 struct Pen<'a> {
     p: &'a Painter,
     c: Pos2,

@@ -16,48 +16,18 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let usage_text = || {
-        format!(
-            "usage: emcraft [PROJECT.emcraft] [--sample NAME] [--control PORT] [--replay REPORT]   (samples: {})",
-            emcraft_engine::templates::names().join(", ")
-        )
-    };
-    let usage = || {
-        eprintln!("{}", usage_text());
-        ExitCode::FAILURE
-    };
-    let mut sample = None;
-    let mut project = None;
-    let mut replay = None;
-    let mut control: Option<u16> = std::env::var("EMCRAFT_CONTROL_PORT").ok().and_then(|p| p.parse().ok());
-    let mut it = args.iter();
-    while let Some(a) = it.next() {
-        match a.as_str() {
-            "-h" | "--help" => {
-                println!("{}", usage_text());
-                return ExitCode::SUCCESS;
-            }
-            "-V" | "--version" => {
-                println!("emcraft {}", env!("CARGO_PKG_VERSION"));
-                return ExitCode::SUCCESS;
-            }
-            "--sample" => match it.next() {
-                Some(name) if emcraft_engine::templates::find(name).is_some() => sample = Some(name.clone()),
-                _ => return usage(),
-            },
-            // A crash report's folder (or a recording): played back in the window.
-            "--replay" => match it.next() {
-                Some(path) => replay = Some(std::path::PathBuf::from(path)),
-                None => return usage(),
-            },
-            "--control" => match it.next().map(|p| p.parse::<u16>()) {
-                Some(Ok(p)) => control = Some(p),
-                _ => return usage(),
-            },
-            path if !path.starts_with('-') && project.is_none() => project = Some(path.to_owned()),
-            _ => return usage(),
+    let env_port = std::env::var("EMCRAFT_CONTROL_PORT").ok().and_then(|p| p.parse().ok());
+    let Cli { sample, project, replay, control } = match parse_args(&args, env_port) {
+        Parsed::Run(cli) => cli,
+        Parsed::Print(text) => {
+            println!("{text}");
+            return ExitCode::SUCCESS;
         }
-    }
+        Parsed::Usage => {
+            eprintln!("{}", usage_text());
+            return ExitCode::FAILURE;
+        }
+    };
     let host = emcraft_ui_egui::Host {
         picker: Some(std::sync::Arc::new(picker::SystemPicker)),
         prefs: emcraft_ui_egui::prefs::default_path(),
@@ -96,6 +66,62 @@ fn main() -> ExitCode {
     }
 }
 
+/// The command line's choices: a sample to open and solve, a project file, a crash report or
+/// recording to replay, and the control channel's port.
+#[derive(Debug, Default, PartialEq)]
+struct Cli {
+    sample: Option<String>,
+    project: Option<String>,
+    replay: Option<std::path::PathBuf>,
+    control: Option<u16>,
+}
+
+/// What the command line asks: run with its choices, print a text and stop (help, version),
+/// or it is wrong (print the usage and fail).
+#[derive(Debug, PartialEq)]
+enum Parsed {
+    Run(Cli),
+    Print(String),
+    Usage,
+}
+
+/// The usage line with the samples' names.
+fn usage_text() -> String {
+    format!(
+        "usage: emcraft [PROJECT.emcraft] [--sample NAME] [--control PORT] [--replay REPORT]   (samples: {})",
+        emcraft_engine::templates::names().join(", ")
+    )
+}
+
+/// Reads the arguments (without the program's name); `control` is the port from the
+/// environment, which `--control` overrides.
+fn parse_args(args: &[String], control: Option<u16>) -> Parsed {
+    let mut cli = Cli { control, ..Cli::default() };
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "-h" | "--help" => return Parsed::Print(usage_text()),
+            "-V" | "--version" => return Parsed::Print(format!("emcraft {}", env!("CARGO_PKG_VERSION"))),
+            "--sample" => match it.next() {
+                Some(name) if emcraft_engine::templates::find(name).is_some() => cli.sample = Some(name.clone()),
+                _ => return Parsed::Usage,
+            },
+            // A crash report's folder (or a recording): played back in the window.
+            "--replay" => match it.next() {
+                Some(path) => cli.replay = Some(std::path::PathBuf::from(path)),
+                None => return Parsed::Usage,
+            },
+            "--control" => match it.next().map(|p| p.parse::<u16>()) {
+                Some(Ok(p)) => cli.control = Some(p),
+                _ => return Parsed::Usage,
+            },
+            path if !path.starts_with('-') && cli.project.is_none() => cli.project = Some(path.to_owned()),
+            _ => return Parsed::Usage,
+        }
+    }
+    Parsed::Run(cli)
+}
+
 /// The window could not open (typically no OpenGL 2 driver: a virtual machine, a remote
 /// desktop). A window program on Windows has no console for the error, so it is shown in a
 /// message box; elsewhere the terminal shows it. Not with `--control`: an agent reads stderr.
@@ -113,3 +139,24 @@ fn show_start_error(error: &str) {
 
 #[cfg(not(all(windows, not(debug_assertions))))]
 fn show_start_error(_error: &str) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str], env: Option<u16>) -> Parsed {
+        parse_args(&args.iter().map(ToString::to_string).collect::<Vec<_>>(), env)
+    }
+
+    #[test]
+    fn arguments_choose_what_opens_and_bad_ones_give_the_usage() {
+        assert_eq!(parse(&[], Some(7)), Parsed::Run(Cli { control: Some(7), ..Cli::default() }));
+        let Parsed::Run(cli) = parse(&["model.emcraft", "--sample", "highpass", "--control", "9000"], Some(7)) else { panic!("not run") };
+        assert_eq!(cli, Cli { sample: Some("highpass".into()), project: Some("model.emcraft".into()), replay: None, control: Some(9000) });
+        assert!(matches!(parse(&["--version"], None), Parsed::Print(v) if v.starts_with("emcraft ")));
+        assert!(matches!(parse(&["--help"], None), Parsed::Print(u) if u.starts_with("usage:")));
+        for bad in [&["--sample", "no-such"][..], &["--control", "x"], &["--control"], &["a", "b"], &["--what"], &["--replay"]] {
+            assert_eq!(parse(bad, None), Parsed::Usage, "{bad:?}");
+        }
+    }
+}
