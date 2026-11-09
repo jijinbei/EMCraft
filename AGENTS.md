@@ -15,7 +15,8 @@ environment variables, docs and CI.
 
 ## Start every session here
 1. Read `ROADMAP.md` (milestones, what is next) and your task.
-2. `docs/architecture.md`: crates, layers, the solver pipeline.
+2. `docs/architecture.md`: crates, layers, the solver pipeline. `docs/style.md`: how code is
+   written (functional style first, names, small functions, docs, errors, tests).
 3. `docs/adr/`: library decisions (what we may depend on).
 4. Solver work: `docs/solvers/literature.md` (the papers each method comes from) and
    `docs/verification.md`.
@@ -69,10 +70,9 @@ People trust EMCraft with their models; a crash loses their work. **This outrank
   test); compute kernels stay in Rust (CubeCL). See docs/adr/0004-gpu-viewport.md.
 
 ## Workflow for every change
-1. Work on a branch. While you work: `cargo check` and the tests your change can break,
+1. While you work: `cargo check` and the tests your change can break,
    `cargo xtask test --changed` (the packages changed since main and those built on them, in
-   one pool with cargo-nextest when installed: `cargo binstall cargo-nextest`). Commit after
-   each working step; every commit builds and passes its tests. The whole gate
+   one pool with cargo-nextest when installed: `cargo binstall cargo-nextest`). The whole gate
    (`cargo xtask test`) runs before merging and on CI.
 2. When the change is done: `cargo fmt --all`, `cargo clippy -p <crate> --all-targets -- -D warnings`
    for each crate you touched. Regenerate what your change affects: `docs/features.md` when
