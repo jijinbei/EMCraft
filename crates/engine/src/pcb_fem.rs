@@ -435,23 +435,7 @@ pub fn element(s: &mut Session, p: &Params) -> Result<Value> {
         Some(w) if d.norm() > 0.0 => Some(Vec3::new(-d.z, 0.0, d.x) * (0.5 * w / d.norm())),
         _ => None,
     };
-    let part = |name: &str, si: f64| -> Result<f64> {
-        let v = p.number(name).or(0.0)?;
-        if !(v.is_finite() && v >= 0.0) {
-            return Err(p.error(name, "must be a finite number ≥ 0"));
-        }
-        Ok(v * si)
-    };
-    s.model.add_element(emcraft_model::LumpedElement {
-        name: p.string("name").required()?.to_owned(),
-        from,
-        to,
-        resistance: part("resistance", 1.0)?,
-        inductance: part("inductance", 1e-9)?,
-        capacitance: part("capacitance", 1e-12)?,
-        arrangement: p.pick("arrangement").or(emcraft_model::Arrangement::Series)?,
-        across,
-    })?;
+    s.model.add_element(crate::elements::lumped(p, p.string("name").required()?.to_owned(), from, to, across)?)?;
     Ok(json!({"elements": s.model.elements.len()}))
 }
 

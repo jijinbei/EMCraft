@@ -438,15 +438,14 @@ fn autosave(app: &mut EmcraftApp, a: Args) -> Handled {
             app.autosave.dir = None;
             app.autosave.found.clear();
         }
-        Some(Value::String(d)) if !d.trim().is_empty() && d.len() <= MAX_PATH => {
-            let dir = std::path::PathBuf::from(d);
+        Some(v) => {
+            let dir = folder(v).ok_or_else(|| format!("`dir` must be a folder's path (at most {MAX_PATH} bytes) or null"))?;
             app.autosave.found = crate::autosave::scan(&dir);
             app.autosave.dir = Some(dir);
             if !app.autosave.found.is_empty() {
                 app.apply(Action::Show(crate::page::Tab::Start)).map_err(|e| e.to_string())?;
             }
         }
-        Some(_) => return Err(format!("`dir` must be a folder's path (at most {MAX_PATH} bytes) or null")),
     }
     if let Some(v) = a.get("every") {
         app.autosave.every = v
@@ -486,12 +485,16 @@ fn replay(app: &mut EmcraftApp, a: Args) -> Handled {
     Ok(wrap(app.play(r)))
 }
 
+/// A request's folder: a non-blank path of at most [`MAX_PATH`] bytes; none for anything else.
+fn folder(v: &Value) -> Option<std::path::PathBuf> {
+    v.as_str().filter(|d| !d.trim().is_empty() && d.len() <= MAX_PATH).map(std::path::PathBuf::from)
+}
+
 /// Where crash reports go (`dir`: a folder, the journal begun there), and the reports there.
 fn crashes(app: &mut EmcraftApp, a: Args) -> Handled {
     match a.get("dir") {
         None => {}
-        Some(Value::String(d)) if !d.trim().is_empty() && d.len() <= MAX_PATH => app.keep_crash_reports(std::path::PathBuf::from(d), false),
-        Some(_) => return Err(format!("`dir` must be a folder's path (at most {MAX_PATH} bytes)")),
+        Some(v) => app.keep_crash_reports(folder(v).ok_or_else(|| format!("`dir` must be a folder's path (at most {MAX_PATH} bytes)"))?, false),
     }
     let reports = app.crashes.dir.as_deref().map(crate::crash::list).unwrap_or_default();
     Ok(ok(json!({

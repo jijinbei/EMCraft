@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use emcraft_model::{Arrangement, LumpedElement, Point3};
+use emcraft_model::{LumpedElement, Point3};
 use emcraft_solver::{Complex64 as C, SMatrix};
 use serde_json::{Value, json};
 
@@ -39,23 +39,8 @@ enum Block {
 /// A lumped element from a block's `resistance` (Ω), `inductance` (nH), `capacitance` (pF) and
 /// `arrangement`, checked as `model.element.create` checks its own.
 fn element(p: &Params) -> Result<LumpedElement> {
-    let part = |name: &str, si: f64| -> Result<f64> {
-        let v = p.number(name).or(0.0)?;
-        if !(v.is_finite() && v >= 0.0) {
-            return Err(p.error(name, "must be a finite number ≥ 0"));
-        }
-        Ok(v * si)
-    };
-    let e = LumpedElement {
-        name: "block".into(),
-        from: Point3::ORIGIN,
-        to: Point3::new(0.0, 0.0, 1e-3),
-        resistance: part("resistance", 1.0)?,
-        inductance: part("inductance", 1e-9)?,
-        capacitance: part("capacitance", 1e-12)?,
-        arrangement: p.pick("arrangement").or(Arrangement::Series)?,
-        across: None,
-    };
+    // Where it sits does not matter in a circuit: a gap of a millimetre, its ends apart.
+    let e = crate::elements::lumped(p, "block".into(), Point3::ORIGIN, Point3::new(0.0, 0.0, 1e-3), None)?;
     e.check().map_err(|err| p.error("resistance", err.to_string()))?;
     Ok(e)
 }

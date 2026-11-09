@@ -10,13 +10,6 @@ use crate::session::Session;
 /// `model.element.create`: a resistor, inductor and capacitor (in Ω, nH and pF) across the gap
 /// from `from` to `to`, in series or in parallel.
 pub fn create(s: &mut Session, p: &Params) -> Result<Value> {
-    let part = |name: &str, si: f64| -> Result<f64> {
-        let v = p.number(name).or(0.0)?;
-        if !(v.is_finite() && v >= 0.0) {
-            return Err(p.error(name, "must be a finite number ≥ 0"));
-        }
-        Ok(v * si)
-    };
     let width = p.positive_length("width").optional()?;
     let from = p.point("from").required()?;
     let to = p.point("to").required()?;
@@ -30,18 +23,43 @@ pub fn create(s: &mut Session, p: &Params) -> Result<Value> {
             Some(dir * (0.5 * w))
         }
     };
-    let e = LumpedElement {
-        name: p.string("name").required()?.to_owned(),
+    let e = lumped(p, p.string("name").required()?.to_owned(), from, to, across)?;
+    s.model.add_element(e)?;
+    Ok(json!({"elements": s.model.elements.len()}))
+}
+
+/// Henries per nanohenry and farads per picofarad: the units a command's `inductance` and
+/// `capacitance` are read in (`resistance` in ohms).
+const NANOHENRY: f64 = 1e-9;
+const PICOFARAD: f64 = 1e-12;
+
+/// A lumped element named `name` across `from`–`to` (m), its `resistance` (Ω), `inductance`
+/// (nH) and `capacitance` (pF) — each a finite number ≥ 0, 0 (the default) for a part it does
+/// not have — and `arrangement` (series by default) read from `p`; its sheet `across`.
+pub(crate) fn lumped(
+    p: &Params,
+    name: String,
+    from: emcraft_model::Point3,
+    to: emcraft_model::Point3,
+    across: Option<emcraft_model::Vec3>,
+) -> Result<LumpedElement> {
+    let part = |key: &str, si: f64| -> Result<f64> {
+        let v = p.number(key).or(0.0)?;
+        if !(v.is_finite() && v >= 0.0) {
+            return Err(p.error(key, "must be a finite number ≥ 0"));
+        }
+        Ok(v * si)
+    };
+    Ok(LumpedElement {
+        name,
         from,
         to,
         resistance: part("resistance", 1.0)?,
-        inductance: part("inductance", 1e-9)?,
-        capacitance: part("capacitance", 1e-12)?,
+        inductance: part("inductance", NANOHENRY)?,
+        capacitance: part("capacitance", PICOFARAD)?,
         arrangement: p.pick("arrangement").or(Arrangement::Series)?,
         across,
-    };
-    s.model.add_element(e)?;
-    Ok(json!({"elements": s.model.elements.len()}))
+    })
 }
 
 /// `model.element.remove`: the element named `name`.
