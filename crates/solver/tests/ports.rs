@@ -29,7 +29,8 @@ fn numeric_filter() -> Model {
 #[test]
 fn numerical_port_modes_give_the_closed_forms_s_parameters() {
     // The filter's S against the exact cascade, as with the closed-form TE10, and against the
-    // closed-form ports' own S: the modes differ only by the cross-section's discretisation.
+    // closed-form ports' own S: the modes differ only by the cross-section's discretisation (Pozar,
+    // Microwave Engineering, 4th ed., §3.3, §4.4).
     let numeric = Driven::new(&numeric_filter(), Order::Two).unwrap();
     let analytic = Driven::new(&guide(&FILTER, 0.004, 4), Order::Two).unwrap();
     for f in [5.0e9, 6.5e9, 8.0e9] {
@@ -66,6 +67,7 @@ fn coax(length: f64, size: f64) -> Model {
 
 #[test]
 fn a_coaxial_line_transmits_its_tem_wave() {
+    // Coaxial TEM: S21 = e^{−jk√εr L} (Pozar, Microwave Engineering, 4th ed., §3.5).
     // No closed form covers the annulus, so its ports take the numerical modes: TEM first,
     // S21 = e^{−jk√εr L}, nothing reflected. The cross-section's triangles bend with the
     // volume's onto the conductors (straight ones, a polygon in a curved guide, reflect 5e-3):
@@ -146,6 +148,7 @@ fn stripline(a: f64, b: f64, w: f64, length: f64, er: f64, size: f64) -> Model {
 
 #[test]
 fn a_stripline_carries_tem_at_the_speed_of_light_in_its_fill() {
+    // Stripline TEM: β = k√εr of its fill (Pozar, Microwave Engineering, 4th ed., §3.7).
     // A strip across the middle of a filled box: TEM, β = k√εr whatever the cross-section. The
     // strip's edges are singular (E ∝ r^{−1/2}): graded to a twentieth of the size there, |S11|
     // 1.5e-4 and the phase within 5e-5 rad at 1.5 mm (graded to a quarter, as irises are: 9e-4
@@ -190,7 +193,8 @@ fn a_microstrip_has_hammerstad_and_jensens_effective_permittivity() {
     // cover 38 substrates up, the side walls 12 strip widths away each side): the quasi-TEM
     // mode's (β/k₀)² against the fit (itself within 0.2 %), for a narrow, a 50 Ω and a wide
     // strip. Measured −0.24 %, −0.20 %, +0.30 % (with the cover at 9 h, −0.5 to −0.9 %: a cover
-    // adds capacitance in the air and lowers ε_eff).
+    // adds capacitance in the air and lowers ε_eff) (Hammerstad & Jensen, IEEE MTT-S Digest, 1980,
+    // pp. 407-409).
     let (h, er): (f64, f64) = (0.000635, 9.8);
     let k0 = 2.0 * std::f64::consts::PI * 1e9 / emcraft_model::units::C0;
     for u in [0.4f64, 0.945, 3.0] {
@@ -207,7 +211,8 @@ fn a_microstrip_has_hammerstad_and_jensens_effective_permittivity() {
 fn strip_lines_have_their_closed_form_impedances() {
     // Power and current on the ports' cross-sections against Cohn's exact stripline impedance
     // (side walls three plate spacings from the strip) and Hammerstad–Jensen's microstrip fit:
-    // measured −0.23 % and −0.58 %.
+    // measured −0.23 % and −0.58 % (Cohn, IRE Trans. MTT 2(2), 1954; Hammerstad & Jensen, IEEE
+    // MTT-S Digest, 1980).
     let k0 = |f: f64| 2.0 * std::f64::consts::PI * f / emcraft_model::units::C0;
     let z_of = |m: &Model, f: f64| {
         let d = Driven::new(m, Order::Two).unwrap();
@@ -245,7 +250,7 @@ fn coupled_strips_have_cohns_even_and_odd_impedances() {
     // Cohn's exact Z0e and Z0o (within 0.3 % and 0.4 % at 1 mm cells). Under a magnetic wall between
     // the strips only the even mode is left, under an electric wall only the odd one, the same
     // impedances from the half; and below a magnetic wall through the strips' plane, the same
-    // again from the half's half strips.
+    // again from the half's half strips (Cohn, IRE Trans. MTT 3(5):29-38, 1955).
     let (w, s, b) = (0.0015, 0.0005, 0.002);
     let (ze, zo) = emcraft_theory::coupled::z0_even_odd(w, s, b, 2.2).unwrap();
     let k0 = 2.0 * std::f64::consts::PI * 2e9 / emcraft_model::units::C0;

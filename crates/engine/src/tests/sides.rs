@@ -12,7 +12,8 @@ fn entry(r: &Value, i: usize, pq: &str) -> (f64, f64) {
 
 #[test]
 fn ports_across_x_and_y_carry_a_straight_guide() {
-    // WR-90, 30 mm along x and along y: S21 = e^{−jβL} as along z (88.01° at 10 GHz).
+    // WR-90, 30 mm along x and along y: S21 = e^{−jβL} as along z (88.01° at 10 GHz) (TE10 β,
+    // Pozar, Microwave Engineering, 4th ed., §3.3).
     let exact = 88.008;
     for (axis, size, far) in [("x", [30.0, 22.86, 10.16], [30.0, 0.0, 0.0]), ("y", [22.86, 30.0, 10.16], [30.0, 0.0, 0.0])] {
         let mut s = Session::new();
@@ -59,7 +60,7 @@ fn a_face_port_holding_a_ridge_takes_the_cross_section_solvers_modes() {
 #[test]
 fn the_cross_section_solver_works_on_a_face_across_y() {
     // Across y the port's axes are (x, z, −y): the numerical modes, turned back, carry the
-    // guide as the closed forms do.
+    // guide as the closed forms do (TE10 β, Pozar, Microwave Engineering, 4th ed., §3.3).
     let mut s = Session::new();
     s.execute("geometry.solid", &json!({"shape": "box", "size": [22.86, 30, 10.16]})).unwrap();
     s.execute("mesh.generate", &json!({"size": 4})).unwrap();

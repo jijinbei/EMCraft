@@ -33,7 +33,7 @@ fn cavity(size: f64) -> Model {
 #[test]
 fn rectangular_cavity_resonances() {
     // The four modes nearest 12 GHz are the four lowest (TE101, TE102, TE201, TE011); measured
-    // within 1e-4 of the closed form.
+    // within 1e-4 of the closed form (Pozar, Microwave Engineering, 4th ed., §6.3).
     let e = eigenmodes(&cavity(0.003), Order::Two, 4, 12.0e9).unwrap();
     let exact = cavity_resonances(A, B, D, 1.0, 4);
     for (m, (f, name)) in e.modes.iter().zip(&exact) {
@@ -47,7 +47,8 @@ fn rectangular_cavity_resonances() {
 fn modes_far_above_the_shift_come_with_the_gradients_projected_out() {
     // Twelve modes asked near 7 GHz: the higher ones (to about 20 GHz) lie beyond 2 × the
     // shift's k², farther from it than the gradients' zero eigenvalue. With the gradients
-    // deflated they come all the same; against the closed form's twelve lowest.
+    // deflated they come all the same; against the closed form's twelve lowest (Pozar, Microwave
+    // Engineering, 4th ed., §6.3).
     let e = eigenmodes(&cavity(0.003), Order::Two, 12, 7.0e9).unwrap();
     let exact: Vec<f64> = cavity_resonances(A, B, D, 1.0, 12).into_iter().map(|(f, _)| f).collect();
     assert_eq!(e.modes.len(), 12);
@@ -59,6 +60,8 @@ fn modes_far_above_the_shift_come_with_the_gradients_projected_out() {
 
 #[test]
 fn a_very_lossy_fill_gives_its_complex_frequency() {
+    // Derived here from a filled cavity's ω = ω₀/√(1 − j tanδ), Q → 1/tanδ for small loss (Pozar,
+    // Microwave Engineering, 4th ed., §6.3).
     // tan δ = 0.05 throughout: K x = k² ε′(1 − j tan δ) M₀ x, so every k² is the lossless one
     // divided by 1 − j tan δ, ω = ω₀ (1 − j tan δ)^{−1/2} — exactly, for the discrete problem
     // too. Q = Re ω / (2 Im ω) = 1/(2 tan(½ atan tan δ)) = 20.0125, not perturbation's 20.
@@ -90,6 +93,7 @@ fn a_very_lossy_fill_gives_its_complex_frequency() {
 
 #[test]
 fn copper_te101_q() {
+    // TE101 Q from wall losses, closed form Q_c (Pozar, Microwave Engineering, 4th ed., eq. 6.46).
     let mut m = cavity(0.003);
     m.set_wall_conductivity(Some(emcraft_model::Conductivity::new(5.8e7).unwrap()));
     let e = eigenmodes(&m, Order::Two, 1, 8.0e9).unwrap();
@@ -102,6 +106,7 @@ fn copper_te101_q() {
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn copper_te101_q_converges() {
+    // TE101 Q from wall losses, closed form Q_c (Pozar, Microwave Engineering, 4th ed., eq. 6.46).
     // Measured −1.2 %, −0.55 %, −0.31 % at 3, 2 and 1.5 mm.
     let errors: Vec<f64> = [0.003, 0.002, 0.0015]
         .iter()
@@ -117,7 +122,8 @@ fn copper_te101_q_converges() {
 
 #[test]
 fn a_filled_cavity_scales_and_its_dielectric_sets_q() {
-    // Filled with εr = 2.25, tan δ = 1e-3: frequencies fall by 1.5, Q_d = 1/tan δ.
+    // Filled with εr = 2.25, tan δ = 1e-3: frequencies fall by 1.5, Q_d = 1/tan δ (Pozar, Microwave
+    // Engineering, 4th ed., §6.3, §6.7).
     let mut m = Model::new();
     m.add_material(Material::new("fill", 2.25, 1.0).unwrap().with_loss_tangent(1e-3).unwrap()).unwrap();
     m.set_waveguide(Waveguide {

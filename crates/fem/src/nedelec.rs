@@ -511,6 +511,8 @@ mod tests {
 
     #[test]
     fn order_one_matrices_match_the_closed_form() {
+        // curl w_ij = 2 ∇λ_i × ∇λ_j (Whitney functions, 1957) and ∫λ_aλ_b = V(1 + δ_ab)/20
+        // (Zienkiewicz & Taylor, vol. 1, §8.8).
         // curl w_ij = 2 ∇λ_i × ∇λ_j; ∫ λ_a λ_b = V (1 + δ_ab) / 20.
         let e = Element::new(Order::One, tet()).unwrap();
         let (s, m) = (e.stiffness(1.0), e.mass(1.0));

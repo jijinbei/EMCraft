@@ -36,6 +36,8 @@ fn field_errors(d: &Driven, sections: &[(f64, f64)], f: f64) -> (f64, f64) {
 
 #[test]
 fn straight_guide_transmits_with_the_te10_phase() {
+    // Empty TE10 line: S11 = 0, S21 = e^{−jβL}, β = √(k² − (π/a)²) (Pozar, Microwave Engineering,
+    // 4th ed., §3.3, §4.4).
     let sections = [(0.03, 1.0)];
     let d = Driven::new(&guide(&sections, 0.003, 1), Order::One).unwrap();
     for f in [8.0e9, 10.0e9, 12.0e9] {
@@ -50,7 +52,8 @@ fn straight_guide_transmits_with_the_te10_phase() {
 
 #[test]
 fn dielectric_step_reflects_by_the_impedance_ratio() {
-    // PTFE-like fill (εr = 2.1) meeting an empty guide: S11 = (β₁ − β₂)/(β₁ + β₂) at the step.
+    // PTFE-like fill (εr = 2.1) meeting an empty guide: S11 = (β₁ − β₂)/(β₁ + β₂) at the step
+    // (Pozar, Microwave Engineering, 4th ed., §3.3, §4.4).
     let sections = [(0.012, 2.1), (0.018, 1.0)];
     let d = Driven::new(&guide(&sections, 0.003, 4), Order::Two).unwrap();
     for f in [7.5e9, 9.0e9] {
@@ -73,6 +76,8 @@ fn high_pass_filter_order_one() {
 
 #[test]
 fn high_pass_filter_order_two() {
+    // Exact TE10 transmission-line cascade of the filled sections (Pozar, Microwave Engineering,
+    // 4th ed., §3.3, §4.4).
     let d = Driven::new(&guide(&FILTER, 0.004, 4), Order::Two).unwrap();
     let worst = worst_s_error(&d, &FILTER, &BAND);
     assert!(worst < 4e-3, "{worst:e}");
@@ -98,6 +103,8 @@ fn symmetric_and_solved_to_rounding() {
 
 #[test]
 fn fields_match_the_exact_te10_fields() {
+    // Exact TE10 fields E_y = sin(πx/a)·(A e^{−jβz} + B e^{jβz}) (Pozar, Microwave Engineering, 4th
+    // ed., §3.3, §4.4).
     let d = Driven::new(&guide(&FILTER, 0.004, 4), Order::Two).unwrap();
     for f in [5.5e9, 8.0e9] {
         let (e, h) = field_errors(&d, &FILTER, f);

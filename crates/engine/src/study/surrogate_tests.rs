@@ -152,6 +152,8 @@ fn quarter_wave_by(method: &str, size: f64, order: u8, tolerance: f64) -> (Value
 
 #[test]
 fn the_bayesian_optimizer_finds_the_quarter_wave_match_in_no_more_solves() {
+    // Optimum length = λg/4 of the matching section (quarter-wave transformer, Pozar, Microwave
+    // Engineering, 4th ed., §2.5, §5.4).
     let (_, quarter) = quarter_wave();
     let (r, mut s) = quarter_wave_by("bayesian", 5.0, 1, 1e-3);
     let (simplex, _) = quarter_wave_by("simplex", 5.0, 1, 1e-3);
@@ -182,6 +184,8 @@ fn the_bayesian_optimizer_finds_the_quarter_wave_match_in_no_more_solves() {
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn the_bayesian_optimizer_comes_near_the_simplex_on_the_oracle_case() {
+    // Optimum length = λg/4 of the matching section (quarter-wave transformer, Pozar, Microwave
+    // Engineering, 4th ed., §2.5, §5.4).
     let (_, quarter) = quarter_wave();
     let (bayes, _) = quarter_wave_by("bayesian", 3.0, 2, 1e-3);
     let (simplex, _) = quarter_wave_by("simplex", 3.0, 2, 1e-3);

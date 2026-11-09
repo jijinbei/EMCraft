@@ -72,6 +72,8 @@ fn inductive_iris_matches_mode_matching() {
 
 #[test]
 fn offset_step_matches_mode_matching() {
+    // Offset step: converged TE_m0 mode matching (Wexler, IEEE Trans. MTT 15(9):508-517, 1967;
+    // theory::modematch).
     // (Power conserved across ports of different aperture: the engine's invariants.rs, the
     // taper among its templates.)
     let d = Driven::new(&model(&STEP, &emcraft_mesh::Options::new(metres(0.004))), Order::Two).unwrap();

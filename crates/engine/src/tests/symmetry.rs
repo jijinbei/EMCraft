@@ -64,6 +64,8 @@ fn a_port_the_plane_does_not_cut_through_its_middle_is_refused() {
 /// X band, its first cut-off TE10 at c/2a, and the X band its ports' band.
 #[test]
 fn a_face_port_given_narrow_side_first_is_read_by_its_broad_side() {
+    // TE10 cut-off f_c = c/2a of the 22.86 mm broad side (Pozar, Microwave Engineering, 4th ed.,
+    // §3.3).
     let mut s = crate::Session::new();
     s.execute("file.sample", &json!({"name": "td-e-bend"})).unwrap();
     let steps = crate::workflow::steps(&s);

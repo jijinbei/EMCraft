@@ -356,6 +356,8 @@ mod tests {
     /// does (the doctest).
     #[test]
     fn a_straight_guide_is_a_line() {
+        // Straight guide: S11 = 0, S21 = e^(−jβL), β = √(k² − (π/a)²) (Pozar, Microwave
+        // Engineering, 4th ed., §3.3).
         let g = SmoothGuide { plane: Plane::H, length: 0.03, eps_r: 1.0, wall: |_z: f64| (A, 0.0), corners: vec![] };
         let (s11, s21) = g.solve(10e9, Discretisation { along: 20, across: 3, degree: 5, modes: 4 }).unwrap_or_default();
         let k0 = 2.0 * PI * 10e9 / 299_792_458.0;

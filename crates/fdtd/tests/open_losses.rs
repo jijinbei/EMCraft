@@ -95,6 +95,8 @@ fn lossy() -> (Material, impl Fn(f64) -> C, impl Fn(f64) -> C) {
 
 #[test]
 fn a_dipole_in_a_lossy_magnetic_sphere_radiates_as_the_spherical_wave_solution() {
+    // Dipole in a lossy magnetic sphere: r H_φ ∝ kζ(kr) matched at the surface (Balanis, Adv. Eng.
+    // Electromagnetics, 2nd ed., §6.8).
     let (m, eps, mu) = lossy();
     // 1 mm cells (λ/12 in the sphere at 12 GHz), the sphere staircased: measured −0.6 % and
     // +2.0 % (+1.5 % and +11 % at 2 mm).
@@ -104,6 +106,8 @@ fn a_dipole_in_a_lossy_magnetic_sphere_radiates_as_the_spherical_wave_solution()
 
 #[test]
 fn the_sphere_solution_is_free_space_without_a_sphere() {
+    // Limits of the Hertzian-dipole sphere solution: no sphere gives 1, a small one 3/(ε + 2)
+    // (Balanis, Adv. Eng. Electromagnetics, §6.8).
     let p = sphere_power(10e9, 0.01, C::new(1.0, 0.0), C::new(1.0, 0.0));
     assert!((p - 1.0).abs() < 1e-12, "{p}");
     // A small sphere screens the dipole by 3/(ε + 2) (quasi-statics), its power by the square.

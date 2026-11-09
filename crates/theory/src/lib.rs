@@ -331,6 +331,8 @@ mod tests {
 
     #[test]
     fn a_single_step_reflects_by_the_impedance_ratio() {
+        // Step reflects (β₁ − β₂)/(β₁ + β₂) at the interface (Pozar, Microwave Engineering, 4th
+        // ed., §3.3, §4.4).
         let l = |length: f64, eps_r: f64| Layer::lossless(length, eps_r, 1.0);
         let line = Te10Line { a: A, layers: vec![l(0.01, 2.0), l(0.03, 1.0)] };
         let f = 8.0e9;
@@ -385,6 +387,8 @@ mod tests {
 
     #[test]
     fn a_lossy_slab_absorbs_and_matches_the_complex_propagation_constant() {
+        // Decay is the complex γ = √((π/a)² − k²), α ≈ k² tanδ/(2β) to first order in tanδ (Pozar,
+        // Microwave Engineering, 4th ed., §3.3).
         // A long matched-ish lossy line: |S21| ≈ e^{−Im(−β) L}.
         let f = 10.0e9;
         let lossy = Layer::lossy(0.1, 1.0, 1.0, 0.01);
@@ -414,7 +418,7 @@ mod tests {
     #[test]
     fn cavity_modes_in_order() {
         // 22.86 × 10.16 × 30 mm: TE101 at c/2·√(1/a² + 1/d²) = 1.49896e8 · 54.997 = 8.2439 GHz,
-        // then TE102.
+        // then TE102 (Pozar, Microwave Engineering, 4th ed., §6.3).
         let r = cavity_resonances(0.02286, 0.01016, 0.03, 1.0, 3);
         assert_eq!(r[0].1, "TE101");
         assert!((r[0].0 - 8.2439e9).abs() < 1e6, "{}", r[0].0);
@@ -441,7 +445,8 @@ mod tests {
     #[test]
     fn a_magnetically_lossy_line_decays_by_its_complex_propagation_constant() {
         // One section, ports in the lossy medium: S11 = 0, S21 = e^{−γL}, γ = √((π/a)² − k²),
-        // k² = k0² εr μr (1 − j tan δ_m), evaluated here by hand.
+        // k² = k0² εr μr (1 − j tan δ_m), evaluated here by hand (Pozar, Microwave Engineering, 4th
+        // ed., §1.3, §3.3).
         let f = 10.0e9;
         let (l, tm) = (0.05, 0.03);
         let line = Te10Line { a: A, layers: vec![Layer { magnetic_loss_tangent: tm, ..Layer::lossless(l, 2.0, 1.5) }] };

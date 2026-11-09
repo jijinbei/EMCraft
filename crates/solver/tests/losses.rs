@@ -33,6 +33,8 @@ fn exact(f: f64) -> (emcraft_solver::Complex64, emcraft_solver::Complex64) {
 
 #[test]
 fn lossy_slab_matches_the_exact_cascade() {
+    // Exact TE10 cascade, complex β = √(k²εr(1 − j tanδ) − (π/a)²) (Pozar, Microwave Engineering,
+    // 4th ed., §3.3, §4.4).
     let d = Driven::new(&slab(0.003), Order::Two).unwrap();
     for f in [8.0e9, 10.0e9, 12.0e9] {
         let r = d.solve(f).unwrap();
@@ -131,6 +133,8 @@ fn dispersive_slab(size: f64) -> Model {
 
 #[test]
 fn dispersive_slab_matches_the_exact_cascade() {
+    // Exact TE10 cascade with the complex ε at each frequency (Pozar, Microwave Engineering, 4th
+    // ed., §3.3, §4.4).
     let d = Driven::new(&dispersive_slab(0.003), Order::Two).unwrap();
     assert!(d.is_dispersive());
     for f in [8.0e9, 10.0e9, 12.0e9] {

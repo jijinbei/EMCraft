@@ -634,7 +634,8 @@ mod tests {
     fn an_empty_rectangle_has_the_te_and_tm_modes() {
         // WR-90 at 12 GHz: β² = k² − k_c², TE10, TE20, TE01, TE11/TM11 (degenerate), TE30: one
         // propagating, five evanescent. Order 2 on 12 × 6 cells: within 4e-4 k² (order 1 on
-        // 24 × 12: 1.5e-2); the TE10 field within 1e-3 (3e-2).
+        // 24 × 12: 1.5e-2); the TE10 field within 1e-3 (3e-2) (Pozar, Microwave Engineering, 4th
+        // ed., §3.3).
         let (a, b) = (0.02286, 0.01016);
         let k0 = 2.0 * std::f64::consts::PI * 12e9 / emcraft_model::units::C0;
         let mut exact: Vec<f64> = emcraft_fem::modes::lowest(a, b, 8).iter().map(|m| k0 * k0 - m.cutoff().powi(2)).collect();
@@ -709,6 +710,7 @@ mod tests {
 
     #[test]
     fn a_coaxial_line_carries_its_tem_mode_at_the_speed_of_light_in_it() {
+        // Coaxial TEM: β = k√εr (Pozar, Microwave Engineering, 4th ed., §3.5).
         // A two-conductor line of one dielectric carries TEM at β = k √εr whatever its section's
         // shape, so the polygonal one here too: exact but for rounding. Its field is radial,
         // outward by the sign convention.
@@ -735,6 +737,7 @@ mod tests {
 
     #[test]
     fn a_coaxial_line_has_its_closed_form_impedance() {
+        // Coaxial line: Z₀ = η₀ ln(b/a)/(2π√εr) (Pozar, Microwave Engineering, 4th ed., §3.5).
         // Z₀ = η₀ ln(b/a) / (2π √εr), by power and the inner conductor's current, the rings'
         // edges curved onto the circles.
         let (r_in, r_out, er, rings, sectors) = (0.001, 0.0035, 2.1, 4, 24);

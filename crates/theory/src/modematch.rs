@@ -654,6 +654,8 @@ mod tests {
 
     #[test]
     fn equal_apertures_reduce_to_the_te10_cascade() {
+        // Equal apertures keep only TE10: the exact line cascade (Pozar, Microwave Engineering, 4th
+        // ed., §3.3, §4.4).
         let line = HPlaneLine { sections: vec![full(0.015, 2.0), full(0.02, 1.0), full(0.015, 2.0)] };
         let exact =
             Te10Line { a: A, layers: vec![Layer::lossless(0.015, 2.0, 1.0), Layer::lossless(0.02, 1.0, 1.0), Layer::lossless(0.015, 2.0, 1.0)] };
@@ -714,6 +716,8 @@ mod tests {
 
     #[test]
     fn e_plane_lines_reduce_conserve_and_converge() {
+        // Equal heights: the empty guide's exact r = 0, t = e^(−jβL) (Pozar, Microwave Engineering,
+        // 4th ed., §3.3); iris checks are invariants.
         let b = 0.01016;
         let full = |l: f64| ESection { length: l, eps_r: 1.0, mu_r: 1.0, loss_tangent: 0.0, y0: 0.0, height: b };
         // Equal heights: the empty guide's exact phase.

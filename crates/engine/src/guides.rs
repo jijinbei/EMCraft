@@ -119,6 +119,8 @@ mod tests {
 
     #[test]
     fn a_wr90_guide_offers_its_band_and_another_its_te10_band() {
+        // WR-90 band 8.2–12.4 GHz (EIA RS-261-B); TE10 cut-off f_c = c/2a (Pozar, Microwave
+        // Engineering, 4th ed., §3.3).
         let mut s = Session::new();
         assert!(bands(&s).is_empty());
         let guide = |w: f64| serde_json::json!({"width": w, "height": 10.16, "sections": [{"length": 30, "material": "vacuum"}]});

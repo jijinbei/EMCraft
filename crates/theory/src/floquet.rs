@@ -223,6 +223,8 @@ mod tests {
 
     #[test]
     fn a_slab_at_normal_incidence_is_the_fresnel_slab() {
+        // Half-wave slab transparent, quarter-wave |S11| = (n² − 1)/(n² + 1) (Orfanidis,
+        // Electromagnetic Waves and Antennas, ch. 7–8; Pozar §4.4).
         // A half-wave slab is transparent; a quarter-wave one reflects (n² − 1)/(n² + 1).
         let n: f64 = 2.0;
         let f = 10e9;
@@ -241,6 +243,8 @@ mod tests {
 
     #[test]
     fn a_single_interface_gives_fresnel_coefficients_and_brewster() {
+        // Fresnel r_TE, r_TM at an air–glass interface and Brewster's angle atan n (Orfanidis,
+        // Electromagnetic Waves and Antennas, ch. 7–8).
         // Air to glass (n = 1.5), half-spaces of no thickness: S₁₁ is Fresnel's r (of E_t for TM).
         let n: f64 = 1.5;
         let glass = StackLayer { thickness: 0.0, eps_r: C::new(n * n, 0.0), mu_r: 1.0 };

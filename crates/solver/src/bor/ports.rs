@@ -316,6 +316,8 @@ mod port_tests {
 
     #[test]
     fn a_circular_guide_passes_its_modes_on_the_half_plane() {
+        // Circular guide: e^{−jβL}, β = √(k² − (x/r)²), x = Bessel zero (Marcuvitz, Waveguide
+        // Handbook, §2.3; A&S Table 9.5).
         // Lowest-order elements at 0.5 mm: TM01 1.2e-3 off e^{−jβL}, TE11 6.9e-3 (its 1/r
         // terms near the axis), the reflections below 3e-4.
         passes(0, 14e9, 2.404_825_557_695_773, "TM01", 2e-3);
@@ -340,6 +342,8 @@ mod port_tests {
     #[test]
     #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
     fn the_half_plane_s_converge_as_the_size_squared() {
+        // Circular guide: e^{−jβL}, β = √(k² − (x/r)²), x = Bessel zero (Marcuvitz, Waveguide
+        // Handbook, §2.3; A&S Table 9.5).
         // TE11: 2.6e-2, 6.9e-3, 1.9e-3 at 1, 0.5, 0.25 mm; TM01: 5.1e-3, 1.2e-3, 3.0e-4.
         passes_at(1, 12e9, 1.841_183_781_340_659, "TE11", 2.5e-3, 0.25e-3);
         passes_at(0, 14e9, 2.404_825_557_695_773, "TM01", 4e-4, 0.25e-3);

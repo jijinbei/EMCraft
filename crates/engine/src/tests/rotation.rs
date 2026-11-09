@@ -299,6 +299,7 @@ fn a_widened_guide_on_a_quarter_gives_the_whole_s_s() {
 
 #[test]
 fn the_harmonics_assemble_the_whole_guide_s_standing_modes() {
+    // (circular-guide modes: Marcuvitz §2.3, Pozar §3.4; x'11 from Abramowitz & Stegun Table 9.5)
     let mut s = guide_quarter(0, 4.0);
     let r = s.execute("solve.harmonics", &json!({"frequencies": [12], "order": 2})).unwrap();
     // At 12 GHz harmonic 0's TM01 (cut-off 11.47 GHz) and 2's TE21 (14.6 GHz): TM01 passes, TE21 not.

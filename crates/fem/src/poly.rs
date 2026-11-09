@@ -157,6 +157,8 @@ mod tests {
 
     #[test]
     fn monomial_integrals() {
+        // ∫ λ₀ᵃλ₁ᵇλ₂ᶜλ₃ᵈ dV = 3! V a!b!c!d!/(a+b+c+d+3)! (Zienkiewicz & Taylor, FEM vol. 1, 5th
+        // ed., §8.8; Cendes 1991).
         // ∫ 1 = V, ∫ λ = V/4, ∫ λ² = V/10, ∫ λᵢλⱼ = V/20.
         approx::assert_abs_diff_eq!(monomial_integral([0; 4], 2.0), 2.0, epsilon = 1e-15);
         approx::assert_abs_diff_eq!(monomial_integral([1, 0, 0, 0], 1.0), 0.25, epsilon = 1e-15);

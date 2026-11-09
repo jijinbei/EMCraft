@@ -384,6 +384,8 @@ mod tests {
 
     #[test]
     fn a_matched_lines_chain_matrix_is_its_own() {
+        // λ/4 line: A = D = 0, B = jZ₀, C = j/Z₀; two make S21 = −1 (Pozar, Microwave Engineering,
+        // 4th ed., §4.4, Tables 4.1–4.2).
         // λ/4 at 1 GHz in vacuum: A = D = 0, B = j Z₀, C = j/Z₀.
         let m = chain(&Block::Line { z0: 50.0, length: C0 / 4e9, eps_r: 1.0 }, 1e9).unwrap();
         assert!(m[0].norm() < 1e-12 && (m[1] - C::new(0.0, 50.0)).norm() < 1e-9);

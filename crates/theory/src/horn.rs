@@ -126,6 +126,8 @@ mod tests {
 
     #[test]
     fn a_long_horn_tends_to_the_uniform_phase_aperture() {
+        // Phase error → 0: D → (4π/λ²) a₁b₁ 8/π², the TE10 aperture (limit of Balanis, Antenna
+        // Theory, 3rd ed., §13.4.3).
         // With the apexes far behind, the phase error vanishes: the TE10 aperture's directivity
         // (4π/λ²) a₁ b₁ (8/π²).
         let horn = PyramidalHorn { a: 22.86e-3, b: 10.16e-3, a1: 60e-3, b1: 45e-3, length: 100.0 };

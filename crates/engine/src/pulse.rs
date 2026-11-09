@@ -600,6 +600,8 @@ mod tests {
     /// chirp −1/D it is compressed most.
     #[test]
     fn a_chirp_through_a_dispersive_line_compresses_as_the_closed_form_says() {
+        // Chirped Gaussian through a quadratic-phase line: 1/α′ = 1/α + jD/π (Agrawal, Nonlinear
+        // Fiber Optics, 5th ed., §3.2).
         let (f0, tau0, d) = (10e9, 5e-9, 8e-18); // group delay 5 ns, rising 8 ns per GHz
         let freqs: Vec<f64> = (0..=4000).map(|k| 8e9 + k as f64 * 1e6).collect();
         let s: Vec<C> = freqs.iter().map(|&f| C::from_polar(1.0, -2.0 * PI * (tau0 * (f - f0) + 0.5 * d * (f - f0) * (f - f0)))).collect();

@@ -323,6 +323,8 @@ mod tests {
 
     #[test]
     fn dispersion_is_checked_and_evaluated() {
+        // Debye, Lorentz, Drude susceptibilities for e^(jωt) (Taflove & Hagness, Computational
+        // Electrodynamics, 3rd ed., §9.2, §9.4).
         let x = || Material::new("x", 2.0, 1.0).unwrap();
         assert!(Pole::debye(-1.0, 1e-11).is_err() && Pole::lorentz(1.0, f64::INFINITY, 1e9).is_err() && Pole::drude(1e10, 0.0).is_err());
         let mut many = x();

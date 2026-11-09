@@ -544,6 +544,8 @@ mod tests {
     /// Second order: halving the cells quarters each order's error (TM010, TE111, TE211).
     #[test]
     fn the_error_falls_as_the_square_of_the_cells() {
+        // Reference f: pillbox closed forms (Pozar, Microwave Engineering, 4th ed., §6.3; A&S Table
+        // 9.5); error ratio ~4 per halving.
         let (a, d) = (0.01, 0.015);
         let f = |x: f64, p: f64| k(x, a, p, d) * C0 / (2.0 * PI);
         for (m, exact) in [(0u32, f(2.404_825_557_695_773, 0.0)), (1, f(1.841_183_781_340_659, 1.0)), (2, f(3.054_236_928_227_14, 1.0))] {

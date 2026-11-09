@@ -222,7 +222,8 @@ fn an_electric_wall_keeps_te20_and_a_numeric_port_frees_its_rim() {
 fn a_half_stripline_has_the_whole_lines_impedance() {
     // A stripline cut through its strip by a magnetic wall: the half carries half the power and
     // half the current, so its impedance by power and current is twice the whole's; the solver
-    // reports the whole's (Cohn's 2.4 mm strip in εr = 2.2, b = 3 mm: within 0.3 % at this mesh).
+    // reports the whole's (Cohn's 2.4 mm strip in εr = 2.2, b = 3 mm: within 0.3 % at this mesh)
+    // (Cohn, IRE Trans. MTT 2(2), 1954; Pozar §3.7).
     let (b, w, er, length) = (0.003, 0.0024, 2.2, 0.001);
     let a = w + 6.0 * b;
     let line = |planes: &[Symmetry]| {
@@ -254,6 +255,8 @@ fn a_half_stripline_has_the_whole_lines_impedance() {
 
 #[test]
 fn a_stripline_halved_through_its_strip_plane_keeps_the_whole_lines_impedance() {
+    // Stripline Z0 = η0/(4√εr)·K(k)/K(k') (Cohn, IRE Trans. MTT 2(2):52-57, 1954; Pozar, Microwave
+    // Engineering, 4th ed., §3.7).
     // The stripline's TEM is even about the strip's plane y = b/2 (tangential E even, normal E
     // odd): a magnetic wall there keeps it, the strip a conductor on the wall. Power and current
     // both halve, so the reported impedance is the whole's; S is the whole's.

@@ -72,6 +72,8 @@ fn an_l_section_cascaded_fits_back_to_its_own_l_and_c() {
 
 #[test]
 fn two_quarter_wave_lines_turn_the_phase_by_a_half_and_a_sweep_chains_with_them() {
+    // Two quarter-wave lines chained by ABCD give S21 = -1 (Pozar, Microwave Engineering, 4th ed.,
+    // §4.4, Tables 4.1-4.2).
     let mut s = Session::new();
     // 75 mm in vacuum is a quarter wave at 1 GHz: two of them, S21 = −1 there.
     // A band of one frequency is refused.

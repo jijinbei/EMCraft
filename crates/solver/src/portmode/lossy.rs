@@ -362,7 +362,8 @@ mod tests {
     #[test]
     fn a_degenerate_lossy_pair_is_made_orthogonal() {
         // A square guide filled with a lossy dielectric: TE10 and TE01 share γ; the solver's two
-        // vectors are made orthogonal in xᵀBy, so their cross power vanishes.
+        // vectors are made orthogonal in xᵀBy, so their cross power vanishes (γ = √(k_c² − k²),
+        // Pozar, Microwave Engineering, 4th ed., §3.3).
         let a = 0.02;
         let k0 = 2.0 * std::f64::consts::PI * 12e9 / emcraft_model::units::C0;
         let cs = rectangle(Order::Two, a, a, 8, 8, |_, _| 1.0);

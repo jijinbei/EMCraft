@@ -379,6 +379,8 @@ mod tests {
 
     #[test]
     fn mutual_impedance_of_short_gaps() {
+        // Far apart, short gaps: Z21 from the infinitesimal dipole's exact field (Balanis, Antenna
+        // Theory, 4th ed., eqs. 4-10a, 4-10b).
         let f = 10e9;
         let k = 2.0 * PI * f / C0;
         // Short gaps far apart: the point-dipole broadside field, V₂ = E_θ l₂ (E_z = −E_θ),
@@ -422,6 +424,8 @@ mod tests {
 
     #[test]
     fn spherical_bessel_by_downward_recurrence() {
+        // Closed forms j0 = sin ρ/ρ, j1 = sin ρ/ρ² − cos ρ/ρ; recurrence as in the Mie series
+        // (Bohren & Huffman, 1983, §4.4).
         let j = sph_j_all(12, 0.7);
         approx::assert_abs_diff_eq!(j[0], 0.7f64.sin() / 0.7, epsilon = 1e-15);
         approx::assert_abs_diff_eq!(j[1], (0.7f64.sin() / 0.49 - 0.7f64.cos() / 0.7), epsilon = 1e-15);

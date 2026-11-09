@@ -95,6 +95,8 @@ mod tests {
 
     #[test]
     fn simplex_rules_integrate_monomials() {
+        // Collapsed rules are exact on monomials: ∫λ^α = 3!V α!/(|α|+3)! (Stroud 1971, §2.4; Duffy
+        // 1982; Zienkiewicz & Taylor §8.8).
         let corners = [[0.0, 0.0, 0.0], [2.0, 0.1, 0.0], [0.3, 1.5, 0.2], [0.1, 0.2, 0.9]].map(emcraft_model::Point3::from);
         let n = 4;
         let rule = tet_rule(&corners, n);

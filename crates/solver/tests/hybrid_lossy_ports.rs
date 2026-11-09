@@ -83,6 +83,8 @@ fn check_two_ply(order: Order, freqs: &[f64], mode_tol: f64, tol: f64) {
 
 #[test]
 fn a_lossy_two_ply_stripline_carries_its_exact_tem_wave() {
+    // TEM in a lossy fill: γ = jk₀√(εr(1 − j tanδ)), S21 = e^{−γL} (Pozar, Microwave Engineering,
+    // 4th ed., §1.3, §3.7).
     // First-order elements: the TEM mode still exact, S within 2e-2.
     check_two_ply(Order::One, &[10e9], 1e-6, 2e-2);
 }
@@ -90,6 +92,8 @@ fn a_lossy_two_ply_stripline_carries_its_exact_tem_wave() {
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn a_lossy_two_ply_stripline_carries_its_exact_tem_wave_at_order_two() {
+    // TEM in a lossy fill: γ = jk₀√(εr(1 − j tanδ)), S21 = e^{−γL} (Pozar, Microwave Engineering,
+    // 4th ed., §1.3, §3.7).
     // As the lossless stripline (`stripline` oracle): |S11| ~1e-4, the phase within 0.005°.
     check_two_ply(Order::Two, &[5e9, 10e9], 1e-6, 1e-3);
 }
@@ -170,7 +174,8 @@ fn a_terminal_port_in_a_lossy_medium_is_refused() {
 fn a_lossy_filling_with_te_and_tm_modes_of_equal_cut_off_is_solved() {
     // WR-90 filled with one lossy dielectric, its ports solved numerically with six modes: TE11
     // and TM11 share their cut-off, and a pair the solver mixes takes the hybrid lossy modes
-    // (no longer refused); every γ is the closed form's.
+    // (no longer refused); every γ is the closed form's (γ = √(k_c² − k²), Pozar, Microwave
+    // Engineering, 4th ed., §3.3).
     let fill = Material::new("lossy", 2.2, 1.0).unwrap().with_loss_tangent(0.02).unwrap();
     let (a, b) = (0.02286, 0.01016);
     let mut m = boxed(vec![fill], [a, b, 0.01], "lossy", Vec::new(), &[], 0.003);

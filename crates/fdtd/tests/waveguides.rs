@@ -105,6 +105,8 @@ fn hostile_requests_are_refused() {
 
 #[test]
 fn an_e_plane_step_reflects_as_mode_matching_says() {
+    // E-plane step by mode matching (Wexler 1967; Uher, Bornemann & Rosenberg 1993, §2.2);
+    // smoke-level, 20 % on |S11|.
     // The guide steps down to half its height against the y = 0 wall. A smoke test of the
     // sections' heights on 2.54 mm cells (|S11| 3 % and 7 % high): how close it comes to mode
     // matching is the oracle's eplane-step (1 mm cells, 1.0e-2 and 1.7e-2 in S); a step left
@@ -156,6 +158,8 @@ fn dispersive_error(cell: f64, freqs: &[f64]) -> f64 {
 
 #[test]
 fn dispersive_slab_matches_the_exact_cascade() {
+    // Debye + Lorentz ε(ω) in the TE10 cascade (Taflove & Hagness, 3rd ed., §9.2, §9.4; Pozar, 4th
+    // ed., §3.3).
     // The auxiliary differential equations against ε(ω) in closed form. Measured 1.9e-2, 3.7e-2
     // and 7.2e-2 at 8, 10 and 12 GHz with 1.5 mm cells: the grid's phase error, as large as for
     // a lossless slab of the same index (1.4e-2, 5.8e-2, 6.7e-2).

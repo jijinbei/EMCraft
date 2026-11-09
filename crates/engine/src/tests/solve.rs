@@ -10,7 +10,8 @@ use crate::*;
 fn the_sample_solves_and_is_compared_with_the_theory() {
     // The plumbing: the default order, the reply, the comparison's reference and its units.
     // How close it comes is the oracle's highpass-filter (its results.compare) and the solver's
-    // waveguide.rs; a wrong reference (another filling, length or mode) would be tenths off.
+    // waveguide.rs; a wrong reference (another filling, length or mode) would be tenths off. The
+    // TE10 line cascade: Pozar, Microwave Engineering, 4th ed., §3.3, §4.4.
     let mut s = Session::new();
     s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
     s.execute("mesh.generate", &json!({"size": 8})).unwrap();
@@ -28,7 +29,8 @@ fn the_sample_solves_and_is_compared_with_the_theory() {
 fn a_dispersive_slab_solves_against_its_exact_cascade() {
     // The comparison evaluates ε(ω) at each frequency: one that left the pole out would be
     // tenths off. How close it comes is the oracle's dispersive-slab (its results.compare) and
-    // the solver's losses.rs.
+    // the solver's losses.rs. The TE10 line cascade: Pozar, Microwave Engineering, 4th ed., §3.3,
+    // §4.4.
     let mut s = Session::new();
     s.execute("model.material.create", &json!({"name": "d", "eps_r": 2, "debye": [{"delta_eps": 0.6, "frequency": 20}]})).unwrap();
     s.execute(
@@ -47,6 +49,8 @@ fn a_dispersive_slab_solves_against_its_exact_cascade() {
 
 #[test]
 fn ports_in_a_magnetically_lossy_filling_solve_against_the_exact_line() {
+    // Exact line of a lossy filling: γ = √(k_c² − k²), complex ε and μ (Pozar, Microwave
+    // Engineering, 4th ed., §1.3, §3.3).
     let mut s = Session::new();
     // Hostile loss tangents are refused, and nothing is created.
     for bad in [json!(-0.1), json!(f64::MAX), json!(1e10), json!("x")] {
@@ -84,6 +88,7 @@ fn ports_in_a_magnetically_lossy_filling_solve_against_the_exact_line() {
 
 #[test]
 fn an_iris_is_compared_with_mode_matching() {
+    // Mode matching through the iris (Wexler, IEEE Trans. MTT 15(9):508–517, 1967).
     let mut s = Session::new();
     s.execute(
         "geometry.waveguide",
@@ -110,6 +115,8 @@ fn an_iris_is_compared_with_mode_matching() {
 
 #[test]
 fn cavity_eigenmodes_and_their_pictures() {
+    // The reply's reference rows are f = c/2 √((m/a)² + (n/b)² + (p/d)²), TE101 8.24 GHz (Pozar,
+    // Microwave Engineering, 4th ed., §6.3).
     let mut s = Session::new();
     s.execute("file.sample", &json!({"name": "cavity"})).unwrap();
     s.execute("mesh.generate", &json!({"size": 8})).unwrap();
@@ -253,6 +260,8 @@ fn the_time_domain_runs_where_the_machine_can() {
 
 #[test]
 fn circular_and_coaxial_guides_have_exact_references() {
+    // Circular TE11: cut-off x'11/r, S21 = e^{-jβL} (Marcuvitz §2.3, Pozar §3.4; x'11 from
+    // Abramowitz & Stegun Table 9.5).
     // An empty cylinder: TE11 (cut-off 8.79 GHz for r = 10 mm), S21 = e^{−jβL}, no S11; with a
     // coaxial conductor subtracted through it, TEM at k√εr; anything else has none.
     let mut s = Session::new();
@@ -378,6 +387,8 @@ fn stubs_and_vias_mesh_and_solve_and_hostile_vias_are_refused() {
 
 #[test]
 fn the_cut_offs_beside_the_band_are_the_ports_and_the_sections() {
+    // WR-90 cut-offs f_c = c/2a (TE10), c/a (TE20), c/2b (TE01), over √εr in a filling (Pozar,
+    // Microwave Engineering, 4th ed., §3.3).
     let mut s = Session::new();
     s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
     let c = crate::workflow::cutoffs(&s);

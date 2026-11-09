@@ -49,6 +49,8 @@ fn cylinder_error(h: f64, curved: bool) -> f64 {
 
 #[test]
 fn cylindrical_cavity_resonances() {
+    // Cylinder cavity: f = c/(2π)·√((x_nm/a)² + (pπ/d)²) (Pozar, Microwave Engineering, 4th ed.,
+    // §6.4; Bessel zeros: Abramowitz & Stegun).
     // Curved elements: 1.1e-4 at 4 mm (4.0e-5 at 3 mm, curved_cavities_converge and the oracle's
     // cylinder-cavity). Straight ones, flat facets inscribed in the wall, shrink the cavity: an
     // O(h²) error of the geometry, 8.2e-3 (5.6e-3 at 3 mm).
@@ -68,6 +70,8 @@ fn sphere_error(h: f64) -> f64 {
 
 #[test]
 fn spherical_cavity_resonances() {
+    // Spherical cavity: TM_np at zeros of [x j_n(x)]', TE_np at zeros of j_n (Harrington,
+    // Time-Harmonic EM Fields, 1961, §6.10).
     // 1.6e-4 at 3 mm (straight elements: 1.3e-2).
     let w = sphere_error(0.003);
     assert!(w < 5e-4, "{w:e}");
@@ -87,6 +91,7 @@ fn curved_cavities_converge() {
 
 #[test]
 fn unstructured_box_cavity() {
+    // Box cavity f = c/2·√((m/a)² + (n/b)² + (p/d)²) (Pozar, Microwave Engineering, 4th ed., §6.3).
     let m = body(Shape::Box { size: box_size(Vec3::new(0.02286, 0.01016, 0.03)) }, 0.003);
     let e = eigenmodes(&m, Order::Two, 3, 12.0e9).unwrap();
     let f: Vec<f64> = e.modes.iter().map(|x| x.frequency).collect();
@@ -98,6 +103,8 @@ fn unstructured_box_cavity() {
 
 #[test]
 fn unstructured_waveguide_transmits_with_the_te10_phase() {
+    // TE10 line: S21 = e^{−jβL}, β = √(k² − (π/a)²) (Pozar, Microwave Engineering, 4th ed., §3.3,
+    // §4.4).
     use emcraft_model::{End, Port};
     // A 30 mm length of WR-90 as a box with ports on its ends, meshed without structure.
     let mut m = body(Shape::Box { size: box_size(Vec3::new(0.02286, 0.01016, 0.03)) }, 0.003);
@@ -140,6 +147,8 @@ fn circular_guide_error(h: f64) -> f64 {
 
 #[test]
 fn circular_waveguide_transmits_with_the_te11_phase() {
+    // Circular guide TE11: k_c = p'11/r, S21 = e^{−jβL} (Pozar, Microwave Engineering, 4th ed.,
+    // §3.4; Abramowitz & Stegun, Table 9.5).
     // The ports' TE11, TM01 and the cross-polarized TE11 against Bessel modes: 1.1e-3 at 3 mm,
     // |S11| under 1e-4 (straight elements, whose flat facets raise the cut-off: 4.4e-2).
     let w = circular_guide_error(0.003);

@@ -382,6 +382,8 @@ mod tests {
     /// them (mm).
     #[test]
     fn the_oracles_references() {
+        // Cohn's Z0e/Z0o (IRE MTT 3(5), 1955), Jones–Bolljahn/Pozar §8.7 section,
+        // Matthaei–Young–Jones §4.05 filter cascade.
         let (mm, er) = (1e-3, 2.2);
         let close = |a: f64, b: f64| (a - b).abs() <= 1e-9 * b.abs().max(1.0);
         // Coupled stripline: W = 2.4, S = 0.6, b = 3.

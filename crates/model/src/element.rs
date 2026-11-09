@@ -151,6 +151,8 @@ mod tests {
 
     #[test]
     fn series_and_parallel_resonate_where_lc_says() {
+        // Series and parallel RLC resonate at f₀ = 1/(2π√(LC)) (Pozar, Microwave Engineering, 4th
+        // ed., §6.1).
         let (l, c): (f64, f64) = (1e-9, 1e-12);
         let f0 = 1.0 / (2.0 * PI * (l * c).sqrt());
         // In series a short at resonance (only R left), in parallel an open (only G left).

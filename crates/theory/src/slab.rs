@@ -254,6 +254,8 @@ mod tests {
 
     #[test]
     fn a_full_slab_scales_the_wavenumber_and_the_dominant_mode_lies_between() {
+        // Filled slab (d = b): TE10 β² = k²εr − (π/a)² (Pozar, Microwave Engineering, 4th ed.,
+        // §3.3).
         let (a, b, k0) = (0.02286, 0.01016, 2.0 * PI * 10e9 / emcraft_model::units::C0);
         // Filled (d = b, L = 0): TE10 with k² εr.
         let full = slab_loaded_modes(&SlabGuide { a, b, d: b, eps_r: 2.25 }, ModeSearch { k0, lowest: 0.0, count: 1 });
@@ -265,6 +267,8 @@ mod tests {
 
     #[test]
     fn a_lossy_slab_follows_the_lossless_roots() {
+        // Filled lossy guide: TE10 β² = k²εr(1 − j tanδ) − (π/a)² (Pozar §3.3); half-filled root
+        // meets the LSM equation (Collin §6.1).
         let (a, b, k0) = (0.02286, 0.01016, 2.0 * PI * 10e9 / emcraft_model::units::C0);
         // Filled (d = b): TE10 with the complex k² εr exactly.
         let eps = C::new(2.25, -2.25 * 0.02);

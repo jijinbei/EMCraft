@@ -41,6 +41,7 @@ fn gap(name: &str, x: f64, z: f64, v: f64) -> LumpedPort {
 
 #[test]
 fn a_coarse_current_element_radiates_and_bad_inputs_are_refused() {
+    // Hertzian dipole: P = η(kIl)²/(12π), D = 3/2 (Balanis, Antenna Theory, 4th ed., §4.2).
     // 2 mm cells (λ/15), a 40 mm box: the plumbing, fast.
     let f = 10e9;
     let mut m = open_box(0.04, 0.01);
@@ -69,6 +70,7 @@ fn a_coarse_current_element_radiates_and_bad_inputs_are_refused() {
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn a_current_element_radiates_as_a_hertzian_dipole() {
+    // Hertzian dipole: P = η(kIl)²/(12π), D = 1.5 sin²θ (Balanis, Antenna Theory, 4th ed., §4.2).
     let mut m = open_box(0.06, 0.015);
     m.add_source(Source::Dipole { at: Point3::new(0.03, 0.03, 0.03), direction: Vec3::new(0.0, 0.0, 1.0), length: metres(1e-3), current: 1.0 })
         .unwrap();

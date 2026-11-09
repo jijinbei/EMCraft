@@ -304,7 +304,7 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   components on the (r, z) Yee grid, the axis by Ampère's law round a disc (m = 0) or the
   fields' mirror images (m = 1), the step bounded by Δ/(m + 1) (`emcraft-fdtd::bor`).
 - The pillbox's and the coaxial cavity's closed forms that check it: D. M. Pozar, *Microwave
-  Engineering*, 4th ed., Wiley 2012, §6.3; the Bessel zeros from M. Abramowitz, I. A. Stegun,
+  Engineering*, 4th ed., Wiley 2012, §6.4 (circular cavities; §6.3 is the rectangular one's); the Bessel zeros from M. Abramowitz, I. A. Stegun,
   *Handbook of Mathematical Functions*, 1964, Table 9.5.
 
 ## Losses
@@ -629,6 +629,16 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
 - D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §4.4, Tables 4.1–4.2 — lumped
   series and shunt elements' and lines' chain matrices, S from ABCD, the π and T networks of Y
   and Z (`circuit.cascade`, `results.equivalent`; oracle `network-lumped`).
+- D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012 — the closed forms the tests check
+  that no paper above gives, and the notation of derivations made here (docs/style.md): §1.3
+  plane waves in lossy media (γ = jk√(1 − j tan δ)); §3.5 the coaxial line (TEM, β = k√εr,
+  Z₀ = η ln(b/a)/2π); §3.7 the stripline (TEM in its fill); §6.1 series and parallel resonant
+  circuits (ω₀ = 1/√(LC)); §6.3 the dielectric Q of a filled cavity (Q_d = 1/tan δ).
+- O. C. Zienkiewicz, R. L. Taylor, *The Finite Element Method*, vol. 1, 5th ed., 2000, §8.8 — the
+  exact integrals of barycentric monomials over a simplex that the element matrices and the
+  quadrature tests check (`emcraft-fem::poly`, `quadrature`, `nedelec`).
+- EIA RS-261-B, *Rectangular Waveguides* (IEC 60153-2 lists the same) — the standard guides'
+  sizes and recommended bands (`emcraft-engine::guides`).
 - G. P. Agrawal, *Nonlinear Fiber Optics*, 5th ed., Academic Press 2013, §3.2 — a chirped
   Gaussian pulse through a dispersive line, compressed when its chirp undoes the group-delay
   slope (`emcraft-engine::pulse`, `results.pulse`; the closed form its test checks).

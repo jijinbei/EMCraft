@@ -274,6 +274,8 @@ mod tests {
 
     #[test]
     fn te10_is_the_dominant_mode() {
+        // Rectangular modes: k_c = √((mπ/a)² + (nπ/b)²), TE10 first, e = ŷ sin(πx/a) (Pozar,
+        // Microwave Engineering, 4th ed., §3.3).
         let (a, b) = (0.02286, 0.01016);
         let modes = lowest(a, b, 5);
         let names: Vec<String> = modes.iter().map(Mode::name).collect();
@@ -320,6 +322,8 @@ mod tests {
 
     #[test]
     fn propagation_constants() {
+        // γ = √(k_c² − k²) below cut-off, j√(k² − k_c²) above; κ = γ (TE), −k²/γ (TM) (Pozar
+        // §3.3–3.4; Jin 2014, §8.5).
         let m = Mode::te10(0.02, 0.01);
         let kc = m.cutoff();
         let (gr, gi) = m.gamma(2.0 * kc);
@@ -337,6 +341,8 @@ mod tests {
 
     #[test]
     fn lossy_propagation_constants_decay_and_reduce_to_the_lossless_ones() {
+        // Lossy medium: γ² = k_c² − k² with complex k², α ≈ k″²/(2β) to first order (Pozar §3.3;
+        // Jin 2014, §8.5).
         use num_complex::Complex64 as C;
         let m = Mode::te10(0.02, 0.01);
         let kc = m.cutoff();
@@ -361,6 +367,8 @@ mod tests {
 
     #[test]
     fn circular_modes_are_orthogonal_with_their_norms_and_meet_the_wall() {
+        // Circular modes: TE11 k_c r = p′₁₁ = 1.8412 (Pozar §3.4; Abramowitz & Stegun, Table 9.5);
+        // orthogonal with their norms.
         let r = 0.01;
         let modes = lowest_circular(r, 9);
         let names: Vec<String> = modes.iter().map(Mode::name).collect();

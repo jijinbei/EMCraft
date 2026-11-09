@@ -67,6 +67,8 @@ fn lossy_slab_exact(f: f64) -> (C, C) {
 
 #[test]
 fn a_lossy_slab_matches_the_cascade_of_its_conductivity() {
+    // TE10 cascade with ε = εr(1 − j tan δ) (Pozar, Microwave Engineering, 4th ed., §1.3, §3.3,
+    // §4.4).
     let r = run(&lossy_slab(), 0.0015, &FREQS);
     let (s, mag) = worst(&r, lossy_slab_exact);
     // Measured 5.2e-2 (the grid's phase error, as for a lossless slab of the same index) and
@@ -79,6 +81,8 @@ fn a_lossy_slab_matches_the_cascade_of_its_conductivity() {
 
 #[test]
 fn magnetic_losses_match_the_cascade_of_their_magnetic_conductivity() {
+    // TE10 cascade with μ = μr(1 − j tan δm) (Pozar, Microwave Engineering, 4th ed., §1.3, §3.3,
+    // §4.4).
     let ferrite = Material::new("ferrite", 1.5, 2.0).unwrap().with_magnetic_loss_tangent(0.05).unwrap();
     let m =
         guide(vec![ferrite], vec![Section::new(metres(0.01), "vacuum"), Section::new(metres(0.02), "ferrite"), Section::new(metres(0.01), "vacuum")]);
@@ -116,6 +120,8 @@ fn wall_errors(cell: f64, decay: f64) -> Vec<f64> {
 
 #[test]
 fn finite_conductivity_walls_attenuate_by_the_te10_conductor_loss() {
+    // TE10 wall attenuation α_c = R_s(2bπ² + a³k²)/(a³bβkη) (Pozar, Microwave Engineering, 4th ed.,
+    // eq. 3.96).
     // Measured +0.9, +0.9 and +0.8 % at 1.5 mm. αL is 1e-2: the transforms' settling to 1e-5
     // leaves |S21| within some 1e-4 (an empty guide's α reads 1e-3 Np/m at 8 GHz), 1 % of it.
     let errors = wall_errors(0.0015, 1e-5);
@@ -125,6 +131,8 @@ fn finite_conductivity_walls_attenuate_by_the_te10_conductor_loss() {
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn wall_losses_converge() {
+    // TE10 wall attenuation α_c against eq. 3.96 (Pozar, Microwave Engineering, 4th ed.), first
+    // order in R_s.
     // Settled to 1e-7 (an empty guide's α then reads 5e-5 Np/m): −0.2, +0.8 and +1.7 % at 1.5 mm,
     // −0.2, +0.14 and +0.38 % at 0.75 mm, second order at 10 and 12 GHz; at 8 GHz, near the
     // cut-off, the closed form's own first-order error in R_s/η (k/β)² ≈ 1.5e-3 remains.
@@ -134,6 +142,8 @@ fn wall_losses_converge() {
 
 #[test]
 fn a_lossy_port_carries_the_complex_propagation_constant() {
+    // S21 = e^{−γL}, γ = √(k_c² − k²) with complex k² (Pozar, 4th ed., §3.3); lossy-port waves per
+    // Marks & Williams 1992.
     // The whole guide lossy: S21 = e^{−γL} with γ the realised material's, S11 ≈ 0.
     let lossy = Material::new("lossy", 2.2, 1.0).unwrap().with_loss_tangent(0.02).unwrap();
     let m = guide(vec![lossy], vec![Section::new(metres(0.05), "lossy")]);
@@ -155,6 +165,8 @@ fn a_lossy_port_carries_the_complex_propagation_constant() {
 
 #[test]
 fn a_dispersive_port_carries_its_complex_propagation_constant() {
+    // Debye ε(ω) = ε∞ + Δε/(1 + jωτ) in the TE10 line (Taflove & Hagness, 3rd ed., §9.2; Pozar, 4th
+    // ed., §3.3).
     let tau = 1.0 / (2.0 * PI * 20e9);
     let debye = Material::new("debye", 2.0, 1.0).unwrap().with_dispersion(vec![Pole::debye(0.6, tau).unwrap()]).unwrap();
     let m = guide(vec![debye], vec![Section::new(metres(0.03), "debye")]);

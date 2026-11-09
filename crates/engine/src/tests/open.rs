@@ -102,6 +102,8 @@ fn spherical_layers_radiate() {
 
 #[test]
 fn a_lumped_gap_radiates_as_a_hertzian_dipole() {
+    // Hertzian dipole Re Z = 2P/I² = 80π²(l/λ)² = 0.8785 Ω for l = 1 mm at 10 GHz (Balanis, Antenna
+    // Theory, 4th ed., §4.2).
     let mut s = Session::new();
     s.execute("geometry.solid", &json!({"shape": "box", "size": [40, 40, 40]})).unwrap();
     s.execute("model.open", &json!({"thickness": 10})).unwrap();
@@ -171,6 +173,8 @@ fn ports_on_faces_go_with_open_boundaries() {
 
 #[test]
 fn the_time_domain_solves_open_problems() {
+    // Hertzian dipole: Re Z = 80π²(l/λ)² = 3.514 Ω for 2 mm at 10 GHz, directivity 3/2 (Balanis,
+    // Antenna Theory, 4th ed., §4.2).
     let mut s = Session::new();
     s.execute("geometry.solid", &json!({"shape": "box", "size": [40, 40, 40]})).unwrap();
     s.execute("model.open", &json!({"thickness": 10})).unwrap();

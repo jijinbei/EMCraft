@@ -148,7 +148,8 @@ pub(crate) fn quarter_wave() -> (f64, f64) {
 #[test]
 fn the_optimizer_converges_and_leaves_the_model_at_its_best() {
     // On 8 mm first-order elements, for speed: how close it comes to λg/4 is the oracle's
-    // study-optimize-quarter-wave (3 mm, second order).
+    // study-optimize-quarter-wave (3 mm, second order) (λg/4 transformer: Pozar, Microwave
+    // Engineering, 4th ed., §2.5, §5.4).
     let (size, order) = (8.0, 1);
     let (er, quarter) = quarter_wave();
     let mut s = Session::new();

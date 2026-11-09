@@ -82,6 +82,8 @@ fn rate(order: Order) -> f64 {
 // meshes are not exact halvings, hence the margins). Measured 4.05 and 13.9.
 #[test]
 fn the_indicator_falls_at_the_first_order_rate() {
+    // Order-p Nédélec elements' a priori rate: the squared error falls as h^{2p} (Monk, Finite
+    // Element Methods for Maxwell's Equations, 2003).
     let r = rate(Order::One);
     assert!(r > 2.5 && r < 7.0, "{r}");
 }

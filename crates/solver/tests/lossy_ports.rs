@@ -87,6 +87,7 @@ fn a_guide_filled_with_a_magnetically_lossy_material_decays_from_port_to_port() 
 fn a_step_from_air_into_a_lossy_filling_matches_the_cascade() {
     // Port 1 in air, port 2 in the lossy filling (both kinds of loss): the TE10 cascade with
     // its waves normalised as the solver's (the unconjugated root of the wave admittances).
+    // Source: Pozar, Microwave Engineering, 4th ed., §3.3, §4.4; Marks & Williams 1992.
     let fill = Material::new("lossy", 2.0, 1.3).unwrap().with_loss_tangent(0.01).unwrap().with_magnetic_loss_tangent(0.02).unwrap();
     let m = guide(vec![fill], vec![Section::new(metres(0.012), "vacuum"), Section::new(metres(0.02), "lossy")], 0.003, ModeSolver::Auto);
     let d = Driven::new(&m, Order::Two).unwrap();
@@ -105,6 +106,8 @@ fn a_step_from_air_into_a_lossy_filling_matches_the_cascade() {
 
 #[test]
 fn magnetic_losses_balance_the_ports() {
+    // Exact TE10 cascade with μ = μr(1 − j tanδm) (Pozar, Microwave Engineering, 4th ed., §1.3,
+    // §3.3, §4.4).
     // A slab with magnetic loss between air ports: 1 − |S11|² − |S21|² = ½ωμ₀∫μ″|H|² / P_inc.
     let slab = Material::new("ferrite", 1.0, 2.0).unwrap().with_magnetic_loss_tangent(0.05).unwrap();
     let m = guide(
@@ -153,6 +156,7 @@ fn a_fast_sweep_handles_lossy_ports_and_magnetic_losses() {
 #[test]
 fn de_embedding_a_lossy_line_uses_its_attenuation() {
     // Moving both reference planes in by d along the lossy line: S21′ = S21 e^{2γd} = e^{−γ(L − 2d)}.
+    // Source: γ = √(k_c² − k²), Pozar, Microwave Engineering, 4th ed., §3.3.
     let fill = Material::new("lossy", 2.2, 1.0).unwrap().with_loss_tangent(0.05).unwrap();
     let (l, dz) = (0.03, 0.005);
     let mut m = guide(vec![fill], vec![Section::new(metres(l), "lossy")], 0.003, ModeSolver::Auto);
@@ -169,6 +173,8 @@ fn de_embedding_a_lossy_line_uses_its_attenuation() {
 
 #[test]
 fn port_modes_report_the_complex_propagation_constant() {
+    // TE10 γ = √((π/a)² − k0² εr(1 − j tanδ) μr(1 − j tanδm)) (Pozar, Microwave Engineering, 4th
+    // ed., §3.3).
     let fill = Material::new("lossy", 2.2, 1.4).unwrap().with_magnetic_loss_tangent(0.01).unwrap().with_loss_tangent(0.02).unwrap();
     for solver in [ModeSolver::Auto, ModeSolver::Numeric] {
         let m = guide(vec![fill.clone()], vec![Section::new(metres(0.02), "lossy")], 0.003, solver);
@@ -201,6 +207,8 @@ fn cavity(fill: Material) -> Model {
 
 #[test]
 fn a_magnetically_lossy_cavity_has_q_of_its_loss_tangent() {
+    // Derived here from a filled cavity's ω = ω₀/√(1 − j tanδm), Q → 1/tanδm for small loss (Pozar,
+    // Microwave Engineering, 4th ed., §6.3).
     // μ = μr(1 − j tan δm) throughout: K/(1 − j tan δm) x = k² M x, so k² is the lossless one
     // divided by 1 − j tan δm, as for a dielectric loss: Q_m = 1/(2 tan(½ atan tan δm)) ≈ 1/tan δm.
     let tan_m: f64 = 1e-3;

@@ -616,6 +616,8 @@ mod tests {
 
     #[test]
     fn a_minimum_is_the_parabolas_vertex() {
+        // Derived here: three samples fix a parabola, so its fitted vertex −b/2a is the sampled
+        // function's own minimum.
         // y = |x − 2.3| sampled at 0.5 steps: y² is a parabola, its vertex exact.
         let points: Vec<Value> = (0..9).map(|i| f64::from(i) * 0.5).map(|x| json!({"f": x, "s": {"mag": (x - 2.3f64).abs()}})).collect();
         let reply = json!({"points": points});

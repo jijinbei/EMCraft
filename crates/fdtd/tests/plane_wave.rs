@@ -31,6 +31,7 @@ fn rayleigh(f: f64, a: f64, eps: f64) -> f64 {
 
 #[test]
 fn a_faint_sphere_scatters_as_rayleigh_says_whichever_way_the_wave_comes() {
+    // Rayleigh cross-section σ = (8π/3)k⁴a⁶((εr − 1)/(εr + 2))² (Bohren & Huffman 1983, §5.2).
     // Along +z and −x: the split lets no incident wave out, so what reaches the Huygens box is
     // the sphere's.
     for (k, e) in [(Vec3::new(0.0, 0.0, 1.0), Vec3::new(1.0, 0.0, 0.0)), (Vec3::new(-1.0, 0.0, 0.0), Vec3::new(0.0, 0.0, -1.0))] {

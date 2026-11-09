@@ -99,6 +99,8 @@ mod tests {
     /// A straight guide's cell carries TE11 as it is: λ = e^{−jβp}, β = √(k² − (x′₁₁/r)²).
     #[test]
     fn a_straight_cell_carries_the_guides_wave() {
+        // Straight cell: λ = e^{−jβp}, β = √(k² − (p'11/r)²) (Pozar, Microwave Engineering, 4th
+        // ed., §3.4; Abramowitz & Stegun, Table 9.5).
         let (r, p, f) = (0.012, 0.016, 10e9);
         let prof = cell(r, p, 0.0, 0.6e-3);
         let ports = |z: f64| BorPort { z, modes: 3 };
@@ -112,6 +114,8 @@ mod tests {
     /// into itself): there the wave decays, |λ| < 1, and below and above it passes.
     #[test]
     fn a_waving_wall_stops_the_wave_at_the_bragg_frequency() {
+        // Bragg stop band where βp = π, β = √(k² − (p'11/r)²) (Collin, Foundations for Microwave
+        // Engineering, 2nd ed., §9.2).
         let (r, p, h) = (0.012, 0.016, 0.0015);
         let prof = cell(r, p, h, 0.6e-3);
         let ports = |z: f64| BorPort { z, modes: 3 };

@@ -349,6 +349,8 @@ mod tests {
 
     #[test]
     fn an_empty_guide_periodic_along_z_has_te10s_dispersion() {
+        // Empty periodic guide: k² = (mπ/a)² + (nπ/b)² + ((ψ+2πq)/L)² (theory::floquet; Collin,
+        // Foundations, periodic structures).
         let m = guide(vec![Section::new(metres(0.01), "vacuum")]);
         let sweep = Sweep { axis: 2, from: 0.0, to: PI, points: 3, bands: 2, near: 15e9 };
         let d = dispersion(&m, Order::Two, &sweep).unwrap();
@@ -408,6 +410,8 @@ mod cyclic_tests {
     /// +5e-5).
     #[test]
     fn a_quarter_of_a_pillbox_at_order_two() {
+        // Pillbox f = c/(2π)·√((x_nm/a)² + (pπ/d)²) (Pozar, Microwave Engineering, 4th ed., §6.4;
+        // Abramowitz & Stegun, Table 9.5).
         let (m, exact) = exact()[1];
         let got = sector_modes_of(4, m, 0.9 * exact[0], 0.003, Order::Two);
         for (g, e) in got.iter().zip(&exact) {
@@ -419,6 +423,8 @@ mod cyclic_tests {
     #[test]
     #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
     fn a_quarter_of_a_pillbox_at_order_two_in_both_harmonics() {
+        // Pillbox f = c/(2π)·√((x_nm/a)² + (pπ/d)²) (Pozar, Microwave Engineering, 4th ed., §6.4;
+        // Abramowitz & Stegun, Table 9.5).
         for (m, exact) in exact() {
             let got = sector_modes_of(4, m, 0.9 * exact[0], 0.003, Order::Two);
             for (g, e) in got.iter().zip(&exact) {
@@ -432,6 +438,8 @@ mod cyclic_tests {
     #[test]
     #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
     fn a_quarter_of_a_pillbox_converges_on_a_finer_mesh() {
+        // Pillbox f = c/(2π)·√((x_nm/a)² + (pπ/d)²) (Pozar, Microwave Engineering, 4th ed., §6.4;
+        // Abramowitz & Stegun, Table 9.5).
         for (m, exact) in exact() {
             let got = sector_modes(4, m, 0.9 * exact[0], 0.0015);
             for (g, e) in got.iter().zip(&exact) {

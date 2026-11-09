@@ -179,6 +179,8 @@ mod tests {
 
     #[test]
     fn values_and_identities() {
+        // J0(1) = 0.76519768…, J1′ = J0 − J1/x, j0 = sin x/x (Abramowitz & Stegun, Handbook of
+        // Mathematical Functions, 1964).
         // J₀(1) = 0.7651976865579666; Wronskian-like identity J₁' = J₀ − J₁/x.
         approx::assert_abs_diff_eq!(j(0, 1.0), 0.7651976865579666, epsilon = 1e-14);
         for x in [0.5, 3.0, 12.0] {
@@ -190,6 +192,8 @@ mod tests {
 
     #[test]
     fn a_vacuum_core_is_the_plain_sphere_and_a_dielectric_one_lowers_it() {
+        // Vacuum core gives the plain sphere's roots (Harrington, Time-Harmonic EM Fields, 1961,
+        // §6.10); y1(x) from its closed form.
         let plain = sphere_cavity_resonances(0.01, 1.0, 6);
         let same = layered_sphere_resonances(0.004, 1.0, 0.01, 6);
         for (a, b) in plain.iter().zip(&same) {
@@ -203,6 +207,8 @@ mod tests {
 
     #[test]
     fn cavity_mode_orders() {
+        // Mode order from Bessel zeros: cylinder (Pozar, Microwave Engineering, 4th ed., §6.4),
+        // sphere (Harrington, 1961, §6.10).
         // A cylinder taller than its diameter: TE111 below TM010.
         let r = cylinder_cavity_resonances(0.01, 0.03, 1.0, 3);
         assert_eq!(r[0].1, "TE111");

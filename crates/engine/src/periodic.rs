@@ -206,6 +206,8 @@ mod tests {
 
     #[test]
     fn a_slab_cell_matches_the_plane_wave_through_it() {
+        // Oblique TM plane wave through a slab, a cascade of lines (Pozar, Microwave Engineering,
+        // 4th ed., §4.4; Orfanidis, ch. 7–8).
         let mut s = Session::new();
         slab_cell(&mut s);
         let r = s.execute("model.periodic", &json!({"theta": 30, "phi": 20, "polarization": "tm"})).unwrap();
@@ -225,6 +227,8 @@ mod tests {
 
     #[test]
     fn a_guide_periodic_along_z_has_its_dispersion() {
+        // Bands k² = (π/a)² + ((ψ + 2πq)/L)² of a guide periodic in z (theory::floquet; TE/TM
+        // modes: Pozar, 4th ed., §3.3); β = ψ/L.
         let mut s = Session::new();
         s.execute("geometry.waveguide", &json!({"width": 22.86, "height": 10.16, "sections": [{"length": 10, "material": "vacuum"}]})).unwrap();
         s.execute("mesh.generate", &json!({"size": 3.5})).unwrap();

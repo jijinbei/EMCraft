@@ -316,6 +316,8 @@ mod tests {
 
     #[test]
     fn the_green_function_is_symmetric_and_vanishes_on_the_walls() {
+        // Parallel-plate Green's function: far apart only the TE10 term of the modal series remains
+        // (Collin, Field Theory of Guided Waves, ch. 5).
         let a = 22.86e-3;
         let k = 2.0 * PI * 10e9 / C0;
         let (p, q) = ((3e-3, 1e-3), (17e-3, 2.5e-3));

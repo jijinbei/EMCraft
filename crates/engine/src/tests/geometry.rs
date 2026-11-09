@@ -51,6 +51,8 @@ fn dispersive_materials_are_read_in_display_units_and_checked() {
 
 #[test]
 fn solids_mesh_unstructured_and_their_modes_meet_the_bessel_zeros() {
+    // The reply's reference row is the cylinder cavity's TE111 from the zero x'11 of J1' (Pozar,
+    // Microwave Engineering, 4th ed., §6.4).
     let mut s = Session::new();
     s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 30})).unwrap();
     let m = s.execute("mesh.generate", &json!({"size": 6})).unwrap();
@@ -703,6 +705,8 @@ fn one_search_sets_the_symmetries_that_change_no_answer() {
 /// modes and their fields come back in their own systems.
 #[test]
 fn every_wall_eigenmodes_are_the_wholes() {
+    // TE101 of the empty cavity f = c/2 √(1/a² + 1/l²) = 8.2440 GHz (Pozar, Microwave Engineering,
+    // 4th ed., §6.3).
     let freqs = |r: &serde_json::Value| r["modes"].as_array().unwrap().iter().map(|m| m["frequency"].as_f64().unwrap()).collect::<Vec<_>>();
     let mut s = Session::new();
     s.execute("geometry.solid", &json!({"shape": "box", "size": [22.86, 10.16, 30]})).unwrap();

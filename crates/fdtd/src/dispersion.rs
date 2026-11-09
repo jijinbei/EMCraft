@@ -263,6 +263,8 @@ mod tests {
 
     #[test]
     fn the_exponential_fit_matches_the_exponential_update() {
+        // Exponential update: ca = e^{−r}, cb = (1 − e^{−r})/r (Taflove & Hagness, Computational
+        // Electrodynamics, 3rd ed., §3.12).
         for r in [0.0, 1e-6, 1e-3, 0.5, 2.0, 40.0, 1e8] {
             let (eps, loss) = (exponential_fit(r), 0.5 * r);
             let (ca, cb) = ((eps - loss) / (eps + loss), 1.0 / (eps + loss));
