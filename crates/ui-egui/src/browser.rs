@@ -623,6 +623,13 @@ fn domain(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
                 }
                 None => wall,
             };
+            let detail = match d.wall_roughness {
+                Some(h) => {
+                    let rough = words(t!("{roughness} {unit} rough"), args!(roughness = mm(h.get()), unit = lu));
+                    Both { en: format!("{} · {}", detail.en, rough.en), shown: format!("{} · {}", detail.shown, rough.shown) }
+                }
+                None => detail,
+            };
             node("outer", words(t!("Outer boundary"), &[]), Some(detail), Glyph::Walls, Act::Edit("model.walls"))
         }
     };

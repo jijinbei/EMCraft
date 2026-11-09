@@ -46,6 +46,8 @@ mod items;
 pub mod job;
 mod meshing;
 pub mod network;
+pub mod noise;
+mod nrw;
 mod numbers;
 pub mod open;
 pub mod params;

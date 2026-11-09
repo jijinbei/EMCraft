@@ -86,6 +86,9 @@ fn walls(m: &Model, d: Display) -> Value {
     if let Some(t) = m.domain.wall_thickness {
         v["thickness"] = json!(d.length.from_si(t.get()));
     }
+    if let Some(h) = m.domain.wall_roughness {
+        v["roughness"] = json!(d.length.from_si(h.get()));
+    }
     v
 }
 

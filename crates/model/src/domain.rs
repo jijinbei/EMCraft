@@ -34,6 +34,10 @@ pub struct Domain {
     /// surface impedance sees through (never meshed); infinitely thick when `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wall_thickness: Option<Metres>,
+    /// The rms height (m) of the walls' roughness, raising their loss by the Hammerstad–Jensen
+    /// factor; smooth when `None`. Only with a conductivity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wall_roughness: Option<Metres>,
     /// An open boundary (radiation into free space through a PML) in place of the walls.
     #[serde(default)]
     pub open: Option<Open>,

@@ -34,9 +34,34 @@ pub fn nested_dissection(xyz: &[Point3], adjacency: &[Vec<usize>]) -> Vec<usize>
 /// Nested dissection by planes at `cuts` across the `axes` longest axes of each part.
 fn dissection(xyz: &[Point3], adjacency: &[Vec<usize>], cuts: &[f64], axes: usize) -> Vec<usize> {
     let n = xyz.len();
-    let mut order = Vec::with_capacity(n);
     let mut scratch = Scratch { side: vec![0u8; n], place: vec![0usize; n] };
-    // An explicit stack instead of recursion: (part, separator to emit after it).
+    dissect(n, |part| {
+        let Some(Cut { sorted, at, separator }) = best_cut(&part, xyz, adjacency, cuts, axes, &mut scratch) else {
+            return Parted::Whole(part);
+        };
+        let (left, right) = sorted.split_at(at);
+        // The parts leave the separator out.
+        scratch.mark(&separator, SEPARATOR);
+        let a: Vec<usize> = left.iter().copied().filter(|v| !scratch.is(*v, SEPARATOR)).collect();
+        let b: Vec<usize> = right.iter().copied().filter(|v| !scratch.is(*v, SEPARATOR)).collect();
+        scratch.mark(&separator, OUT);
+        Parted::Parts(vec![a, b], separator)
+    })
+}
+
+/// How [`dissect`] splits a part: not at all, or into parts ordered in turn and then the
+/// separator between them.
+enum Parted {
+    Whole(Vec<usize>),
+    Parts(Vec<Vec<usize>>, Vec<usize>),
+}
+
+/// The order of `n` nodes by splitting their parts with `split` until they hold [`LEAF`] or
+/// fewer: each part's parts in turn, then its separator. An explicit stack instead of
+/// recursion.
+fn dissect(n: usize, mut split: impl FnMut(Vec<usize>) -> Parted) -> Vec<usize> {
+    let mut order = Vec::with_capacity(n);
+    // (part, separator to emit after it).
     enum Task {
         Split(Vec<usize>),
         Emit(Vec<usize>),
@@ -54,20 +79,14 @@ fn dissection(xyz: &[Point3], adjacency: &[Vec<usize>], cuts: &[f64], axes: usiz
             order.extend(part);
             continue;
         }
-        let Some(Cut { sorted, at, separator }) = best_cut(&part, xyz, adjacency, cuts, axes, &mut scratch) else {
-            order.extend(part);
-            continue;
-        };
-        let (left, right) = sorted.split_at(at);
-        // The parts leave the separator out.
-        scratch.mark(&separator, SEPARATOR);
-        let a: Vec<usize> = left.iter().copied().filter(|v| !scratch.is(*v, SEPARATOR)).collect();
-        let b: Vec<usize> = right.iter().copied().filter(|v| !scratch.is(*v, SEPARATOR)).collect();
-        scratch.mark(&separator, OUT);
-        // Order: a, then b, then the separator (the stack runs in reverse).
-        stack.push(Task::Emit(separator));
-        stack.push(Task::Split(b));
-        stack.push(Task::Split(a));
+        match split(part) {
+            Parted::Whole(part) => order.extend(part),
+            Parted::Parts(parts, separator) => {
+                // The stack runs in reverse.
+                stack.push(Task::Emit(separator));
+                stack.extend(parts.into_iter().rev().map(Task::Split));
+            }
+        }
     }
     order
 }
@@ -235,29 +254,12 @@ fn clear(level: &mut [usize], structure: &[Vec<usize>]) {
 /// the ordering is deterministic.
 pub fn graph_dissection(adjacency: &[Vec<usize>]) -> Vec<usize> {
     let n = adjacency.len();
-    let mut order = Vec::with_capacity(n);
     // The part each node is in (a token per part), and its level in the current search.
     let mut owner = vec![0usize; n];
     let mut level = vec![usize::MAX; n];
     let mut token = 0usize;
-    enum Task {
-        Split(Vec<usize>),
-        Emit(Vec<usize>),
-    }
-    let mut stack = vec![Task::Split((0..n).collect())];
-    while let Some(task) = stack.pop() {
-        let part = match task {
-            Task::Emit(sep) => {
-                order.extend(sep);
-                continue;
-            }
-            Task::Split(p) => p,
-        };
-        let Some(&first) = part.first() else { continue };
-        if part.len() <= LEAF {
-            order.extend(part);
-            continue;
-        }
+    dissect(n, |part| {
+        let Some(&first) = part.first() else { return Parted::Whole(part) };
         token += 1;
         for &v in &part {
             if let Some(o) = owner.get_mut(v) {
@@ -293,14 +295,11 @@ pub fn graph_dissection(adjacency: &[Vec<usize>]) -> Vec<usize> {
             clear(&mut level, &structure);
             let mut component: Vec<usize> = structure.into_iter().flatten().collect();
             component.sort_unstable();
-            stack.push(Task::Split(rest));
-            stack.push(Task::Split(component));
-            continue;
+            return Parted::Parts(vec![component, rest], Vec::new());
         }
         if structure.len() < 3 {
             clear(&mut level, &structure);
-            order.extend(part);
-            continue;
+            return Parted::Whole(part);
         }
         // The middle level: the first at which the levels up to it hold half the part, kept
         // off the last level so both sides are non-empty.
@@ -325,12 +324,9 @@ pub fn graph_dissection(adjacency: &[Vec<usize>]) -> Vec<usize> {
         before.sort_unstable();
         separator.sort_unstable();
         after.sort_unstable();
-        // Order: before, then after, then the separator (the stack runs in reverse).
-        stack.push(Task::Emit(separator));
-        stack.push(Task::Split(after));
-        stack.push(Task::Split(before));
-    }
-    order
+        // Order: before, then after, then the separator.
+        Parted::Parts(vec![before, after], separator)
+    })
 }
 
 /// One step of Liu's elimination-tree algorithm with path compression: row k's entry in

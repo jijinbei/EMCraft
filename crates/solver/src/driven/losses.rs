@@ -10,13 +10,63 @@ use num_complex::Complex64 as C;
 
 use super::{Driven, Field, Result};
 
-/// Walls of finite conductivity.
+/// Walls of finite conductivity: σ (S/m), their thickness (m, infinite when `None`) and the
+/// rms height of their roughness (m, smooth when `None`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Wall {
+    pub sigma: f64,
+    pub thickness: Option<f64>,
+    pub roughness: Option<f64>,
+}
+
+impl Wall {
+    /// Smooth walls of `sigma`, infinitely thick.
+    pub const fn thick(sigma: f64) -> Wall {
+        Wall { sigma, thickness: None, roughness: None }
+    }
+
+    /// The surface impedance Z_s (Ω): [`wall_impedance`] times the roughness factor
+    /// [`roughness_factor`] where the walls are rough.
+    ///
+    /// ```
+    /// use emcraft_solver::driven::{Wall, roughness_factor, wall_impedance};
+    /// let (f, cu) = (10e9, 5.8e7);
+    /// let smooth = Wall::thick(cu);
+    /// assert_eq!(smooth.impedance(f), wall_impedance(f, cu, None));
+    /// // 1 µm rms on copper (δ ≈ 0.66 µm at 10 GHz): the loss grows by about 80 %.
+    /// let rough = Wall { roughness: Some(1e-6), ..smooth };
+    /// let k = roughness_factor(f, cu, 1e-6);
+    /// assert!((rough.impedance(f) - smooth.impedance(f) * k).norm() < 1e-15 && k > 1.8 && k < 1.81);
+    /// ```
+    pub fn impedance(&self, frequency: f64) -> C {
+        let z = wall_impedance(frequency, self.sigma, self.thickness);
+        match self.roughness {
+            Some(h) => z * roughness_factor(frequency, self.sigma, h),
+            None => z,
+        }
+    }
+}
+
+/// The Hammerstad–Jensen roughness factor K = 1 + (2/π) arctan(1.4 (Δ/δ)²) by which a
+/// surface of rms height Δ (m) multiplies the loss of a smooth one (E. Hammerstad and Ø. Jensen,
+/// "Accurate models for microstrip computer-aided design", IEEE MTT-S Int. Microwave Symp.
+/// Digest, 1980, pp. 407–409): 1 for Δ ≪ δ, towards 2 for Δ ≫ δ. δ = 1/√(πfμ₀σ).
+///
+/// ```
+/// use emcraft_solver::driven::roughness_factor;
+/// assert_eq!(roughness_factor(10e9, 5.8e7, 0.0), 1.0);
+/// assert!(roughness_factor(10e9, 5.8e7, 1e-3) > 1.999);
+/// ```
+pub fn roughness_factor(frequency: f64, sigma: f64, roughness: f64) -> f64 {
+    let delta = 1.0 / (PI * frequency * MU0 * sigma).sqrt();
+    let ratio = roughness / delta;
+    1.0 + 2.0 / PI * (1.4 * ratio * ratio).atan()
+}
+
+/// Walls of finite conductivity in a solve.
 #[derive(Clone, Debug)]
 pub(crate) struct WallLoss {
-    /// σ (S/m).
-    pub sigma: f64,
-    /// The walls' thickness (m), infinite when `None`.
-    pub thickness: Option<f64>,
+    pub wall: Wall,
     /// The walls' tangential mass matrix ∫ N_i,t · N_j,t dS on the pattern.
     pub mass: Vec<f64>,
 }
@@ -48,11 +98,10 @@ impl Driven {
         Ok(0.5 * omega * MU0 * total)
     }
 
-    /// The power (W) walls of conductivity `sigma` and `thickness` (m, infinite when `None`)
-    /// would absorb for a field computed with perfectly conducting walls: ½ Re Z_s ∫ |H_t|² dS
-    /// (the perturbation estimate, [`wall_impedance`]).
-    pub fn wall_loss_perturbation(&self, x: &[C], frequency: f64, sigma: f64, thickness: Option<f64>) -> Result<f64> {
-        let rs = wall_impedance(frequency, sigma, thickness).re;
+    /// The power (W) walls `wall` would absorb for a field computed with perfectly conducting
+    /// walls: ½ Re Z_s ∫ |H_t|² dS (the perturbation estimate, [`Wall::impedance`]).
+    pub fn wall_loss_perturbation(&self, x: &[C], frequency: f64, wall: Wall) -> Result<f64> {
+        let rs = wall.impedance(frequency).re;
         let total = self.integrate_walls(x, frequency, Field::H, |h, n| tangential_c(h, n).norm_sqr())?;
         Ok(0.5 * rs * total)
     }
@@ -68,10 +117,10 @@ impl Driven {
     pub fn wall_loss(&self, x: &[C], frequency: f64) -> Result<f64> {
         let Some(wall) = &self.wall else { return Ok(0.0) };
         let total = self.integrate_walls(x, frequency, Field::E, |e, n| tangential_c(e, n).norm_sqr())?;
-        Ok(match wall.thickness {
-            None => total / (4.0 * surface_resistance(frequency, wall.sigma)),
-            Some(t) => {
-                let z = wall_impedance(frequency, wall.sigma, Some(t));
+        Ok(match wall.wall {
+            Wall { sigma, thickness: None, roughness: None } => total / (4.0 * surface_resistance(frequency, sigma)),
+            w => {
+                let z = w.impedance(frequency);
                 0.5 * z.re / z.norm_sqr() * total
             }
         })
@@ -127,9 +176,13 @@ pub fn wall_impedance(frequency: f64, sigma: f64, thickness: Option<f64>) -> C {
     eta * (eta0 + eta * tanh) / (eta + eta0 * tanh)
 }
 
-/// jωμ₀/Z_s (1/m): ωμ₀(1 + j)/(2R_s) for thick walls ([`wall_impedance`]).
-pub(crate) fn wall_factor(frequency: f64, sigma: f64, thickness: Option<f64>) -> C {
+/// jωμ₀/Z_s (1/m): ωμ₀(1 + j)/(2R_s) for thick smooth walls ([`Wall::impedance`]).
+pub(crate) fn wall_factor(frequency: f64, wall: Wall) -> C {
     let omega = angular(frequency);
+    if wall.roughness.is_some() {
+        return C::new(0.0, omega * MU0) / wall.impedance(frequency);
+    }
+    let Wall { sigma, thickness, .. } = wall;
     let z = wall_impedance(frequency, sigma, thickness);
     if z == C::new(z.re, z.re) {
         // Thick walls: the Leontovich factor as it always was, to the bit.
@@ -157,9 +210,9 @@ mod tests {
         let far = wall_impedance(f, sigma, Some(8.0 * delta));
         assert!((far - C::new(rs, rs)).norm() < 1e-6 * rs);
         assert_eq!(wall_impedance(f, sigma, Some(20.0 * delta)), C::new(rs, rs));
-        assert_eq!(wall_factor(f, sigma, Some(1.0)), wall_factor(f, sigma, None));
+        assert_eq!(wall_factor(f, Wall { thickness: Some(1.0), ..Wall::thick(sigma) }), wall_factor(f, Wall::thick(sigma)));
         // The factor is jωμ₀/Z_s.
-        let w = wall_factor(f, sigma, Some(delta));
+        let w = wall_factor(f, Wall { thickness: Some(delta), ..Wall::thick(sigma) });
         let back = C::new(0.0, 2.0 * PI * f * MU0) / w;
         assert!((back - wall_impedance(f, sigma, Some(delta))).norm() < 1e-12 * rs);
     }

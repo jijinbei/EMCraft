@@ -113,6 +113,9 @@ impl Grid {
         let w = model.waveguide().ok_or_else(|| FdtdError::NotReady("no waveguide".into()))?;
         let band = Band::of(freqs);
         let losses = Losses::new(band.fc);
+        if model.domain.wall_roughness.is_some() {
+            return Err(FdtdError::Unsupported("rough walls in the time domain (its walls are smooth; leave out model.walls' roughness)".into()));
+        }
         let wall = match model.domain.wall_conductivity {
             None => None,
             Some(sigma) => Some((crate::Losses::wall(sigma, band.f1)?, crate::surface::inverse_sqrt(angular(band.f0), angular(band.f1)))),

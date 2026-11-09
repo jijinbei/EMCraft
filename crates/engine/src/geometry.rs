@@ -731,9 +731,18 @@ pub fn solid(s: &mut Session, p: &Params) -> Result<Value> {
 pub fn walls(s: &mut Session, p: &Params) -> Result<Value> {
     let sigma = p.checked::<Conductivity>("conductivity").optional()?;
     let thickness = p.metres("thickness").optional()?;
+    let roughness = p.metres("roughness").optional()?;
+    if roughness.is_some() && sigma.is_none() {
+        return Err(p.error("roughness", "needs a `conductivity`: a perfect conductor loses nothing, rough or smooth"));
+    }
     s.model.set_wall_thickness(thickness)?;
+    s.model.set_wall_roughness(roughness)?;
     s.model.set_wall_conductivity(sigma);
-    Ok(json!({"conductivity": sigma, "thickness": thickness.map(|t| s.show_length(t.get()))}))
+    Ok(json!({
+        "conductivity": sigma,
+        "thickness": thickness.map(|t| s.show_length(t.get())),
+        "roughness": roughness.map(|h| s.show_length(h.get())),
+    }))
 }
 
 pub fn symmetry(s: &mut Session, p: &Params) -> Result<Value> {

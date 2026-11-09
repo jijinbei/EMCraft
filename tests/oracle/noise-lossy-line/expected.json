@@ -1,0 +1,79 @@
+{
+ "title": "WR-90 filled with a lossy dielectric (εr = 2.2, tan δ = 0.02), 30 mm, ports in it: the noise figure of the matched lossy line",
+ "kind": "theory",
+ "source": "A matched passive line of loss L at physical temperature T has noise temperature Te = (L − 1)T and noise figure F = 1 + (L − 1)T/T₀, T₀ = 290 K (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §10.1), with L = |S21|⁻² of the line's closed form, S21 = e^{−γL}, γ = √((π/a)² − k0² εr(1 − j tan δ)) (lossy-line's reference), evaluated separately from EMCraft's code",
+ "quantities": [
+  {
+   "id": "nf_db_8",
+   "quantity": "noise figure at 8 GHz, 290 K (dB)",
+   "measure": {
+    "command": "results.noise",
+    "params": {},
+    "pointer": "/points/0/nf_db"
+   },
+   "value": 0.7774532501116517,
+   "tolerance": {
+    "absolute": 0.005
+   },
+   "reason": "F = 1/G for a matched line at T₀, so its error is |S21|'s: second-order elements of 3 mm (lossy-line: about 1e-3 dB)"
+  },
+  {
+   "id": "nf_db_10",
+   "quantity": "noise figure at 10 GHz, 290 K (dB)",
+   "measure": {
+    "command": "results.noise",
+    "params": {},
+    "pointer": "/points/1/nf_db"
+   },
+   "value": 0.9030097512771205,
+   "tolerance": {
+    "absolute": 0.005
+   },
+   "reason": "F = 1/G for a matched line at T₀, so its error is |S21|'s: second-order elements of 3 mm (lossy-line: about 1e-3 dB)"
+  },
+  {
+   "id": "nf_db_12",
+   "quantity": "noise figure at 12 GHz, 290 K (dB)",
+   "measure": {
+    "command": "results.noise",
+    "params": {},
+    "pointer": "/points/2/nf_db"
+   },
+   "value": 1.0455167932861427,
+   "tolerance": {
+    "absolute": 0.005
+   },
+   "reason": "F = 1/G for a matched line at T₀, so its error is |S21|'s: second-order elements of 3 mm (lossy-line: about 1e-3 dB)"
+  },
+  {
+   "id": "nf_min_db_10",
+   "quantity": "least noise figure at 10 GHz, 290 K (dB)",
+   "measure": {
+    "command": "results.noise",
+    "params": {},
+    "pointer": "/points/1/nf_min_db"
+   },
+   "value": 0.9030097512771205,
+   "tolerance": {
+    "absolute": 0.005
+   },
+   "reason": "a matched line's conjugate match is the matched source: the same figure, |S11| about 1e-3 apart"
+  },
+  {
+   "id": "nf_db_10_77k",
+   "quantity": "noise figure at 10 GHz, the line at 77 K (dB)",
+   "measure": {
+    "command": "results.noise",
+    "params": {
+     "temperature": 77
+    },
+    "pointer": "/points/1/nf_db"
+   },
+   "value": 0.25865493586480875,
+   "tolerance": {
+    "absolute": 0.002
+   },
+   "reason": "F = 1 + (77/290)(L − 1): the loss's error scaled by 77/290"
+  }
+ ]
+}

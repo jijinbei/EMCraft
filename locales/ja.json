@@ -20,6 +20,8 @@
     "Cascade": "縦続接続",
     "Synthesize filter": "フィルタ合成",
     "Coupling matrix": "結合行列",
+    "Material from S": "S から材料定数",
+    "Noise figure": "雑音指数",
     "FILTER": "フィルタ",
     "Coupling matrix of {n} resonators{fit}.": "{n} 共振器の結合行列{fit}。",
     "Equivalent circuit kept as {name}.": "等価回路を {name} として残しました。",
@@ -661,6 +663,7 @@
     "Strip {n}": "ストリップ {n}",
     "the air the part encloses · {material}": "部品が囲む空気 · {material}",
     "the region · imported": "領域 · 読み込み",
+    "{roughness} {unit} rough": "粗さ {roughness} {unit}",
     "{thickness} {unit} thick": "厚さ {thickness} {unit}",
     "Via {n}": "ビア {n}",
     "σ = {sigma} S/m": "σ = {sigma} S/m",
@@ -885,6 +888,13 @@
     "order": "次数",
     "points": "点数",
     "start": "開始",
+    "after": "後",
+    "before": "前",
+    "branch": "分枝",
+    "input": "入力",
+    "output": "出力",
+    "roughness": "粗さ",
+    "temperature": "温度",
     "stop": "終了",
     "Confirm conditions": "条件を確定",
     "Conditions confirmed": "条件は確定済み",
@@ -1317,6 +1327,30 @@
         "name": "モデルの応答を残す名前（既定 `coupling model`）"
       }
     },
+    "results.material": {
+      "label": "S から材料定数",
+      "doc": "試料を満たした線路の S パラメータから、試料の複素 εr と μr を Nicolson–Ross–Weir 法（Nicolson & Ross, IEEE Trans. IM-19, 1970; Weir, Proc. IEEE 62, 1974）で求める。S11 と S21 を試料の端面に移し（`before` と `after` は各ポートから試料までの空の線路）、試料の反射 Γ と透過 T を求め、そこから εr と μr を出す。掃引を読むときの既定はモデルの導波管の TE10（空の導波管の遮断周波数）、測定値では `cutoff` を与えない限り TEM 線路（`cutoff` 0）。1/T の位相は `branch` から周波数に沿ってつなぐ（試料が管内波長より短ければ 0）。試料が半波長の整数倍の長さになる点（S11 が 0）は読めず、それぞれ理由を返す。ε = εr′ − jεr″（e^{jωt}）。",
+      "params": {
+        "length": "試料の長さ",
+        "before": "ポート `input` から試料までの空の線路（既定 0）",
+        "after": "試料からポート `output` までの空の線路（既定 0）",
+        "cutoff": "空の線路の遮断周波数（既定は掃引ならモデルの導波管の TE10、それ以外は TEM 線路の 0）",
+        "branch": "最初の周波数での ln(1/T) の分枝：試料に入る管内波長の数（既定 0）",
+        "data": "`sweep`（既定）または測定値の名前",
+        "input": "試料の一方の側のポート（既定 1）",
+        "output": "もう一方の側のポート（既定 2）"
+      }
+    },
+    "results.noise": {
+      "label": "雑音指数",
+      "doc": "一様な物理温度にある受動 2 ポートの雑音指数を S だけから求める。熱平衡では雑音温度が Te = T(1 − G)/G（G は有能利得）になる（Pozar §10.1; Hillbrand & Russer, IEEE Trans. CAS-23, 1976）。他のポートは温度 T の整合負荷で終端したとする。周波数ごとに、整合した信号源からの利得と雑音指数（G = |S21|²/(1 − |S22|²)。損失 L の整合した減衰器は T₀ = 290 K で F = L）、雑音温度、そして最小雑音指数（共役整合した信号源のもの。最大有能利得から求め、無条件安定でなければ無し）を返す。伝送が無い点や利得のある点は理由を返す。",
+      "params": {
+        "temperature": "回路網の物理温度（K、既定 290）",
+        "data": "`sweep`（既定）または測定値の名前",
+        "input": "入力ポート（既定 1）",
+        "output": "出力ポート（既定 2）"
+      }
+    },
     "results.check": {
       "label": "結果のチェック",
       "doc": "掃引の物理チェック：受動性（全周波数での S の最大特異値。受動なら ≤ 1）、相反性（max |S − Sᵀ|）、ユニタリ性（max |SᴴS − 1|。無損失なら 0）。",
@@ -1512,10 +1546,11 @@
     },
     "model.walls": {
       "label": "壁",
-      "doc": "導波管の壁、アイリス、段差の導電率と厚さ。金属はメッシュしない：メッシュするのは内側だけで、壁はその表面のインピーダンスとして扱うので、厚さを与えても未知数は増えない。`conductivity` があれば Leontovich 条件による損失（良導体、表皮深さが導波管より十分小さい場合）を、外側が自由空間の厚さ `thickness` の壁を通して求める（Z_s = η_c(η₀ + η_c tanh γt)/(η_c + η₀ tanh γt)：表皮深さの数倍より薄いと損失が増える。時間領域ソルバーは壁を厚いものとして扱う）。`conductivity` がなければ壁は完全導体で、厚さは導波管のまわりに描くだけ。`thickness` を省略すると無限に厚い壁として面一に描く。",
+      "doc": "導波管の壁、アイリス、段差の導電率と厚さ。金属はメッシュしない：メッシュするのは内側だけで、壁はその表面のインピーダンスとして扱うので、厚さを与えても未知数は増えない。`conductivity` があれば Leontovich 条件による損失（良導体、表皮深さが導波管より十分小さい場合）を、外側が自由空間の厚さ `thickness` の壁を通して求める（Z_s = η_c(η₀ + η_c tanh γt)/(η_c + η₀ tanh γt)：表皮深さの数倍より薄いと損失が増える。時間領域ソルバーは壁を厚いものとして扱う）。`conductivity` がなければ壁は完全導体で、厚さは導波管のまわりに描くだけ。`thickness` を省略すると無限に厚い壁として面一に描く。`roughness`（表面の二乗平均の高さ Δ）を与えると、壁の表面インピーダンスに Hammerstad–Jensen の係数 1 + (2/π) arctan(1.4 (Δ/δ)²) を掛ける：Δ が表皮深さ δ より十分小さければ 1、大きければ 2 に近づく（周波数領域ソルバー。時間領域は粗い壁を受け付けない）。",
       "params": {
         "conductivity": "σ（S/m、銅は 5.8e7）。完全導体にするには省略",
-        "thickness": "壁の厚さ。無限に厚い壁にするには省略"
+        "thickness": "壁の厚さ。無限に厚い壁にするには省略",
+        "roughness": "壁の粗さの二乗平均の高さ（`conductivity` と一緒に）。滑らかな壁にするには省略"
       }
     },
     "model.symmetry": {

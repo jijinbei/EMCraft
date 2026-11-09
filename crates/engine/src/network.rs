@@ -562,6 +562,21 @@ pub(crate) fn source(s: &Session, p: &Params) -> Result<Source> {
     }
 }
 
+/// The ports a two-port reading takes (0-based) from `input` and `output` (1-based, default 1
+/// and 2) of `n` ports: different, and both excited in `data` so S₁₁, S₂₁, S₁₂ and S₂₂ are held.
+pub(crate) fn port_pair(p: &Params, data: &SData) -> Result<(usize, usize)> {
+    let n = data.outputs();
+    let input = p.integer("input", 1..=n.max(1)).or(1)? - 1;
+    let output = p.integer("output", 1..=n.max(1)).or(2.min(n))? - 1;
+    if input == output {
+        return Err(p.error("output", "must differ from `input`"));
+    }
+    if ![input, output].iter().all(|q| data.inputs().contains(q)) {
+        return Err(p.error("input", format!("ports {} and {} must both be excited in the data", input + 1, output + 1)));
+    }
+    Ok((input, output))
+}
+
 /// The frequencies to read: the one nearest `frequency` when given, else all.
 fn frequencies_of(s: &Session, p: &Params, data: &SData) -> Result<Vec<usize>> {
     let fs = data.frequencies();

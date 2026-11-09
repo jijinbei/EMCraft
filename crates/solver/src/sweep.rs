@@ -417,7 +417,7 @@ impl Reduced {
         let k0 = wavenumber(frequency);
         let (n, m) = (d.dofs.unknowns, basis.v.len());
         let k2 = k0 * k0;
-        let wall = d.wall.as_ref().map(|w| wall_factor(frequency, w.sigma, w.thickness));
+        let wall = d.wall.as_ref().map(|w| wall_factor(frequency, w.wall));
         // k₀² εr,d(ω) per dispersive material.
         let dispersive = d.dispersive_scales(frequency);
         // The layer at this k₀: its own matrix on the pattern, times the basis.

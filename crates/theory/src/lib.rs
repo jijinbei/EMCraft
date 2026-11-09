@@ -45,6 +45,7 @@ pub mod floquet;
 pub mod horn;
 pub mod microstrip;
 pub mod modematch;
+pub mod nrw;
 pub mod post;
 pub mod radiation;
 pub mod slab;

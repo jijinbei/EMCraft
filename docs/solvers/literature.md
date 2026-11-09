@@ -346,6 +346,27 @@ overlap tests).
   (`emcraft-model::Pole`). The frequency-domain solver evaluates them at each frequency, each
   dispersive material with its own mass matrix (`emcraft-solver::driven`, and term by term in
   the fast sweep).
+- E. Hammerstad, Ø. Jensen, *Accurate models for microstrip computer-aided design*, IEEE MTT-S
+  Int. Microwave Symp. Digest, 1980, pp. 407–409 — the roughness factor
+  K = 1 + (2/π) arctan(1.4 (Δ/δ)²) of a conductor of rms roughness Δ, multiplying the walls'
+  surface impedance (`emcraft-solver::driven::roughness_factor`, `model.walls` `roughness`;
+  oracle `wall-loss-rough`).
+
+## Material measurement and noise
+- A. M. Nicolson, G. F. Ross, *Measurement of the intrinsic properties of materials by
+  time-domain techniques*, IEEE Trans. Instrum. Meas. IM-19(4):377–382, 1970; W. B. Weir,
+  *Automatic measurement of complex dielectric constant and permeability at microwave
+  frequencies*, Proc. IEEE 62(1):33–36, 1974 — εr and μr of a sample from S11 and S21 through
+  its reflection Γ and transmission T, a guide's cut-off included
+  (`emcraft-theory::nrw`, `results.material`; oracle `nrw-sample`).
+- D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §10.1 — the noise temperature of
+  a passive two-port, Te = T(1 − G)/G, and the noise figure F = 1 + Te/T₀; §12.2 — the maximum
+  available gain of a conjugate match from Rollett's K; H. Hillbrand, P. H. Russer, *An
+  efficient method for computer aided noise analysis of linear amplifier networks*, IEEE Trans.
+  Circuits Syst. CAS-23(4):235–238, 1976, and R. Q. Twiss, *Nyquist's and Thevenin's theorems
+  generalized for nonreciprocal linear networks*, J. Appl. Phys. 26:599–602, 1955 — a passive
+  network's noise correlation kT(I − SSᴴ), which lets a two-port cut from it be read alone
+  (`emcraft-engine::noise`, `results.noise`; oracle `noise-lossy-line`).
 
 ## Sparse direct solution
 - A. George, *Nested dissection of a regular finite element mesh*, SIAM J. Numer. Anal.

@@ -25,6 +25,10 @@ use crate::waveguide::Waveguide;
 /// The thickest wall a model may have (m).
 pub const MAX_WALL_THICKNESS: f64 = 1.0;
 
+/// The roughest walls (m rms): a tenth of a millimetre, far rougher than any machined or plated
+/// surface, where the factor has long reached 2.
+pub const MAX_WALL_ROUGHNESS: f64 = 1e-4;
+
 /// The model.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Model {
@@ -334,6 +338,18 @@ impl Model {
             return Err(invalid("wall thickness", format!("must be at most {MAX_WALL_THICKNESS} m, got {t}")));
         }
         self.domain.wall_thickness = thickness;
+        Ok(())
+    }
+
+    /// Sets the rms height of the walls' roughness (m, at most [`MAX_WALL_ROUGHNESS`]), or smooth
+    /// walls with `None`.
+    pub fn set_wall_roughness(&mut self, roughness: Option<Metres>) -> Result<()> {
+        if let Some(h) = roughness
+            && h.get() > MAX_WALL_ROUGHNESS
+        {
+            return Err(invalid("wall roughness", format!("must be at most {MAX_WALL_ROUGHNESS} m, got {h}")));
+        }
+        self.domain.wall_roughness = roughness;
         Ok(())
     }
 

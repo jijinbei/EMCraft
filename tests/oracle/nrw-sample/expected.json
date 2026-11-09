@@ -1,0 +1,12 @@
+{
+ "title": "An 8 mm sample (εr = 2.2, tan δ = 0.01) in WR-90 between 10 mm of empty guide each side: εr and μr read back from the solved S by Nicolson–Ross–Weir",
+ "kind": "theory",
+ "source": "The sample's material, εr = 2.2(1 − 0.01j) = 2.2 − 0.022j, μr = 1, which the NRW inversion (A. M. Nicolson and G. F. Ross, IEEE Trans. Instrum. Meas. IM-19(4), 1970; W. B. Weir, Proc. IEEE 62(1), 1974) recovers exactly from the exact TE10 cascade (emcraft_theory::nrw's tests)",
+ "quantities": [
+  {"id": "eps_re_8", "quantity": "εr′ at 8 GHz", "measure": {"command": "results.material", "params": {"length": 8, "before": 10, "after": 10}, "pointer": "/points/0/eps_r/re"}, "value": 2.2, "tolerance": {"relative": 0.002}, "reason": "second-order elements of 3 mm: the solved S21's phase is off by about 0.01° and S11 by about 1e-4, which the inversion carries into εr′ at about 1e-4 relative"},
+  {"id": "eps_re_10", "quantity": "εr′ at 10 GHz", "measure": {"command": "results.material", "params": {"length": 8, "before": 10, "after": 10}, "pointer": "/points/1/eps_r/re"}, "value": 2.2, "tolerance": {"relative": 0.002}, "reason": "as at 8 GHz"},
+  {"id": "eps_re_12", "quantity": "εr′ at 12 GHz", "measure": {"command": "results.material", "params": {"length": 8, "before": 10, "after": 10}, "pointer": "/points/2/eps_r/re"}, "value": 2.2, "tolerance": {"relative": 0.002}, "reason": "as at 8 GHz; the elements are fewer per wavelength, so the error is largest here (about 2e-4)"},
+  {"id": "eps_im_10", "quantity": "εr″ (as −Im εr) at 10 GHz", "measure": {"command": "results.material", "params": {"length": 8, "before": 10, "after": 10}, "pointer": "/points/1/eps_r/im"}, "value": -0.022, "tolerance": {"absolute": 0.0002}, "reason": "the loss is read from |T| over 8 mm (about 0.03 dB): 1 % of it is 2e-4 in εr″"},
+  {"id": "mu_re_10", "quantity": "μr′ at 10 GHz", "measure": {"command": "results.material", "params": {"length": 8, "before": 10, "after": 10}, "pointer": "/points/1/mu_r/re"}, "value": 1.0, "tolerance": {"absolute": 0.002}, "reason": "μr comes from the wave impedance (1 + Γ)/(1 − Γ), most sensitive to S11's error: about 2e-4 here"}
+ ]
+}

@@ -403,7 +403,15 @@ fn iterate<A: Arithmetic>(model: &Model, driven: &Driven, count: usize, sigma: f
         let q_walls = match model.domain.wall_conductivity {
             Some(s) => Some(
                 omega * u
-                    / driven.wall_loss_perturbation(&vector, frequency, s.get(), model.domain.wall_thickness.map(emcraft_model::Metres::get))?,
+                    / driven.wall_loss_perturbation(
+                        &vector,
+                        frequency,
+                        crate::driven::Wall {
+                            sigma: s.get(),
+                            thickness: model.domain.wall_thickness.map(emcraft_model::Metres::get),
+                            roughness: model.domain.wall_roughness.map(emcraft_model::Metres::get),
+                        },
+                    )?,
             ),
             None => None,
         };

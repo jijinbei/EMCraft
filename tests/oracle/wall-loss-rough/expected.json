@@ -1,0 +1,9 @@
+{
+ "title": "Rough copper WR-90, 200 mm, 1 µm rms: TE10 attenuation by the walls at 10 GHz",
+ "kind": "theory",
+ "source": "TE10 conductor attenuation α_c = R_s(2bπ² + a³k²)/(a³bβkη) (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, eq. 3.96), R_s = √(ωμ0/2σ), σ = 5.8e7 S/m, times the Hammerstad–Jensen roughness factor K = 1 + (2/π) arctan(1.4 (Δ/δ)²) (E. Hammerstad and Ø. Jensen, IEEE MTT-S Digest 1980, pp. 407–409), Δ = 1 µm, δ = 0.661 µm: K = 1.80750, α = 0.022554 Np/m, evaluated separately from EMCraft's code",
+ "quantities": [
+  {"id": "s21_db", "quantity": "|S21| at 10 GHz (dB): the loss of 200 mm of rough copper guide", "measure": {"step": "solve", "pointer": "/points/0/s21/db"}, "value": -0.03918123109191888, "tolerance": {"relative": 0.01}, "reason": "the smooth case's band (wall-loss: the Leontovich condition with second-order elements of 4 mm, within 0.2 %): the rough walls' impedance is the smooth one times K, which the loss follows to first order in R_s/η"},
+  {"id": "s11_mag", "quantity": "|S11| at 10 GHz", "measure": {"step": "solve", "pointer": "/points/0/s11/mag"}, "value": 0.0, "tolerance": {"absolute": 1e-3}, "reason": "the lossy guide's TE10 differs from the lossless port mode by order K R_s/η"}
+ ]
+}

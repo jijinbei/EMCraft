@@ -373,6 +373,32 @@ The folded coupling matrix of N resonators whose response best fits the sweep's 
 | `stop` | number | frequency | no | fit up to this frequency (default the data's last) |
 | `name` | string |  | no | the name the model's response is kept under (default `coupling model`) |
 
+## `results.material` — Material from S
+
+A sample's complex εr and μr from the S-parameters of the line it fills, by the Nicolson–Ross–Weir method (Nicolson & Ross, IEEE Trans. IM-19, 1970; Weir, Proc. IEEE 62, 1974): S11 and S21 moved onto the sample's faces (`before` and `after`, the empty line from each port to it), then its reflection Γ and transmission T, and εr, μr from them. A guide's TE10 by default (the model's guide's cut-off, empty) when reading the sweep, a TEM line (`cutoff` 0) for a measurement unless `cutoff` is given. The phase of 1/T is unwrapped along the frequencies from `branch` (0 for a sample shorter than a guide wavelength). Points where the sample is a whole number of half wavelengths long (S11 vanishes) cannot be read: each says why. ε = εr′ − jεr″ (e^{jωt}).
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `length` | number | length | yes | the sample's length |
+| `before` | number | length | no | the empty line from port `input` to the sample (default 0) |
+| `after` | number | length | no | the empty line from the sample to port `output` (default 0) |
+| `cutoff` | number | frequency | no | the empty line's cut-off (default the model's guide's TE10 with the sweep, 0 for a TEM line otherwise) |
+| `branch` | integer |  | no | the branch of ln(1/T) at the first frequency: whole guide wavelengths in the sample (default 0) |
+| `data` | string |  | no | `sweep` (default) or a measurement's name |
+| `input` | integer |  | no | the port on the sample's first side (default 1) |
+| `output` | integer |  | no | the port on its second side (default 2) |
+
+## `results.noise` — Noise figure
+
+The noise figure of a passive two-port at one physical temperature, from its S alone: in thermal equilibrium its noise temperature is Te = T(1 − G)/G, G the available gain (Pozar §10.1; Hillbrand & Russer, IEEE Trans. CAS-23, 1976), the other ports terminated in matched loads at T. Per frequency: the gain and noise figure from a matched source (G = |S21|²/(1 − |S22|²); a matched attenuator of loss L at T₀ = 290 K has F = L), the noise temperature, and the least noise figure, the conjugately matched source's (from the maximum available gain; none where the network is not unconditionally stable). A point with no transmission, or a gain, says why.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `temperature` | number |  | no | the network's physical temperature in K (default 290) |
+| `data` | string |  | no | `sweep` (default) or a measurement's name |
+| `input` | integer |  | no | the input port (default 1) |
+| `output` | integer |  | no | the output port (default 2) |
+
 ## `results.check` — Check results
 
 The sweep's physics checks: passivity (the largest singular value of S over the frequencies, ≤ 1 when passive), reciprocity (max |S − Sᵀ|) and unitarity (max |SᴴS − 1|, 0 when lossless).
@@ -650,12 +676,13 @@ Refines the mesh in passes until the S-parameters (or an open problem's far fiel
 
 ## `model.walls` — Walls
 
-The conductivity and thickness of the guide's walls, irises and steps. The metal is never meshed: only the inside is, and the walls are a surface impedance on it, so a thickness costs no unknowns. With `conductivity`, losses by the Leontovich condition (good conductors, skin depth far below the guide), through a wall of `thickness` with free space behind it (Z_s = η_c(η₀ + η_c tanh γt)/(η_c + η₀ tanh γt): thinner than a few skin depths it loses more; the time-domain solver takes walls as thick). Without `conductivity` the walls are perfect conductors; the thickness is then drawn round the guide only. Leave `thickness` out for infinitely thick walls drawn flush.
+The conductivity and thickness of the guide's walls, irises and steps. The metal is never meshed: only the inside is, and the walls are a surface impedance on it, so a thickness costs no unknowns. With `conductivity`, losses by the Leontovich condition (good conductors, skin depth far below the guide), through a wall of `thickness` with free space behind it (Z_s = η_c(η₀ + η_c tanh γt)/(η_c + η₀ tanh γt): thinner than a few skin depths it loses more; the time-domain solver takes walls as thick). Without `conductivity` the walls are perfect conductors; the thickness is then drawn round the guide only. Leave `thickness` out for infinitely thick walls drawn flush. With `roughness` (the surface's rms height Δ) the walls' surface impedance is multiplied by the Hammerstad–Jensen factor 1 + (2/π) arctan(1.4 (Δ/δ)²): 1 while Δ is well below the skin depth δ, towards 2 above it (frequency-domain solvers; the time domain refuses rough walls).
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `conductivity` | number |  | no | σ in S/m (copper 5.8e7); leave out for perfect conductors |
 | `thickness` | number | length | no | the walls' thickness; leave out for infinitely thick walls |
+| `roughness` | number | length | no | the rms height of the walls' roughness (with `conductivity`); leave out for smooth walls |
 
 ## `model.symmetry` — Symmetry plane
 

@@ -97,7 +97,7 @@ pub use dofs::Dofs;
 pub use floquet::{FloquetMode, FloquetPort, FloquetTerm};
 pub use generalized::{Generalized, MAX_GENERALIZED_MODES};
 pub(crate) use losses::wall_factor;
-pub use losses::{surface_resistance, wall_impedance};
+pub use losses::{Wall, roughness_factor, surface_resistance, wall_impedance};
 pub use lumped::{ElementData, LumpedData};
 pub use periodic::Tie;
 use pml::Layer;
@@ -429,8 +429,11 @@ impl Driven {
         };
         let wall = match sigma {
             Some(sigma) => Some(WallLoss {
-                sigma,
-                thickness: model.domain.wall_thickness.map(emcraft_model::Metres::get),
+                wall: Wall {
+                    sigma,
+                    thickness: model.domain.wall_thickness.map(emcraft_model::Metres::get),
+                    roughness: model.domain.wall_roughness.map(emcraft_model::Metres::get),
+                },
                 mass: space.wall_mass(&pattern, &faces.walls)?,
             }),
             None => None,

@@ -59,6 +59,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("circuit.cascade", Some(t!("Cascade").en()), Some(Glyph::Lumped), false),
     ui("filter.synthesize", Some(t!("Synthesize filter").en()), Some(Glyph::Waveguide), false),
     ui("results.coupling", Some(t!("Coupling matrix").en()), Some(Glyph::Waveguide), false),
+    ui("results.material", Some(t!("Material from S").en()), Some(Glyph::Material), false),
+    ui("results.noise", Some(t!("Noise figure").en()), Some(Glyph::Chart), false),
     ui("results.check", Some(t!("Checks").en()), Some(Glyph::Check), false),
     ui("units.set", Some(t!("Units").en()), Some(Glyph::Units), false),
     ui("model.material.create", Some(t!("Material").en()), Some(Glyph::Material), false),

@@ -171,3 +171,30 @@ fn hostile_imports_are_refused_and_nothing_is_kept() {
     s.execute("results.import", &json!({"path": bad, "name": "m3"})).unwrap();
     assert_eq!(s.views.measured.len(), 8);
 }
+
+#[test]
+fn material_noise_and_rough_walls_refuse_hostile_parameters() {
+    let mut s = highpass();
+    for (command, params) in [
+        ("results.material", json!({})),
+        ("results.material", json!({"length": 0})),
+        ("results.material", json!({"length": 5, "before": -1})),
+        ("results.material", json!({"length": 5, "cutoff": -1})),
+        ("results.material", json!({"length": 5, "branch": 100000})),
+        ("results.material", json!({"length": 5, "input": 2, "output": 2})),
+        ("results.material", json!({"length": 5, "output": 9})),
+        ("results.noise", json!({"temperature": 0})),
+        ("results.noise", json!({"temperature": 1e9})),
+        ("results.noise", json!({"data": "no such"})),
+        ("model.walls", json!({"roughness": 0.001})),
+        ("model.walls", json!({"conductivity": 5.8e7, "roughness": 1000})),
+        ("model.walls", json!({"conductivity": 5.8e7, "roughness": -1})),
+    ] {
+        assert!(s.execute(command, &params).is_err(), "{command} {params}");
+    }
+    // The highpass filter's iris: every point reads, or says why; the passive filter's figure ≥ 0 dB.
+    let m = s.execute("results.material", &json!({"length": 5})).unwrap();
+    assert!(m["points"].as_array().unwrap().iter().all(|p| p.get("eps_r").is_some() || p["why"].is_string()), "{m}");
+    let n = s.execute("results.noise", &json!({})).unwrap();
+    assert!(n["points"].as_array().unwrap().iter().all(|p| p["nf_db"].as_f64().is_none_or(|f| f >= -1e-9)), "{n}");
+}

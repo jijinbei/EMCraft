@@ -1,0 +1,25 @@
+{
+  "note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.",
+  "values": {
+    "eps_im_10": {
+      "band": 2.0002200100000002e-7,
+      "value": -0.021997241852917397
+    },
+    "eps_re_10": {
+      "band": 2.200001e-9,
+      "value": 2.1998009384600823
+    },
+    "eps_re_12": {
+      "band": 2.200001e-9,
+      "value": 2.1994821780155296
+    },
+    "eps_re_8": {
+      "band": 2.200001e-9,
+      "value": 2.199860437883168
+    },
+    "mu_re_10": {
+      "band": 2.001000001e-6,
+      "value": 0.9997649240340658
+    }
+  }
+}
