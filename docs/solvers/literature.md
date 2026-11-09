@@ -597,6 +597,16 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   as cos(nφ − 2πz/p) couples TE11 of one rotation with TE21 near its cut-off, the operating wave's
   group velocity changing strongly and smoothly with frequency: the helical pulse compressor
   (template `helical-compressor`, its cell `crates/templates/designs/helical-cell.solidcraft`).
+- D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §4.3–4.4 and Table 4.2 — the
+  impedance, admittance and chain (ABCD) matrices read from S on each port's reference
+  impedance, and S from Z or Y (`emcraft-solver::SMatrix::impedance`, `admittance`, `chain`,
+  `from_impedance`, `from_admittance`; `results.network`); D. E. Bockelman, W. R. Eisenstadt,
+  *Combined differential and common-mode scattering parameters: theory and simulation*, IEEE
+  Trans. MTT 43(7):1530–1539, 1995 — mixed-mode S of paired ports, M S Mᵀ with the
+  differential and common waves (a₊ ∓ a₋)/√2 (`SMatrix::mixed_mode`, `results.mixed_mode`, the
+  S-parameter chart's Mixed mode); IBIS Open Forum, *Touchstone File Format Specification*,
+  version 2.0, 2009 — the files `results.import` reads (`emcraft-engine::network`) and
+  `results.touchstone` writes.
 - G. P. Agrawal, *Nonlinear Fiber Optics*, 5th ed., Academic Press 2013, §3.2 — a chirped
   Gaussian pulse through a dispersive line, compressed when its chirp undoes the group-delay
   slope (`emcraft-engine::pulse`, `results.pulse`; the closed form its test checks).

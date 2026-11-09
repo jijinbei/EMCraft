@@ -189,7 +189,8 @@ pub struct StudyState {
 #[derive(Clone, Debug, PartialEq)]
 pub enum SharedChart {
     /// The S-parameters, in dB, as magnitudes or as phases, with the kept solves drawn over them.
-    SParameters(emcraft_engine::view::SDisplay, Vec<u32>),
+    /// In mixed mode when its flag is set.
+    SParameters(emcraft_engine::view::SDisplay, Vec<u32>, bool),
     Dispersion,
     /// A cut through the far-field pattern.
     Pattern(PatternSettings),
@@ -290,6 +291,8 @@ pub struct ViewState {
     pub pattern: PatternSettings,
     /// What the S-parameter chart shows: |S| in dB, magnitude or phase.
     pub sdisplay: emcraft_engine::view::SDisplay,
+    /// The S-parameter chart in mixed mode (ports paired in order).
+    pub mixed: bool,
     /// The S-parameter view's table unfolded (the chart first: folded until asked for).
     pub s_table: bool,
     /// The kept solves (`results.history`) drawn over the S-parameter chart.

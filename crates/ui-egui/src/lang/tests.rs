@@ -697,6 +697,7 @@ const UNREACHED: &[(&str, &str)] = &[
     ("phase (°)", "in the S-parameter display menu, open (scenario sparameter_display)"),
     ("phase, unwrapped (°)", "in the S-parameter display menu, open (scenario sparameter_display)"),
     ("group delay (ns)", "in the S-parameter display menu, open (scenario sparameter_display)"),
+    ("Smith chart", "in the S-parameter display menu, open (scenario network_views)"),
     (
         "Not read back (solve again): {what}",
         "a project file whose results no longer fit its model (engine test results_that_do_not_fit_are_left_out_with_why)",

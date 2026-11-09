@@ -549,6 +549,8 @@ pub fn initial(command: &str, s: &Session) -> Value {
         // Results and pictures.
         "results.touchstone" => json!({"path": format!("emcraft.s{}p", ports.max(1)), "format": "ri"}),
         "results.compare" => json!({"modes": 160}),
+        "results.import" => json!({"path": "measured.s2p"}),
+        "results.network" => json!({"kind": "z"}),
         // The highest solved frequency of the sweep, as the field view opens on.
         "view.animation" => {
             let f = s.results().sweep.as_ref().and_then(|sw| sw.results.last()).map(|r| fu.from_si(r.frequency));

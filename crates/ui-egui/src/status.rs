@@ -138,6 +138,18 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
         }
         "project.setup" => tr(t!("Settings confirmed.")).to_owned(),
         "results.touchstone" => trf(t!("Wrote {path}."), args!(path = r.text("path"))),
+        "results.import" => trf(
+            t!("Read {name}: {ports} ports, {n} frequencies."),
+            args!(name = r.text("name"), ports = r.count("ports"), n = r.count("frequencies")),
+        ),
+        "results.measured" => {
+            let worst =
+                r.0.pointer("/compared/worst/max_difference")
+                    .and_then(serde_json::Value::as_f64)
+                    .map_or_else(|| "—".to_owned(), |v| format!("{v:.3e}"));
+            let entry = r.0.pointer("/compared/worst/entry").and_then(serde_json::Value::as_str).unwrap_or("—").to_owned();
+            trf(t!("Worst |S − S_measured| = {worst} ({entry})."), args!(worst = worst, entry = entry))
+        }
         "results.check" => {
             let passive = tr(if r.flag("passive") { t!("passive") } else { t!("not passive") });
             let (largest, error) = (format!("{:.6}", r.num("largest_singular_value")), format!("{:.3e}", r.num("reciprocity_error")));

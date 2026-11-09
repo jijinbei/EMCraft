@@ -2,6 +2,16 @@
   "name": "日本語",
   "complete": true,
   "strings": {
+    "Measured": "測定値",
+    "Against measured": "測定と比較",
+    "Z, Y, ABCD": "Z・Y・ABCD",
+    "Mixed mode": "混合モード",
+    "mixed": "混合モード",
+    "pairs": "ポートの組",
+    "NETWORK": "回路網",
+    "Smith chart": "スミスチャート",
+    "Read {name}: {ports} ports, {n} frequencies.": "{name} を読み込みました：{ports} ポート、{n} 周波数。",
+    "Worst |S − S_measured| = {worst} ({entry}).": "最大の |S − S_測定| = {worst}（{entry}）。",
     "Pulse": "パルス",
     "chirp": "チャープ",
     "scale": "倍率",
@@ -1197,6 +1207,47 @@
         "format": "`ri`（既定）または `ma`"
       }
     },
+    "results.import": {
+      "label": "測定 S の読み込み",
+      "doc": "Touchstone ファイル（バージョン 1 または 2：.s1p、.s2p、…。S・Y・Z を RI・MA・dB で、周波数の単位は任意）を読み、その Sパラメータを測定値としてプロジェクトに残す。Sパラメータのチャート（とスミスチャート）に重ねて描き、掃引と比べる。名前は `name` がなければファイル名の語幹。同じ名前のものは置き換える。Y と Z はファイルの基準インピーダンスで S に直す。2 ポートの雑音データは読まない。測定値は 8 個まで、1 ファイル 64 MB まで。",
+      "params": {
+        "path": "Touchstone ファイル",
+        "name": "測定値の名前（既定はファイル名の語幹）"
+      }
+    },
+    "results.import.delete": {
+      "label": "測定値を削除",
+      "doc": "results.import で読み込んだ測定値を捨てる。",
+      "params": {
+        "name": "測定値"
+      }
+    },
+    "results.measured": {
+      "label": "測定値との比較",
+      "doc": "測定値と掃引を S の要素ごとに比べる。測定の帯域内にある掃引の周波数で（測定値は周波数の間を線形補間）、|ΔS|（複素）の最大と RMS、|S| の dB の差の最大、|ΔS| が最大になる周波数、最も悪い要素を返す。",
+      "params": {
+        "name": "測定値（既定はただ 1 つのもの）"
+      }
+    },
+    "results.network": {
+      "label": "回路行列",
+      "doc": "掃引（または測定値）の S を回路として読む。インピーダンス行列 Z = √z₀ (I + S)(I − S)⁻¹ √z₀、アドミタンス Y = Z⁻¹、2 ポートの縦続行列 ABCD（Pozar, Microwave Engineering, §4.3–4.4）、または S そのものを、各周波数（または `frequency` に最も近い周波数）で [実部, 虚部] の行として返す。他のポートを整合したときの各ポートの入力インピーダンス z₀ (1 + Sᵢᵢ)/(1 − Sᵢᵢ) も返す。z₀ は各ポートの基準インピーダンス（TEM・端子ポート）。導波管ポートには無いので、`impedance` がなければ正規化（z₀ = 1）する。",
+      "params": {
+        "kind": "`z`（既定）、`y`、`abcd` または `s`",
+        "data": "`sweep`（既定）または測定値の名前",
+        "frequency": "この周波数に最も近いものだけ（既定はすべて）",
+        "impedance": "基準インピーダンスの無いポート（導波管ポート）の z₀（Ω）"
+      }
+    },
+    "results.mixed_mode": {
+      "label": "混合モード S",
+      "doc": "掃引（または測定値）の S を、差動線路として組にしたポートの混合モードで表す（Bockelman & Eisenstadt, IEEE Trans. MTT 43(7), 1995）。各組の差動波 (a₊ − a₋)/√2 と同相波 (a₊ + a₋)/√2 で S_mm = M S Mᵀ。波の順は d1, d2, …, c1, c2, …、そのあと組にしないポート。Sdd21 は要素 (d2, d1)、Scd21 は変換 (c2, d1)。各周波数（または `frequency` に最も近い周波数）で [実部, 虚部] の行として返す。",
+      "params": {
+        "pairs": "ポートの組 [正, 負]（1 から数える）。例 [[1, 3], [2, 4]]（既定は 1 と 2、3 と 4、…）",
+        "data": "`sweep`（既定）または測定値の名前",
+        "frequency": "この周波数に最も近いものだけ（既定はすべて）"
+      }
+    },
     "results.check": {
       "label": "結果のチェック",
       "doc": "掃引の物理チェック：受動性（全周波数での S の最大特異値。受動なら ≤ 1）、相反性（max |S − Sᵀ|）、ユニタリ性（max |SᴴS − 1|。無損失なら 0）。",
@@ -1786,8 +1837,9 @@
         "theme": "組み込みテーマ（`light`（既定）、`dark`、`mono`、`graphite`、`sepia`、`midnight`、`forest`）またはテーマファイルのパス（docs/themes.md）",
         "width": "ピクセル（既定 1000）",
         "height": "ピクセル（既定 600）",
-        "display": "`db`（既定）、`magnitude` または `phase`",
-        "compare": "重ねて描く残した解析（results.history）の ID。それぞれ `#id` の名前の線で描く"
+        "display": "`db`（既定）、`magnitude`、`phase`、`phase_unwrapped`、`group_delay` または `smith`（各ポートの反射をスミスチャートに）",
+        "compare": "重ねて描く残した解析（results.history）の ID。それぞれ `#id` の名前の線で描く",
+        "mixed": "順に組にしたポート（1 と 2、3 と 4、…）の混合モード S：最初の組の差動の列、Sdd と Scd（既定 false）"
       }
     },
     "model.region": {

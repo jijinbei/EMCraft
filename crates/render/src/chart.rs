@@ -76,11 +76,14 @@ pub enum Legend {
 pub struct Look {
     pub grid: bool,
     pub legend: Legend,
+    /// One unit as long along x as along y (a Smith chart's circles round): the shorter
+    /// side's range widened about its middle to match the picture.
+    pub equal: bool,
 }
 
 impl Default for Look {
     fn default() -> Look {
-        Look { grid: true, legend: Legend::Below }
+        Look { grid: true, legend: Legend::Below, equal: false }
     }
 }
 
@@ -134,7 +137,20 @@ pub fn layout(width: usize, height: usize, x: (f64, f64), y: (f64, f64)) -> Layo
 
 /// The layout of `chart` drawn `width` × `height` pixels.
 pub fn layout_of(chart: &Chart, width: usize, height: usize) -> Layout {
-    Layout { log: [chart.x.is_log(), chart.y.is_log()], ..layout(width, height, chart.x.span(), chart.y.span()) }
+    let log = [chart.x.is_log(), chart.y.is_log()];
+    let mut at = Layout { log, ..layout(width, height, chart.x.span(), chart.y.span()) };
+    if chart.look.equal && !log[0] && !log[1] {
+        let [_, _, pw, ph] = at.plane;
+        // Units per pixel along each axis; the larger taken by both.
+        let per = ((at.x.1 - at.x.0) / pw).max((at.y.1 - at.y.0) / ph);
+        let widened = |(a, b): (f64, f64), side: f64| {
+            let (mid, half) = (0.5 * (a + b), 0.5 * per * side);
+            (mid - half, mid + half)
+        };
+        at.x = widened(at.x, pw);
+        at.y = widened(at.y, ph);
+    }
+    at
 }
 
 /// A diamond marker of half-diagonal `r` about `q`.
@@ -236,7 +252,13 @@ pub fn draw(chart: &Chart, width: usize, height: usize, palette: &Palette) -> Ca
     // A point a log axis cannot place (zero, negative) is left out.
     let placed = |p: &&[f64; 2]| p[0].is_finite() && p[1].is_finite() && (!layout.log[0] || p[0] > 0.0) && (!layout.log[1] || p[1] > 0.0);
     c.text(x0, 12.0, &chart.title, 2, ink);
-    axes::frame(&mut c, [x0, y0, pw, ph], &chart.x, &chart.y, ink, chart.look.grid.then_some(palette.grid));
+    // The axes over the ranges laid out (an equal chart's widened).
+    let (mut ax, mut ay) = (chart.x.clone(), chart.y.clone());
+    if chart.look.equal {
+        (ax.min, ax.max) = layout.x;
+        (ay.min, ay.max) = layout.y;
+    }
+    axes::frame(&mut c, [x0, y0, pw, ph], &ax, &ay, ink, chart.look.grid.then_some(palette.grid));
     for (x, label) in &chart.marks {
         if !(x.is_finite() && *x > xa && *x < xb) {
             continue;
@@ -379,6 +401,22 @@ mod tests {
     }
 
     #[test]
+    fn an_equal_chart_draws_a_unit_as_long_either_way() {
+        // A unit circle's chart in a wide picture: x widened, y kept, a unit the same pixels.
+        let mut chart = Chart::new("Smith", Axis::new("x", -1.0, 1.0), Axis::new("y", -1.0, 1.0), Vec::new());
+        chart.look.equal = true;
+        let at = layout_of(&chart, 900, 500);
+        let [_, _, pw, ph] = at.plane;
+        approx::assert_abs_diff_eq!((at.x.1 - at.x.0) / pw, (at.y.1 - at.y.0) / ph, epsilon = 1e-12);
+        assert_eq!(at.y, (-1.0, 1.0));
+        assert!(at.x.0 < -1.0 && at.x.1 > 1.0);
+        // Not equal: the ranges as given.
+        chart.look.equal = false;
+        assert_eq!(layout_of(&chart, 900, 500).x, (-1.0, 1.0));
+        let _ = draw(&Chart { look: Look { equal: true, ..Look::default() }, ..chart }, 300, 600, &Palette::fallback());
+    }
+
+    #[test]
     fn looks_change_the_picture_and_nothing_breaks() {
         let light = crate::palette::samples::light();
         let base = Chart::new(
@@ -395,7 +433,7 @@ mod tests {
         let plain = draw(&base, 400, 300, &light);
         let mut styled = base.clone();
         styled.x.log = true;
-        styled.look = Look { grid: false, legend: Legend::TopRight };
+        styled.look = Look { grid: false, legend: Legend::TopRight, equal: false };
         styled.series[0].pen = Pen::Custom(crate::Rgb(10, 200, 10));
         styled.series[0].width = Some(5.0);
         let other = draw(&styled, 400, 300, &light);

@@ -91,6 +91,8 @@ impl EmcraftApp {
                 self.views.tdr.params = crate::state::TdrParams::of(params);
                 self.place = self.place.show(View::Tdr);
             }
+            // A measurement drawn over the S-parameter chart.
+            "results.import" | "results.import.delete" => self.place = self.place.show(View::SParameters),
             "results.compare" => {
                 self.replies.compare = serde_json::from_value(reply.clone()).ok();
                 self.place = self.place.show(View::Compare);

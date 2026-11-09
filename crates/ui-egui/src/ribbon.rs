@@ -74,6 +74,7 @@ pub const TABS: &[(RibbonTab, &[(&str, &[&str])])] = &[
         &[
             // Comparison, checks, TDR and Touchstone are the result views' and Results' (step 8).
             (t!("EXPORT").en(), &["view.sparameters", "view.field", "view.animation", "view.pattern", "view.dispersion"]),
+            (t!("NETWORK").en(), &["results.import", "results.measured", "results.network", "results.mixed_mode"]),
         ],
     ),
 ];

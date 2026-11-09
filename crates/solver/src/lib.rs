@@ -24,7 +24,7 @@ pub mod zdense;
 
 pub use driven::{Driven, Field, FrequencyResult, SPort, SolveError};
 pub use num_complex::Complex64;
-pub use smatrix::SMatrix;
+pub use smatrix::{MixedWave, SMatrix, mixed_order};
 
 /// The threads the solvers' parallel loops have (rayon's pool): the results do not depend on
 /// it (each sum is taken in one fixed order), only the time.

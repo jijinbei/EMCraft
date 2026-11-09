@@ -245,6 +245,9 @@ pub struct Views {
     /// with the project (a template's own).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pulse: Option<serde_json::Value>,
+    /// S-parameters read from files (`results.import`), drawn over the S-parameter chart.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub measured: Vec<crate::network::Measured>,
 }
 
 /// The longest the pulse's parameters may be, written (bytes).
@@ -266,6 +269,7 @@ impl Views {
             && self.hidden_materials.is_empty()
             && self.hidden_geometry.is_empty()
             && self.pulse.is_none()
+            && self.measured.is_empty()
     }
 
     /// The views as read from a project file, checked: charts the engine knows, styles within
@@ -308,6 +312,14 @@ impl Views {
         if self.hidden_geometry.len() > crate::visibility::MAX_HIDDEN {
             return Err(EngineError::failed("views: invalid geometry visibility"));
         }
+        if self.measured.len() > crate::network::MAX_MEASURED {
+            return Err(EngineError::failed(format!("views: more than {} measurements", crate::network::MAX_MEASURED)));
+        }
+        for (i, m) in self.measured.iter().enumerate() {
+            if self.measured[..i].iter().any(|o| o.name == m.name) {
+                return Err(EngineError::failed(format!("views: two measurements named `{}`", crate::text::clip(&m.name, 40))));
+            }
+        }
         if !self.pcb.holds() {
             return Err(EngineError::failed("invalid PCB route or inspection conditions"));
         }
@@ -324,6 +336,7 @@ impl Views {
             hidden_materials: self.hidden_materials,
             hidden_geometry: self.hidden_geometry,
             pulse: self.pulse,
+            measured: self.measured,
         })
     }
 }

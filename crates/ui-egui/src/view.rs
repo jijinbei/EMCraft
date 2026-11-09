@@ -164,7 +164,11 @@ impl View {
             View::Pcb => app.session.model().analysis() == crate::steps::Solver::Pcb,
             // A project just opened: its kept sweeps, drawn from the history.
             View::SParameters => {
-                r.sweep.is_some() || r.time_domain.is_some() || r.revolution.is_some() || app.session.archive().iter().any(|a| a.kept.sweep.is_some())
+                r.sweep.is_some()
+                    || r.time_domain.is_some()
+                    || r.revolution.is_some()
+                    || app.session.archive().iter().any(|a| a.kept.sweep.is_some())
+                    || !app.session.views().measured.is_empty()
             }
             View::Tdr => r.sweep.is_some() || r.time_domain.is_some(),
             View::Pulse => r.sweep.is_some() || r.time_domain.is_some() || r.revolution.is_some(),

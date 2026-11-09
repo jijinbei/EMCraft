@@ -166,7 +166,8 @@ pub fn sparameters(s: &mut Session, p: &Params) -> Result<Value> {
             v.as_u64().and_then(|n| u32::try_from(n).ok()).ok_or_else(|| p.error("compare", "must list the ids of kept solves (results.history)"))
         })
         .collect::<Result<_>>()?;
-    file.write(s, ChartId::SParameters, super::sparameter_chart_compared(s, display, &compare)?)
+    let mixed = p.flag("mixed").or(false)?;
+    file.write(s, ChartId::SParameters, super::sparameter_chart_with(s, display, &compare, mixed)?)
 }
 
 /// `view.tdr`.

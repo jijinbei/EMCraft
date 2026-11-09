@@ -271,6 +271,52 @@ Writes the sweep's S-parameters as a Touchstone (version 1) file, frequencies in
 | `path` | string |  | yes | the file (.s1p, .s2p, …) |
 | `format` | string |  | no | `ri` (default) or `ma` |
 
+## `results.import` — Import measured S
+
+Reads a Touchstone file (version 1 or 2: .s1p, .s2p, …; S, Y or Z in RI, MA or dB, any frequency unit) and keeps its S-parameters with the project as a measurement, drawn over the S-parameter chart (and on the Smith chart) and compared with the sweep. Its name is the file's stem unless `name` is given; one of the same name is replaced. Y and Z are turned into S on the file's reference impedances; a two-port's noise data is left out. At most 8 measurements, 64 MB a file.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `path` | string |  | yes | the Touchstone file |
+| `name` | string |  | no | the measurement's name (default the file's stem) |
+
+## `results.import.delete` — Delete measurement
+
+Lets a measurement imported by results.import go.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | yes | the measurement |
+
+## `results.measured` — Compare with measurement
+
+A measurement against the sweep, entry by entry of S over the sweep's frequencies within the measurement's band (the measurement interpolated linearly between its frequencies): the largest and RMS |ΔS| (complex), the largest difference of |S| in dB and the frequency where |ΔS| is largest, and the worst entry.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | no | the measurement (default the only one) |
+
+## `results.network` — Network matrices
+
+The sweep's (or a measurement's) S as a network: the impedance matrix Z = √z₀ (I + S)(I − S)⁻¹ √z₀, the admittance Y = Z⁻¹, a two-port's chain matrix ABCD (Pozar, Microwave Engineering, §4.3–4.4), or S itself, at each frequency or the one nearest `frequency`, as rows of [re, im]; and each port's input impedance with the others matched, z₀ (1 + Sᵢᵢ)/(1 − Sᵢᵢ). z₀ is each port's reference impedance (a TEM or terminal port's); a waveguide port has none, so its entries are normalized (z₀ = 1) unless `impedance` gives one.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `kind` | string |  | no | `z` (default), `y`, `abcd` or `s` |
+| `data` | string |  | no | `sweep` (default) or a measurement's name |
+| `frequency` | number | frequency | no | the frequency nearest this one only (default every one) |
+| `impedance` | number |  | no | z₀ in Ω for ports without a reference impedance (waveguide ports) |
+
+## `results.mixed_mode` — Mixed-mode S
+
+The sweep's (or a measurement's) S of ports paired as differential lines, in mixed mode (Bockelman & Eisenstadt, IEEE Trans. MTT 43(7), 1995): each pair's differential wave (a₊ − a₋)/√2 and common wave (a₊ + a₋)/√2, S_mm = M S Mᵀ, its waves ordered d1, d2, …, c1, c2, …, then the ports left unpaired; so Sdd21 is the entry (d2, d1) and Scd21 the conversion (c2, d1). At each frequency or the one nearest `frequency`, as rows of [re, im].
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `pairs` | array |  | no | pairs of ports [positive, negative] from 1, such as [[1, 3], [2, 4]] (default 1 with 2, 3 with 4, …) |
+| `data` | string |  | no | `sweep` (default) or a measurement's name |
+| `frequency` | number | frequency | no | the frequency nearest this one only (default every one) |
+
 ## `results.check` — Check results
 
 The sweep's physics checks: passivity (the largest singular value of S over the frequencies, ≤ 1 when passive), reciprocity (max |S − Sᵀ|) and unitarity (max |SᴴS − 1|, 0 when lossless).
@@ -1188,8 +1234,9 @@ Writes a PNG of |S11| and |S21| (and the rest of S's first column) against frequ
 | `theme` | string |  | no | a built-in theme (`light`, the default, `dark`, `mono`, `graphite`, `sepia`, `midnight`, `forest`) or the path of a theme file (docs/themes.md) |
 | `width` | integer |  | no | pixels (default 1000) |
 | `height` | integer |  | no | pixels (default 600) |
-| `display` | string |  | no | `db` (default), `magnitude` or `phase` |
+| `display` | string |  | no | `db` (default), `magnitude`, `phase`, `phase_unwrapped`, `group_delay` or `smith` (each port's reflection on a Smith chart) |
 | `compare` | array |  | no | ids of kept solves (results.history) whose sweeps are drawn over it, each as lines named `#id` |
+| `mixed` | boolean |  | no | mixed-mode S of ports paired in order (1 with 2, 3 with 4, …): the first pair's differential column, Sdd and Scd (default false) |
 
 ## `model.open` — Open boundary
 

@@ -24,11 +24,19 @@ impl ChartView for SParameters {
                 }
             });
             scenario::publish_target(Fixed::SDisplay, r.response.rect);
+            // Mixed mode where the ports pair in order (four or more, an even number).
+            if pairs(app) {
+                let label = tr(t!("Mixed mode"));
+                if ui.named(egui::Button::selectable(st.views.mixed, label), Fixed::SMixed.into()).clicked() {
+                    st.views.mixed = !st.views.mixed;
+                }
+            }
         });
+        let mixed = st.views.mixed && pairs(app);
         // A kept solve let go is drawn no more.
         let kept: Vec<u32> = app.session.archive().iter().map(|a| a.id).collect();
         st.views.compare.retain(|id| kept.contains(id));
-        Some(SharedChart::SParameters(st.views.sdisplay, st.views.compare.clone()))
+        Some(SharedChart::SParameters(st.views.sdisplay, st.views.compare.clone(), mixed))
     }
 
     /// The history (once there are two solves to compare), the table of S and the ports'
@@ -60,22 +68,32 @@ impl ChartView for SParameters {
     }
 
     fn chart(app: &EmcraftApp, key: &SharedChart) -> Result<emcraft_render::chart::Chart, String> {
-        let (display, compare) = match key {
-            SharedChart::SParameters(d, c) => (*d, c.as_slice()),
-            _ => (view::SDisplay::Db, &[][..]),
+        let (display, compare, mixed) = match key {
+            SharedChart::SParameters(d, c, m) => (*d, c.as_slice(), *m),
+            _ => (view::SDisplay::Db, &[][..], false),
         };
-        view::sparameter_chart_compared(&app.session, display, compare).map_err(|e| e.to_string())
+        view::sparameter_chart_with(&app.session, display, compare, mixed).map_err(|e| e.to_string())
     }
 
     /// The field view's frequency on the chart, the band to refine, the ports' reference
     /// planes and the table of S.
     fn below(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, chart: &egui::Response, size: egui::Vec2, out: &mut Actions) {
-        if let Some(layout) = st.views.layout {
+        // A Smith chart's axes are Γ's, not frequency: no frequency to pick or band to refine.
+        if let Some(layout) = st.views.layout.filter(|_| st.views.sdisplay != view::SDisplay::Smith) {
             let map = ChartMap { rect: chart.rect, size, layout, unit: app.session.display().frequency };
             frequency_marker(&mut st.field, ui, chart, &map, &app.frequencies(), out);
             refine_band(app, &mut st.views.refine, ui, chart, &map, out);
         }
     }
+}
+
+/// Whether the sweep's or a measurement's ports pair in order for mixed mode: four or more, an
+/// even number.
+fn pairs(app: &EmcraftApp) -> bool {
+    let even = |n: usize| n >= 4 && n.is_multiple_of(2);
+    let r = app.session.results();
+    r.sweep.as_ref().is_some_and(|sw| even(sw.results.first().map_or(0, |x| x.s.ports())))
+        || app.session.views().measured.iter().any(|m| even(m.data.outputs()))
 }
 
 /// What is packed round the S-parameter chart.

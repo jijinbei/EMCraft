@@ -9,6 +9,7 @@ mod history;
 mod invariants;
 mod items;
 mod junctions;
+mod network;
 mod open;
 mod pcb_fem;
 mod project;

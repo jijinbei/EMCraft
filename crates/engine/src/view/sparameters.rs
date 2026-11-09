@@ -1,7 +1,9 @@
 //! The S-parameter chart: |S11| and |S21| (and the rest of the first column with more ports or
 //! terminals) against frequency — in dB, as a magnitude or as a phase in degrees — the solved
 //! points over the reference's curves, with the sections' cut-offs marked. A fast sweep's curves
-//! are lines marked only at the frequencies solved in full.
+//! are lines marked only at the frequencies solved in full. Measurements (`results.import`)
+//! are drawn as lines behind them; the same S can be shown in mixed mode (ports paired in
+//! order) or as each port's reflection on a Smith chart.
 
 use emcraft_model::units::decibels;
 use emcraft_render::chart::{Chart, Series, Style};
@@ -35,6 +37,9 @@ emcraft_macros::named_enum! {
         Unwrapped = "phase_unwrapped" => "phase, unwrapped (°)",
         /// The group delay τ = −dφ/dω (ns): how long the signal takes through.
         GroupDelay = "group_delay" => "group delay (ns)",
+        /// Each port's reflection Γ on a Smith chart (the impedance plane's circles of
+        /// constant resistance and reactance mapped onto it).
+        Smith = "smith" => "Smith chart",
     }
 }
 
@@ -44,7 +49,7 @@ impl SDisplay {
     pub fn of(self, s: C) -> f64 {
         match self {
             SDisplay::Db => decibels(s.norm()).max(DB_FLOOR),
-            SDisplay::Magnitude => s.norm(),
+            SDisplay::Magnitude | SDisplay::Smith => s.norm(),
             SDisplay::Phase | SDisplay::Unwrapped | SDisplay::GroupDelay => s.arg().to_degrees(),
         }
     }
@@ -117,6 +122,7 @@ impl SDisplay {
                 Axis::new("$|S|$ (linear, 0 to 1)", 0.0, (top * 1.05).min(10.0))
             }
             SDisplay::Phase => Axis::new("phase (°)", -190.0, 190.0),
+            SDisplay::Smith => Axis::new("Im Γ", -SMITH_EDGE, SMITH_EDGE),
             SDisplay::Unwrapped | SDisplay::GroupDelay => {
                 let values = series.iter().flat_map(|s| s.points.iter().map(|p| p[1])).filter(|v| v.is_finite());
                 let (lo, hi) = values.fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), v| (a.min(v), b.max(v)));
@@ -152,11 +158,13 @@ impl SDisplay {
     }
 }
 
-/// Whether a curve's key names a reflection, S_pp (`s11.fem`, `run2.s22`, `s11.ref`).
+/// Whether a curve's key names a reflection, S_pp (`s11.fem`, `run2.s22`, `s11.ref`), or a
+/// mixed-mode wave's back into its own pair (`sdd11.fem`, `scd11.m1`).
 fn reflection(key: &str) -> bool {
     key.split('.').any(|part| {
         let b = part.as_bytes();
-        b.len() == 3 && b[0] == b's' && b[1].is_ascii_digit() && b[1] == b[2]
+        (b.len() == 3 && b[0] == b's' && b[1].is_ascii_digit() && b[1] == b[2])
+            || (b.len() == 5 && b[0] == b's' && b[1].is_ascii_alphabetic() && b[2].is_ascii_alphabetic() && b[3].is_ascii_digit() && b[3] == b[4])
     })
 }
 
@@ -212,6 +220,34 @@ pub fn compare_pens(k: usize) -> [Pen; 2] {
 /// over it: each one's |S11| and |S21| as lines through its points, named by its id (`#3`).
 /// With nothing solved now (a project just opened), the kept solves' alone.
 pub fn sparameter_chart_compared(session: &Session, display: SDisplay, compare: &[u32]) -> Result<Chart> {
+    sparameter_chart_with(session, display, compare, false)
+}
+
+/// The S-parameter chart as [`sparameter_chart_compared`] draws it, or in mixed mode when
+/// `mixed` (ports paired in order: the first pair's differential column), or — for
+/// [`SDisplay::Smith`] — each port's reflection on a Smith chart.
+///
+/// ```
+/// use emcraft_engine::view::{SDisplay, sparameter_chart_with};
+///
+/// let mut s = emcraft_engine::Session::new();
+/// s.execute("file.sample", &serde_json::json!({"name": "highpass", "solve": true})).unwrap();
+/// let smith = sparameter_chart_with(&s, SDisplay::Smith, &[], false).unwrap();
+/// assert!(smith.look.equal && smith.series.iter().any(|c| c.key == "s11.fem"));
+/// // A passive port's reflection stays inside the unit circle.
+/// let s11 = smith.series.iter().find(|c| c.key == "s11.fem").unwrap();
+/// assert!(s11.points.iter().all(|p| p[0].hypot(p[1]) <= 1.0 + 1e-9));
+/// // Two ports do not pair into mixed mode's two pairs… but they make one: Sdd11 alone.
+/// let mixed = sparameter_chart_with(&s, SDisplay::Db, &[], true).unwrap();
+/// assert!(mixed.series.iter().any(|c| c.key == "sdd11.fem"));
+/// ```
+pub fn sparameter_chart_with(session: &Session, display: SDisplay, compare: &[u32], mixed: bool) -> Result<Chart> {
+    if display == SDisplay::Smith {
+        return smith_chart(session, compare, mixed);
+    }
+    if mixed {
+        return mixed_chart(session, display);
+    }
     let fu = session.display.frequency;
     let (mut chart, own) = match sparameter_chart_now(session, display) {
         Ok(chart) => (chart, true),
@@ -268,7 +304,8 @@ fn sparameter_chart_now(session: &Session, display: SDisplay) -> Result<Chart> {
     let span = sweep
         .and_then(|sw| Some((sw.results.first()?.frequency, sw.results.last()?.frequency)))
         .or_else(|| td.and_then(|t| Some((*t.frequencies.first()?, *t.frequencies.last()?))))
-        .or_else(|| bor.and_then(|b| Some((*b.data.frequencies().first()?, *b.data.frequencies().last()?))));
+        .or_else(|| bor.and_then(|b| Some((*b.data.frequencies().first()?, *b.data.frequencies().last()?))))
+        .or_else(|| measured_span(session));
     let Some((f0, f1)) = span else {
         return Err(EngineError::NotSolved { what: "results", run: "solve.frequency or solve.time_domain" });
     };
@@ -341,6 +378,7 @@ fn sparameter_chart_now(session: &Session, display: SDisplay) -> Result<Chart> {
             }
         }
     }
+    series.extend(measured_series(session, display));
     let marks = section_cutoffs(session).into_iter().map(|(fc, name)| (fu.from_si(fc), format!("$f_c$ {name}"))).collect();
     display.derive_all(&mut series, fu);
     let y = display.axis(&series);
@@ -379,9 +417,233 @@ fn reference_curves(session: &Session, f0: f64, f1: f64, display: SDisplay) -> V
 
 /// Consistent colours for each destination in full charts and the field frequency chart.
 pub fn sparameter_pen(row: usize) -> Pen {
+    Pen::Strong(row_colour(row))
+}
+
+/// The series colour of destination `row`: S11's, S21's, then the rest's.
+fn row_colour(row: usize) -> u8 {
     match row {
-        0 => Pen::Strong(1),
-        1 => Pen::Strong(0),
-        _ => Pen::Strong(MORE_PENS[(row - 2) % MORE_PENS.len()]),
+        0 => 1,
+        1 => 0,
+        _ => MORE_PENS[(row - 2) % MORE_PENS.len()],
     }
+}
+
+/// How far the Smith chart's axes reach either side of its centre (the unit circle within).
+const SMITH_EDGE: f64 = 1.08;
+
+/// The most ports whose reflections the Smith chart draws.
+const MAX_SMITH_PORTS: usize = 8;
+
+/// The band the measurements cover (Hz), when there are any.
+fn measured_span(session: &Session) -> Option<(f64, f64)> {
+    let fs = session.views.measured.iter().flat_map(|m| [m.data.frequencies().first().copied(), m.data.frequencies().last().copied()]).flatten();
+    fs.fold(None, |acc: Option<(f64, f64)>, f| Some(acc.map_or((f, f), |(a, b)| (a.min(f), b.max(f)))))
+}
+
+/// The rows of column `q` in the order drawn: the others first, `q`'s own (its reflection)
+/// last, at most [`MAX_CHART_ENTRIES`].
+fn rows_of(n: usize, q: usize) -> impl Iterator<Item = usize> {
+    let n = n.min(MAX_CHART_ENTRIES);
+    (0..n).filter(move |p| *p != q).chain((q < n).then_some(q))
+}
+
+/// The measurements' column of S — the driven entry's when they have it, else their first —
+/// as lines behind the solved points, named by the measurement.
+fn measured_series(session: &Session, display: SDisplay) -> Vec<Series> {
+    let fu = session.display.frequency;
+    let mut out = Vec::new();
+    for (k, m) in session.views.measured.iter().enumerate() {
+        let n = m.data.outputs();
+        let q = if session.driven_entry() < n { session.driven_entry() } else { 0 };
+        for p in rows_of(n, q) {
+            let entry = format!("{}{}", p + 1, q + 1);
+            let pts = m.data.curve(p, q).map(|(f, s)| [fu.from_si(f), display.of(s)]).collect();
+            out.extend(curve(
+                &format!("s{entry}.m{}", k + 1),
+                format!("{} {}", display.entry(&entry), m.name),
+                Pen::Faded(row_colour(p)),
+                pts,
+                display,
+            ));
+        }
+    }
+    out
+}
+
+/// Mixed mode's S of `data` with its ports paired in order, its waves named (`d1`, `c1`, …);
+/// none when they do not pair (an odd number) or not every port was excited.
+fn mixed_of(data: &crate::SData) -> Option<(Vec<String>, crate::SData)> {
+    let pairs = crate::network::default_pairs(data.outputs())?;
+    let mixed = crate::network::mixed_data(data, &pairs)?;
+    Some((crate::network::mixed_names(data.outputs(), &pairs), mixed))
+}
+
+/// Entry (r, c) of mixed mode by its waves' names: `dd21` for (d2, d1), `cd11` for (c1, d1);
+/// `3,d1` for an unpaired port's.
+fn mixed_entry(row: &str, column: &str) -> String {
+    let split = |w: &str| w.chars().next().filter(char::is_ascii_alphabetic).map(|m| (m, w[1..].to_string()));
+    match (split(row), split(column)) {
+        (Some((a, i)), Some((b, j))) => format!("{a}{b}{i}{j}"),
+        _ => format!("{row},{column}"),
+    }
+}
+
+/// The S-parameter chart in mixed mode: the first pair's differential column (Sdd11, Sdd21,
+/// …, Scd11, Scd21, …) of the sweep's points and the measurements' lines.
+fn mixed_chart(session: &Session, display: SDisplay) -> Result<Chart> {
+    let fu = session.display.frequency;
+    let mut series = Vec::new();
+    let mut sources: Vec<(String, String, Pen, Style, crate::SData)> = Vec::new();
+    if let Some(sw) = session.results.sweep.as_ref() {
+        sources.push(("fem".into(), format!("FEM (order {})", sw.order.as_u8()), Pen::Ink, Style::Joined, sw.sdata().map_err(EngineError::failed)?));
+    }
+    for (k, m) in session.views.measured.iter().enumerate() {
+        sources.push((format!("m{}", k + 1), m.name.clone(), Pen::Muted, Style::Line, (*m.data).clone()));
+    }
+    if sources.is_empty() {
+        return Err(EngineError::NotSolved { what: "results", run: "solve.frequency" });
+    }
+    let mut span: Option<(f64, f64)> = None;
+    for (key, label, pen, style, data) in &sources {
+        let Some((names, mixed)) = mixed_of(data) else { continue };
+        for r in rows_of(names.len(), 0) {
+            let entry = mixed_entry(&names[r], &names[0]);
+            let pts: Vec<[f64; 2]> = mixed.curve(r, 0).map(|(f, s)| [fu.from_si(f), display.of(s)]).collect();
+            let colour = row_colour(r);
+            let pen = if *pen == Pen::Ink { Pen::Strong(colour) } else { Pen::Faded(colour) };
+            let label = format!("{} {label}", display.entry(&entry));
+            if *style == Style::Joined {
+                series.push(Series::new(&format!("s{entry}.{key}"), label, pen, Style::Joined, pts));
+            } else {
+                series.extend(curve(&format!("s{entry}.{key}"), label, pen, pts, display));
+            }
+        }
+        let (a, b) = (data.frequencies().first().copied(), data.frequencies().last().copied());
+        if let (Some(a), Some(b)) = (a, b) {
+            span = Some(span.map_or((a, b), |(x, y)| (x.min(a), y.max(b))));
+        }
+    }
+    let Some((f0, f1)) = span else {
+        return Err(EngineError::failed(
+            "mixed mode pairs the ports in order (1 with 2, 3 with 4, …): an even number of them, every one excited (results.mixed_mode pairs them otherwise)",
+        ));
+    };
+    let pad = if f1 > f0 { 0.0 } else { 0.05 * f0 };
+    display.derive_all(&mut series, fu);
+    let y = display.axis(&series);
+    Ok(Chart::new(
+        "Mixed-mode S-parameters",
+        Axis::new(&format!("frequency ({})", fu.symbol()), fu.from_si(f0 - pad), fu.from_si(f1 + pad)),
+        y,
+        series,
+    ))
+}
+
+/// The Smith chart's grid: circles of constant resistance (0, 0.2, 0.5, 1, 2, 5) and arcs of
+/// constant reactance (±0.2, ±0.5, ±1, ±2, ±5), normalized, mapped by Γ = (z − 1)/(z + 1),
+/// and the real axis.
+fn smith_grid() -> Vec<Series> {
+    const STEPS: [f64; 5] = [0.2, 0.5, 1.0, 2.0, 5.0];
+    let one = C::new(1.0, 0.0);
+    let gamma = |z: C| {
+        let g = (z - one) / (z + one);
+        [g.re, g.im]
+    };
+    let line = |points: Vec<[f64; 2]>| Series { width: Some(0.8), ..Series::new("grid", "", Pen::Muted, Style::Line, points) };
+    let mut out = Vec::new();
+    // Along a circle of resistance r: the reactance x = tan θ from −∞ to ∞.
+    for r in std::iter::once(0.0).chain(STEPS) {
+        let mut pts = vec![[1.0, 0.0]];
+        pts.extend((1..360).map(|k| gamma(C::new(r, (std::f64::consts::PI * (f64::from(k) / 360.0 - 0.5)).tan()))));
+        pts.push([1.0, 0.0]);
+        out.push(line(pts));
+    }
+    // Along an arc of reactance x: the resistance r = tan φ from 0 to ∞.
+    for x in STEPS.into_iter().flat_map(|x| [x, -x]) {
+        let mut pts: Vec<[f64; 2]> = (0..180).map(|k| gamma(C::new((std::f64::consts::FRAC_PI_2 * f64::from(k) / 180.0).tan(), x))).collect();
+        pts.push([1.0, 0.0]);
+        out.push(line(pts));
+    }
+    out.push(line(vec![[-1.0, 0.0], [1.0, 0.0]]));
+    out
+}
+
+/// Each port's reflection on a Smith chart: the sweep's points (mixed mode's waves' when
+/// `mixed`), the time domain's and a body of revolution's lines, the measurements' and the
+/// kept solves `compare`.
+fn smith_chart(session: &Session, compare: &[u32], mixed: bool) -> Result<Chart> {
+    let mut series = smith_grid();
+    let grid = series.len();
+    let gamma = |c: C| [c.re, c.im];
+    // Reflections of `data`: each entry's own (p, p), or mixed mode's waves'.
+    let reflections = |data: &crate::SData| -> Vec<(String, usize, Vec<[f64; 2]>)> {
+        if mixed {
+            let Some((names, m)) = mixed_of(data) else { return Vec::new() };
+            (0..names.len().min(MAX_SMITH_PORTS))
+                .map(|r| (mixed_entry(&names[r], &names[r]), r, m.curve(r, r).map(|(_, s)| gamma(s)).collect()))
+                .collect()
+        } else {
+            let n = data.outputs().min(MAX_SMITH_PORTS);
+            (0..n)
+                .filter(|p| data.inputs().contains(p))
+                .map(|p| (format!("{}{}", p + 1, p + 1), p, data.curve(p, p).map(|(_, s)| gamma(s)).collect()))
+                .collect()
+        }
+    };
+    let entry = |e: &str| format!("$S_{{{e}}}$");
+    if let Some(sw) = session.results.sweep.as_ref() {
+        let data = sw.sdata().map_err(EngineError::failed)?;
+        for (e, p, pts) in reflections(&data) {
+            series.push(Series::new(
+                &format!("s{e}.fem"),
+                format!("{} FEM (order {})", entry(&e), sw.order.as_u8()),
+                sparameter_pen(p),
+                Style::Joined,
+                pts,
+            ));
+        }
+    }
+    if !mixed {
+        if let Some(td) = session.results.time_domain.as_ref().and_then(|t| crate::sdata::of_time_domain(t).ok()) {
+            for (e, p, pts) in reflections(&td) {
+                series.push(Series::new(&format!("s{e}.td"), format!("{} time domain", entry(&e)), Pen::Series(row_colour(p)), Style::Line, pts));
+            }
+        }
+        if let Some(b) = session.results.revolution.as_ref() {
+            for (e, p, pts) in reflections(&b.data) {
+                series.push(Series::new(
+                    &format!("s{e}.bor"),
+                    format!("{} revolution (m = {})", entry(&e), b.m),
+                    Pen::Series(row_colour(p)),
+                    Style::Line,
+                    pts,
+                ));
+            }
+        }
+    }
+    for (k, m) in session.views.measured.iter().enumerate() {
+        for (e, p, pts) in reflections(&m.data) {
+            series.push(Series::new(&format!("s{e}.m{}", k + 1), format!("{} {}", entry(&e), m.name), Pen::Faded(row_colour(p)), Style::Line, pts));
+        }
+    }
+    if !mixed {
+        for (k, a) in crate::archive::picked(session, compare)?.into_iter().enumerate() {
+            let Some(sw) = a.kept.sweep.as_ref() else { continue };
+            let pts = sw.curve(0, 0).into_iter().map(|(_, s)| gamma(s)).collect();
+            series.push(Series::new(&format!("run{}.s11", a.id), format!("#{} {}", a.id, entry("11")), compare_pens(k)[1], Style::Joined, pts));
+        }
+    }
+    if series.len() == grid {
+        return Err(EngineError::NotSolved { what: "results", run: "solve.frequency, or a measurement (results.import)" });
+    }
+    let mut chart = Chart::new(
+        if mixed { "Smith chart (mixed mode)" } else { "Smith chart" },
+        Axis::new("Re Γ", -SMITH_EDGE, SMITH_EDGE),
+        SDisplay::Smith.axis(&[]),
+        series,
+    );
+    chart.look.grid = false;
+    chart.look.equal = true;
+    Ok(chart)
 }

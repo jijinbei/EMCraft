@@ -43,6 +43,7 @@ pub mod guides;
 mod items;
 pub mod job;
 mod meshing;
+pub mod network;
 mod numbers;
 pub mod open;
 pub mod params;

@@ -47,8 +47,12 @@ history/<id>/s.c64           a kept solve's S-parameters (complex: real then ima
   knows; otherwise the file is refused.
 - `views` is how the project's results are looked at, set by `view.chart.style`,
   `view.probe.*` and `view.driven` (never by the history): each chart's style by its id, and
-  the probes. Only what differs from automatic is written; on reading they are checked (known
-  charts, texts and lists within their caps, finite numbers, valid colours, probes named once).
+  the probes; and the measurements `results.import` read from Touchstone files (`measured`:
+  each one's `name`, `file`, per-port `references` in Ω, `frequencies` in Hz, `ports` and `s`,
+  S flat — frequency by frequency, row by row, real and imaginary parts in turn —, at most 8,
+  named once). Only what differs from automatic is written; on reading they are checked (known
+  charts, texts and lists within their caps, finite numbers, valid colours, probes named once,
+  measurements of consistent sizes).
 - `analysis_history` is the analysis history (`results.history`): the solves kept, the oldest
   first, each with its identity (`id`, `when`, `command`, `params`, `units`, its model's
   `history` — an index into `histories`, each distinct history written once —, `variables`,

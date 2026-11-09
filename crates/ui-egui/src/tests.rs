@@ -7,11 +7,19 @@ use crate::scenario::Harness;
 /// Runs `tests/scenarios/<name>.json`; `$TMP` in it is a folder of its own, emptied first and
 /// removed after.
 fn scenario(name: &str) -> Harness {
+    scenario_with(name, &[])
+}
+
+/// Runs a scenario as [`scenario`] does, with `files` (name, text) written into `$TMP` first.
+fn scenario_with(name: &str, files: &[(&str, &str)]) -> Harness {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios").join(format!("{name}.json"));
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let tmp = std::env::temp_dir().join(format!("emcraft-scenario-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).unwrap_or_else(|e| panic!("{}: {e}", tmp.display()));
+    for (file, text) in files {
+        std::fs::write(tmp.join(file), text).unwrap_or_else(|e| panic!("{file}: {e}"));
+    }
     let text = text.replace("$TMP", tmp.to_str().unwrap_or_else(|| panic!("{}: not UTF-8", tmp.display())));
     let steps: Value = serde_json::from_str(&text).unwrap_or_else(|e| panic!("{name}: {e}"));
     let mut h = Harness::new();
@@ -21,6 +29,28 @@ fn scenario(name: &str) -> Harness {
         panic!("scenario {name}: {e}\nlast messages: {:?}", h.app.messages.iter().rev().take(5).collect::<Vec<_>>());
     }
     h
+}
+
+#[test]
+fn scenario_network_views() {
+    use std::fmt::Write as _;
+    // Two thru lines 1→3 and 2→4, a little unequal: a four-port to pair into mixed mode.
+    let mut lines = String::from("# GHz S RI R 50\n");
+    for f in [6.0, 7.0, 8.0] {
+        let _ = write!(lines, "{f}");
+        for p in 0..4 {
+            for q in 0..4 {
+                let v = match (p, q) {
+                    (2, 0) | (0, 2) => "0.9 -0.1",
+                    (3, 1) | (1, 3) => "0.8 -0.2",
+                    _ => "0.01 0",
+                };
+                let _ = write!(lines, " {v}");
+            }
+            lines.push('\n');
+        }
+    }
+    scenario_with("network_views", &[("lines.s4p", &lines)]);
 }
 
 #[test]
@@ -489,7 +519,8 @@ fn every_scenario_file_runs() {
     let src = include_str!("tests.rs");
     for e in std::fs::read_dir(dir).unwrap() {
         let name = e.unwrap().path().file_stem().unwrap().to_string_lossy().into_owned();
-        assert!(src.contains(&format!("scenario(\"{name}\")")), "tests/scenarios/{name}.json has no test");
+        let runs = src.contains(&format!("scenario(\"{name}\")")) || src.contains(&format!("scenario_with(\"{name}\""));
+        assert!(runs, "tests/scenarios/{name}.json has no test");
     }
 }
 
