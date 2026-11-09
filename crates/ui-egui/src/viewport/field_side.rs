@@ -315,7 +315,7 @@ fn probes(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut
     };
     if field.probe_values.as_ref().is_none_or(|(k, _)| *k != key) {
         let points: Vec<Point3> = probes.iter().map(emcraft_engine::views::Probe::point).collect();
-        let values = view::fields_at(&app.session, &field.view, &points).map(|(_, v)| v).unwrap_or_default();
+        let values = view::fields_at(&app.session, &field.view, &points).map(|p| p.values).unwrap_or_default();
         field.probe_values = Some((key, values));
     }
     let magnetic = field.view.component.is_magnetic();

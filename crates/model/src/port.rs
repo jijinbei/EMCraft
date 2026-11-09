@@ -191,7 +191,7 @@ impl PortFace {
 
     /// Whether `q` lies on the rectangle, to `tol` (m).
     pub fn holds(&self, q: Point3, tol: f64) -> bool {
-        let (u, v, _) = Frame::new(self.axis).axes();
+        let FrameAxes { u, v, .. } = Frame::new(self.axis).axes();
         let within = |x: f64, lo: f64, side: Metres| (lo - tol..=lo + side.get() + tol).contains(&x);
         (q[self.axis.index()] - self.at).abs() <= tol && within(q[u], self.u0, self.a) && within(q[v], self.v0, self.b)
     }
@@ -199,7 +199,7 @@ impl PortFace {
     /// The rectangle's corners in the model's coordinates, counter-clockwise in (u, v).
     pub fn corners(&self) -> [Point3; 4] {
         let f = Frame::new(self.axis);
-        let (_, _, s) = f.axes();
+        let s = f.axes().sign;
         let w = s * self.at;
         [(0.0, 0.0), (self.a.get(), 0.0), (self.a.get(), self.b.get()), (0.0, self.b.get())]
             .map(|(du, dv)| f.global(Point3::new(self.u0 + du, self.v0 + dv, w)))
@@ -226,30 +226,40 @@ pub struct Frame {
     pub axis: Axis,
 }
 
+/// A port frame's axes in global components: u's and v's (0 = x, 1 = y, 2 = z), and +1 when w
+/// runs up the global axis (−1 when down: a frame across y, whose (u, v, w) = (x, z, −y)).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FrameAxes {
+    pub u: usize,
+    pub v: usize,
+    pub sign: f64,
+}
+
 impl Frame {
     pub fn new(axis: Axis) -> Frame {
         Frame { axis }
     }
 
     /// The global components of u and v, and the sign of w along the axis.
-    pub fn axes(self) -> (usize, usize, f64) {
-        match self.axis {
+    pub fn axes(self) -> FrameAxes {
+        let (u, v, sign) = match self.axis {
             Axis::X => (1, 2, 1.0),
             Axis::Y => (0, 2, -1.0),
             Axis::Z => (0, 1, 1.0),
-        }
+        };
+        FrameAxes { u, v, sign }
     }
 
     /// A point in the face's own coordinates (u, v, w).
     pub fn local(self, p: Point3) -> Point3 {
-        let (u, v, s) = self.axes();
+        let FrameAxes { u, v, sign: s } = self.axes();
         Point3::new(p[u], p[v], s * p[self.axis.index()])
     }
 
     /// A point given in the face's own coordinates, in the model's.
     pub fn global(self, q: Point3) -> Point3 {
         let mut p = Point3::ORIGIN;
-        let (u, v, s) = self.axes();
+        let FrameAxes { u, v, sign: s } = self.axes();
         p[u] = q.x;
         p[v] = q.y;
         p[self.axis.index()] = s * q.z;
@@ -278,7 +288,7 @@ impl Frame {
     /// assert_eq!(local, [Symmetry { axis: Axis::Y, ..plane }]);
     /// ```
     pub fn local_planes(self, planes: &[crate::Symmetry]) -> Vec<crate::Symmetry> {
-        let (u, v, _) = self.axes();
+        let FrameAxes { u, v, .. } = self.axes();
         planes
             .iter()
             .map(|p| {
@@ -298,7 +308,7 @@ impl Frame {
     /// A complex vector given in the face's own components, in the model's.
     pub fn global_cvec(self, q: CVec3) -> CVec3 {
         let mut p = CVec3::ZERO;
-        let (u, v, s) = self.axes();
+        let FrameAxes { u, v, sign: s } = self.axes();
         p[u] = q.x;
         p[v] = q.y;
         p[self.axis.index()] = q.z * s;
@@ -307,7 +317,7 @@ impl Frame {
 
     /// The length of a vector's part across the face (its normal component dropped).
     pub fn across(self, p: Vec3) -> f64 {
-        let (u, v, _) = self.axes();
+        let FrameAxes { u, v, .. } = self.axes();
         p[u].hypot(p[v])
     }
 }
@@ -437,7 +447,7 @@ impl Model {
         let mut out = Vec::new();
         for tag in 0..6u32 {
             let axis = [Axis::X, Axis::Y, Axis::Z][(tag / 2) as usize];
-            let (u, v, _) = Frame::new(axis).axes();
+            let FrameAxes { u, v, .. } = Frame::new(axis).axes();
             let corners =
                 triangles.iter().zip(tags).filter(|(_, t)| **t == tag).flat_map(|(t, _)| t.iter().filter_map(|i| positions.get(*i as usize)));
             let Some(b) = crate::geom::Aabb::around(corners.copied()) else { continue };

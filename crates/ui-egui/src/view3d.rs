@@ -733,7 +733,7 @@ fn dynamic_field_arrows(app: &EmcraftApp, field: &FieldState, built: &mut Built)
         if !shown {
             continue;
         }
-        let (nx, ny, mut data) = samples.phasors(component);
+        let emcraft_engine::view::Phasors { nx, ny, grid: mut data } = samples.phasors(component);
         if nx < 2 || ny < 2 {
             continue;
         }

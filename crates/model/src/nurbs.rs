@@ -149,8 +149,8 @@ impl Nurbs {
 
     /// S(u, v) and its derivatives along u and v. The patch must have passed [`Nurbs::check`]
     /// (a malformed one gives NaN, never a panic).
-    pub fn eval(&self, u: f64, v: f64) -> (Point3, Vec3, Vec3) {
-        let nan = (Point3::new(f64::NAN, f64::NAN, f64::NAN), Vec3::ZERO, Vec3::ZERO);
+    pub fn eval(&self, u: f64, v: f64) -> Evaluated {
+        let nan = Evaluated { point: Point3::new(f64::NAN, f64::NAN, f64::NAN), along_u: Vec3::ZERO, along_v: Vec3::ZERO };
         let (rows, cols) = (self.net.len(), self.net.first().map_or(0, Vec::len));
         if rows <= self.u.degree
             || cols <= self.v.degree
@@ -181,12 +181,12 @@ impl Nurbs {
         let s = a * (1.0 / w);
         let su_ = (au - s * wu) * (1.0 / w);
         let sv_ = (av - s * wv) * (1.0 / w);
-        (Point3::ORIGIN + s, su_, sv_)
+        Evaluated { point: Point3::ORIGIN + s, along_u: su_, along_v: sv_ }
     }
 
     /// S(u, v).
     pub fn point(&self, u: f64, v: f64) -> Point3 {
-        self.eval(u, v).0
+        self.eval(u, v).point
     }
 
     /// The patch with every control point mapped by `f` (an affine map: a move, a turn).
@@ -289,15 +289,15 @@ impl Projector {
     /// The point of the patch nearest `p` (the parameters kept in its domain), `None` when
     /// nothing finite is found.
     pub fn project(&self, p: Point3) -> Option<Point3> {
-        self.nearest(p).map(|(_, _, q)| q)
+        self.nearest(p).map(|n| n.point)
     }
 
     /// The parameters and point nearest `p`.
-    pub fn nearest(&self, p: Point3) -> Option<(f64, f64, Point3)> {
+    pub fn nearest(&self, p: Point3) -> Option<Nearest> {
         let &(mut u, mut v, _) = self.nearest_sample(p)?;
         let ((u0, u1), (v0, v1)) = self.patch.domain();
         for _ in 0..MAX_STEPS {
-            let (s, su, sv) = self.patch.eval(u, v);
+            let Evaluated { point: s, along_u: su, along_v: sv } = self.patch.eval(u, v);
             let r = s - p;
             // Gauss–Newton: [su·su su·sv; sv·su sv·sv] δ = −[su·r; sv·r].
             let (a, b, c) = (su.dot(su), su.dot(sv), sv.dot(sv));
@@ -316,7 +316,7 @@ impl Projector {
             }
         }
         let q = self.patch.point(u, v);
-        q.is_finite().then_some((u, v, q))
+        q.is_finite().then_some(Nearest { u, v, point: q })
     }
 
     /// The sample nearest `p`: the grid's cells in growing shells about p's (clamped into the
@@ -365,10 +365,26 @@ impl Projector {
 
     /// The unit normal ∂S/∂u × ∂S/∂v at the point nearest `p`.
     pub fn normal(&self, p: Point3) -> Option<Vec3> {
-        let (u, v, _) = self.nearest(p)?;
-        let (_, su, sv) = self.patch.eval(u, v);
-        su.cross(sv).normalized()
+        let Nearest { u, v, .. } = self.nearest(p)?;
+        let e = self.patch.eval(u, v);
+        e.along_u.cross(e.along_v).normalized()
     }
+}
+
+/// A patch's point S(u, v) and its derivatives ∂S/∂u and ∂S/∂v there.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Evaluated {
+    pub point: Point3,
+    pub along_u: Vec3,
+    pub along_v: Vec3,
+}
+
+/// The parameters (u, v) of a patch's point nearest another, and that point.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Nearest {
+    pub u: f64,
+    pub v: f64,
+    pub point: Point3,
 }
 
 #[cfg(test)]
@@ -387,7 +403,7 @@ mod tests {
             Nurbs { u: Knots { degree: 2, knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0] }, v: Knots { degree: 1, knots: vec![0.0, 0.0, 1.0, 1.0] }, net };
         s.check().unwrap_or_else(|e| panic!("{e}"));
         for k in 0..=10 {
-            let (p, du, dv) = s.eval(k as f64 / 10.0, 0.3);
+            let Evaluated { point: p, along_u: du, along_v: dv } = s.eval(k as f64 / 10.0, 0.3);
             assert!((p.x.hypot(p.y) - 1.0).abs() < 1e-14 && (p.z - 0.3).abs() < 1e-14, "{p:?}");
             assert!((du.x * p.x + du.y * p.y).abs() < 1e-12 && (dv - Vec3::new(0.0, 0.0, 1.0)).norm() < 1e-12);
         }

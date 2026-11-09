@@ -45,7 +45,7 @@ pub fn port_mode_plot(session: &Session, port: &str, mode: usize, frequency: f64
         format!("cut off, {:.3} dB/{lu}", decibels((-(-pat.beta2).sqrt() * l.to_si(1.0)).exp()).abs())
     };
     // The face's own axes: x and y on a z face, y and z on an x face, x and z on a y face.
-    let (u, v, _) = p.frame().axes();
+    let emcraft_model::port::FrameAxes { u, v, .. } = p.frame().axes();
     let (u, v) = (emcraft_model::Axis::name_of(u), emcraft_model::Axis::name_of(v));
     Ok(FieldPlot {
         title: format!("Port {}, {}  f = {:.4} {}", p.name, pat.name, fu.from_si(frequency), fu.symbol()),

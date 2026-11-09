@@ -88,7 +88,7 @@ pub use view::field_view;
 
 /// results.tdr's chart, for the UI.
 pub fn results_tdr_chart(s: &Session, p: &Params) -> Result<emcraft_render::chart::Chart> {
-    let (t, port, z0) = results::tdr_of(s, p)?;
+    let results::PortTdr { tdr: t, port, reference: z0 } = results::tdr_of(s, p)?;
     Ok(view::tdr_chart(&t, &port, z0))
 }
 

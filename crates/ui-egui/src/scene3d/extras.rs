@@ -19,7 +19,7 @@ const PORT_CELLS: usize = 96;
 pub(super) fn port_face(m: &Model, p: &emcraft_model::Port) -> Vec<[[f64; 3]; 3]> {
     let Some(z) = port_z(m, p) else { return Vec::new() };
     let frame = p.frame();
-    let w = frame.axes().2 * z;
+    let w = frame.axes().sign * z;
     let on = |u: f64, v: f64| p3(frame.global(emcraft_model::Point3::new(u, v, w)));
     match m.port_shape_of(p) {
         Ok(emcraft_model::PortShape::Rect { x0, y0, a, b }) => {
@@ -94,7 +94,7 @@ pub(crate) fn port_normal(p: &emcraft_model::Port) -> [f64; 3] {
 pub(crate) fn port_quad(m: &Model, p: &emcraft_model::Port) -> Option<[[f64; 3]; 4]> {
     let face = port_face(m, p);
     let frame = p.frame();
-    let (u, v, _) = frame.axes();
+    let emcraft_model::port::FrameAxes { u, v, .. } = frame.axes();
     let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
     for q in face.iter().flatten() {
         for (k, c) in [u, v].into_iter().enumerate() {
@@ -177,7 +177,7 @@ pub(super) fn extras(m: &Model, driven: Option<usize>, overlay: Overlay, out: &m
         let Some(q) = port_quad(m, p) else { continue };
         let c = quad_centre(&q);
         let frame = p.frame();
-        let (u, v, _) = frame.axes();
+        let emcraft_model::port::FrameAxes { u, v, .. } = frame.axes();
         let width = (q[2][u] - q[0][u]).abs();
         let height = (q[2][v] - q[0][v]).abs();
         let len = (0.6 * width.max(height)).min(0.25 * size).max(1e-9);

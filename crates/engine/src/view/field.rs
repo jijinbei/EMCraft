@@ -278,7 +278,7 @@ pub struct PlaneSamples {
 /// with the frequency (Hz) solved.
 ///
 /// ```
-/// use emcraft_engine::view::{FieldView, Plane, fields_at};
+/// use emcraft_engine::view::{FieldView, Plane, Probed, fields_at};
 /// use emcraft_model::Point3;
 ///
 /// let mut s = emcraft_engine::Session::new();
@@ -287,13 +287,30 @@ pub struct PlaneSamples {
 /// assert!(fields_at(&s, &FieldView::new(7e9, Plane::H), &[Point3::new(0.0, 0.0, 0.0)]).is_err());
 /// s.execute("solve.frequency", &serde_json::json!({"frequencies": [7], "order": 1})).unwrap();
 /// let inside = Point3::new(0.011, 0.005, 0.01);
-/// let (f, values) = fields_at(&s, &FieldView::new(7e9, Plane::H), &[inside, Point3::new(1.0, 1.0, 1.0)]).unwrap();
+/// let Probed { frequency: f, values } = fields_at(&s, &FieldView::new(7e9, Plane::H), &[inside, Point3::new(1.0, 1.0, 1.0)]).unwrap();
 /// assert_eq!(f, 7e9);
 /// assert!(values[0].is_some() && values[1].is_none());
 /// ```
-pub fn fields_at(session: &Session, view: &FieldView, points: &[Point3]) -> Result<(f64, Vec<Option<(CVec3, CVec3)>>)> {
+pub fn fields_at(session: &Session, view: &FieldView, points: &[Point3]) -> Result<Probed> {
     let Solution { driven, field, frequency, .. } = solution(session, view)?;
-    Ok((frequency, points.iter().map(|p| driven.fields(field, frequency, *p)).collect()))
+    Ok(Probed { frequency, values: points.iter().map(|p| driven.fields(field, frequency, *p)).collect() })
+}
+
+/// The fields at points: the frequency they were solved at (Hz) and (E, H) at each point (V/m,
+/// A/m), `None` outside the mesh.
+#[derive(Clone, Debug)]
+pub struct Probed {
+    pub frequency: f64,
+    pub values: Vec<Option<(CVec3, CVec3)>>,
+}
+
+/// A plane's phasors on its plot grid: nx × ny points, row 0 at the bottom, each the real and
+/// imaginary parts of one field's vector (`None` outside the mesh).
+#[derive(Clone, Debug)]
+pub struct Phasors {
+    pub nx: usize,
+    pub ny: usize,
+    pub grid: Vec<Option<([f64; 3], [f64; 3])>>,
 }
 
 /// The field plot of a view.
@@ -550,7 +567,7 @@ impl PlaneSamples {
     /// s.execute("solve.frequency", &serde_json::json!({"frequencies": [7], "order": 1})).unwrap();
     /// let view = FieldView::new(7e9, Plane::H);
     /// let samples = sample_plane(&s, &view).unwrap();
-    /// let (nx, ny, grid) = samples.phasors(Component::Ey);
+    /// let emcraft_engine::view::Phasors { nx, ny, grid } = samples.phasors(Component::Ey);
     /// assert_eq!(grid.len(), nx * ny);
     /// // The plot at phase 0 reads the real parts.
     /// let plot = samples.plot(&FieldView { component: Component::Ey, ..view }).unwrap();
@@ -559,7 +576,7 @@ impl PlaneSamples {
     /// let first = grid.iter().position(|g| g.is_some()).unwrap();
     /// assert!((values[first] - re[1]).abs() <= 1e-9 * re[1].abs().max(1.0));
     /// ```
-    pub fn phasors(&self, component: Component) -> (usize, usize, Vec<Option<([f64; 3], [f64; 3])>>) {
+    pub fn phasors(&self, component: Component) -> Phasors {
         let grid = self
             .grid
             .iter()
@@ -570,7 +587,7 @@ impl PlaneSamples {
                 })
             })
             .collect();
-        (self.nx, self.ny, grid)
+        Phasors { nx: self.nx, ny: self.ny, grid }
     }
 
     pub fn plot(&self, view: &FieldView) -> Result<FieldPlot> {

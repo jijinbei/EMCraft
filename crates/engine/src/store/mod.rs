@@ -100,15 +100,15 @@ impl Stored {
 
     /// The file's results for `model` (its mesh on): those that fit, the stale ones marked,
     /// the kept solve they are, and why any was left out.
-    pub(crate) fn results(&mut self, model: &Model) -> (crate::Results, Option<u32>, Vec<FileError>) {
+    pub(crate) fn results(&mut self, model: &Model) -> FileResults {
         match (self.results.take(), self.package.as_mut()) {
             (Some(st), Some(r)) => {
                 let (stale, archived) = (st.stale.clone(), st.archive_current);
                 let (mut results, dropped) = st.read(r, model);
                 results.mark_stale(stale);
-                (results, archived, dropped)
+                FileResults { results, archived, dropped }
             }
-            _ => (crate::Results::default(), None, Vec::new()),
+            _ => FileResults { results: crate::Results::default(), archived: None, dropped: Vec::new() },
         }
     }
 
@@ -120,6 +120,14 @@ impl Stored {
             _ => Ok(None),
         }
     }
+}
+
+/// A project file's results: those read, the kept solve (`results.history`) they are, and why
+/// any was left out.
+pub(crate) struct FileResults {
+    pub results: crate::Results,
+    pub archived: Option<u32>,
+    pub dropped: Vec<FileError>,
 }
 
 fn failed(path: &Path, e: impl std::fmt::Display) -> EngineError {

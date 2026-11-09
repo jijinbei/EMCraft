@@ -480,7 +480,7 @@ fn reduced(d: &Driven, basis: &Basis, frequency: f64, terms: &[Vec<PortTerm<'_>>
         fields.push(x);
     }
     // S as the full solve reads it.
-    let (s, impedances) = d.s_parameters(terms, &mut fields, frequency)?;
+    let crate::driven::Read { s, impedances, fields } = d.s_parameters(terms, fields, frequency)?;
     let seconds = t0.elapsed().as_secs_f64();
     Ok((
         FrequencyResult {

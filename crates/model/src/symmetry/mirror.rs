@@ -214,7 +214,7 @@ impl Symmetry {
             let Some(face) = &p.face else {
                 return Err(format!("port {} lies on an end of the solid: a symmetry plane cuts only ports on faces (axis and face)", p.name));
             };
-            let (u, v, _) = crate::port::Frame::new(face.axis).axes();
+            let crate::port::FrameAxes { u, v, .. } = crate::port::Frame::new(face.axis).axes();
             let (lo, side) = match d {
                 _ if d == u => (face.u0, face.a.get()),
                 _ if d == v => (face.v0, face.b.get()),
@@ -425,7 +425,7 @@ impl Model {
     /// along its first side (u: its modes come in the order of its sides), as it excites it.
     fn wall_for(&self, p: &crate::Port, axis: Axis) -> Option<SymmetryKind> {
         let crate::PortShape::Rect { a, b, .. } = self.port_shape_of(p).ok()? else { return None };
-        let (u, v, _) = p.frame().axes();
+        let crate::port::FrameAxes { u, v, .. } = p.frame().axes();
         let square = (a - b).abs() <= 1e-9 * a.max(b);
         let (broad, narrow) = if a > b || square { (u, v) } else { (v, u) };
         match axis.index() {

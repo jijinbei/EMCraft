@@ -86,13 +86,20 @@ impl Driven {
     }
 
     /// The modal S `sm` (of the excitations' power waves, at the ports' faces) de-embedded per
-    /// mode and converted to the entries' waves (see the module docs), with each excitation's
-    /// field in `fields` (a unit wave of its mode) replaced by the field of a unit wave (1 W
-    /// available on the whole line) at its entry, the other entries' incident waves zero.
-    pub(crate) fn to_terminals(&self, sm: &SMatrix, terms: &[Vec<PortTerm<'_>>], frequency: f64, fields: &mut Vec<Vec<C>>) -> Result<SMatrix> {
+    /// mode and converted to the entries' waves (see the module docs), and the fields of the
+    /// entries' excitations: each a unit wave (1 W available on the whole line) at its entry,
+    /// the other entries' incident waves zero, made from the modes' fields `modes` (each a
+    /// unit wave of its mode).
+    pub(crate) fn to_terminals(
+        &self,
+        sm: &SMatrix,
+        terms: &[Vec<PortTerm<'_>>],
+        frequency: f64,
+        modes: Vec<Vec<C>>,
+    ) -> Result<(SMatrix, Vec<Vec<C>>)> {
         let ex = self.excitations();
         let n = ex.len();
-        if sm.ports() != n || fields.len() != n {
+        if sm.ports() != n || modes.len() != n {
             return Err(invalid("terminals", "the excitations do not match the ports' entries"));
         }
         let term = |e: usize| ex.get(e).and_then(|&(p, m)| terms.get(p)?.get(m)).ok_or_else(|| invalid("terminals", "a mode's term is missing"));
@@ -162,12 +169,11 @@ impl Driven {
             }
             weight.push(shift[e] / power.sqrt());
         }
-        let old = std::mem::take(fields);
-        let len = old.first().map_or(0, Vec::len);
-        *fields = (0..n)
+        let len = modes.first().map_or(0, Vec::len);
+        let entries = (0..n)
             .map(|k| {
                 let mut x = vec![C::new(0.0, 0.0); len];
-                for (j, f) in old.iter().enumerate() {
+                for (j, f) in modes.iter().enumerate() {
                     let c = weight[j] * inv[j * n + k];
                     if c != C::new(0.0, 0.0) {
                         x.iter_mut().zip(f).for_each(|(xi, fi)| *xi += c * fi);
@@ -176,7 +182,7 @@ impl Driven {
                 x
             })
             .collect();
-        Ok(st)
+        Ok((st, entries))
     }
 }
 

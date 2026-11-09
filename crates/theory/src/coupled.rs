@@ -395,7 +395,7 @@ mod tests {
         let (ze, zo) = z0_even_odd(w, s, b, er).unwrap();
         let z = crate::stripline::z0(w, b, er);
         assert!(close(z, 62.21392318257151), "{z}");
-        let (_, delta, _) = crate::stripline::open_end(w, b);
+        let delta = crate::stripline::open_end(w, b).middle;
         let beta = |f: f64| 2.0 * PI * f * er.sqrt() / C0;
         let coupler = |f: f64| {
             let feed = line(z, beta(f) * (4.0 * mm - delta));
@@ -417,7 +417,7 @@ mod tests {
                 .iter()
                 .map(|&(w, s, l)| {
                     let (z0e, z0o) = z0_even_odd(w * mm, s * mm, b, er).unwrap();
-                    CoupledSection { z0e, z0o, length: l * mm + crate::stripline::open_end(w * mm, b).1 }
+                    CoupledSection { z0e, z0o, length: l * mm + crate::stripline::open_end(w * mm, b).middle }
                 })
                 .collect(),
         };

@@ -395,7 +395,7 @@ fn port_target(m: &emcraft_model::Model, face: &Face) -> PortTarget {
         return PortTarget::Existing(i);
     }
     // The guide lies where the body is: above the face along its axis, or below it.
-    let (u, v, _) = emcraft_model::Frame::new(axis).axes();
+    let emcraft_model::port::FrameAxes { u, v, .. } = emcraft_model::Frame::new(axis).axes();
     let h = 1e-4 * (b.max[k] - b.min[k]).abs().max(1e-9);
     let ahead = centre.with(k, centre[k] + h);
     let end = if m.material_at(ahead).is_some() { End::Start } else { End::End };

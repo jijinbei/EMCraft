@@ -403,7 +403,7 @@ impl Model {
         }
         for p in &mut m.ports {
             if let Some(f) = p.face.as_mut() {
-                let (u, w, _) = crate::port::Frame::new(f.axis).axes();
+                let crate::port::FrameAxes { u, v: w, .. } = crate::port::Frame::new(f.axis).axes();
                 f.at += v[f.axis.index()];
                 f.u0 += v[u];
                 f.v0 += v[w];

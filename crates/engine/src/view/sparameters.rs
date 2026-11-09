@@ -137,24 +137,30 @@ impl SDisplay {
     /// Each curve of `series` as the display shows it whole ([`SDisplay::derived`]); a delay's
     /// display keeps the transmissions only (a reflection's phase is no time through, and a
     /// small one's is noise).
-    fn derive_all(self, series: &mut Vec<Series>, fu: emcraft_model::units::Frequency) {
+    fn derive_series(self, series: Vec<Series>, fu: emcraft_model::units::Frequency) -> Vec<Series> {
         if !self.along() {
-            return;
+            return series;
         }
-        series.retain(|s| !reflection(&s.key));
-        for s in series.iter_mut().filter(|s| s.style != Style::Markers) {
-            s.points = self.derived(std::mem::take(&mut s.points), fu);
-        }
+        let curves: Vec<Series> = series
+            .into_iter()
+            .filter(|s| !reflection(&s.key))
+            .map(|s| if s.style == Style::Markers { s } else { Series { points: self.derived(s.points.clone(), fu), ..s } })
+            .collect();
         // A fast sweep's marks of its full solves are too few to follow the phase through its
         // wraps: each takes its value from its curve's at its frequency.
-        let curves: Vec<(String, Vec<[f64; 2]>)> =
-            series.iter().filter(|s| s.style != Style::Markers).map(|s| (s.key.clone(), s.points.clone())).collect();
-        for s in series.iter_mut().filter(|s| s.style == Style::Markers) {
-            let Some((_, line)) = curves.iter().find(|(k, _)| *k == s.key) else { continue };
-            for p in &mut s.points {
-                p[1] = line.iter().find(|q| (q[0] - p[0]).abs() <= 1e-12 * p[0].abs().max(1.0)).map_or(f64::NAN, |q| q[1]);
-            }
-        }
+        let on_line = |key: &str, f: f64| {
+            let line = curves.iter().find(|l| l.key == key && l.style != Style::Markers)?;
+            line.points.iter().find(|q| crate::numbers::same_frequency(q[0], f)).map(|q| q[1])
+        };
+        curves
+            .iter()
+            .map(|s| match s.style {
+                Style::Markers => {
+                    Series { points: s.points.iter().map(|p| [p[0], on_line(&s.key, p[0]).unwrap_or(f64::NAN)]).collect(), ..s.clone() }
+                }
+                _ => s.clone(),
+            })
+            .collect()
     }
 }
 
@@ -264,11 +270,11 @@ pub fn sparameter_chart_with(session: &Session, display: SDisplay, compare: &[u3
         let pts = |p: usize, q: usize| sw.curve(p, q).into_iter().map(|(f, s)| [fu.from_si(f), display.of(s)]).collect();
         // Its solved points, as the session's own are drawn: data, not curves through it.
         let [p21, p11] = compare_pens(k);
-        let mut kept = vec![
+        let kept = vec![
             Series::new(&format!("run{}.s21", a.id), format!("#{} {}", a.id, display.entry("21")), p21, Style::Joined, pts(1, 0)),
             Series::new(&format!("run{}.s11", a.id), format!("#{} {}", a.id, display.entry("11")), p11, Style::Joined, pts(0, 0)),
         ];
-        display.derive_all(&mut kept, fu);
+        let kept = display.derive_series(kept, fu);
         chart.series.extend(kept);
     }
     if !own && !added {
@@ -380,7 +386,7 @@ fn sparameter_chart_now(session: &Session, display: SDisplay) -> Result<Chart> {
     }
     series.extend(measured_series(session, display));
     let marks = section_cutoffs(session).into_iter().map(|(fc, name)| (fu.from_si(fc), format!("$f_c$ {name}"))).collect();
-    display.derive_all(&mut series, fu);
+    let series = display.derive_series(series, fu);
     let y = display.axis(&series);
     let mut chart = Chart::new("S-parameters", Axis::new(&format!("frequency ({})", fu.symbol()), fu.from_si(f0), fu.from_si(f1)), y, series);
     chart.marks = marks;
@@ -530,7 +536,7 @@ fn mixed_chart(session: &Session, display: SDisplay) -> Result<Chart> {
         ));
     };
     let pad = if f1 > f0 { 0.0 } else { 0.05 * f0 };
-    display.derive_all(&mut series, fu);
+    let series = display.derive_series(series, fu);
     let y = display.axis(&series);
     Ok(Chart::new(
         "Mixed-mode S-parameters",

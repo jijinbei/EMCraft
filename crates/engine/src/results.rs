@@ -221,10 +221,17 @@ fn reflection(s: &Session, k: usize) -> Result<(Vec<f64>, Vec<emcraft_solver::Co
     Ok((f, r))
 }
 
+/// A port's time-domain reflectometry: the transform, the port's name and its reference
+/// impedance (Ω, where it has one).
+pub(crate) struct PortTdr {
+    pub tdr: crate::tdr::Tdr,
+    pub port: String,
+    pub reference: Option<f64>,
+}
+
 /// The transform of port `port`'s reflection (the first port by default), in `mode` (low pass
-/// on a harmonic sweep by default, else band pass); with the port's name and reference
-/// impedance.
-pub(crate) fn tdr_of(s: &Session, p: &Params) -> Result<(crate::tdr::Tdr, String, Option<f64>)> {
+/// on a harmonic sweep by default, else band pass).
+pub(crate) fn tdr_of(s: &Session, p: &Params) -> Result<PortTdr> {
     let (k, port) = match args::entry(s, p, "port")? {
         Some(named) => named,
         None => s.sparameter_entries().into_iter().enumerate().next().ok_or_else(|| EngineError::failed("no ports"))?,
@@ -235,14 +242,14 @@ pub(crate) fn tdr_of(s: &Session, p: &Params) -> Result<(crate::tdr::Tdr, String
         None if crate::tdr::spacing(&freqs).is_some_and(|(_, harmonic)| harmonic) => crate::tdr::Mode::LowPass,
         None => crate::tdr::Mode::BandPass,
     };
-    Ok((crate::tdr::transform(&freqs, &refl, mode)?, port.name.clone(), port.reference))
+    Ok(PortTdr { tdr: crate::tdr::transform(&freqs, &refl, mode)?, port: port.name.clone(), reference: port.reference })
 }
 
 /// Most points a TDR reply lists.
 const TDR_POINTS: usize = 400;
 
 pub fn tdr(s: &mut Session, p: &Params) -> Result<Value> {
-    let (t, port, z0) = tdr_of(s, p)?;
+    let PortTdr { tdr: t, port, reference: z0 } = tdr_of(s, p)?;
     let step = t.times.len().div_ceil(TDR_POINTS).max(1);
     let points: Vec<Value> = t
         .times

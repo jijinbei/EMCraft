@@ -733,7 +733,7 @@ pub fn probes(s: &mut Session, p: &Params) -> Result<Value> {
     }
     view.excitation = crate::args::excitation(s, p)?;
     let points: Vec<Point3> = s.views.probes.iter().map(Probe::point).collect();
-    let (f, values) = crate::view::fields_at(s, &view, &points)?;
+    let crate::view::Probed { frequency: f, values } = crate::view::fields_at(s, &view, &points)?;
     let parts = |v: &emcraft_model::CVec3| v.iter().map(|c| json!([c.re, c.im])).collect::<Vec<_>>();
     let rows: Vec<Value> = s
         .views

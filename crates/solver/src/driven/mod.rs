@@ -88,6 +88,7 @@ pub(crate) mod pml;
 mod ports;
 mod solution;
 mod sparams;
+pub(crate) use sparams::Read;
 mod terminals;
 mod terms;
 
@@ -541,8 +542,9 @@ impl Driven {
                 .collect();
             extra.extend(last.iter().cloned());
         }
-        let (s, impedances) = self.s_parameters(&terms, &mut solved.fields, frequency)?;
-        Ok((solved.result(frequency, s, impedances), extra))
+        let read = self.s_parameters(&terms, std::mem::take(&mut solved.fields), frequency)?;
+        solved.fields = read.fields;
+        Ok((solved.result(frequency, read.s, read.impedances), extra))
     }
 
     /// A frequency solved by GMRES preconditioned by the first-order part ([`pmg`]).
@@ -561,8 +563,9 @@ impl Driven {
             fields.push(x);
         }
         let mut solved = solution::Solved::iterative(fields, worst, assembly, factor, started);
-        let (s, impedances) = self.s_parameters(&terms, &mut solved.fields, frequency)?;
-        Ok(solved.result(frequency, s, impedances))
+        let read = self.s_parameters(&terms, std::mem::take(&mut solved.fields), frequency)?;
+        solved.fields = read.fields;
+        Ok(solved.result(frequency, read.s, read.impedances))
     }
 
     pub(crate) fn element_of(&self, t: usize) -> Result<Element> {

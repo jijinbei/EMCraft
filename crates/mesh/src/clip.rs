@@ -29,9 +29,18 @@ pub(crate) struct Bound {
     pub(crate) tag: u32,
 }
 
-/// The triangles flat across an axis (corners within `tol` along it): (axis, plane, outward
-/// sign, triangle).
-pub(crate) fn flat(s: Triangles, tol: f64) -> Vec<(usize, f64, f64, usize)> {
+/// A triangle flat across an axis: the axis, the plane it lies in, its outward sign (±1) along
+/// the axis and its index.
+#[derive(Clone, Copy)]
+pub(crate) struct Flat {
+    pub(crate) axis: usize,
+    pub(crate) at: f64,
+    pub(crate) outward: f64,
+    pub(crate) triangle: usize,
+}
+
+/// The triangles flat across an axis (corners within `tol` along it).
+pub(crate) fn flat(s: Triangles, tol: f64) -> Vec<Flat> {
     let mut out = Vec::new();
     for (i, t) in s.triangles.iter().enumerate() {
         let Some(q) = corners(s.positions, t) else { continue };
@@ -39,7 +48,7 @@ pub(crate) fn flat(s: Triangles, tol: f64) -> Vec<(usize, f64, f64, usize)> {
         for d in 0..3 {
             let (lo, hi) = q.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), p| (a.min(p[d]), b.max(p[d])));
             if hi - lo <= tol && n[d] != 0.0 {
-                out.push((d, q[0][d], n[d].signum(), i));
+                out.push(Flat { axis: d, at: q[0][d], outward: n[d].signum(), triangle: i });
                 break;
             }
         }
@@ -70,23 +79,18 @@ fn behind(s: Triangles, axis: usize, at: f64, outward: f64, tol: f64) -> bool {
 pub(crate) fn bounds(main: Triangles, main_tags: &[u32], tool: Triangles, tol: f64) -> Vec<Bound> {
     let (fm, ft) = (flat(main, tol), flat(tool, tol));
     let mut out: Vec<Bound> = Vec::new();
-    for &(axis, at, outward, i) in &fm {
+    for &Flat { axis, at, outward, triangle: i } in &fm {
         if out.iter().any(|b| b.axis == axis && b.outward == outward) {
             continue;
         }
-        if !ft.iter().any(|&(d, c, s, _)| d == axis && s == outward && (c - at).abs() <= tol) {
+        let same = |f: &&Flat| f.axis == axis && f.outward == outward && (f.at - at).abs() <= tol;
+        if !ft.iter().any(|f| same(&f)) {
             continue;
         }
         if !(behind(main, axis, at, outward, tol) && behind(tool, axis, at, outward, tol)) {
             continue;
         }
-        let tag = fm
-            .iter()
-            .filter(|&&(d, c, s, _)| d == axis && s == outward && (c - at).abs() <= tol)
-            .filter_map(|&(_, _, _, j)| main_tags.get(j).copied())
-            .min()
-            .or_else(|| main_tags.get(i).copied())
-            .unwrap_or(0);
+        let tag = fm.iter().filter(same).filter_map(|f| main_tags.get(f.triangle).copied()).min().or_else(|| main_tags.get(i).copied()).unwrap_or(0);
         out.push(Bound { axis, at, outward, tag });
     }
     out

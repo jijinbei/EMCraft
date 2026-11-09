@@ -102,10 +102,10 @@ pub fn s_parameters_solid(model: &Model, o: &Options, frequencies: &[f64], input
     let (mut device_steps, mut reference_steps, mut converged) = (0, 0, true);
     for (c, &q) in inputs.iter().enumerate() {
         let reference = SolidGrid::reference(&grid, &ports[q], o)?;
-        let (inc, r_steps, _) = run.go(&reference, &ports[q], std::slice::from_ref(&ports[q]), None)?;
+        let Transformed { sums: inc, steps: r_steps, .. } = run.go(&reference, &ports[q], std::slice::from_ref(&ports[q]), None)?;
         let inc = inc.into_iter().next().unwrap_or_default();
         let scale = inc.iter().fold(0.0f64, |m, c| m.max(c.norm()));
-        let (v, d_steps, settled) = run.go(&grid, &ports[q], &ports, Some(scale))?;
+        let Transformed { sums: v, steps: d_steps, settled } = run.go(&grid, &ports[q], &ports, Some(scale))?;
         reference_steps += r_steps;
         device_steps += d_steps;
         converged &= settled;
@@ -588,8 +588,7 @@ impl Run<'_> {
     /// One run on `g`: the pulse launched at `source`'s source plane, the TE₁₀ projections at
     /// the faces of `ports` transformed; every [`CHECK`] steps past `t_min` they are checked
     /// against the incident wave's `scale` (when given) and the run stops once they settle.
-    /// Returns the transforms (per port, per frequency), the steps and whether they settled.
-    fn go(&self, g: &SolidGrid, source: &FacePort, ports: &[FacePort], scale: Option<f64>) -> Result<(Vec<Vec<C>>, usize, bool)> {
+    fn go(&self, g: &SolidGrid, source: &FacePort, ports: &[FacePort], scale: Option<f64>) -> Result<Transformed> {
         let steps = Steps::of(&g.lines);
         let coef = g.coefficients(self.model, &steps, self.dt, self.losses);
         let cpml = g.cpml(self.dt, Band::of(self.frequencies).fc);
@@ -604,7 +603,7 @@ impl Run<'_> {
         let mut phasor = advance.clone();
         let mut sums = vec![vec![C::new(0.0, 0.0); nf]; planes.len()];
         let mut settling = Settling::new(self.o.decay);
-        let (mut converged, mut failed, mut grew) = (false, false, false);
+        let mut stop = Stop::Running;
         let ce = &coef.ce[src.narrow];
         let e_src = &fields.e[src.narrow];
         let taken = leapfrog(&kernel, g.n()[2] + 1, self.o.max_steps, |n| {
@@ -616,7 +615,9 @@ impl Run<'_> {
             }
             for (sum, plane) in sums.iter_mut().zip(&planes) {
                 let v = plane.project(&fields.e[plane.narrow]);
-                failed |= !v.is_finite();
+                if !v.is_finite() {
+                    stop = Stop::Diverged;
+                }
                 for (x, p) in sum.iter_mut().zip(&phasor) {
                     *x += *p * v;
                 }
@@ -624,7 +625,7 @@ impl Run<'_> {
             for (p, a) in phasor.iter_mut().zip(&advance) {
                 *p *= a;
             }
-            if failed {
+            if stop == Stop::Diverged {
                 return ControlFlow::Break(());
             }
             let t = (n + 1) as f64 * self.dt;
@@ -634,25 +635,41 @@ impl Run<'_> {
                 // Waves out of a passive device stay below the incident one: far beyond it the
                 // run is growing (a mode trapped below cut-off feeding the absorbers).
                 if scale.is_some_and(|s| peak > GROWTH * s) {
-                    grew = true;
+                    stop = Stop::Grew;
                     return ControlFlow::Break(());
                 }
                 if settling.settled(now, scale.unwrap_or(peak)) {
-                    converged = true;
+                    stop = Stop::Settled;
                     return ControlFlow::Break(());
                 }
             }
             ControlFlow::Continue(())
         });
-        if failed {
-            return Err(invalid("run", "the fields diverged"));
-        }
-        if grew {
-            return Err(invalid(
+        match stop {
+            Stop::Diverged => Err(invalid("run", "the fields diverged")),
+            Stop::Grew => Err(invalid(
                 "run",
                 "the fields grew without bound before they settled (energy trapped below the ports' cut-off reaching the absorbers): start the band further above cut-off or use a smaller cell",
-            ));
+            )),
+            Stop::Running | Stop::Settled => Ok(Transformed { sums, steps: taken, settled: stop == Stop::Settled }),
         }
-        Ok((sums, taken, converged))
     }
+}
+
+/// Why a run's leapfrog stopped: still running at its last step, its transforms settled, its
+/// fields not finite, or its waves grown past the incident one's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Stop {
+    Running,
+    Settled,
+    Diverged,
+    Grew,
+}
+
+/// A run's transforms at its ports' planes (per port, per frequency), the steps it took and
+/// whether they settled before its last step.
+struct Transformed {
+    sums: Vec<Vec<C>>,
+    steps: usize,
+    settled: bool,
 }

@@ -50,31 +50,41 @@ pub(crate) fn read_s<T: ModeTerm>(terms: &[Vec<T>], excitations: &[(usize, usize
     s
 }
 
+/// What the solutions of a frequency read as: S, each entry's line impedance (Ω, where its
+/// port's first mode has one) and the field of each entry's excitation.
+pub(crate) struct Read {
+    pub s: SMatrix,
+    pub impedances: Vec<Option<f64>>,
+    pub fields: Vec<Vec<C>>,
+}
+
 impl Driven {
-    /// S from the solutions `fields` of each excitation ([`Driven::excitations`]), with each
-    /// entry's line impedance (where a port's first mode has one): the lumped ports' when there
-    /// are no waveguide ports ([`Driven::lumped_s`]); else read ([`read_s`]), referred to
-    /// the ports' reference impedances ([`Driven::refer`]) and de-embedded
-    /// ([`Driven::deembed`]); with terminal ports, de-embedded per mode and converted to the
-    /// terminals' waves, `fields` then made the entries' ([`Driven::to_terminals`]).
-    pub(crate) fn s_parameters(&self, terms: &[Vec<PortTerm<'_>>], fields: &mut Vec<Vec<C>>, frequency: f64) -> Result<(SMatrix, Vec<Option<f64>>)> {
+    /// S from the solutions `fields` of each excitation ([`Driven::excitations`]) at
+    /// `frequency` (Hz): the lumped ports' when there are no waveguide ports
+    /// ([`Driven::lumped_s`]); else read ([`read_s`]), referred to the ports' reference
+    /// impedances ([`Driven::refer`]) and de-embedded ([`Driven::deembed`]). With terminal
+    /// ports the modes are de-embedded one by one and converted to the terminals' waves, and
+    /// the fields become the entries' ([`Driven::to_terminals`]); otherwise they come back as
+    /// they were given.
+    pub(crate) fn s_parameters(&self, terms: &[Vec<PortTerm<'_>>], fields: Vec<Vec<C>>, frequency: f64) -> Result<Read> {
         if self.ports.is_empty() {
-            return Ok((self.lumped_s(fields), self.lumped.iter().map(|l| Some(l.impedance)).collect()));
+            let impedances = self.lumped.iter().map(|l| Some(l.impedance)).collect();
+            return Ok(Read { s: self.lumped_s(&fields), impedances, fields });
         }
         let excitations = self.excitations();
-        let modal = read_s(terms, &excitations, fields);
+        let modal = read_s(terms, &excitations, &fields);
         if self.has_terminals() {
             let impedances = self
                 .entries()
                 .iter()
                 .map(|e| if e.terminal.is_some() { None } else { terms.get(e.port).and_then(|l| l.first()).and_then(|t| t.impedance) })
                 .collect();
-            let s = self.to_terminals(&modal, terms, frequency, fields)?;
-            return Ok((s, impedances));
+            let (s, fields) = self.to_terminals(&modal, terms, frequency, fields)?;
+            return Ok(Read { s, impedances, fields });
         }
         let impedances: Vec<Option<f64>> = terms.iter().map(|l| l.first().and_then(|t| t.impedance)).collect();
         let s = self.deembed(self.refer(modal, &impedances)?, terms);
-        Ok((s, impedances))
+        Ok(Read { s, impedances, fields })
     }
 
     /// S at the ports' reference planes moved `deembed` into the model along their lines: the

@@ -51,7 +51,7 @@ pub(super) fn gap_sizes(t: &Tessellation, size: f64, flush: f64) -> Result<(Vec<
     // Per axis, the triangles facing down it (the low side of a gap: outward −) and up it, by plane.
     let mut up: [Vec<(f64, usize)>; 3] = Default::default();
     let mut down: [Vec<(f64, usize)>; 3] = Default::default();
-    for &(axis, at, outward, i) in &flats {
+    for &crate::clip::Flat { axis, at, outward, triangle: i } in &flats {
         if outward > 0.0 { up[axis].push((at, i)) } else { down[axis].push((at, i)) }
     }
     for list in up.iter_mut().chain(down.iter_mut()) {

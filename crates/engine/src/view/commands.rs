@@ -173,7 +173,7 @@ pub fn sparameters(s: &mut Session, p: &Params) -> Result<Value> {
 /// `view.tdr`.
 pub fn tdr(s: &mut Session, p: &Params) -> Result<Value> {
     let file = ChartFile::read(s, p)?;
-    let (t, port, z0) = crate::results::tdr_of(s, p)?;
+    let crate::results::PortTdr { tdr: t, port, reference: z0 } = crate::results::tdr_of(s, p)?;
     file.write(s, ChartId::Tdr, super::tdr_chart(&t, &port, z0))
 }
 

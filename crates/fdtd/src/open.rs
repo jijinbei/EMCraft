@@ -371,7 +371,7 @@ fn element_loads(model: &Model, grid: &BoxGrid, coef: &BoxCoefficients) -> Resul
         if e.across.is_some() {
             return Err(FdtdError::Unsupported(format!("sheet lumped elements in the time domain (`{}`)", e.name)));
         }
-        let (axis, ids, _) = gap_edges(&e.name, "lumped element", e.from, e.to, grid, coef)?;
+        let GapEdges { axis, edges: ids, .. } = gap_edges(Gap { name: &e.name, what: "lumped element", from: e.from, to: e.to }, grid, coef)?;
         let n = ids.len() as f64;
         let (h, area) = (grid.hs[axis], grid.area(axis));
         let load = Load {
@@ -387,9 +387,9 @@ fn element_loads(model: &Model, grid: &BoxGrid, coef: &BoxCoefficients) -> Resul
     Ok(out)
 }
 
-/// The run of grid edges along the gap from `from` to `to` (a lumped port's or element's,
-/// `what` named `name`): its axis, the edges' indices and the gap's direction along the axis.
-fn gap_edges(name: &str, what: &str, from: Point3, to: Point3, grid: &BoxGrid, coef: &BoxCoefficients) -> Result<(usize, Vec<usize>, f64)> {
+/// The run of grid edges along `gap` (a lumped port's or element's).
+fn gap_edges(gap: Gap<'_>, grid: &BoxGrid, coef: &BoxCoefficients) -> Result<GapEdges> {
+    let Gap { name, what, from, to } = gap;
     let ce = &coef.ce;
     let (hs, n) = (grid.hs, grid.n);
     let d = to - from;
@@ -458,7 +458,24 @@ fn gap_edges(name: &str, what: &str, from: Point3, to: Point3, grid: &BoxGrid, c
     if ids.iter().any(|&id| ce[axis][id] == 0.0) {
         return Err(invalid(what, format!("`{name}` crosses a conductor on the grid")));
     }
-    Ok((axis, ids, if b[axis] > a[axis] { 1.0 } else { -1.0 }))
+    Ok(GapEdges { axis, edges: ids, sign: if b[axis] > a[axis] { 1.0 } else { -1.0 } })
+}
+
+/// A lumped element's or port's gap: its name and kind (for messages) and its ends (m).
+#[derive(Clone, Copy)]
+struct Gap<'a> {
+    name: &'a str,
+    what: &'static str,
+    from: Point3,
+    to: Point3,
+}
+
+/// A gap on the grid: the axis it runs along, its edges' indices, and +1 when it runs from
+/// `from` to `to` up the axis (−1 down).
+struct GapEdges {
+    axis: usize,
+    edges: Vec<usize>,
+    sign: f64,
 }
 
 /// The most cells a lumped port's ends are carried along its gap to reach a conductor.
@@ -491,7 +508,7 @@ impl GridPort {
         if lp.across.is_some() {
             return Err(FdtdError::Unsupported("sheet lumped ports in the time domain".into()));
         }
-        let (axis, ids, sign) = gap_edges(&lp.name, "lumped port", lp.from, lp.to, grid, coef)?;
+        let GapEdges { axis, edges: ids, sign } = gap_edges(Gap { name: &lp.name, what: "lumped port", from: lp.from, to: lp.to }, grid, coef)?;
         let count = ids.len() as f64;
         let r_edge = lp.impedance / count;
         let area = grid.area(axis);
@@ -1157,25 +1174,32 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
     if checks.diverged {
         return Err(invalid("run", "the fields diverged"));
     }
-    let (ports, radiated, huygens) = normalise(frequencies, &ports, &tr, &hbox)?;
+    let Normalised { ports, radiated, huygens } = normalise(frequencies, &ports, &tr, &hbox)?;
     Ok(OpenRun { frequencies: frequencies.to_vec(), ports, radiated, huygens, cells: grid.cells(), steps, dt, converged: checks.converged })
 }
 
-/// The ports' spectra, the radiated power and the Huygens box's fields: the transforms
-/// normalised by the source spectrum.
-fn normalise(frequencies: &[f64], ports: &[GridPort], tr: &Transforms, hbox: &HuygensBox) -> Result<(Vec<PortSpectrum>, Vec<f64>, Vec<Huygens>)> {
-    let ds = &tr.source;
+/// An open run's transforms per unit source: the ports' spectra, the power radiated (W) and the
+/// Huygens box's fields, at each frequency.
+struct Normalised {
+    ports: Vec<PortSpectrum>,
+    radiated: Vec<f64>,
+    huygens: Vec<Huygens>,
+}
+
+/// The transforms `tr` normalised by the source's spectrum.
+fn normalise(frequencies: &[f64], ports: &[GridPort], tr: &Transforms, hbox: &HuygensBox) -> Result<Normalised> {
+    let source = &tr.source;
     let huygens = frequencies
         .iter()
-        .zip(ds.iter().zip(tr.e.iter().zip(&tr.h)))
-        .map(|(&frequency, (&s, (ef, hf)))| {
+        .zip(source.iter().zip(tr.e.iter().zip(&tr.h)))
+        .map(|(&frequency, (&s, (e_box, h_box)))| {
             if s.norm() == 0.0 {
                 return Err(invalid("frequency", "outside the pulse's band"));
             }
             let samples = hbox
                 .samples
                 .iter()
-                .zip(ef.iter().zip(hf))
+                .zip(e_box.iter().zip(h_box))
                 .map(|(x, (e, h))| HuygensSample { point: x.point, weight: x.weight, normal: x.normal, e: *e / s, h: *h / s })
                 .collect();
             Ok(Huygens { frequency, centre: hbox.centre, samples })
@@ -1185,13 +1209,13 @@ fn normalise(frequencies: &[f64], ports: &[GridPort], tr: &Transforms, hbox: &Hu
     let ports = ports
         .iter()
         .zip(tr.voltage.iter().zip(&tr.current))
-        .map(|(p, (dvp, dip))| {
-            let voltage: Vec<C> = dvp.iter().zip(ds).map(|(v, s)| v / s).collect();
-            let current: Vec<C> = dip.iter().zip(ds).map(|(i, s)| i / s).collect();
+        .map(|(p, (voltages, currents))| {
+            let voltage: Vec<C> = voltages.iter().zip(source).map(|(v, s)| v / s).collect();
+            let current: Vec<C> = currents.iter().zip(source).map(|(i, s)| i / s).collect();
             let impedance = voltage.iter().zip(&current).map(|(v, i)| v / i).collect();
             let power = voltage.iter().zip(&current).map(|(v, i)| 0.5 * (v * i.conj()).re).collect();
             PortSpectrum { name: p.name.clone(), voltage, current, impedance, power }
         })
         .collect();
-    Ok((ports, radiated, huygens))
+    Ok(Normalised { ports, radiated, huygens })
 }

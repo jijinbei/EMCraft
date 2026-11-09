@@ -166,7 +166,7 @@ pub(super) fn field_frame(app: &EmcraftApp, v: &mut View3d, field: &FieldState) 
     let grid = match &v.field_grid {
         Some(g) if g.id == id => g.clone(),
         _ => {
-            let (nx, ny, phasors) = s.phasors(component);
+            let emcraft_engine::view::Phasors { nx, ny, grid: phasors } = s.phasors(component);
             let (x, y) = s.axes();
             let frame = scene3d::field_frame_of(&app.session, s.plane, s.at, x.span(), y.span(), lo);
             let axis = component.axis(s.normal_axis());

@@ -249,7 +249,7 @@ impl<'a> Line<'a> {
     /// The matched chirp's frequency at each of `times`: the f with t = −s (τ(f) − τ(f₀)) on
     /// the monotonic stretch of τ about f₀, held at the stretch's ends past it; with the times
     /// the stretch spans.
-    fn matched(&self, f0: f64, scale: f64, times: &[f64]) -> (Vec<f64>, (f64, f64)) {
+    fn matched(&self, f0: f64, scale: f64, times: &[f64]) -> Matched {
         let (freqs, tau) = (self.freqs, &self.tau);
         let (tau0, slope) = self.delay_at(f0);
         let k = freqs.partition_point(|x| *x <= f0).clamp(1, freqs.len() - 1);
@@ -267,8 +267,8 @@ impl<'a> Line<'a> {
         let mut table: Vec<(f64, f64)> = (lo..=hi).map(|i| (-scale * (tau[i] - tau0), freqs[i])).collect();
         table.sort_by(|a, b| a.0.total_cmp(&b.0));
         table.dedup_by(|a, b| a.0 == b.0);
-        let span = (table.first().map_or(0.0, |x| x.0), table.last().map_or(0.0, |x| x.0));
-        let f = times
+        let (start, end) = (table.first().map_or(0.0, |x| x.0), table.last().map_or(0.0, |x| x.0));
+        let frequencies = times
             .iter()
             .map(|&t| {
                 let j = table.partition_point(|x| x.0 <= t);
@@ -282,8 +282,16 @@ impl<'a> Line<'a> {
                 }
             })
             .collect();
-        (f, span)
+        Matched { frequencies, start, end }
     }
+}
+
+/// The matched chirp's frequency (Hz) at each time asked for, and the times (s) its monotonic
+/// stretch of delay spans: past them the frequency is held.
+struct Matched {
+    frequencies: Vec<f64>,
+    start: f64,
+    end: f64,
 }
 
 /// Past its stretch the matched chirp's envelope falls as e^{−(d/e)²}, d how far past and
@@ -413,7 +421,7 @@ fn evenly(x: &[C], x0: f64, dx: f64, y: f64) -> C {
 /// The matched chirp's envelope at `times`: the Gaussian with the phase 2π ∫ (f(t′) − f₀) dt′
 /// from the peak (t = 0), f the matched frequency.
 fn matched_envelope(line: &Line, f0: f64, width: f64, scale: f64, times: &[f64]) -> Vec<C> {
-    let (f, (lo, hi)) = line.matched(f0, scale, times);
+    let Matched { frequencies: f, start: lo, end: hi } = line.matched(f0, scale, times);
     let edge = (EDGE * (hi - lo)).max(f64::MIN_POSITIVE);
     let taper = |t: f64| {
         let out = (lo - t).max(t - hi).max(0.0) / edge;

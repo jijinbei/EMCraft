@@ -481,7 +481,7 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
     fresh.replay(&stored.history, crate::session::Meshing::Recorded)?;
     let mesh = stored.mesh(fresh.model.materials.len()).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?;
     fresh.model.mesh = mesh.map(std::sync::Arc::new);
-    let (results, archived, dropped) = stored.results(&fresh.model);
+    let crate::store::FileResults { results, archived, dropped } = stored.results(&fresh.model);
     // Undo inside the opened project, then back to before it.
     fresh.undo.clear();
     fresh.runs = stored.runs;
