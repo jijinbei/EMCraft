@@ -1,0 +1,5 @@
+[
+ {"command": "filter.synthesize", "params": {"order": 5, "return_loss": 20}, "id": "m"},
+ {"command": "filter.synthesize", "params": {"order": 4, "return_loss": 22, "zeros": [-1.8, 1.8], "center": 10, "bandwidth": 0.4}, "id": "elliptic"},
+ {"command": "results.coupling", "params": {"data": "prototype", "order": 4, "zeros": 2, "center": 10, "bandwidth": 0.4}, "id": "back"}
+]

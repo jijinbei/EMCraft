@@ -1,0 +1,9 @@
+[
+ {"command": "circuit.cascade", "params": {"blocks": [{"type": "shunt", "resistance": 100}], "start": 1, "stop": 2, "points": 2, "name": "shunt"}},
+ {"command": "results.network", "params": {"data": "shunt", "kind": "z", "frequency": 1}, "id": "z"},
+ {"command": "circuit.cascade", "params": {"blocks": [{"type": "series", "inductance": 2}], "start": 1, "stop": 2, "points": 2, "name": "coil"}},
+ {"command": "results.network", "params": {"data": "coil", "kind": "abcd", "frequency": 1}, "id": "abcd"},
+ {"command": "results.equivalent", "params": {"data": "coil", "topology": "pi"}, "id": "eq"},
+ {"command": "circuit.cascade", "params": {"blocks": [{"type": "series", "resistance": 50}, {"type": "shunt", "resistance": 50}], "start": 1, "stop": 2, "points": 2, "name": "pad"}},
+ {"command": "results.mixed_mode", "params": {"data": "pad", "pairs": [[1, 2]], "frequency": 1}, "id": "mm"}
+]

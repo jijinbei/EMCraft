@@ -6,8 +6,25 @@
     "Against measured": "測定と比較",
     "Z, Y, ABCD": "Z・Y・ABCD",
     "Mixed mode": "混合モード",
-    "mixed": "混合モード",
-    "pairs": "ポートの組",
+    "Resonators": "共振器の数",
+    "Transmission zeros ω": "伝送零点 ω",
+    "Transmission zeros": "伝送零点の数",
+    "Bandwidth": "帯域幅",
+    "Blocks": "ブロック",
+    "Centre frequency": "中心周波数",
+    "Guide cut-off": "導波管の遮断周波数",
+    "Port pairs": "ポートの組",
+    "Return loss": "反射損失",
+    "Topology": "回路形",
+    "Equivalent circuit": "等価回路",
+    "Cascade": "縦続接続",
+    "Synthesize filter": "フィルタ合成",
+    "Coupling matrix": "結合行列",
+    "FILTER": "フィルタ",
+    "Coupling matrix of {n} resonators{fit}.": "{n} 共振器の結合行列{fit}。",
+    "Equivalent circuit kept as {name}.": "等価回路を {name} として残しました。",
+    "Cascade of {n} blocks kept as {name}.": "{n} ブロックの縦続接続を {name} として残しました。",
+    "Reflection zeros ω: {r} · transmission zeros ω: {z}": "反射零点 ω：{r} · 伝送零点 ω：{z}",
     "NETWORK": "回路網",
     "Smith chart": "スミスチャート",
     "Read {name}: {ports} ports, {n} frequencies.": "{name} を読み込みました：{ports} ポート、{n} 周波数。",
@@ -1246,6 +1263,58 @@
         "pairs": "ポートの組 [正, 負]（1 から数える）。例 [[1, 3], [2, 4]]（既定は 1 と 2、3 と 4、…）",
         "data": "`sweep`（既定）または測定値の名前",
         "frequency": "この周波数に最も近いものだけ（既定はすべて）"
+      }
+    },
+    "results.equivalent": {
+      "label": "等価回路",
+      "doc": "掃引（または測定値）の回路に集中定数の枝を当てはめる（Pozar, Microwave Engineering, §4.4）。1 ポートのインピーダンスを R・L・C の直列（`series`）、またはアドミタンスを G・L・C の並列（`shunt`）で表す。2 ポートは π 形（並列枝 Y11 + Y12 と Y22 + Y12、直列枝 −1/Y12）または T 形（直列枝 Z11 − Z12 と Z22 − Z12、並列枝 Z12）で表す。各枝の損失は実部の平均、L と C（それぞれ 0 以上、または無し）は虚部の周波数にわたる最小二乗で求め、RMS 相対誤差を付ける。当てはめた回路の S を測定値 `name` として残し、チャートに重ねる。z₀ は各ポートの基準インピーダンス。導波管ポートは `impedance`（既定 50 Ω）を使う。",
+      "params": {
+        "topology": "`series`、`shunt`（1 ポート用。1 ポートの既定）、`pi`（2 ポートの既定）または `t`",
+        "data": "`sweep`（既定）または測定値の名前",
+        "port": "1 ポートとして見るポート（1 から、既定 1）。他のポートは整合",
+        "impedance": "基準インピーダンスの無いポートの z₀（Ω、既定 50）",
+        "name": "当てはめた回路の S を残す名前（既定 `equivalent`）"
+      }
+    },
+    "circuit.cascade": {
+      "label": "縦続接続",
+      "doc": "2 ポートを鎖状につなぐ（各ブロックのポート 2 を次のポート 1 に）。縦続行列（ABCD）の積で求める（Pozar, Microwave Engineering, §4.4）。ブロックは `{\"type\": \"data\", \"data\": \"sweep\"}`（掃引または測定値。`flip` でポートを入れ替え）、`{\"type\": \"series\" | \"shunt\", \"resistance\", \"inductance\", \"capacitance\", \"arrangement\"}`（Ω・nH・pF、`series` または `parallel`。model.element.create と同じ）、`{\"type\": \"line\", \"impedance\", \"length\", \"eps_r\"}`（Ω・表示単位の長さ、無損失）。結果の S は `impedance` を基準に、最初の S ブロックの各周波数で（他は線形補間、帯域外はエラー）、S ブロックが無ければ `start` から `stop` まで `points` 点で求め、測定値 `name` として残してチャートに重ねる。",
+      "params": {
+        "blocks": "ポート 1 側からの 2 ポートの並び（32 個まで）",
+        "impedance": "結果のポートと、基準インピーダンスの無い S ブロックのポートの基準インピーダンス（Ω、既定 50）",
+        "start": "最初の周波数（S ブロックが無いとき）",
+        "stop": "最後の周波数（S ブロックが無いとき）",
+        "points": "周波数の数（S ブロックが無いとき、既定 201）",
+        "name": "結果を残す名前（既定 `cascade`）"
+      }
+    },
+    "filter.synthesize": {
+      "label": "フィルタ合成",
+      "doc": "一般化 Chebyshev フィルタの折り返し形の結合行列（ソース、N 個の共振器、ロード）を求める（Cameron, IEEE Trans. MTT 47(4), 1999 および 51(1), 2003）。通過帯域で反射損失は等リプル。有限の伝送零点は低域通過周波数 ω で与える（|ω| > 1、帯域端が ±1）。アドミタンスの留数から横断型行列を作り、回転で折り返し形に変える。返り値は行列（行は S, 1, …, N, L）、反射零点と伝送零点、ε。`center` と `bandwidth` を与えると、帯域通過の応答 ω = (f₀/Δf)(f/f₀ − f₀/f) を測定値 `name` として残し、Sパラメータのチャートに重ねる。",
+      "params": {
+        "order": "共振器の数（1〜16）",
+        "return_loss": "通過帯域の反射損失（dB、既定 20）",
+        "zeros": "有限の伝送零点。低域通過の ω で、それぞれ ±1 の外（既定は無し）",
+        "center": "帯域の中心 f₀",
+        "bandwidth": "帯域幅 Δf",
+        "cutoff": "共振器の導波管の遮断周波数 f_c。写像を √(f² − f_c²) で行う（導波管フィルタ用、既定は無し）",
+        "name": "応答を残す名前（既定 `prototype`）"
+      }
+    },
+    "results.coupling": {
+      "label": "結合行列の抽出",
+      "doc": "掃引（または測定値）の S11 と S21 に最もよく合う N 共振器の折り返し形の結合行列を求める。周波数は低域通過の ω = (f₀/Δf)(f/f₀ − f₀/f) に写し、そのあと filter.synthesize と同じく合成する。既定（`magnitude`）は |S| だけを使う。無損失フィルタの |S11|²/|S21|² は ε²F(ω)²/P(ω)² なので、反射零点（F の根）と伝送零点（P の根）を最小二乗で当てはめる。位相だけを変えるポートと共振器の間の給電線は取り除かなくてよい。`cauchy` は複素の S に当てはめる（Macchiarella & Traina, IEEE MWCL 16(5), 2006：S11 E − F = 0, S21 E − P = 0）。各ポートの位相負荷は ω の一次式とし、有理モデルが最もよく合う傾きとして取り除く。`cauchy_plain` は S をそのまま使う。どの方法でも F と P の根を虚軸上に置き、E を無損失として作り直す。`cutoff` を与えると導波管周波数 √(f² − f_c²) で写す（導波管フィルタの共振器：位相が β に比例するため）。`start` と `stop` で当てはめる帯域を狭められる。返り値は行列、零点、ε、位相負荷（cauchy）、モデルとデータの |S11| と |S21| の RMS 差。モデルの応答は測定値 `name` として残す。",
+      "params": {
+        "order": "共振器の数（1〜16）",
+        "zeros": "有限の伝送零点の数（既定 0）",
+        "center": "帯域の中心 f₀",
+        "bandwidth": "帯域幅 Δf（帯域端が ω = ±1）",
+        "cutoff": "共振器の導波管の遮断周波数 f_c。写像を √(f² − f_c²) で行う（導波管フィルタ用、既定は無し）",
+        "data": "`sweep`（既定）または測定値の名前",
+        "method": "`magnitude`（既定：|S| だけ、給電線の位相は不要）、`cauchy`（複素の S、ポートの位相負荷を除く）または `cauchy_plain`（複素の S をそのまま）",
+        "start": "この周波数から当てはめる（既定はデータの最初）",
+        "stop": "この周波数まで当てはめる（既定はデータの最後）",
+        "name": "モデルの応答を残す名前（既定 `coupling model`）"
       }
     },
     "results.check": {

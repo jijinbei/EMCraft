@@ -142,6 +142,12 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             t!("Read {name}: {ports} ports, {n} frequencies."),
             args!(name = r.text("name"), ports = r.count("ports"), n = r.count("frequencies")),
         ),
+        "filter.synthesize" | "results.coupling" => {
+            let fit = r.0.get("rms_s21").and_then(serde_json::Value::as_f64).map(|v| format!(" (RMS |ΔS21| {v:.3})")).unwrap_or_default();
+            trf(t!("Coupling matrix of {n} resonators{fit}."), args!(n = r.count("order"), fit = fit))
+        }
+        "results.equivalent" => trf(t!("Equivalent circuit kept as {name}."), args!(name = r.text("kept"))),
+        "circuit.cascade" => trf(t!("Cascade of {n} blocks kept as {name}."), args!(n = r.count("blocks"), name = r.text("name"))),
         "results.measured" => {
             let worst =
                 r.0.pointer("/compared/worst/max_difference")

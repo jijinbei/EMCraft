@@ -123,7 +123,8 @@ pub fn kind_of(command: &str, p: &ParamSpec, session: &Session) -> Kind {
         }
         (_, "excitation") => return Kind::Choice(session.model().ports.iter().map(|p| p.name.clone()).collect()),
         ("study.sweep", "variable") | ("project.variable.delete", "name") => return Kind::Choice(session.variables().keys().cloned().collect()),
-        ("results.probe", "at") => return Kind::Json,
+        ("results.probe", "at") | ("circuit.cascade", "blocks") => return Kind::Json,
+        ("filter.synthesize", "zeros") => return Kind::Numbers,
         (_, "size" | "at" | "direction" | "polarization" | "from" | "to") if p.kind == emcraft_engine::Kind::Array => return Kind::Vector(XYZ),
         (_, "face") => return Kind::Vector(FACE),
         (_, "frequencies") => return Kind::Numbers,
@@ -551,6 +552,12 @@ pub fn initial(command: &str, s: &Session) -> Value {
         "results.compare" => json!({"modes": 160}),
         "results.import" => json!({"path": "measured.s2p"}),
         "results.network" => json!({"kind": "z"}),
+        "results.equivalent" => json!({"topology": if ports == 1 { "series" } else { "pi" }}),
+        "circuit.cascade" => json!({"blocks": [{"type": "data", "data": "sweep"}]}),
+        "filter.synthesize" => {
+            json!({"order": 4, "return_loss": 20, "zeros": [], "center": middle, "bandwidth": band.map_or(0.5, |(a, z)| 0.1 * (z - a))})
+        }
+        "results.coupling" => json!({"order": 4, "zeros": 0, "center": middle, "bandwidth": band.map_or(0.5, |(a, z)| 0.3 * (z - a))}),
         // The highest solved frequency of the sweep, as the field view opens on.
         "view.animation" => {
             let f = s.results().sweep.as_ref().and_then(|sw| sw.results.last()).map(|r| fu.from_si(r.frequency));

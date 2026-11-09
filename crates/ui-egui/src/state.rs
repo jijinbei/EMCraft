@@ -320,6 +320,8 @@ pub struct Replies {
     pub import: Option<ImportProbe>,
     /// The last `results.pulse`'s reply.
     pub pulse: Option<Value>,
+    /// The last coupling matrix (`filter.synthesize`, `results.coupling`).
+    pub coupling: Option<Value>,
 }
 
 /// `geometry.import.inspect`'s reply for the file (and STL unit) `key` names, or why not.

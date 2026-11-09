@@ -39,6 +39,8 @@ mod estimate;
 pub mod expr;
 mod geometry;
 pub use geometry::{DesignParameter, ImportInspection, ImportedBody};
+pub mod circuit;
+pub mod filter;
 pub mod guides;
 mod items;
 pub mod job;

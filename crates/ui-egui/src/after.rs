@@ -92,7 +92,11 @@ impl EmcraftApp {
                 self.place = self.place.show(View::Tdr);
             }
             // A measurement drawn over the S-parameter chart.
-            "results.import" | "results.import.delete" => self.place = self.place.show(View::SParameters),
+            "results.import" | "results.import.delete" | "results.equivalent" | "circuit.cascade" => self.place = self.place.show(View::SParameters),
+            "filter.synthesize" | "results.coupling" => {
+                self.replies.coupling = Some(reply.clone());
+                self.place = self.place.show(View::SParameters);
+            }
             "results.compare" => {
                 self.replies.compare = serde_json::from_value(reply.clone()).ok();
                 self.place = self.place.show(View::Compare);
@@ -137,6 +141,7 @@ impl EmcraftApp {
         // Another project: its own pulse, sent again when its view opens.
         if id != "file.save" {
             self.replies.pulse = None;
+            self.replies.coupling = None;
             self.views.pulse = crate::state::PulseState::default();
         }
         if matches!(id, "file.open" | "file.save")

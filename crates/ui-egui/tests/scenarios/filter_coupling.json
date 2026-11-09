@@ -1,0 +1,15 @@
+[
+  {"note": "A filter by its coupling matrix: synthesized from a generalized Chebyshev response, its response over the S-parameter chart and its matrix beside it; the ribbon's FILTER panel"},
+  {"call": "engine.execute", "params": {"command": "filter.synthesize", "params": {"order": 4, "return_loss": 22, "zeros": [-1.8, 1.8], "center": 10, "bandwidth": 0.4}}},
+  {"call": "ui.set", "params": {"view": "sparameters"}},
+  {"frames": 2},
+  {"expect": {"view": "sparameters", "handles": ["chart:sparameters"], "status_error": false}},
+  {"shot": "coupling-matrix"},
+  {"call": "ui.set", "params": {"step": "none", "tab": "RESULTS"}},
+  {"frames": 1},
+  {"expect": {"handles": ["toolbar:filter.synthesize", "toolbar:results.coupling", "toolbar:results.equivalent", "toolbar:circuit.cascade"]}},
+  {"note": "Its dialog opens with the order, return loss and zeros to fill in"},
+  {"click": "toolbar:filter.synthesize"},
+  {"frames": 2},
+  {"shot": "synthesize-dialog"}
+]

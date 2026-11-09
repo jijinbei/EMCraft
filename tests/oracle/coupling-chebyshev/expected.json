@@ -1,0 +1,12 @@
+{
+ "title": "A fifth-order Chebyshev filter's coupling matrix against its g-values; a quasi-elliptic one extracted again from its own response",
+ "kind": "theory",
+ "source": "G. L. Matthaei, L. Young, E. M. T. Jones, Microwave Filters, Impedance-Matching Networks, and Coupling Structures, McGraw-Hill 1964, §4.05 and §8.11: the Chebyshev low-pass prototype's g-values for 20 dB return loss (0.0436 dB ripple: g = 1, 0.97321, 1.37228, 1.80317, 1.37228, 0.97321, 1), the couplings M_k,k+1 = 1/√(g_k g_k+1) evaluated independently",
+ "quantities": [
+  {"id": "m_s1", "quantity": "M_S1, 1/√(g₀g₁)", "measure": {"step": "m", "pointer": "/matrix/0/1"}, "value": 1.013670655333976, "tolerance": {"absolute": 1e-9}, "reason": "the polynomials' roots by the companion matrix's QR"},
+  {"id": "m_12", "quantity": "M_12, 1/√(g₁g₂)", "measure": {"step": "m", "pointer": "/matrix/1/2"}, "value": 0.8653188083703346, "tolerance": {"absolute": 1e-9}, "reason": "as M_S1"},
+  {"id": "m_23", "quantity": "M_23, 1/√(g₂g₃)", "measure": {"step": "m", "pointer": "/matrix/2/3"}, "value": 0.6357125594119948, "tolerance": {"absolute": 1e-9}, "reason": "as M_S1"},
+  {"id": "zero", "quantity": "the upper transmission zero extracted (|S| alone) from the synthesized response (ω)", "measure": {"step": "back", "pointer": "/transmission_zeros/1"}, "value": 1.8, "tolerance": {"absolute": 1e-5}, "reason": "the response sampled at 401 frequencies, the magnitude fit's Levenberg–Marquardt"},
+  {"id": "fit", "quantity": "RMS |S21| of the extracted model less the synthesized response's", "measure": {"step": "back", "pointer": "/rms_s21"}, "value": 0.0, "tolerance": {"absolute": 1e-6}, "reason": "as the zero"}
+ ]
+}

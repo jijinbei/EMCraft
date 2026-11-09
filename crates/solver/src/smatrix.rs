@@ -131,15 +131,19 @@ impl SMatrix {
     }
 }
 
+/// The largest normalized network entry taken as finite: past it D was singular but for
+/// round-off (a series element's Z, a shunt one's Y).
+const MAX_NORMALIZED: f64 = 1e10;
+
 /// N D⁻¹ for n × n row-major N and D: Dᵀ Xᵀ = Nᵀ solved row by row of N. `None` when D is
-/// singular or a size is wrong.
+/// singular (or so near it that an entry passes [`MAX_NORMALIZED`]) or a size is wrong.
 fn right_divide(num: &[C], den: &[C], n: usize) -> Option<Vec<C>> {
     if num.len() != n * n || den.len() != n * n {
         return None;
     }
     let dt = Lu::new((0..n * n).map(|k| den[(k % n) * n + k / n]).collect(), n)?;
     let x: Vec<C> = (0..n).flat_map(|i| dt.solve(&num[i * n..(i + 1) * n])).collect();
-    x.iter().all(|c| c.re.is_finite() && c.im.is_finite()).then_some(x)
+    x.iter().all(|c| c.re.is_finite() && c.im.is_finite() && c.norm() <= MAX_NORMALIZED).then_some(x)
 }
 
 /// Whether reference impedances `z0` are one finite positive resistance per port of `n`.
@@ -407,6 +411,11 @@ mod tests {
         let z = s.impedance(&[z0, z0]).unwrap();
         assert!(z.iter().all(|e| (e - c(r, 0.0)).norm() < 1e-9), "{z:?}");
         let [a, b, cc, d] = s.chain([z0, z0]).unwrap();
+        // A series element has no Z (I − S singular), a shunt one no Y: none, however near.
+        let (zs, k) = (C::new(30.0, 40.0), C::new(1.0, 0.0) / (C::new(30.0, 40.0) + 2.0 * z0));
+        let series = SMatrix::from_fn(2, |p, q| if p == q { zs * k } else { 2.0 * z0 * k });
+        assert!(series.impedance(&[z0, z0]).is_none() && series.admittance(&[z0, z0]).is_some());
+        assert!(s.admittance(&[z0, z0]).is_none());
         assert!((a - c(1.0, 0.0)).norm() < 1e-12 && b.norm() < 1e-9 && (cc - c(1.0 / r, 0.0)).norm() < 1e-12 && (d - c(1.0, 0.0)).norm() < 1e-12);
     }
 

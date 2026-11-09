@@ -59,6 +59,7 @@ impl ChartView for SParameters {
                     table(app, ui);
                 }
             }
+            Some(Part::Coupling) => coupling_table(app, ui),
             Some(Part::Planes) => {
                 reference_planes(app, &mut st.views.deembed, ui, out);
                 crate::ui_kit::caption(ui, t!("Click: the fields there · drag: a band to solve more finely"));
@@ -100,8 +101,59 @@ fn pairs(app: &EmcraftApp) -> bool {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Part {
     History,
+    /// The last coupling matrix (filter.synthesize, results.coupling).
+    Coupling,
     Table,
     Planes,
+}
+
+/// A coupling matrix cell's width and row's height (points).
+const COUPLING_CELL: f32 = 62.0;
+const COUPLING_ROW: f32 = 20.0;
+
+/// The last coupling matrix's row names (S, 1, …, N, L).
+fn coupling_names(app: &EmcraftApp) -> Vec<String> {
+    let names = app.replies.coupling.as_ref().and_then(|r| r.get("names")?.as_array().cloned()).unwrap_or_default();
+    names.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect()
+}
+
+/// The last coupling matrix as a table: rows and columns S, 1, …, N, L, the zeros left blank;
+/// its reflection and transmission zeros under it.
+fn coupling_table(app: &EmcraftApp, ui: &mut egui::Ui) {
+    let Some(reply) = app.replies.coupling.as_ref() else { return };
+    let t = &Tokens::get();
+    let names = coupling_names(app);
+    let n = names.len();
+    crate::ui_kit::section(ui, t!("Coupling matrix"));
+    let (rect, _) = ui.allocate_exact_size(vec2(40.0 + COUPLING_CELL * n as f32, COUPLING_ROW * (n as f32 + 1.0)), Sense::hover());
+    let p = ui.painter();
+    let font = table_font();
+    let at = |i: usize, j: usize| reply["matrix"][i][j].as_f64().unwrap_or(0.0);
+    for (j, name) in names.iter().enumerate() {
+        let x = rect.left() + 40.0 + COUPLING_CELL * (j as f32 + 0.5);
+        p.text(pos2(x, rect.top() + COUPLING_ROW * 0.5), Align2::CENTER_CENTER, name, font.clone(), t.text_dim);
+    }
+    for (i, name) in names.iter().enumerate() {
+        let y = rect.top() + COUPLING_ROW * (i as f32 + 1.5);
+        p.text(pos2(rect.left() + 20.0, y), Align2::CENTER_CENTER, name, font.clone(), t.text_dim);
+        for j in 0..n {
+            let v = at(i, j);
+            if v.abs() < 1e-9 {
+                continue;
+            }
+            let x = rect.left() + 40.0 + COUPLING_CELL * (j as f32 + 1.0) - 6.0;
+            p.text(pos2(x, y), Align2::RIGHT_CENTER, format!("{v:.4}"), font.clone(), t.text);
+        }
+    }
+    let list = |key: &str| {
+        let v: Vec<String> =
+            reply[key].as_array().map(|a| a.iter().filter_map(|x| x.as_f64().map(|x| format!("{x:.3}"))).collect()).unwrap_or_default();
+        if v.is_empty() { "—".to_owned() } else { v.join(", ") }
+    };
+    crate::ui_kit::caption(
+        ui,
+        trf(t!("Reflection zeros ω: {r} · transmission zeros ω: {z}"), args!(r = list("reflection_zeros"), z = list("transmission_zeros"))),
+    );
 }
 
 /// The parts the session has, in the order they go: the history once there are two solves to
@@ -109,7 +161,8 @@ enum Part {
 fn parts(app: &EmcraftApp) -> impl Iterator<Item = Part> {
     let kept = app.session.archive().len();
     let history = kept >= 2 || (kept == 1 && app.session.results().sweep.is_none());
-    history.then_some(Part::History).into_iter().chain([Part::Table, Part::Planes])
+    let coupling = app.replies.coupling.is_some().then_some(Part::Coupling);
+    history.then_some(Part::History).into_iter().chain(coupling).chain([Part::Table, Part::Planes])
 }
 
 impl Part {
@@ -121,6 +174,10 @@ impl Part {
             Part::Table if table_open => STable::of(app, ui).map_or(vec2(300.0, 26.0), |t| t.size(ui)),
             Part::Table => vec2(140.0, 26.0),
             Part::Planes => vec2(80.0 + 110.0 * app.session.model().ports.len() as f32, 46.0),
+            Part::Coupling => {
+                let n = coupling_names(app).len() as f32;
+                vec2(40.0 + COUPLING_CELL * n, 34.0 + COUPLING_ROW * (n + 2.0))
+            }
         }
     }
 }

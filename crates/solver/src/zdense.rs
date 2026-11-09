@@ -45,6 +45,15 @@ fn vector(a: &[C], n: usize, lambda: C, scale: f64) -> Option<Vec<C>> {
     Some(v)
 }
 
+/// The eigenvalues of `a` (n × n) alone; `None` when the input is not finite or the QR
+/// algorithm does not converge.
+pub fn values(a: &[C], n: usize) -> Option<Vec<C>> {
+    if a.len() != n * n || !a.iter().all(|x| x.re.is_finite() && x.im.is_finite()) {
+        return None;
+    }
+    eigenvalues(a.to_vec(), n)
+}
+
 fn eigenvalues(mut h: Vec<C>, n: usize) -> Option<Vec<C>> {
     crate::dense::hessenberg(&mut h, n);
     let at = |h: &Vec<C>, i: usize, j: usize| h[i * n + j];

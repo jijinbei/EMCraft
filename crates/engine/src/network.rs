@@ -321,14 +321,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     let name = p.string("name").optional()?.map_or(stem, str::to_string);
     check_name(&name).map_err(|e| p.error("name", e))?;
     let m = Measured { name: name.clone(), file: path.to_string(), references: t.references.clone(), data: Arc::new(t.data) };
-    let list = &mut s.views.measured;
-    match list.iter().position(|x| x.name == name) {
-        Some(k) => list[k] = m.clone(),
-        None if list.len() >= MAX_MEASURED => {
-            return Err(EngineError::failed(format!("at most {MAX_MEASURED} measurements: delete one first (results.import.delete)")));
-        }
-        None => list.push(m.clone()),
-    }
+    keep(s, m.clone())?;
     let mut reply = summary(s, &m);
     if let Some(sweep) = s.results.sweep.as_ref()
         && let Ok(sim) = sweep.sdata()
@@ -340,6 +333,27 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         o.insert("parameter".into(), json!(t.parameter.to_string()));
     }
     Ok(reply)
+}
+
+/// Keeps `m` with the project's measurements, replacing one of the same name; an error past
+/// [`MAX_MEASURED`].
+pub(crate) fn keep(s: &mut Session, m: Measured) -> Result<()> {
+    let list = &mut s.views.measured;
+    match list.iter().position(|x| x.name == m.name) {
+        Some(k) => list[k] = m,
+        None if list.len() >= MAX_MEASURED => {
+            return Err(EngineError::failed(format!("at most {MAX_MEASURED} measurements: delete one first (results.import.delete)")));
+        }
+        None => list.push(m),
+    }
+    Ok(())
+}
+
+/// The name a computed response is kept under: `name` when given (checked), else `default`.
+pub(crate) fn kept_name(p: &Params, default: &str) -> Result<String> {
+    let name = p.string("name").optional()?.map_or_else(|| default.to_string(), str::to_string);
+    check_name(&name).map_err(|e| p.error("name", e))?;
+    Ok(name)
 }
 
 /// What a measurement holds, for replies: its name, file, ports, references and band.
@@ -456,14 +470,14 @@ pub fn measured(s: &mut Session, p: &Params) -> Result<Value> {
 
 /// S over frequency to read a network from: the sweep's or a measurement's, each entry's name
 /// and reference impedance (none for a waveguide port's power waves).
-struct Source {
-    data: SData,
-    names: Vec<String>,
-    references: Vec<Option<f64>>,
+pub(crate) struct Source {
+    pub data: SData,
+    pub names: Vec<String>,
+    pub references: Vec<Option<f64>>,
 }
 
 /// The S `data` names: `sweep` (the default) or a measurement.
-fn source(s: &Session, p: &Params) -> Result<Source> {
+pub(crate) fn source(s: &Session, p: &Params) -> Result<Source> {
     match p.string("data").optional()? {
         None | Some("sweep") => {
             let sweep = s.results.sweep()?;
@@ -511,7 +525,7 @@ fn frequencies_of(s: &Session, p: &Params, data: &SData) -> Result<Vec<usize>> {
 }
 
 /// A row-major matrix as rows of [re, im].
-fn matrix_json(m: &[C], n: usize) -> Value {
+pub(crate) fn matrix_json(m: &[C], n: usize) -> Value {
     Value::Array((0..n).map(|i| Value::Array((0..n).map(|j| json!([m[i * n + j].re, m[i * n + j].im])).collect())).collect())
 }
 

@@ -4,6 +4,7 @@ mod adapt;
 mod cavity;
 mod designs;
 mod elements;
+mod filter;
 mod geometry;
 mod history;
 mod invariants;

@@ -607,6 +607,28 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   S-parameter chart's Mixed mode); IBIS Open Forum, *Touchstone File Format Specification*,
   version 2.0, 2009 — the files `results.import` reads (`emcraft-engine::network`) and
   `results.touchstone` writes.
+- R. J. Cameron, *General coupling matrix synthesis methods for Chebyshev filtering
+  functions*, IEEE Trans. MTT 47(4):433–442, 1999; *Advanced coupling matrix synthesis
+  techniques for microwave filters*, IEEE Trans. MTT 51(1):1–10, 2003 — the generalized
+  Chebyshev polynomials by the recursion of U and V over the transmission zeros, E by the
+  Feldtkeller equation, the N + 2 transversal matrix from the residues of y21 and y22, its
+  reduction to the folded form by plane rotations, the response [A] = [M + ωW − jR]
+  (`emcraft-solver::coupling`, `filter.synthesize`); G. L. Matthaei, L. Young, E. M. T. Jones,
+  *Microwave Filters, Impedance-Matching Networks, and Coupling Structures*, McGraw-Hill 1964,
+  §4.05 — the Chebyshev g-values the all-pole matrices are checked against (oracle
+  `coupling-chebyshev`).
+- G. Macchiarella, D. Traina, *A formulation of the Cauchy method suitable for the synthesis of
+  lossless circuit models of microwave filters from lossy measurements*, IEEE MWCL
+  16(5):243–245, 2006 — S11 E − F = 0, S21 E − P = 0 by least squares, F's and P's roots taken
+  onto the axis and E rebuilt lossless (`coupling::fit`, `results.coupling` `method: cauchy`);
+  C. K. Sanathanan, J. Koerner, *Transfer function synthesis as a ratio of two complex
+  polynomials*, IEEE Trans. Autom. Control 8(1):56–58, 1963 — the reweighted linear fit that
+  starts the phase-free fit of |S11|²/|S21|² = ε²F²/P² (`coupling::fit_magnitude`, the default);
+  K. Madsen, H. B. Nielsen, O. Tingleff, *Methods for Non-Linear Least Squares Problems*, 2nd
+  ed., DTU 2004, §3.2 — Levenberg–Marquardt, which then fits the zeros and ε to |S| itself.
+- D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §4.4, Tables 4.1–4.2 — lumped
+  series and shunt elements' and lines' chain matrices, S from ABCD, the π and T networks of Y
+  and Z (`circuit.cascade`, `results.equivalent`; oracle `network-lumped`).
 - G. P. Agrawal, *Nonlinear Fiber Optics*, 5th ed., Academic Press 2013, §3.2 — a chirped
   Gaussian pulse through a dispersive line, compressed when its chirp undoes the group-delay
   slope (`emcraft-engine::pulse`, `results.pulse`; the closed form its test checks).

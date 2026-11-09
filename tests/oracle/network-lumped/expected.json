@@ -1,0 +1,12 @@
+{
+ "title": "Lumped two-ports through their network matrices: a shunt resistor's Z, a series inductor's ABCD and its equivalent circuit, an L-pad in mixed mode",
+ "kind": "theory",
+ "source": "D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, Table 4.1 (a shunt admittance's Z: every entry 1/Y; a series impedance's ABCD [1 Z; 0 1]) and Table 4.2 (S from ABCD); D. E. Bockelman, W. R. Eisenstadt, IEEE Trans. MTT 43(7), 1995: one pair's mixed-mode S, Sdd = (S11 − S12 − S21 + S22)/2. The L-pad (50 Ω in series, 50 Ω shunt) on 50 Ω: from its ABCD [2, 50; 0.02, 1], Δ = 5, S11 = 0.2 (75 Ω seen at port 1), S21 = S12 = 0.4, S22 = −0.2, so Sdd = −0.4",
+ "quantities": [
+  {"id": "z11", "quantity": "Re Z11 of a 100 Ω shunt resistor (Ω)", "measure": {"step": "z", "pointer": "/matrices/0/0/0/0"}, "value": 100.0, "tolerance": {"absolute": 1e-9}, "reason": "round-off through S and back"},
+  {"id": "z21", "quantity": "Re Z21 of the same (Ω)", "measure": {"step": "z", "pointer": "/matrices/0/1/0/0"}, "value": 100.0, "tolerance": {"absolute": 1e-9}, "reason": "as Z11"},
+  {"id": "b", "quantity": "Im B of 2 nH in series at 1 GHz, ωL (Ω)", "measure": {"step": "abcd", "pointer": "/matrices/0/0/1/1"}, "value": 12.566370614359174, "tolerance": {"absolute": 1e-9}, "reason": "as Z11"},
+  {"id": "l", "quantity": "the π network's series branch fitted to the same inductor (nH)", "measure": {"step": "eq", "pointer": "/branches/2/inductance_nh"}, "value": 2.0, "tolerance": {"absolute": 1e-9}, "reason": "least squares over two frequencies"},
+  {"id": "sdd", "quantity": "Re Sdd of the L-pad's two ports paired", "measure": {"step": "mm", "pointer": "/matrices/0/0/0/0"}, "value": -0.4, "tolerance": {"absolute": 1e-12}, "reason": "as Z11"}
+ ]
+}
