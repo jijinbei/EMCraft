@@ -1034,18 +1034,10 @@ pub fn radiate(model: &Model, o: &OpenOptions, frequencies: &[f64]) -> Result<Op
 
 /// [`radiate`] with the leapfrog on `device` (the CPU's threads when `None`).
 pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device: Option<&dyn OpenStepper>) -> Result<OpenRun> {
-    // A box off the origin (a block region): solved moved onto it, the Huygens box moved back.
     if let Some(b) = model.domain.solid.as_ref().and_then(|s| s.shape.box_bounds())
         && b.min != Point3::ORIGIN
     {
-        let moved = model.translated(Point3::ORIGIN - b.min).map_err(|e| invalid("model", e.to_string()))?;
-        let mut run = radiate_with(&moved, o, frequencies, device)?;
-        let back = b.min - Point3::ORIGIN;
-        for h in &mut run.huygens {
-            h.centre += back;
-            h.samples.iter_mut().for_each(|x| x.point += back);
-        }
-        return Ok(run);
+        return radiate_shifted(model, b.min, o, frequencies, device);
     }
     o.validate()?;
     if !frequencies_ok(frequencies) || frequencies.len() > MAX_FREQUENCIES {
@@ -1059,18 +1051,7 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
     // source (`loads`).
     let element_loads = element_loads(model, &grid, &coef)?;
     let mut ports = model.lumped.iter().map(|lp| GridPort::new(lp, &grid, &coef, &element_loads)).collect::<Result<Vec<_>>>()?;
-    let mut loads: Vec<GridPort> = {
-        let on_ports: std::collections::BTreeSet<(usize, usize)> =
-            ports.iter().flat_map(|p| p.edges.iter().map(|e| (p.axis.index(), e.id))).collect();
-        let mut by_axis: [Vec<usize>; 3] = [Vec::new(), Vec::new(), Vec::new()];
-        for &(axis, id) in element_loads.keys().filter(|k| !on_ports.contains(k)) {
-            by_axis[axis].push(id);
-        }
-        (0..3)
-            .filter(|&a| !by_axis[a].is_empty())
-            .map(|a| GridPort::of(format!("elements {a}"), a, &by_axis[a], (0.0, 0.0), &coef, &element_loads))
-            .collect::<Result<_>>()?
-    };
+    let mut loads = load_ports(&ports, &coef, &element_loads)?;
     let currents = currents(model, &grid, &coef)?;
     let ce = &coef.ce;
     let wave = crate::planewave::of(model)?;
@@ -1080,18 +1061,10 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
     let cpml = BoxCpml::new(&grid, dt, band.fc);
     // The pulse: Gaussian-modulated over the band.
     let pulse = Pulse::over(band, PULSE_SPREAD);
-    // A plane wave: the total-field box round the bodies, the Huygens box two cells outside it.
-    let split = match wave {
-        Some(_) => {
-            let bodies = emcraft_model::Aabb::around(model.radiators())
-                .ok_or_else(|| FdtdError::NotReady("nothing for the plane wave to scatter: add a body".into()))?;
-            Some(crate::planewave::split_box(bodies, &grid)?)
-        }
-        None => None,
-    };
+    let split = wave.map(|_| scattering_box(model, &grid)).transpose()?;
     let keep_out = split.map(|(lo, hi)| {
         let at = |i: [usize; 3], by: f64| Point3::from([0, 1, 2].map(|d| (i[d] as f64 + by) * grid.hs[d]));
-        emcraft_model::Aabb::new(at(lo, -2.0), at(hi, 2.0))
+        emcraft_model::Aabb::new(at(lo, -HUYGENS_GAP), at(hi, HUYGENS_GAP))
     });
     let hbox = HuygensBox::new(model, &grid, keep_out)?;
     let mut wave = match (wave, split) {
@@ -1177,6 +1150,42 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
     let Normalised { ports, radiated, huygens } = normalise(frequencies, &ports, &tr, &hbox)?;
     Ok(OpenRun { frequencies: frequencies.to_vec(), ports, radiated, huygens, cells: grid.cells(), steps, dt, converged: checks.converged })
 }
+
+/// [`radiate_with`] for a model whose box (a block region) lies off the origin: solved moved
+/// onto it, the Huygens box moved back.
+fn radiate_shifted(model: &Model, corner: Point3, o: &OpenOptions, frequencies: &[f64], device: Option<&dyn OpenStepper>) -> Result<OpenRun> {
+    let moved = model.translated(Point3::ORIGIN - corner).map_err(|e| invalid("model", e.to_string()))?;
+    let mut run = radiate_with(&moved, o, frequencies, device)?;
+    let back = corner - Point3::ORIGIN;
+    for h in &mut run.huygens {
+        h.centre += back;
+        h.samples.iter_mut().for_each(|x| x.point += back);
+    }
+    Ok(run)
+}
+
+/// The lumped elements on gaps of their own (not a port's) as ports without a source, one per
+/// axis their edges run along.
+fn load_ports(ports: &[GridPort], coef: &BoxCoefficients, element_loads: &std::collections::BTreeMap<(usize, usize), Load>) -> Result<Vec<GridPort>> {
+    let on_ports: std::collections::BTreeSet<(usize, usize)> = ports.iter().flat_map(|p| p.edges.iter().map(|e| (p.axis.index(), e.id))).collect();
+    let free: Vec<(usize, usize)> = element_loads.keys().filter(|k| !on_ports.contains(k)).copied().collect();
+    (0..3)
+        .map(|a| (a, free.iter().filter(|(axis, _)| *axis == a).map(|(_, id)| *id).collect::<Vec<usize>>()))
+        .filter(|(_, ids)| !ids.is_empty())
+        .map(|(a, ids)| GridPort::of(format!("elements {a}"), a, &ids, (0.0, 0.0), coef, element_loads))
+        .collect()
+}
+
+/// A plane wave's total-field box: round the bodies it scatters off (grid indices, low and
+/// high corners).
+fn scattering_box(model: &Model, grid: &BoxGrid) -> Result<([usize; 3], [usize; 3])> {
+    let bodies = emcraft_model::Aabb::around(model.radiators())
+        .ok_or_else(|| FdtdError::NotReady("nothing for the plane wave to scatter: add a body".into()))?;
+    crate::planewave::split_box(bodies, grid)
+}
+
+/// The cells between a plane wave's total-field box and the Huygens box outside it.
+const HUYGENS_GAP: f64 = 2.0;
 
 /// An open run's transforms per unit source: the ports' spectra, the power radiated (W) and the
 /// Huygens box's fields, at each frequency.

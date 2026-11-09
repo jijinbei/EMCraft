@@ -138,6 +138,39 @@ impl Field {
 /// # Ok::<(), emcraft_fdtd::FdtdError>(())
 /// ```
 pub fn ring(grid: &BorGrid, m: u32, (start, stop): (f64, f64), periods: f64) -> Result<Ringdown> {
+    check(grid, m, (start, stop), periods)?;
+    let dt = time_step(grid, m);
+    let mid = 0.5 * (start + stop);
+    let steps = (periods / (mid * dt)).ceil() as usize;
+    if steps > MAX_STEPS {
+        return Err(invalid("periods", format!("{steps} steps are more than {MAX_STEPS}: fewer periods or a larger cell")));
+    }
+    let mut f = Fields::new(grid, m, dt);
+    let Excitation { source, probes } = f.excitation()?;
+    let band = stop - start;
+    let tau = 4.0 / (PI * band);
+    let t0 = PULSE_WIDTHS * tau;
+    let pulse = |t: f64| (-((t - t0) / tau).powi(2)).exp() * (2.0 * PI * mid * (t - t0)).sin();
+    let quiet = ((t0 + PULSE_WIDTHS * tau) / dt).ceil() as usize;
+    let mut record: Vec<Vec<f64>> = vec![Vec::with_capacity(steps.saturating_sub(quiet)); probes.len()];
+    for n in 0..steps {
+        f.step();
+        let s = pulse((n as f64 + 1.0) * dt);
+        for &(w, k) in &source {
+            f.component_mut(w)[k] += s;
+        }
+        if n >= quiet {
+            for (rec, &(w, k)) in record.iter_mut().zip(&probes) {
+                rec.push(f.component(w)[k]);
+            }
+        }
+    }
+    let frequencies = peaks(&record, dt, (start, stop));
+    Ok(Ringdown { frequencies, steps, dt })
+}
+
+/// Refuses a grid, order, band or length of run [`ring`] cannot take, with why.
+fn check(grid: &BorGrid, m: u32, (start, stop): (f64, f64), periods: f64) -> Result<()> {
     let (nr, nz) = (grid.nr, grid.nz);
     if nr < 2
         || nz < 2
@@ -162,88 +195,146 @@ pub fn ring(grid: &BorGrid, m: u32, (start, stop): (f64, f64), periods: f64) -> 
     if grid.cells.iter().flatten().any(|&(e, u)| !(e.is_finite() && u.is_finite() && e > 0.0 && u > 0.0)) {
         return Err(invalid("grid", "every filling needs finite εr > 0 and μr > 0"));
     }
+    Ok(())
+}
+
+/// The time step (s): [`COURANT`] of the stability bound for the slowest filling and order `m`
+/// (see the module docs).
+fn time_step(grid: &BorGrid, m: u32) -> f64 {
     let (dr, dz) = (grid.dr, grid.dz);
     let slowest = grid.cells.iter().flatten().map(|&(e, u)| e * u).fold(f64::INFINITY, f64::min).min(1.0);
     let speed = C0 / slowest.sqrt();
     let k = if m == 0 { 2f64.sqrt() } else { f64::from(m + 1) };
-    let dt = COURANT * 2f64.sqrt() / (k * speed * (1.0 / (dr * dr) + 1.0 / (dz * dz)).sqrt());
-    let mid = 0.5 * (start + stop);
-    let steps = (periods / (mid * dt)).ceil() as usize;
-    if steps > MAX_STEPS {
-        return Err(invalid("periods", format!("{steps} steps are more than {MAX_STEPS}: fewer periods or a larger cell")));
-    }
-    let mf = f64::from(m);
-    let r = |i: f64| i * dr;
-    let (ni, nj) = (nr as isize, nz as isize);
-    // The fields and their coefficients Δt/ε or Δt/μ (zero where held).
-    let mut er = Field::new(nr, nz + 1);
-    let mut ep = Field::new(nr + 1, nz + 1);
-    let mut ez = Field::new(nr + 1, nz);
-    let mut hr = Field::new(nr + 1, nz);
-    let mut hp = Field::new(nr, nz);
-    let mut hz = Field::new(nr, nz + 1);
-    for j in 0..=nj {
-        for i in 0..ni {
-            if let Some(e) = grid.eps(&[(i, j - 1), (i, j)]) {
-                er.c[j as usize * nr + i as usize] = dt / (EPS0 * e);
+    COURANT * 2f64.sqrt() / (k * speed * (1.0 / (dr * dr) + 1.0 / (dz * dz)).sqrt())
+}
+
+/// Where a ring is driven and listened to: (electric component, index) pairs.
+struct Excitation {
+    source: Vec<(usize, usize)>,
+    probes: Vec<(usize, usize)>,
+}
+
+/// One order's six field components on the (r, z) grid with their update coefficients Δt/ε or
+/// Δt/μ (zero where held): E_r, E_φ, E_z (components 0, 1, 2), H_r, H_φ, H_z.
+struct Fields {
+    nr: usize,
+    nz: usize,
+    dr: f64,
+    dz: f64,
+    m: u32,
+    er: Field,
+    ep: Field,
+    ez: Field,
+    hr: Field,
+    hp: Field,
+    hz: Field,
+}
+
+impl Fields {
+    /// The fields at rest and their coefficients for `grid`'s fillings, order `m`, step `dt`.
+    fn new(grid: &BorGrid, m: u32, dt: f64) -> Fields {
+        let (nr, nz) = (grid.nr, grid.nz);
+        let (ni, nj) = (nr as isize, nz as isize);
+        let mut f = Fields {
+            nr,
+            nz,
+            dr: grid.dr,
+            dz: grid.dz,
+            m,
+            er: Field::new(nr, nz + 1),
+            ep: Field::new(nr + 1, nz + 1),
+            ez: Field::new(nr + 1, nz),
+            hr: Field::new(nr + 1, nz),
+            hp: Field::new(nr, nz),
+            hz: Field::new(nr, nz + 1),
+        };
+        for j in 0..=nj {
+            for i in 0..ni {
+                if let Some(e) = grid.eps(&[(i, j - 1), (i, j)]) {
+                    f.er.c[j as usize * nr + i as usize] = dt / (EPS0 * e);
+                }
+                f.hz.c[j as usize * nr + i as usize] = dt / (MU0 * grid.mu(&[(i, j - 1), (i, j)]));
             }
-            hz.c[j as usize * nr + i as usize] = dt / (MU0 * grid.mu(&[(i, j - 1), (i, j)]));
-        }
-        for i in 0..=ni {
-            // On the axis only the cells beside it (r ≥ 0).
-            let around: Vec<(isize, isize)> = if i == 0 { vec![(0, j - 1), (0, j)] } else { vec![(i - 1, j - 1), (i, j - 1), (i - 1, j), (i, j)] };
-            if let Some(e) = grid.eps(&around)
-                && (i > 0 || m == 1)
-            {
-                ep.c[j as usize * (nr + 1) + i as usize] = dt / (EPS0 * e);
+            for i in 0..=ni {
+                // On the axis only the cells beside it (r ≥ 0).
+                let around: Vec<(isize, isize)> =
+                    if i == 0 { vec![(0, j - 1), (0, j)] } else { vec![(i - 1, j - 1), (i, j - 1), (i - 1, j), (i, j)] };
+                if let Some(e) = grid.eps(&around)
+                    && (i > 0 || m == 1)
+                {
+                    f.ep.c[j as usize * (nr + 1) + i as usize] = dt / (EPS0 * e);
+                }
             }
         }
-    }
-    for j in 0..nj {
-        for i in 0..=ni {
-            let around: Vec<(isize, isize)> = if i == 0 { vec![(0, j)] } else { vec![(i - 1, j), (i, j)] };
-            if let Some(e) = grid.eps(&around)
-                && (i > 0 || m == 0)
-            {
-                ez.c[j as usize * (nr + 1) + i as usize] = dt / (EPS0 * e);
+        for j in 0..nj {
+            for i in 0..=ni {
+                let around: Vec<(isize, isize)> = if i == 0 { vec![(0, j)] } else { vec![(i - 1, j), (i, j)] };
+                if let Some(e) = grid.eps(&around)
+                    && (i > 0 || m == 0)
+                {
+                    f.ez.c[j as usize * (nr + 1) + i as usize] = dt / (EPS0 * e);
+                }
+                if i > 0 || m == 1 {
+                    f.hr.c[j as usize * (nr + 1) + i as usize] = dt / (MU0 * grid.mu(&around));
+                }
             }
-            if i > 0 || m == 1 {
-                hr.c[j as usize * (nr + 1) + i as usize] = dt / (MU0 * grid.mu(&around));
+            for i in 0..ni {
+                f.hp.c[j as usize * nr + i as usize] = dt / (MU0 * grid.mu(&[(i, j)]));
             }
         }
-        for i in 0..ni {
-            hp.c[j as usize * nr + i as usize] = dt / (MU0 * grid.mu(&[(i, j)]));
+        f
+    }
+
+    /// Electric component `which` (0 E_r, 1 E_φ, 2 E_z)'s values.
+    fn component(&self, which: usize) -> &[f64] {
+        match which {
+            0 => &self.er.v,
+            1 => &self.ep.v,
+            _ => &self.ez.v,
         }
     }
-    // The source and probes: points off the grid's symmetry lines, at the nearest live components.
-    let near = |f: &Field, h: usize, fr: f64, fz: f64| -> Option<usize> {
-        let (ti, tj) = ((fr * f.w as f64) as usize, (fz * h as f64) as usize);
-        (0..f.v.len()).filter(|&k| f.c[k] != 0.0).min_by_key(|&k| {
-            let (i, j) = (k % f.w, k / f.w);
-            i.abs_diff(ti).pow(2) + j.abs_diff(tj).pow(2)
-        })
-    };
-    let spots = PROBE_SPOTS;
-    let source: Vec<(usize, usize)> = [(0usize, &er, nz + 1), (1, &ep, nz + 1), (2, &ez, nz)]
-        .iter()
-        .filter_map(|&(which, f, h)| near(f, h, spots[0].0, spots[0].1).map(|k| (which, k)))
-        .collect();
-    let probes: Vec<(usize, usize)> = spots
-        .iter()
-        .flat_map(|&(a, b)| [(0usize, near(&er, nz + 1, a, b)), (1, near(&ep, nz + 1, a, b)), (2, near(&ez, nz, a, b))])
-        .filter_map(|(w, k)| k.map(|k| (w, k)))
-        .collect();
-    if source.is_empty() || probes.is_empty() {
-        return Err(invalid("grid", "holds no field of this order: the body is all conductor"));
+
+    fn component_mut(&mut self, which: usize) -> &mut [f64] {
+        match which {
+            0 => &mut self.er.v,
+            1 => &mut self.ep.v,
+            _ => &mut self.ez.v,
+        }
     }
-    let band = stop - start;
-    let tau = 4.0 / (PI * band);
-    let t0 = PULSE_WIDTHS * tau;
-    let pulse = |t: f64| (-((t - t0) / tau).powi(2)).exp() * (2.0 * PI * mid * (t - t0)).sin();
-    let quiet = ((t0 + PULSE_WIDTHS * tau) / dt).ceil() as usize;
-    let mut record: Vec<Vec<f64>> = vec![Vec::with_capacity(steps.saturating_sub(quiet)); probes.len()];
-    for n in 0..steps {
-        // H from n − ½ to n + ½.
+
+    /// The source (at the first of [`PROBE_SPOTS`]) and the probes (at all of them): the live
+    /// electric components nearest each spot.
+    fn excitation(&self) -> Result<Excitation> {
+        let nz = self.nz;
+        let near = |f: &Field, h: usize, fr: f64, fz: f64| -> Option<usize> {
+            let (ti, tj) = ((fr * f.w as f64) as usize, (fz * h as f64) as usize);
+            (0..f.v.len()).filter(|&k| f.c[k] != 0.0).min_by_key(|&k| {
+                let (i, j) = (k % f.w, k / f.w);
+                i.abs_diff(ti).pow(2) + j.abs_diff(tj).pow(2)
+            })
+        };
+        let spots = PROBE_SPOTS;
+        let source: Vec<(usize, usize)> = [(0usize, &self.er, nz + 1), (1, &self.ep, nz + 1), (2, &self.ez, nz)]
+            .iter()
+            .filter_map(|&(which, f, h)| near(f, h, spots[0].0, spots[0].1).map(|k| (which, k)))
+            .collect();
+        let probes: Vec<(usize, usize)> = spots
+            .iter()
+            .flat_map(|&(a, b)| [(0usize, near(&self.er, nz + 1, a, b)), (1, near(&self.ep, nz + 1, a, b)), (2, near(&self.ez, nz, a, b))])
+            .filter_map(|(w, k)| k.map(|k| (w, k)))
+            .collect();
+        if source.is_empty() || probes.is_empty() {
+            return Err(invalid("grid", "holds no field of this order: the body is all conductor"));
+        }
+        Ok(Excitation { source, probes })
+    }
+
+    /// One leapfrog step: H from n − ½ to n + ½, then E from n to n + 1.
+    fn step(&mut self) {
+        let (nr, nz, dr, dz) = (self.nr, self.nz, self.dr, self.dz);
+        let mf = f64::from(self.m);
+        let r = |i: f64| i * dr;
+        let Fields { er, ep, ez, hr, hp, hz, .. } = self;
         for j in 0..nz {
             for i in 0..nr {
                 let k = j * nr + i;
@@ -269,7 +360,6 @@ pub fn ring(grid: &BorGrid, m: u32, (start, stop): (f64, f64), periods: f64) -> 
                 hz.v[k] -= hz.c[k] * curl;
             }
         }
-        // E from n to n + 1.
         for j in 0..=nz {
             for i in 0..nr {
                 let k = j * nr + i;
@@ -290,7 +380,7 @@ pub fn ring(grid: &BorGrid, m: u32, (start, stop): (f64, f64), periods: f64) -> 
                 let hr_above = if j < nz { hr.at(i, j) } else { 0.0 };
                 let dhz = if i == 0 {
                     // H_z at −Δr/2 is (−1)^m that at +Δr/2.
-                    (1.0 - if m.is_multiple_of(2) { 1.0 } else { -1.0 }) * hz.at(0, j) / dr
+                    (1.0 - if self.m.is_multiple_of(2) { 1.0 } else { -1.0 }) * hz.at(0, j) / dr
                 } else {
                     let right = if i < nr { hz.at(i, j) } else { 0.0 };
                     (right - hz.at(i - 1, j)) / dr
@@ -315,26 +405,7 @@ pub fn ring(grid: &BorGrid, m: u32, (start, stop): (f64, f64), periods: f64) -> 
                 ez.v[k] += ez.c[k] * curl;
             }
         }
-        let s = pulse((n as f64 + 1.0) * dt);
-        for &(w, k) in &source {
-            match w {
-                0 => er.v[k] += s,
-                1 => ep.v[k] += s,
-                _ => ez.v[k] += s,
-            }
-        }
-        if n >= quiet {
-            for (rec, &(w, k)) in record.iter_mut().zip(&probes) {
-                rec.push(match w {
-                    0 => er.v[k],
-                    1 => ep.v[k],
-                    _ => ez.v[k],
-                });
-            }
-        }
     }
-    let frequencies = peaks(&record, dt, (start, stop));
-    Ok(Ringdown { frequencies, steps, dt })
 }
 
 /// The peaks in [`start`, `stop`] of the records' summed power spectrum (Hann-windowed, on a grid

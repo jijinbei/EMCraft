@@ -150,153 +150,216 @@ pub fn ports_of_name(path: &str) -> Option<usize> {
 /// assert!(parse_touchstone("# GHz S RI\n1 0 x\n", Some(1)).is_err());
 /// ```
 pub fn parse_touchstone(text: &str, ports: Option<usize>) -> std::result::Result<Touchstone, String> {
-    let mut unit = 1e9;
-    let mut parameter = 'S';
-    let mut pair = Pair::Ma;
-    let mut reference = 50.0;
-    let mut option = false;
-    let mut version2 = false;
-    let mut n = ports;
-    let mut order21 = true;
-    let mut references: Option<Vec<f64>> = None;
-    let mut wants_references = false;
-    let mut in_data = false;
-    let mut information = false;
-    let mut numbers: Vec<(f64, usize)> = Vec::new();
+    let mut reader = Reader::new(ports);
     for (k, raw) in text.lines().enumerate() {
-        let line_no = k + 1;
         let line = raw.split('!').next().unwrap_or("").trim();
-        if line.is_empty() {
-            continue;
+        if !line.is_empty() && reader.line(k + 1, line)? == Flow::Stop {
+            break;
         }
-        if let Some(rest) = line.strip_prefix('[') {
-            wants_references = false;
-            let (key, value) = rest.split_once(']').ok_or_else(|| format!("line {line_no}: a keyword without `]`"))?;
-            let key = key.trim().to_ascii_lowercase();
-            let value = value.trim();
-            match key.as_str() {
-                "begin information" => information = true,
-                "end information" => information = false,
-                _ if information => {}
-                "version" => version2 = true,
-                "number of ports" => {
-                    let v: usize = value.parse().map_err(|_| format!("line {line_no}: the number of ports is a whole number"))?;
-                    if !(1..=MAX_ENTRIES).contains(&v) {
-                        return Err(format!("line {line_no}: from 1 to {MAX_ENTRIES} ports"));
-                    }
-                    n = Some(v);
-                }
-                "two-port data order" => match value {
-                    "12_21" => order21 = false,
-                    "21_12" => order21 = true,
-                    _ => return Err(format!("line {line_no}: the two-port data order is 12_21 or 21_12")),
-                },
-                "reference" => {
-                    let r = value.split_whitespace().map(str::parse::<f64>).collect::<std::result::Result<Vec<_>, _>>();
-                    references = Some(r.map_err(|_| format!("line {line_no}: references are numbers"))?);
-                    wants_references = true;
-                }
-                "matrix format" if !value.eq_ignore_ascii_case("full") => {
-                    return Err(format!("line {line_no}: not supported yet: a {value} matrix format (only Full)"));
-                }
-                "mixed-mode order" => return Err(format!("line {line_no}: not supported yet: mixed-mode files")),
-                "network data" => in_data = true,
-                "noise data" | "end" => break,
-                _ => {}
-            }
-            continue;
-        }
-        if information {
-            continue;
-        }
-        if let Some(rest) = line.strip_prefix('#') {
-            // Only the first option line counts.
-            if option {
-                continue;
-            }
-            option = true;
-            let words: Vec<String> = rest.split_whitespace().map(str::to_ascii_lowercase).collect();
-            let mut w = words.iter();
-            while let Some(word) = w.next() {
-                match word.as_str() {
-                    "hz" => unit = 1.0,
-                    "khz" => unit = 1e3,
-                    "mhz" => unit = 1e6,
-                    "ghz" => unit = 1e9,
-                    "s" => parameter = 'S',
-                    "y" => parameter = 'Y',
-                    "z" => parameter = 'Z',
-                    "g" | "h" => return Err(format!("line {line_no}: not supported yet: hybrid ({}) parameters", word.to_ascii_uppercase())),
-                    "ri" => pair = Pair::Ri,
-                    "ma" => pair = Pair::Ma,
-                    "db" => pair = Pair::Db,
-                    "r" => {
-                        reference = w.next().and_then(|v| v.parse::<f64>().ok()).ok_or_else(|| format!("line {line_no}: R needs a resistance"))?;
-                    }
-                    other => return Err(format!("line {line_no}: `{}` is not an option", crate::text::clip(other, 20))),
-                }
-            }
-            continue;
-        }
-        let values = line.split_whitespace().map(str::parse::<f64>).collect::<std::result::Result<Vec<_>, _>>();
-        let values = values.map_err(|_| format!("line {line_no}: numbers expected"))?;
-        if wants_references {
-            references.get_or_insert_with(Vec::new).extend(values);
-            continue;
-        }
-        if version2 && !in_data {
-            return Err(format!("line {line_no}: numbers before [Network Data]"));
-        }
-        if numbers.len() + values.len() > 2 * MAX_VALUES + MAX_FREQUENCIES {
-            return Err(format!("more than {MAX_VALUES} values"));
-        }
-        numbers.extend(values.into_iter().map(|v| (v, line_no)));
     }
-    let n = n.ok_or("the number of ports is not known: name the file .s<n>p")?;
-    if !(reference.is_finite() && reference > 0.0) {
+    let Reader { header, numbers, .. } = reader;
+    let n = header.ports.ok_or("the number of ports is not known: name the file .s<n>p")?;
+    if !(header.reference.is_finite() && header.reference > 0.0) {
         return Err("the reference impedance R must be positive".into());
     }
-    let references = references.unwrap_or_else(|| vec![reference; n]);
+    let references = header.references.clone().unwrap_or_else(|| vec![header.reference; n]);
     if references.len() != n || !references.iter().all(|r| r.is_finite() && *r > 0.0) {
         return Err(format!("one positive reference impedance for each of the {n} ports"));
     }
-    let per = 1 + 2 * n * n;
-    let mut frequencies = Vec::new();
-    let mut s: Vec<C> = Vec::new();
-    let mut at = 0;
-    while at < numbers.len() {
-        let (f, line_no) = numbers[at];
-        // A two-port's noise parameters follow its S in version 1, from a lower frequency again.
-        if !version2 && n == 2 && frequencies.last().is_some_and(|last| f * unit <= *last) {
-            break;
-        }
-        let record = numbers.get(at..at + per).ok_or_else(|| format!("line {line_no}: the frequency's values stop short ({per} numbers each)"))?;
-        if frequencies.len() == MAX_FREQUENCIES {
-            return Err(format!("more than {MAX_FREQUENCIES} frequencies"));
-        }
-        frequencies.push(f * unit);
-        let values: Vec<C> = record[1..].as_chunks::<2>().0.iter().map(|p| pair.value(p[0].0, p[1].0)).collect();
-        // Row-major, a two-port's swapped from S11 S21 S12 S22.
-        let mut m: Vec<C> = if n == 2 && order21 { vec![values[0], values[2], values[1], values[3]] } else { values };
-        if parameter != 'S' {
-            // Version 1's Z and Y are normalised to R; version 2's are in ohms and siemens.
-            let scale = |i: usize, j: usize| if version2 { 1.0 } else { (references[i] * references[j]).sqrt() };
-            for (k, v) in m.iter_mut().enumerate() {
-                let r = scale(k / n, k % n);
-                *v = if parameter == 'Z' { *v * r } else { *v / r };
-            }
-            let to_s = if parameter == 'Z' { SMatrix::from_impedance(&m, &references) } else { SMatrix::from_admittance(&m, &references) };
-            let sm = to_s.ok_or_else(|| format!("line {line_no}: {parameter} has no S here"))?;
-            m = sm.rows().flatten().copied().collect();
-        }
-        s.extend(m);
-        at += per;
-    }
+    let (frequencies, s) = records(&header, n, &references, &numbers)?;
     if frequencies.is_empty() {
         return Err("no frequencies".into());
     }
     let data = SData::square(frequencies, n, s)?;
-    Ok(Touchstone { data, references, parameter })
+    Ok(Touchstone { data, references, parameter: header.parameter })
+}
+
+/// What a Touchstone file's option line and keywords say.
+struct Header {
+    /// Hz per frequency unit.
+    unit: f64,
+    /// `S`, `Y` or `Z`.
+    parameter: char,
+    pair: Pair,
+    /// The option line's R (Ω), every port's unless `[Reference]` gives each its own.
+    reference: f64,
+    references: Option<Vec<f64>>,
+    ports: Option<usize>,
+    /// Version 2 (its keywords; Z and Y in ohms and siemens, not normalised).
+    version2: bool,
+    /// A two-port's values in the order S11 S21 S12 S22 (version 1's).
+    order21: bool,
+}
+
+/// Whether reading goes on after a line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Flow {
+    Continue,
+    Stop,
+}
+
+/// A Touchstone file read line by line: its header so far, where it is (an information block,
+/// `[Reference]`'s continued values, `[Network Data]`) and the numbers of its data, each with its
+/// line.
+struct Reader {
+    header: Header,
+    option_seen: bool,
+    in_references: bool,
+    in_information: bool,
+    in_data: bool,
+    numbers: Vec<(f64, usize)>,
+}
+
+impl Reader {
+    fn new(ports: Option<usize>) -> Reader {
+        let header = Header { unit: 1e9, parameter: 'S', pair: Pair::Ma, reference: 50.0, references: None, ports, version2: false, order21: true };
+        Reader { header, option_seen: false, in_references: false, in_information: false, in_data: false, numbers: Vec::new() }
+    }
+
+    /// One line's text (its comment cut, not empty).
+    fn line(&mut self, line_no: usize, line: &str) -> std::result::Result<Flow, String> {
+        if let Some(rest) = line.strip_prefix('[') {
+            self.in_references = false;
+            return self.keyword(line_no, rest);
+        }
+        if self.in_information {
+            return Ok(Flow::Continue);
+        }
+        if let Some(rest) = line.strip_prefix('#') {
+            // Only the first option line counts.
+            if !self.option_seen {
+                self.option_seen = true;
+                self.options(line_no, rest)?;
+            }
+            return Ok(Flow::Continue);
+        }
+        self.data(line_no, line)?;
+        Ok(Flow::Continue)
+    }
+
+    /// A version 2 keyword line, after its `[`.
+    fn keyword(&mut self, line_no: usize, rest: &str) -> std::result::Result<Flow, String> {
+        let (key, value) = rest.split_once(']').ok_or_else(|| format!("line {line_no}: a keyword without `]`"))?;
+        let (key, value) = (key.trim().to_ascii_lowercase(), value.trim());
+        let h = &mut self.header;
+        match key.as_str() {
+            "begin information" => self.in_information = true,
+            "end information" => self.in_information = false,
+            _ if self.in_information => {}
+            "version" => h.version2 = true,
+            "number of ports" => {
+                let v: usize = value.parse().map_err(|_| format!("line {line_no}: the number of ports is a whole number"))?;
+                if !(1..=MAX_ENTRIES).contains(&v) {
+                    return Err(format!("line {line_no}: from 1 to {MAX_ENTRIES} ports"));
+                }
+                h.ports = Some(v);
+            }
+            "two-port data order" => {
+                h.order21 = match value {
+                    "12_21" => false,
+                    "21_12" => true,
+                    _ => return Err(format!("line {line_no}: the two-port data order is 12_21 or 21_12")),
+                }
+            }
+            "reference" => {
+                let r = value.split_whitespace().map(str::parse::<f64>).collect::<std::result::Result<Vec<_>, _>>();
+                h.references = Some(r.map_err(|_| format!("line {line_no}: references are numbers"))?);
+                self.in_references = true;
+            }
+            "matrix format" if !value.eq_ignore_ascii_case("full") => {
+                return Err(format!("line {line_no}: not supported yet: a {value} matrix format (only Full)"));
+            }
+            "mixed-mode order" => return Err(format!("line {line_no}: not supported yet: mixed-mode files")),
+            "network data" => self.in_data = true,
+            "noise data" | "end" => return Ok(Flow::Stop),
+            _ => {}
+        }
+        Ok(Flow::Continue)
+    }
+
+    /// The option line, after its `#`: the frequency unit, the parameter, the format and R.
+    fn options(&mut self, line_no: usize, rest: &str) -> std::result::Result<(), String> {
+        let h = &mut self.header;
+        let words: Vec<String> = rest.split_whitespace().map(str::to_ascii_lowercase).collect();
+        let mut w = words.iter();
+        while let Some(word) = w.next() {
+            match word.as_str() {
+                "hz" => h.unit = 1.0,
+                "khz" => h.unit = 1e3,
+                "mhz" => h.unit = 1e6,
+                "ghz" => h.unit = 1e9,
+                "s" => h.parameter = 'S',
+                "y" => h.parameter = 'Y',
+                "z" => h.parameter = 'Z',
+                "g" | "h" => return Err(format!("line {line_no}: not supported yet: hybrid ({}) parameters", word.to_ascii_uppercase())),
+                "ri" => h.pair = Pair::Ri,
+                "ma" => h.pair = Pair::Ma,
+                "db" => h.pair = Pair::Db,
+                "r" => h.reference = w.next().and_then(|v| v.parse::<f64>().ok()).ok_or_else(|| format!("line {line_no}: R needs a resistance"))?,
+                other => return Err(format!("line {line_no}: `{}` is not an option", crate::text::clip(other, 20))),
+            }
+        }
+        Ok(())
+    }
+
+    /// A line of numbers: `[Reference]`'s continued, or the data's.
+    fn data(&mut self, line_no: usize, line: &str) -> std::result::Result<(), String> {
+        let values = line.split_whitespace().map(str::parse::<f64>).collect::<std::result::Result<Vec<_>, _>>();
+        let values = values.map_err(|_| format!("line {line_no}: numbers expected"))?;
+        if self.in_references {
+            self.header.references.get_or_insert_with(Vec::new).extend(values);
+            return Ok(());
+        }
+        if self.header.version2 && !self.in_data {
+            return Err(format!("line {line_no}: numbers before [Network Data]"));
+        }
+        if self.numbers.len() + values.len() > 2 * MAX_VALUES + MAX_FREQUENCIES {
+            return Err(format!("more than {MAX_VALUES} values"));
+        }
+        self.numbers.extend(values.into_iter().map(|v| (v, line_no)));
+        Ok(())
+    }
+}
+
+/// The frequencies (Hz) and S (row-major per frequency) of a file's numbers: 1 + 2n² of them
+/// a frequency, a two-port's reordered from S11 S21 S12 S22 (version 1), Y and Z turned into
+/// S on `references`; a version 1 two-port's noise data (from a lower frequency again) left
+/// out.
+fn records(h: &Header, n: usize, references: &[f64], numbers: &[(f64, usize)]) -> std::result::Result<(Vec<f64>, Vec<C>), String> {
+    let per = 1 + 2 * n * n;
+    let mut frequencies = Vec::new();
+    let mut s: Vec<C> = Vec::new();
+    for record in numbers.chunks(per) {
+        let (f, line_no) = record[0];
+        if !h.version2 && n == 2 && frequencies.last().is_some_and(|last| f * h.unit <= *last) {
+            break;
+        }
+        if record.len() < per {
+            return Err(format!("line {line_no}: the frequency's values stop short ({per} numbers each)"));
+        }
+        if frequencies.len() == MAX_FREQUENCIES {
+            return Err(format!("more than {MAX_FREQUENCIES} frequencies"));
+        }
+        frequencies.push(f * h.unit);
+        let values: Vec<C> = record[1..].as_chunks::<2>().0.iter().map(|p| h.pair.value(p[0].0, p[1].0)).collect();
+        let m: Vec<C> = if n == 2 && h.order21 { vec![values[0], values[2], values[1], values[3]] } else { values };
+        s.extend(if h.parameter == 'S' {
+            m
+        } else {
+            to_s(h, n, references, m).ok_or_else(|| format!("line {line_no}: {} has no S here", h.parameter))?
+        });
+    }
+    Ok((frequencies, s))
+}
+
+/// S from a frequency's Y or Z (row-major): version 1's normalised to the references,
+/// version 2's in siemens or ohms.
+fn to_s(h: &Header, n: usize, references: &[f64], m: Vec<C>) -> Option<Vec<C>> {
+    let scale = |i: usize, j: usize| if h.version2 { 1.0 } else { (references[i] * references[j]).sqrt() };
+    let m: Vec<C> =
+        m.into_iter().enumerate().map(|(k, v)| if h.parameter == 'Z' { v * scale(k / n, k % n) } else { v / scale(k / n, k % n) }).collect();
+    let sm = if h.parameter == 'Z' { SMatrix::from_impedance(&m, references) } else { SMatrix::from_admittance(&m, references) }?;
+    Some(sm.rows().flatten().copied().collect())
 }
 
 /// A file read whole, at most [`MAX_FILE`] bytes.

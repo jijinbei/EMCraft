@@ -135,11 +135,33 @@ fn mods(p: &Value) -> egui::Modifiers {
 
 /// The UI state, as `ui.inspect` reports it.
 pub fn inspect(app: &EmcraftApp) -> Value {
-    let progress = app.job.as_ref().map(|j| {
-        let s = j.snapshot();
-        json!({"command": j.command, "done": s.done, "total": s.total, "stage": s.stage, "open": s.open, "residual": s.residual, "fraction": s.fraction(), "elapsed": j.elapsed(), "estimate": j.estimate, "remaining": j.remaining(), "text": crate::messages::job_text(j), "device": j.place().map(|w| json!({"device": w.device.id(), "gpu": w.gpu(), "fronts": w.fronts}))})
-    });
-    let dialog = app.ui_state.dialog().map(|d| {
+    let mut v = summary(app);
+    details(app, &mut v);
+    v
+}
+
+/// A running job's progress: its command, steps, stage, residual, times, text and device.
+fn job_progress(j: &crate::worker::Job) -> Value {
+    let s = j.snapshot();
+    json!({
+        "command": j.command,
+        "done": s.done,
+        "total": s.total,
+        "stage": s.stage,
+        "open": s.open,
+        "residual": s.residual,
+        "fraction": s.fraction(),
+        "elapsed": j.elapsed(),
+        "estimate": j.estimate,
+        "remaining": j.remaining(),
+        "text": crate::messages::job_text(j),
+        "device": j.place().map(|w| json!({"device": w.device.id(), "gpu": w.gpu(), "fronts": w.fronts})),
+    })
+}
+
+/// The open dialog: its command, fields as typed, errors, and the import dialog's file.
+fn dialog_state(app: &EmcraftApp) -> Option<Value> {
+    app.ui_state.dialog().map(|d| {
         let fields: serde_json::Map<String, Value> = d
             .fields
             .iter()
@@ -163,8 +185,73 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         });
         json!({"command": d.command.id, "docked": d.docked, "fields": fields, "errors": errors, "error": d.error,
                "detected": detected, "options": d.options, "help": d.help})
-    });
-    let mut v = json!({
+    })
+}
+
+/// What the file prompt asks: a path being typed, a save to confirm and what follows it.
+fn files_state(app: &EmcraftApp) -> Value {
+    let ask = app.ui_state.ask();
+    json!({
+        "prompt": match ask { Some(crate::files::Ask::Path(p)) => Some(p.text.clone()), _ => None },
+        "confirm": matches!(ask, Some(crate::files::Ask::Save(_))),
+        "then": match ask { Some(crate::files::Ask::Save(t)) => Some(format!("{t:?}")), _ => None },
+    })
+}
+
+/// The field view: its frequency, plane, component, phase, playback, what is drawn and hovered.
+fn field_state(app: &EmcraftApp) -> Value {
+    let f = &app.field;
+    json!({
+        "frequency": f.view.frequency,
+        "plane": f.view.plane.id(),
+        "component": f.view.component.id(),
+        "phase": f.view.phase,
+        "mode": f.view.mode,
+        "animate": f.player.playing,
+        "speed": f.player.speed,
+        "shown": f.picture.is_some() || (f.beside_3d && f.samples.is_some()),
+        "arrows": [f.view.show_e, f.view.show_h],
+        "hover": f.hover.map(|p| json!({"at": p.at, "e": [p.e.x.norm(), p.e.y.norm(), p.e.z.norm()]})),
+        "pinned": f.pinned,
+        "at": f.at,
+        "beside_3d": f.beside_3d,
+        "plot_zoom": f.plot_zoom,
+        "excitation": app.session.sparameter_entries().get(f.view.excitation).map(|e| e.name.clone()),
+    })
+}
+
+/// The last study: its kind, variables, rows, best point and how its chart is sliced.
+fn study_state(app: &EmcraftApp) -> Option<Value> {
+    app.session.results().study.as_ref().map(|s| {
+        json!({
+            "kind": if s.kind == emcraft_engine::study::Kind::Sweep { "sweep" } else { "optimize" },
+            "variables": s.variables, "rows": s.rows.len(), "converged": s.converged,
+            "best": s.best.and_then(|b| s.rows.get(b)).map(|r| r.values.clone()),
+            "chart": app.views.study.chart.key().map(|k| format!("{k:?}")), "parameter": app.views.study.parameter,
+            "grid": s.grid.iter().map(Vec::len).collect::<Vec<_>>(), "free": s.variables.get(app.views.study.slice.free), "at": app.views.study.slice.at,
+            "surrogate": s.surrogate.is_some(),
+            "predicted": s.rows.iter().filter(|r| r.is_predicted()).count(),
+        })
+    })
+}
+
+/// The PCB diagnosis: the board, its report, the net and conditions, the stage.
+fn pcb_state(app: &EmcraftApp) -> Value {
+    let views = app.session.views();
+    json!({
+        "loaded": app.session.model().pcb().is_some(),
+        "report": app.replies.pcb,
+        "selected_net": views.pcb.net(),
+        "conditions": views.pcb.conditions().map(|c| c.shown(app.session.display().frequency)),
+        "unconfirmed": app.views.pcb.unconfirmed,
+        "stage": emcraft_engine::pcb::stage(&app.session).id(),
+        "illustration": views.pcb_illustration,
+    })
+}
+
+/// The window's state at large: tab, view, theme, language, project, dialogs, job, views.
+fn summary(app: &EmcraftApp) -> Value {
+    json!({
         "tab": app.tab.id(),
         "view": app.place.view().id(),
         "theme": app.theme,
@@ -178,29 +265,23 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "template": app.ui_state.template().map(super::template_dialog::TemplateDialog::inspect),
         "settings": app.ui_state.page.settings_shown().map(super::settings::Section::id),
         "project": {"name": app.session.name(), "path": app.session.path(), "dirty": app.session.is_dirty(), "title": crate::files::title(app)},
-        "files": {"prompt": match app.ui_state.ask() { Some(crate::files::Ask::Path(p)) => Some(p.text.clone()), _ => None }, "confirm": matches!(app.ui_state.ask(), Some(crate::files::Ask::Save(_))), "then": match app.ui_state.ask() { Some(crate::files::Ask::Save(t)) => Some(format!("{t:?}")), _ => None }},
+        "files": files_state(app),
         "quitting": app.quit_requested,
         "autosave": app.autosave_inspect(),
         "recent": app.prefs.recent,
         "dock_dialogs": app.dock_dialogs,
-        "dialog": dialog,
+        "dialog": dialog_state(app),
         "busy": app.busy(),
-        "progress": progress,
+        "progress": app.job.as_ref().map(job_progress),
         "status": app.status().map(|m| json!({"text": m.text, "error": m.error})),
         "messages": app.messages.len(),
         "search": {"open": app.ui_state.searching(), "text": app.search.text},
         "viewport": app.viewport_rect.map(|r| json!([r.left(), r.top(), r.width(), r.height()])),
-        "field": {"frequency": app.field.view.frequency, "plane": app.field.view.plane.id(), "component": app.field.view.component.id(), "phase": app.field.view.phase, "mode": app.field.view.mode, "animate": app.field.player.playing, "speed": app.field.player.speed, "shown": app.field.picture.is_some() || (app.field.beside_3d && app.field.samples.is_some()), "arrows": [app.field.view.show_e, app.field.view.show_h], "hover": app.field.hover.map(|p| json!({"at": p.at, "e": [p.e.x.norm(), p.e.y.norm(), p.e.z.norm()]})), "pinned": app.field.pinned, "at": app.field.at, "beside_3d": app.field.beside_3d, "plot_zoom": app.field.plot_zoom, "excitation": app.session.sparameter_entries().get(app.field.view.excitation).map(|e| e.name.clone())},
+        "field": field_state(app),
         "chart": app.views.chart.key().map(|k| format!("{k:?}")),
         "sparameters": app.views.sdisplay.id(),
         "variables": app.session.variables(),
-        "study": app.session.results().study.as_ref().map(|s| json!({
-            "kind": if s.kind == emcraft_engine::study::Kind::Sweep { "sweep" } else { "optimize" },
-            "variables": s.variables, "rows": s.rows.len(), "converged": s.converged,
-            "best": s.best.and_then(|b| s.rows.get(b)).map(|r| r.values.clone()),
-            "chart": app.views.study.chart.key().map(|k| format!("{k:?}")), "parameter": app.views.study.parameter,
-            "grid": s.grid.iter().map(Vec::len).collect::<Vec<_>>(), "free": s.variables.get(app.views.study.slice.free), "at": app.views.study.slice.at,
-        })),
+        "study": study_state(app),
         "port_modes": app.replies.port_modes.is_some(),
         "compare": app.replies.compare.as_ref().map(|c| c.worst),
         "frames": app.frames,
@@ -212,7 +293,12 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "history": app.session.history().len(),
         "export": match app.ui_state.ask() { Some(crate::files::Ask::Export(p)) => Some(p.clone()), _ => None },
         "model": app.session.summary(),
-    });
+    })
+}
+
+/// The rest of the report, by part: how results are looked at, the history, the ports, the
+/// probes, the PCB, visibility, the estimates.
+fn details(app: &EmcraftApp, v: &mut Value) {
     // How results are looked at: the chart's style, the band to refine, the reference planes,
     // the probes, the far field's cut, the run's estimates.
     let estimate = |e: Option<&Result<Value, String>>| {
@@ -222,11 +308,6 @@ pub fn inspect(app: &EmcraftApp) -> Value {
     v["drawing"] = json!({"gpu": app.prefs.gpu_look});
     v["packed"] = json!(app.views.packed.map(|[beside, under]| json!({"beside": beside, "under": under})));
     let s = &app.session;
-    // A study's surrogate: whether it had one, and the rows it predicted.
-    if let Some(study) = s.results().study.as_ref() {
-        v["study"]["surrogate"] = json!(study.surrogate.is_some());
-        v["study"]["predicted"] = json!(study.rows.iter().filter(|r| r.is_predicted()).count());
-    }
     v["purpose"] = json!(app.home.purpose.map(emcraft_model::Analysis::id));
     v["page"] = json!(app.ui_state.page.shown().id());
     v["browser_row"] = json!(app.ui_state.selection().row());
@@ -254,7 +335,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
             .unwrap_or_default()
     );
     v["field"]["power"] = json!(app.field.power.as_ref().and_then(|p| p.value.as_ref().ok()));
-    v["pcb"] = json!({"loaded":app.session.model().pcb().is_some(),"report":app.replies.pcb,"selected_net":app.session.views().pcb.net(),"conditions":app.session.views().pcb.conditions().map(|c| c.shown(app.session.display().frequency)),"unconfirmed":app.views.pcb.unconfirmed,"stage":emcraft_engine::pcb::stage(&app.session).id(),"illustration":app.session.views().pcb_illustration});
+    v["pcb"] = pcb_state(app);
     v["hidden_geometry"] = json!(app.session.views().hidden_geometry);
     v["hidden_materials"] = json!(app.session.views().hidden_materials);
     // The eigenmode table's cavity figures per mode (its T, or null).
@@ -265,7 +346,6 @@ pub fn inspect(app: &EmcraftApp) -> Value {
     v["pattern"] = json!({"cut": app.views.pattern.cut.id(), "angle": app.views.pattern.angle, "component": app.views.pattern.component.id()});
     v["estimate"] =
         json!({"run": estimate(crate::steps::run_estimate(app)), "dialog": estimate(app.workflow.dialog_estimate.as_ref().map(|e| &e.reply))});
-    v
 }
 
 /// The chart view's style (`view.chart.style`'s, as it replies it), whether its card is open,
