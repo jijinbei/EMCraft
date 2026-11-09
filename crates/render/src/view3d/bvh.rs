@@ -211,7 +211,7 @@ fn ray_box(o: [f64; 3], d: [f64; 3], inv: [f64; 3], b: &Aabb) -> Option<f64> {
 /// for it: asked about another (a different number of triangles), it scans as [`super::hits`].
 ///
 /// ```
-/// use emcraft_render::view3d::{Camera, Scene, SceneIndex, StandardView, hits};
+/// use emcraft_render::view3d::{Camera, Pixel, Scene, SceneIndex, StandardView, hits};
 /// use emcraft_render::Rgb;
 /// let mut s = Scene::default();
 /// // A grid of 40 × 40 tagged squares on z = 0 (m).
@@ -227,7 +227,7 @@ fn ray_box(o: [f64; 3], d: [f64; 3], inv: [f64; 3], b: &Aabb) -> Option<f64> {
 /// cam.fit([0.0, 0.0, 0.0], [40.0, 40.0, 0.0], 1.0);
 /// // Every pixel picks what the scan of every triangle picks.
 /// for (x, y) in [(50.0, 50.0), (13.0, 77.0), (0.5, 99.5), (500.0, 5.0)] {
-///     assert_eq!(cam.ray(crate::view3d::Pixel::new(x, y, 100.0, 100.0)).and_then(|r| index.hits(&s, r)), hits(&s, &cam, crate::view3d::Pixel::new(x, y, 100.0, 100.0)));
+///     assert_eq!(cam.ray(Pixel::new(x, y, 100.0, 100.0)).and_then(|r| index.hits(&s, r)), hits(&s, &cam, Pixel::new(x, y, 100.0, 100.0)));
 /// }
 /// ```
 #[derive(Clone, Debug, Default)]

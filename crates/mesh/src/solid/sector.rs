@@ -165,7 +165,7 @@ fn clip(t: &mut crate::csg::Surface, d: &dyn Fn(Point3) -> f64, onto: &dyn Fn(Po
 /// triangles into one facet and triangulate it afresh), the first face's `base..base + T`, the
 /// second's `base + T..base + 2T`, triangle i of the one the turn of triangle i of the other.
 /// `size` is the element size, `scale` the model's (its box's diagonal).
-pub(super) fn sector(t: Tessellation, rot: &Rotation, size: f64, scale: f64, bodies: &[Tessellation]) -> Result<(Tessellation, u32, Vec<Cut>)> {
+pub(super) fn sector(t: Tessellation, rot: &Rotation, size: f64, scale: f64, bodies: &[Tessellation]) -> Result<Closed> {
     let tol = GEOMETRY_TOLERANCE * scale;
     let halves = [Half::new(rot, rot.start(), tol), Half::new(rot, rot.start() + rot.angle(), tol)];
     let mut t = with_bodies(t, bodies);
@@ -244,14 +244,7 @@ fn own_tessellation(positions: &[Point3], tris: &[[u32; 3]]) -> Tessellation {
 /// The sector's open surface `t` (its cut faces missing) closed by two faces each other's turn:
 /// triangulated from the union of the two outlines' points and `inner` (points inside the
 /// first face, on its plane's (s, t)), refined to `refine` when given, else taken as they are.
-fn close(
-    t: Tessellation,
-    rot: &Rotation,
-    scale: f64,
-    refine: Option<f64>,
-    inner: &[[f64; 2]],
-    bodies: usize,
-) -> Result<(Tessellation, u32, Vec<Cut>)> {
+fn close(t: Tessellation, rot: &Rotation, scale: f64, refine: Option<f64>, inner: &[[f64; 2]], bodies: usize) -> Result<Closed> {
     let tol = GEOMETRY_TOLERANCE * scale;
     let merge = 1e-7 * scale;
     let halves = [Half::new(rot, rot.start(), tol), Half::new(rot, rot.start() + rot.angle(), tol)];
@@ -262,14 +255,108 @@ fn close(
     };
     let base = t.surface.tags.iter().filter(|&&g| g < BODY_TAG).map(|g| g + 1).max().unwrap_or(0).max(t.analytic.len() as u32);
     let size = refine.unwrap_or(scale);
-    let pos = t.surface.positions.clone();
-    // The open outline the cut left on each plane, with the axis' stretches inside the solid
-    // (where the two faces meet) closing it.
+    let outlines = cut_outlines(&t, &halves, merge)?;
+    let lengths = Lengths { tol, merge, size };
+    let pos = onto_first(&t, &halves, &outlines.edges, t.surface.positions.clone(), lengths, refine.is_some())?;
+    // Points given on the axis (a mesher's, taken back) split its stretch of the outline: they
+    // are the only ones there, no other face reaching the axis inside the solid.
+    let near = 1e-6 * scale;
+    let mut union = Union::of(&halves, &outlines.edges, &pos, merge, inner, near);
+    // The outline segments with every union point on them, from each face; the faces must agree.
+    let (first, second) = (union.chain(0, outlines.edges[0].iter(), merge), union.chain(1, outlines.edges[1].iter(), merge));
+    if first != second {
+        return Err(fail("the sector's two cut faces differ: the solid is not symmetric under the turn"));
+    }
+    let segs: Vec<[u32; 2]> = first.into_iter().collect();
+    // Each body's own outline on the first face (the solid's, then each inclusion's), split at the
+    // union's points as the faces' are.
+    let owned = |who: Option<usize>| -> Vec<[u32; 2]> {
+        let edges = outlines.edges[0].iter().filter(|e| outlines.owner_of(e[0]) == who && outlines.owner_of(e[1]) == who);
+        union.chain(0, edges, merge).into_iter().collect()
+    };
+    let host = owned(None);
+    let rims: Vec<Vec<[u32; 2]>> = (0..bodies).map(|k| owned(Some(k))).collect();
+    union.add_inner(inner, &segs, near);
+    // Refined to the size, or (taking a mesher's points back) only as fine as the points given.
+    let fine = if refine.is_some() { size } else { 4.0 * union.points.iter().fold(0.0f64, |m, q| m.max(q[0].abs()).max(q[1].abs())) };
+    let faces = triangulate_faces(&union.points, &segs, &host, &rims, fine, bodies)?;
+    let FaceVertices { mut positions, ids } = face_vertices(&faces.points, &union.vertex, &halves, &pos, merge);
+    let inserts = outline_inserts(&outlines.edges, &union.point_of, &faces.points, &ids, merge);
+    let mut split = split_open(&t.surface, &inserts, &mut positions);
+    push_faces((&mut split.triangles, &mut split.tags), &positions, &halves, &faces.tris, &ids, base);
+    let caps: Vec<Vec<[u32; 3]>> = (0..bodies)
+        .map(|k| {
+            let mine: Vec<[u32; 3]> = faces.cap_tris.iter().zip(&faces.cap_of).filter(|(_, b)| **b == k).map(|(tri, _)| *tri).collect();
+            let (mut tri_k, mut tag_k) = (Vec::new(), Vec::new());
+            push_faces((&mut tri_k, &mut tag_k), &positions, &halves, &mine, &ids, 0);
+            tri_k
+        })
+        .collect();
+    onto_surfaces(&split, &t.analytic, &halves, &mut positions, lengths);
+    let Split { mut triangles, mut tags } = split;
+    // The inclusions' triangles out of the solid's: their open surfaces and caps their own.
+    let mut cuts = Vec::with_capacity(bodies);
+    if bodies > 0 {
+        let mut opens: Vec<Vec<[u32; 3]>> = vec![Vec::new(); bodies];
+        let (mut solid_tris, mut solid_tags) = (Vec::new(), Vec::new());
+        for (tri, &g) in triangles.iter().zip(&tags) {
+            if g >= BODY_TAG {
+                if let Some(o) = opens.get_mut((g - BODY_TAG) as usize) {
+                    o.push(*tri);
+                }
+            } else {
+                solid_tris.push(*tri);
+                solid_tags.push(g);
+            }
+        }
+        for (o, c) in opens.iter().zip(&caps) {
+            cuts.push(Cut { open: own_tessellation(&positions, o), caps: own_tessellation(&positions, c) });
+        }
+        triangles = solid_tris;
+        tags = solid_tags;
+    }
+    let mut out = t;
+    out.surface = compacted(triangles, tags, &positions);
+    out.analytic.resize(base as usize + 2 * faces.tris.len(), None);
+    Ok(Closed { tessellation: out, base, cuts })
+}
+
+/// The lengths a sector is closed with (m): the geometric tolerance, the distance within which
+/// points merge, and the element size.
+#[derive(Clone, Copy)]
+struct Lengths {
+    tol: f64,
+    merge: f64,
+    size: f64,
+}
+
+/// A sector closed: its tessellation, the first of the cut faces' tags (the mesher freezes them),
+/// and the inclusions across the cut faces.
+pub(super) struct Closed {
+    pub(super) tessellation: Tessellation,
+    pub(super) base: u32,
+    pub(super) cuts: Vec<Cut>,
+}
+
+/// The open outline the cut left on each plane, with the axis' stretches inside each body
+/// closing it, and each vertex's body (the solid's, none, or an inclusion's across the cut).
+struct Outlines {
+    edges: [Vec<[u32; 2]>; 2],
+    owner: BTreeMap<u32, Option<usize>>,
+}
+
+impl Outlines {
+    fn owner_of(&self, v: u32) -> Option<usize> {
+        self.owner.get(&v).copied().flatten()
+    }
+}
+
+fn cut_outlines(t: &Tessellation, halves: &[Half; 2], merge: f64) -> Result<Outlines> {
+    let pos = &t.surface.positions;
     let open = outline(&t.surface.triangles);
     let on = |h: &Half, v: u32| pos.get(v as usize).is_some_and(|p| h.holds(*p));
-    let mut outlines: [Vec<[u32; 2]>; 2] = [0, 1].map(|f| open.iter().copied().filter(|e| on(&halves[f], e[0]) && on(&halves[f], e[1])).collect());
+    let mut edges: [Vec<[u32; 2]>; 2] = [0, 1].map(|f| open.iter().copied().filter(|e| on(&halves[f], e[0]) && on(&halves[f], e[1])).collect());
     let axis = |v: u32| pos.get(v as usize).is_some_and(|p| halves[0].local(*p)[0].abs() <= merge);
-    // Each vertex's body: the solid's (none) or an inclusion's across the cut.
     let mut owner: BTreeMap<u32, Option<usize>> = BTreeMap::new();
     for (tri, &g) in t.surface.triangles.iter().zip(&t.surface.tags) {
         for &v in tri {
@@ -277,9 +364,9 @@ fn close(
         }
     }
     let owner_of = |v: u32| owner.get(&v).copied().flatten();
-    for f in 0..2 {
+    for outline in &mut edges {
         let mut degree: BTreeMap<u32, usize> = BTreeMap::new();
-        for e in &outlines[f] {
+        for e in outline.iter() {
             for v in e {
                 *degree.entry(*v).or_insert(0) += 1;
             }
@@ -295,19 +382,31 @@ fn close(
                 return Err(fail("the cut's outline does not close on the axis"));
             }
             for pair in list.chunks(2) {
-                outlines[f].push([pair[0].min(pair[1]), pair[0].max(pair[1])]);
+                outline.push([pair[0].min(pair[1]), pair[0].max(pair[1])]);
             }
         }
     }
-    if outlines.iter().any(Vec::is_empty) {
+    if edges.iter().any(Vec::is_empty) {
         return Err(fail("the axis misses the solid: the sector's planes cut nothing"));
     }
-    // The second face's outline put on the first's turned (a tessellated round wall crosses the
-    // two planes a facet's sag apart): each of its points to the nearest on the first outline,
-    // no further than a twentieth of the size, else the solid is not symmetric.
+    Ok(Outlines { edges, owner })
+}
+
+/// `pos` with the second face's outline put on the first's turned (a tessellated round wall
+/// crosses the two planes a facet's sag apart): each of its points to the nearest on the first
+/// outline, no further than a twentieth of the size, else the solid is not symmetric. `refine`:
+/// the outlines were thinned to the size (not a mesher's points taken back).
+fn onto_first(
+    t: &Tessellation,
+    halves: &[Half; 2],
+    outlines: &[Vec<[u32; 2]>; 2],
+    mut pos: Vec<Point3>,
+    lengths: Lengths,
+    refine: bool,
+) -> Result<Vec<Point3>> {
+    let Lengths { merge, size, .. } = lengths;
     let first: Vec<([f64; 2], [f64; 2])> =
         outlines[0].iter().map(|e| (halves[0].local(pos[e[0] as usize]), halves[0].local(pos[e[1] as usize]))).collect();
-    let mut pos = pos;
     // A corner of an outline (where it turns by more than 10°) goes to the first's nearest
     // corner, any other point onto its nearest segment.
     let corners = |f: usize| -> BTreeMap<u32, [f64; 2]> {
@@ -370,7 +469,7 @@ fn close(
         // down to. Moved along its own straight outline, by less than half the way to its
         // neighbours, the point keeps its triangles' shapes and sides.
         // (Taking a mesher's points back, none moves: the volume mesh holds them where they are.)
-        let along = if refine.is_none() || second_corners.contains_key(&v) || q[0].abs() <= merge {
+        let along = if !refine || second_corners.contains_key(&v) || q[0].abs() <= merge {
             near
         } else {
             let reach = (0.3 * size).min(0.4 * spacing.get(&v).copied().unwrap_or(0.0));
@@ -399,110 +498,129 @@ fn close(
         });
         pos[v as usize] = if keeps { moved } else { halves[1].point(near) };
     }
-    // The union of the outlines' points on the first plane, each with the vertex it was on each
-    // face.
-    let mut union: Vec<[f64; 2]> = Vec::new();
-    let mut vertex: Vec<[Option<u32>; 2]> = Vec::new();
-    let mut index: BTreeMap<[i64; 2], usize> = BTreeMap::new();
-    let key = |q: [f64; 2]| [(q[0] / merge).round() as i64, (q[1] / merge).round() as i64];
-    let mut point_of: [BTreeMap<u32, usize>; 2] = [BTreeMap::new(), BTreeMap::new()];
-    for f in 0..2 {
-        let vs: BTreeSet<u32> = outlines[f].iter().flatten().copied().collect();
-        for v in vs {
-            let q = halves[f].local(pos[v as usize]);
-            let k = (-1..=1)
-                .flat_map(|i| (-1..=1).map(move |j| (i, j)))
-                .find_map(|(i, j)| {
-                    let mut kk = key(q);
-                    kk[0] += i;
-                    kk[1] += j;
-                    index.get(&kk).copied()
-                })
-                .unwrap_or_else(|| {
-                    union.push(q);
-                    vertex.push([None, None]);
-                    index.insert(key(q), union.len() - 1);
-                    union.len() - 1
-                });
-            vertex[k][f] = Some(v);
-            point_of[f].insert(v, k);
+    Ok(pos)
+}
+
+/// The union of the outlines' points on the first plane, each with the vertex it was on each
+/// face (and each face's vertex's place in it); the first `outline_points` are the outlines',
+/// the rest given inside.
+struct Union {
+    points: Vec<[f64; 2]>,
+    vertex: Vec<[Option<u32>; 2]>,
+    point_of: [BTreeMap<u32, usize>; 2],
+    outline_points: usize,
+}
+
+impl Union {
+    /// The outlines' points merged within `merge`, then the points of `inner` on the axis (not
+    /// within `near` of one there).
+    fn of(halves: &[Half; 2], outlines: &[Vec<[u32; 2]>; 2], pos: &[Point3], merge: f64, inner: &[[f64; 2]], near: f64) -> Union {
+        let mut union: Vec<[f64; 2]> = Vec::new();
+        let mut vertex: Vec<[Option<u32>; 2]> = Vec::new();
+        let mut index: BTreeMap<[i64; 2], usize> = BTreeMap::new();
+        let key = |q: [f64; 2]| [(q[0] / merge).round() as i64, (q[1] / merge).round() as i64];
+        let mut point_of: [BTreeMap<u32, usize>; 2] = [BTreeMap::new(), BTreeMap::new()];
+        for f in 0..2 {
+            let vs: BTreeSet<u32> = outlines[f].iter().flatten().copied().collect();
+            for v in vs {
+                let q = halves[f].local(pos[v as usize]);
+                let k = (-1..=1)
+                    .flat_map(|i| (-1..=1).map(move |j| (i, j)))
+                    .find_map(|(i, j)| {
+                        let mut kk = key(q);
+                        kk[0] += i;
+                        kk[1] += j;
+                        index.get(&kk).copied()
+                    })
+                    .unwrap_or_else(|| {
+                        union.push(q);
+                        vertex.push([None, None]);
+                        index.insert(key(q), union.len() - 1);
+                        union.len() - 1
+                    });
+                vertex[k][f] = Some(v);
+                point_of[f].insert(v, k);
+            }
         }
-    }
-    // Points given on the axis (a mesher's, taken back) split its stretch of the outline: they
-    // are the only ones there, no other face reaching the axis inside the solid.
-    let near = 1e-6 * scale;
-    for &q in inner {
-        if q[0].abs() <= near && !union.iter().any(|u| (u[0] - q[0]).hypot(u[1] - q[1]) <= near) {
-            union.push([0.0, q[1]]);
-            vertex.push([None, None]);
+        for &q in inner {
+            if q[0].abs() <= near && !union.iter().any(|u| (u[0] - q[0]).hypot(u[1] - q[1]) <= near) {
+                union.push([0.0, q[1]]);
+                vertex.push([None, None]);
+            }
         }
+        let outline_points = union.len();
+        Union { points: union, vertex, point_of, outline_points }
     }
-    let outline_points = union.len();
-    // The outline segments with every union point on them, from each face; the faces must agree.
-    let segments = |f: usize| -> BTreeSet<[u32; 2]> {
+
+    /// Outline edges of face `f` as segments between the union's points, every outline point on
+    /// them splitting them.
+    fn chain<'e>(&self, f: usize, edges: impl Iterator<Item = &'e [u32; 2]>, merge: f64) -> BTreeSet<[u32; 2]> {
         let mut out = BTreeSet::new();
-        for e in &outlines[f] {
-            let (a, b) = (point_of[f][&e[0]], point_of[f][&e[1]]);
+        for e in edges {
+            let (a, b) = (self.point_of[f][&e[0]], self.point_of[f][&e[1]]);
             let mut chain = vec![a];
-            chain.extend(between(&union[..outline_points], union[a], union[b], merge));
+            chain.extend(between(&self.points[..self.outline_points], self.points[a], self.points[b], merge));
             chain.push(b);
             for w in chain.windows(2) {
                 out.insert([w[0].min(w[1]) as u32, w[0].max(w[1]) as u32]);
             }
         }
         out
-    };
-    let (first, second) = (segments(0), segments(1));
-    if first != second {
-        return Err(fail("the sector's two cut faces differ: the solid is not symmetric under the turn"));
     }
-    let segs: Vec<[u32; 2]> = first.into_iter().collect();
-    // Each body's own outline on the first face (the solid's, then each inclusion's), split at the
-    // union's points as the faces' are.
-    let owned = |who: Option<usize>| -> Vec<[u32; 2]> {
-        let mut out = BTreeSet::new();
-        for e in outlines[0].iter().filter(|e| owner_of(e[0]) == who && owner_of(e[1]) == who) {
-            let (a, b) = (point_of[0][&e[0]], point_of[0][&e[1]]);
-            let mut chain = vec![a];
-            chain.extend(between(&union[..outline_points], union[a], union[b], merge));
-            chain.push(b);
-            for w in chain.windows(2) {
-                out.insert([w[0].min(w[1]) as u32, w[0].max(w[1]) as u32]);
+
+    /// Adds the points of `inner` off the axis. A mesher's points are its own rounding (about
+    /// 1e-7 of the size) off ours: one within `near` of a point already there or of the outline
+    /// `segs` is that point, or the outline's.
+    fn add_inner(&mut self, inner: &[[f64; 2]], segs: &[[u32; 2]], near: f64) {
+        for &q in inner {
+            let taken = self.points.iter().any(|u| (u[0] - q[0]).hypot(u[1] - q[1]) <= near);
+            let on_outline = segs.iter().any(|e| nearest_on(self.points[e[0] as usize], self.points[e[1] as usize], q).0 <= near);
+            if q[0] > near && !taken && !on_outline {
+                self.points.push(q);
+                self.vertex.push([None, None]);
             }
         }
-        out.into_iter().collect()
-    };
-    let host = owned(None);
-    let rims: Vec<Vec<[u32; 2]>> = (0..bodies).map(|k| owned(Some(k))).collect();
-    // A mesher's points are its own rounding (about 1e-7 of the size) off ours: one within 1e-6
-    // of a point already there or of the outline is that point, or the outline's.
-    for &q in inner {
-        let taken = union.iter().any(|u| (u[0] - q[0]).hypot(u[1] - q[1]) <= near);
-        let on_outline = segs.iter().any(|e| nearest_on(union[e[0] as usize], union[e[1] as usize], q).0 <= near);
-        if q[0] > near && !taken && !on_outline {
-            union.push(q);
-            vertex.push([None, None]);
-        }
     }
-    // Refined to the size, or (taking a mesher's points back) only as fine as the points given.
-    let fine = if refine.is_some() { size } else { 4.0 * union.iter().fold(0.0f64, |m, q| m.max(q[0].abs()).max(q[1].abs())) };
-    // With inclusions across the cut, the solid's whole cut face is triangulated (their outlines
-    // constraints in it) and each triangle inside one's outline is its cap.
-    let (points, tris) = if bodies == 0 {
-        crate::planar::pslg(&union, &segs, fine)?
+}
+
+/// The first cut face triangulated: its points, the solid's triangles, and the caps' triangles
+/// with each one's inclusion.
+struct Faces {
+    points: Vec<[f64; 2]>,
+    tris: Vec<[u32; 3]>,
+    cap_tris: Vec<[u32; 3]>,
+    cap_of: Vec<usize>,
+}
+
+/// Triangulates the union `points` within the outline `segs` to `fine`. With inclusions across
+/// the cut, the solid's whole cut face is triangulated (their outlines constraints in it) and
+/// each triangle inside one's outline `rims` is its cap.
+fn triangulate_faces(points: &[[f64; 2]], segs: &[[u32; 2]], host: &[[u32; 2]], rims: &[Vec<[u32; 2]>], fine: f64, bodies: usize) -> Result<Faces> {
+    let (out, tris) = if bodies == 0 {
+        crate::planar::pslg(points, segs, fine)?
     } else {
-        let snapshot = union.clone();
-        crate::planar::pslg_keep(&union, &segs, fine, &|c| inside(&snapshot, &host, c))?
+        let snapshot = points.to_vec();
+        crate::planar::pslg_keep(points, segs, fine, &|c| inside(&snapshot, host, c))?
     };
     let body_of = |tri: &[u32; 3]| -> Option<usize> {
-        let c = tri.iter().fold([0.0; 2], |s, &k| [s[0] + points[k as usize][0] / 3.0, s[1] + points[k as usize][1] / 3.0]);
-        rims.iter().position(|r| inside(&union, r, c))
+        let c = tri.iter().fold([0.0; 2], |s, &k| [s[0] + out[k as usize][0] / 3.0, s[1] + out[k as usize][1] / 3.0]);
+        rims.iter().position(|r| inside(points, r, c))
     };
     let (tris, cap_tris): (Vec<[u32; 3]>, Vec<[u32; 3]>) = tris.into_iter().partition(|tri| body_of(tri).is_none());
     let cap_of: Vec<usize> = cap_tris.iter().map(|tri| body_of(tri).unwrap_or(0)).collect();
-    // The faces' vertices: those the outlines had, put exactly on the triangulation's points, and
-    // new ones; a point on the axis is one vertex of both faces.
-    let mut positions = pos.clone();
+    Ok(Faces { points: out, tris, cap_tris, cap_of })
+}
+
+/// The vertices with the faces' (`ids[f][k]` face f's vertex at point k).
+struct FaceVertices {
+    positions: Vec<Point3>,
+    ids: [Vec<u32>; 2],
+}
+
+/// The faces' vertices: those the outlines had (`vertex`), put exactly on the triangulation's
+/// points, and new ones; a point on the axis is one vertex of both faces.
+fn face_vertices(points: &[[f64; 2]], vertex: &[[Option<u32>; 2]], halves: &[Half; 2], pos: &[Point3], merge: f64) -> FaceVertices {
+    let mut positions = pos.to_vec();
     let mut ids: [Vec<u32>; 2] = [Vec::new(), Vec::new()];
     for (k, q) in points.iter().enumerate() {
         let axis = q[0].abs() <= merge;
@@ -527,21 +645,44 @@ fn close(
             ids[f].push(id);
         }
     }
-    // Each outline edge's points in order, by its two vertices on that face.
+    FaceVertices { positions, ids }
+}
+
+/// Each outline edge's points in order, by its two vertices on that face.
+fn outline_inserts(
+    outlines: &[Vec<[u32; 2]>; 2],
+    point_of: &[BTreeMap<u32, usize>; 2],
+    points: &[[f64; 2]],
+    ids: &[Vec<u32>; 2],
+    merge: f64,
+) -> BTreeMap<[u32; 2], Vec<u32>> {
     let mut inserts: BTreeMap<[u32; 2], Vec<u32>> = BTreeMap::new();
     for f in 0..2 {
         for e in &outlines[f] {
             let (a, b) = (point_of[f][&e[0]], point_of[f][&e[1]]);
-            let mid: Vec<u32> = between(&points, points[a], points[b], merge).into_iter().map(|k| ids[f][k]).collect();
+            let mid: Vec<u32> = between(points, points[a], points[b], merge).into_iter().map(|k| ids[f][k]).collect();
             if !mid.is_empty() {
                 inserts.insert(*e, mid);
             }
         }
     }
-    let mut triangles = Vec::with_capacity(t.surface.triangles.len() + 2 * tris.len());
-    let mut out_tags = Vec::with_capacity(triangles.capacity());
-    for (i, tri) in t.surface.triangles.iter().enumerate() {
-        let tag = t.surface.tags.get(i).copied().unwrap_or(0);
+    inserts
+}
+
+/// Triangles with their tags.
+struct Split {
+    triangles: Vec<[u32; 3]>,
+    tags: Vec<u32>,
+}
+
+/// The open surface's triangles with the points added on their edges: a triangle with one edge
+/// split a fan from the opposite corner, with more a fan from a new vertex in its middle
+/// (added to `positions`).
+fn split_open(surface: &crate::csg::Surface, inserts: &BTreeMap<[u32; 2], Vec<u32>>, positions: &mut Vec<Point3>) -> Split {
+    let mut triangles = Vec::with_capacity(surface.triangles.len());
+    let mut tags = Vec::with_capacity(triangles.capacity());
+    for (i, tri) in surface.triangles.iter().enumerate() {
+        let tag = surface.tags.get(i).copied().unwrap_or(0);
         // The triangle's corners with the points added on its edges, in order round it.
         let mut ring = Vec::new();
         let mut split = 0;
@@ -559,7 +700,7 @@ fn close(
         }
         match split {
             0 => triangles.push(*tri),
-            1 => fan_from_opposite(tri, &inserts, &mut triangles),
+            1 => fan_from_opposite(tri, inserts, &mut triangles),
             _ => {
                 // A fan from the middle, a new vertex.
                 let c = ring.iter().fold(Point3::ORIGIN.to_vec(), |s, &v| s + positions[v as usize].to_vec()) / ring.len() as f64;
@@ -570,25 +711,29 @@ fn close(
                 }
             }
         }
-        out_tags.resize(triangles.len(), tag);
+        tags.resize(triangles.len(), tag);
     }
-    push_faces((&mut triangles, &mut out_tags), &positions, &halves, &tris, &ids, base);
-    let mut caps: Vec<Vec<[u32; 3]>> = vec![Vec::new(); bodies];
-    for k in 0..bodies {
-        let mine: Vec<[u32; 3]> = cap_tris.iter().zip(&cap_of).filter(|(_, b)| **b == k).map(|(tri, _)| *tri).collect();
-        let (mut tri_k, mut tag_k) = (Vec::new(), Vec::new());
-        push_faces((&mut tri_k, &mut tag_k), &positions, &halves, &mine, &ids, 0);
-        caps[k] = tri_k;
-    }
-    // The solid's other faces' vertices on their exact surfaces: they are frozen for the mesher,
-    // which puts the vertices of a face it may move on it but not these (the points added on the
-    // outlines and in the splits lie on chords). A point on a cut plane stays only where its
-    // projection does (a round wall about the axis moves it along the plane, outward).
-    // A vertex moves only onto the one curved surface its triangles share, and only where it
-    // stays on every plane it also lies on (a point where two curved faces meet, or a curved
-    // face meets a plane it would leave, stays: moving it could fold a neighbour over).
+    Split { triangles, tags }
+}
+
+/// The solid's other faces' vertices moved onto their exact surfaces: they are frozen for the
+/// mesher, which puts the vertices of a face it may move on it but not these (the points added
+/// on the outlines and in the splits lie on chords). A point on a cut plane stays only where its
+/// projection does (a round wall about the axis moves it along the plane, outward). A vertex
+/// moves only onto the one curved surface its triangles share, and only where it stays on every
+/// plane it also lies on (a point where two curved faces meet, or a curved face meets a plane it
+/// would leave, stays: moving it could fold a neighbour over).
+fn onto_surfaces(
+    split: &Split,
+    analytic: &[Option<emcraft_tetmesh::tet::geometry::AnalyticSurface>],
+    halves: &[Half; 2],
+    positions: &mut [Point3],
+    lengths: Lengths,
+) {
+    let Lengths { tol, size, .. } = lengths;
+    let (triangles, tags) = (&split.triangles, &split.tags);
     let mut touching: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
-    for (tri, tag) in triangles.iter().zip(&out_tags) {
+    for (tri, tag) in triangles.iter().zip(tags) {
         for &v in tri {
             touching.entry(v).or_default().insert(*tag);
         }
@@ -598,7 +743,7 @@ fn close(
         // (A face without an exact surface is a facet the point may move within; a cut face's
         // point moves only along its plane, below.)
         let surfaces: Vec<&emcraft_tetmesh::tet::geometry::AnalyticSurface> =
-            tags.iter().filter_map(|&g| t.analytic.get(g as usize).and_then(Option::as_ref)).collect();
+            tags.iter().filter_map(|&g| analytic.get(g as usize).and_then(Option::as_ref)).collect();
         // (A curved face split into several tags is still one surface.)
         let mut curved = surfaces.iter().filter(|s| !plane(s));
         let Some(surface) = curved.next() else { continue };
@@ -616,28 +761,10 @@ fn close(
             positions[v as usize] = q;
         }
     }
-    // The inclusions' triangles out of the solid's: their open surfaces and caps their own.
-    let mut cuts = Vec::with_capacity(bodies);
-    if bodies > 0 {
-        let mut opens: Vec<Vec<[u32; 3]>> = vec![Vec::new(); bodies];
-        let (mut solid_tris, mut solid_tags) = (Vec::new(), Vec::new());
-        for (tri, &g) in triangles.iter().zip(&out_tags) {
-            if g >= BODY_TAG {
-                if let Some(o) = opens.get_mut((g - BODY_TAG) as usize) {
-                    o.push(*tri);
-                }
-            } else {
-                solid_tris.push(*tri);
-                solid_tags.push(g);
-            }
-        }
-        for (o, c) in opens.iter().zip(&caps) {
-            cuts.push(Cut { open: own_tessellation(&positions, o), caps: own_tessellation(&positions, c) });
-        }
-        triangles = solid_tris;
-        out_tags = solid_tags;
-    }
-    // Only the vertices the triangles use.
+}
+
+/// The triangles on only the vertices they use, renumbered in order of first use.
+fn compacted(mut triangles: Vec<[u32; 3]>, tags: Vec<u32>, positions: &[Point3]) -> crate::csg::Surface {
     let mut id = vec![u32::MAX; positions.len()];
     let mut kept = Vec::new();
     for v in triangles.iter_mut().flatten() {
@@ -648,10 +775,7 @@ fn close(
         }
         *v = *slot;
     }
-    let mut out = t;
-    out.surface = crate::csg::Surface { positions: kept, triangles, tags: out_tags };
-    out.analytic.resize(base as usize + 2 * tris.len(), None);
-    Ok((out, base, cuts))
+    crate::csg::Surface { positions: kept, triangles, tags }
 }
 
 /// The open surface `t` with the points of each cut outline closer than `gap` to the one kept
@@ -839,7 +963,7 @@ pub(super) fn refreeze(
     let mut analytic = t.analytic.clone();
     analytic.truncate(base as usize);
     let walled = with_bodies(Tessellation { surface: open, analytic, ..t.clone() }, bodies);
-    close(walled, rot, scale, None, &inner, bodies.len()).map(|(t, _, cuts)| Some((t, cuts)))
+    close(walled, rot, scale, None, &inner, bodies.len()).map(|c| Some((c.tessellation, c.cuts)))
 }
 
 /// The two cut faces' triangles: `tris` on the first face's vertices `ids[0]` and the second's

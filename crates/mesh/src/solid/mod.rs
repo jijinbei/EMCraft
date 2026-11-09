@@ -251,7 +251,7 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
                 placed(tessellate(&inc.shape, interface_size(&inc.shape, size.min(h), inc.material.is_none())), inc.at)
             })
             .collect();
-        let (matched, base, c) = sector::sector(main, rot, size, (b.max - b.min).norm(), &bodies)?;
+        let sector::Closed { tessellation: matched, base, cuts: c } = sector::sector(main, rot, size, (b.max - b.min).norm(), &bodies)?;
         main = matched;
         frozen.push(base);
         cuts = across.iter().copied().zip(c).collect();
