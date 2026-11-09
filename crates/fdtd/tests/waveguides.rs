@@ -53,7 +53,8 @@ fn filter_error(cell: f64, freqs: &[f64]) -> f64 {
 fn high_pass_filter_runs_passive_and_passes_above_its_cut_off() {
     // A smoke test of the path on 2.54 mm cells (whole cells across the guide): how close the
     // filter comes to the exact cascade is the oracle's highpass-time-domain (1 mm) and,
-    // converging at second order, the heavy test below. Measured |S21| 0.52 and 0.90.
+    // converging at second order, the heavy test below. Measured |S21| 0.52 and 0.90. The TE10
+    // line cascade: Pozar, Microwave Engineering, 4th ed., §3.3, §4.4.
     let r = s_parameters(&filter(), &Options::new(0.00254), &[6.0e9, 8.5e9]).unwrap();
     assert!(r.converged);
     for i in 0..2 {

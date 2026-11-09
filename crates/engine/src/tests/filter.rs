@@ -116,7 +116,6 @@ fn the_iris_filters_sweep_extracts_to_a_symmetric_three_resonator_matrix() {
     // couplings that change with frequency are not quite three ideal resonators': within 0.15.
     let r =
         s.execute("results.coupling", &json!({"order": 3, "center": 9.975, "bandwidth": 0.58, "cutoff": 6.557, "start": 9.4, "stop": 10.6})).unwrap();
-    eprintln!("{r}");
     assert!(r["rms_s21"].as_f64().unwrap() < 0.03, "{r}");
     let zeros: Vec<f64> = r["reflection_zeros"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
     for (got, want) in zeros.iter().zip([-0.76, -0.03, 0.81]) {

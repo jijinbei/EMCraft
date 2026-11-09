@@ -337,7 +337,8 @@ mod tests {
     #[test]
     fn a_lossy_slab_gives_collins_complex_modes() {
         // WR-90 with εr = 2.25(1 − 0.02j) in its lower half at 10 GHz, against the LSE/LSM
-        // equations solved in complex arithmetic (emcraft_theory::slab).
+        // equations solved in complex arithmetic (emcraft_theory::slab; Collin, Field Theory of
+        // Guided Waves, 2nd ed., §6.1).
         let (a, b) = (0.02286, 0.01016);
         let eps_slab = C::new(2.25, -0.045);
         let k0 = 2.0 * std::f64::consts::PI * 10e9 / emcraft_model::units::C0;

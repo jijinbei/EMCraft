@@ -131,6 +131,7 @@ fn imported_surfaces_mesh_and_carry_ports() {
     let r = s.execute("solve.frequency", &json!({"frequencies": [10], "order": 2})).unwrap();
     let s21 = &r["points"][0]["s21"];
     let (re, im) = (s21["re"].as_f64().unwrap(), s21["im"].as_f64().unwrap());
+    // The empty guide's S21 = e^{−jβL}, TE10 (Pozar, Microwave Engineering, 4th ed., §3.3).
     let exact = emcraft_theory::Te10Line { a: 0.0225, layers: vec![emcraft_theory::Layer::lossless(0.03, 1.0, 1.0)] }.solve(10e9).unwrap().s21;
     assert!((re - exact.re).hypot(im - exact.im) < 1e-3, "{re} {im} {exact}");
     // The same as ASCII, in centimetres.
@@ -371,7 +372,8 @@ fn a_part_drawn_as_its_metal_gives_the_air_it_encloses() {
     assert!((r["pieces"]["kept"][0].as_f64().unwrap() - exact).abs() < 1e-6 * exact, "{r}");
     assert_eq!(r["pieces"]["dropped"], 0);
     assert!(s.model.features().is_empty() && s.model.inclusions().is_empty());
-    // The ports are the channel's ends: whole rectangles, the TE modes in closed form.
+    // The ports are the channel's ends: whole rectangles, the TE modes in closed form (Pozar,
+    // Microwave Engineering, 4th ed., §3.3).
     s.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
     let Ok(emcraft_model::PortShape::Rect { x0, y0, a, b }) = s.model.port_shape(emcraft_model::End::Start) else { panic!() };
     assert!((x0 - 0.005).abs() < 1e-8 && (y0 - 0.005).abs() < 1e-8 && (a - 0.02286).abs() < 1e-8 && (b - 0.01016).abs() < 1e-8);

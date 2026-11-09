@@ -101,7 +101,8 @@ fn a_lossy_two_ply_stripline_carries_its_exact_tem_wave_at_order_two() {
 #[test]
 fn a_guide_with_a_lossy_slab_transmits_collins_complex_mode() {
     // WR-90 with εr = 2.25, tan δ = 0.02 filling its lower half, 20 mm: S21 = e^{−γL} with the
-    // LSM₁₀'s complex γ from the LSE/LSM equations in complex arithmetic.
+    // LSM₁₀'s complex γ from the LSE/LSM equations in complex arithmetic (Collin, Field Theory
+    // of Guided Waves, 2nd ed., §6.1).
     let (a, b, length) = (0.02286, 0.01016, 0.02);
     let slab = Material::new("slab", 2.25, 1.0).unwrap().with_loss_tangent(0.02).unwrap();
     let m = boxed(vec![slab], [a, b, length], "vacuum", vec![(b / 2.0, "slab")], &[], 0.002);

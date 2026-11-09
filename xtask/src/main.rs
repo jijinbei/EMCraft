@@ -14,6 +14,7 @@ mod fonts;
 mod heavy;
 mod installer;
 mod layers;
+mod style;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -47,6 +48,10 @@ commands:
                   there are copies
   colours         fail on colours written in production code (Rgb(30, …), Color32::from_rgb(…)
                   with numbers): a theme's colours live in its file (docs/themes.md)
+  style           check the rules of docs/style.md a machine can: tests against closed forms
+                  cite their sources, citations name works of docs/solvers/literature.md, no
+                  dbg! or prints left in library code, no commented-out code, comments within
+                  150 columns
   icon            write apps/emcraft/assets/emcraft.ico (the app icon, drawn by
                   emcraft_render::icon)
   font-subset     write the embedded fonts' subsets from the full fonts beside them
@@ -56,7 +61,7 @@ commands:
                   build the Windows installer on Linux: release binaries cross-compiled with
                   MinGW-w64, packed by NSIS (both fetched through nix-shell when missing;
                   docs/install-windows.md); default FILE target/EMCraft-VERSION-setup.exe
-  ci              fmt --check, layers, dupes --fail, colours, clippy -D warnings, the tests,
+  ci              fmt --check, layers, dupes --fail, colours, style, clippy -D warnings, the tests,
                   then the oracle
 ";
 
@@ -75,6 +80,7 @@ fn main() -> ExitCode {
         Some("features") => cmd_features(),
         Some("dupes") => cmd_dupes(&rest),
         Some("colours" | "colors") => colours::run(&root()),
+        Some("style") => style::run(&root()),
         Some("icon") => installer::icon(&root()),
         Some("font-subset") => font_subset(),
         Some("installer-windows") => installer::windows(&root(), &rest),
@@ -255,6 +261,7 @@ fn cmd_ci() -> Result<(), String> {
     cmd_layers()?;
     dupes::run(&root(), dupes::DEFAULT_MIN, true, false)?;
     colours::run(&root())?;
+    style::run(&root())?;
     let mut clippy = cargo();
     clippy.args(["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]);
     run(clippy, "clippy")?;

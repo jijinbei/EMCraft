@@ -48,6 +48,7 @@ jobs:
       - run: cargo xtask layers
       - run: cargo xtask dupes --fail
       - run: cargo xtask colours
+      - run: cargo xtask style
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - uses: taiki-e/install-action@v2
         with:

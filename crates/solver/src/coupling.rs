@@ -310,7 +310,8 @@ impl Coupling {
 
     /// The folded form (Cameron 2003, §IV): rows from the source and columns from the load
     /// cleared in turn by rotations, leaving the main line, the diagonal, the anti-diagonal's
-    /// cross couplings and an asymmetric response's diagonal ones beside them ([`folded_place`]). The response is unchanged (each rotation is a similarity).
+    /// cross couplings and an asymmetric response's diagonal ones beside them ([`folded_place`]).
+    /// The response is unchanged (each rotation is a similarity).
     pub fn folded(&self) -> Coupling {
         let mut m = self.clone();
         let n = m.size();
@@ -575,7 +576,8 @@ fn halved(roots: &[C]) -> Vec<f64> {
 /// let c = chebyshev(4, 20.0, &[-1.6, 1.9]).unwrap();
 /// let w: Vec<f64> = (0..121).map(|k| -3.0 + 6.0 * f64::from(k) / 120.0).collect();
 /// // Any phase at all on the data: only |S| is read.
-/// let (s11, s21): (Vec<_>, Vec<_>) = w.iter().map(|x| { let (a, b) = c.s(*x); (a * emcraft_solver::Complex64::from_polar(1.0, 3.0 * x), b) }).unzip();
+/// let turn = |x: f64| emcraft_solver::Complex64::from_polar(1.0, 3.0 * x);
+/// let (s11, s21): (Vec<_>, Vec<_>) = w.iter().map(|x| { let (a, b) = c.s(*x); (a * turn(*x), b) }).unzip();
 /// let back = fit_magnitude(&w, &s11, &s21, 4, 2).unwrap();
 /// assert!((back.transmission_zeros[0] + 1.6).abs() < 1e-5 && (back.transmission_zeros[1] - 1.9).abs() < 1e-5);
 /// assert!((back.eps - c.eps).abs() < 1e-6 * c.eps);

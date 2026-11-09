@@ -8,7 +8,8 @@
 //! Tests (as `cargo xtask dupes` reads them: `tests/` directories, `tests.rs` files, everything
 //! from a `#[cfg(test)]` line) and comments are left out. So are the scientific colour maps of
 //! `crates/render/src/colormap.rs` (a map's colours are its meaning, the same in every theme),
-//! the app icon's of `crates/render/src/icon.rs` (the app's mark) and the two constants of `Rgb` itself ([`ALLOWED_LINES`]). `Color32::WHITE` (an image's tint)
+//! the app icon's of `crates/render/src/icon.rs` (the app's mark) and the two constants of `Rgb`
+//! itself ([`ALLOWED_LINES`]). `Color32::WHITE` (an image's tint)
 //! and `Color32::TRANSPARENT` are no colour of a theme.
 
 use std::path::{Path, PathBuf};
@@ -67,7 +68,7 @@ fn has_literal(code: &str) -> bool {
 /// Where a line starts: in code, or inside a string (`raw`: a raw string closed by `"` and that
 /// many `#`).
 #[derive(Clone, Copy, PartialEq)]
-enum State {
+pub(crate) enum State {
     Code,
     Str,
     Raw(usize),
@@ -75,7 +76,7 @@ enum State {
 
 /// A line's code: string literals emptied (their quotes kept), the comment cut off, and the
 /// state the next line starts in.
-fn code_of(line: &str, mut state: State) -> (String, State) {
+pub(crate) fn code_of(line: &str, mut state: State) -> (String, State) {
     let chars: Vec<char> = line.chars().collect();
     let mut out = String::new();
     let mut i = 0;

@@ -80,7 +80,8 @@ fn lossy_walls(length: f64, sigma: f64, size: f64) -> Model {
 
 #[test]
 fn walls_attenuate_as_the_perturbation_formula() {
-    // σ = 1e6 S/m (skin depth 5 µm at 10 GHz, far below the guide): |S21| = e^{−α L}.
+    // σ = 1e6 S/m (skin depth 5 µm at 10 GHz, far below the guide): |S21| = e^{−α L}, α the
+    // TE10 conductor attenuation (Pozar, Microwave Engineering, 4th ed., eq. 3.96).
     let (len, sigma) = (0.1, 1.0e6);
     let d = Driven::new(&lossy_walls(len, sigma, 0.004), Order::Two).unwrap();
     for f in [8.0e9, 10.0e9, 12.0e9] {

@@ -36,7 +36,8 @@ fn ports_across_x_and_y_carry_a_straight_guide() {
 
 #[test]
 fn a_face_port_holding_a_ridge_takes_the_cross_section_solvers_modes() {
-    // A ridged guide, uniform along z, its ports' rectangles the whole box: the closed forms of
+    // A ridged guide (no closed form for its modes), uniform along z, its ports' rectangles the
+    // whole box: the closed forms of
     // the empty rectangle would reflect half the wave (|S11| 0.46 before the face was looked
     // at); its own modes match it, so the automatic choice is the numerical solver's, and it
     // reflects nothing but the mesh's error.

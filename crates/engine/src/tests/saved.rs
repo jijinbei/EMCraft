@@ -105,6 +105,7 @@ fn eigenmodes_open_with_their_vectors() {
 /// table with its NaNs and predictions) read back exactly.
 #[test]
 fn tables_read_back_exactly() {
+    // No closed form: the theory's types are only data here.
     use emcraft_solver::Complex64 as C;
     let mut s = Session::new();
     let c = |re: f64, im: f64| C::new(re, im);

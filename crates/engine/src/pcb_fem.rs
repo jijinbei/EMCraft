@@ -1,7 +1,8 @@
 //! A board's region solved by the finite elements. `pcb.region` sets the box: a shielded solid
 //! of air (its sides carry the ports, made with `model.port.create` on its faces) with the
 //! region's lower-left corner at the origin, the board's plane the model's x–z (its y the
-//! model's z) and its lowest layer `below` over the floor (the model's y up). `mesh.generate` then meshes it with the planar mesher (`emcraft_mesh::planar`): the
+//! model's z) and its lowest layer `below` over the floor (the model's y up). `mesh.generate` then
+//! meshes it with the planar mesher (`emcraft_mesh::planar`): the
 //! copper of every layer in one triangulation, extruded through the substrates (each a material,
 //! `substrate εr …`) and the air, the copper conducting sheets inside.
 

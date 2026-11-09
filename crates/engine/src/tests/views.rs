@@ -20,7 +20,7 @@ fn chart_styles_apply_to_pngs_are_saved_and_refuse_bad_input() {
     let mut s = swept(3);
     let r = s.execute("view.chart.style", &json!({"chart": "sparameters"})).unwrap();
     let keys: Vec<&str> = r["curves"].as_array().unwrap().iter().filter_map(|c| c["key"].as_str()).collect();
-    // The data only: the closed form is the guide's to add, not drawn unasked.
+    // The data only: the reference curve is the style's to add, not drawn unasked.
     assert!(keys.contains(&"s21.fem") && !keys.contains(&"s11.ref"), "{keys:?}");
     let optional: Vec<String> = views::optional_curves(&s, ChartId::SParameters).into_iter().map(|(k, _)| k).collect();
     assert_eq!(optional, ["s21.ref", "s11.ref"]);

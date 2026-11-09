@@ -3,6 +3,10 @@
 One aim: a reader understands a piece of code in one pass, without running it, and can change it
 without fear. Every rule below serves that aim; when a rule and the aim disagree, the aim wins.
 
+`cargo xtask style` checks the rules a machine can, on CI: tests against closed forms cite their
+sources (§8), citations name works `docs/solvers/literature.md` lists, no `dbg!` and no prints
+in library code, no commented-out code (§5), comments within rustfmt's 150 columns (§9).
+
 ## 1. Prefer the functional style
 
 - **Expressions over statements.** Build a value with `map`, `filter`, `zip`, `fold`, a `match` or
@@ -76,7 +80,8 @@ without fear. Every rule below serves that aim; when a rule and the aim disagree
   doctest that shows the call.
 - **Comments say why, not what.** The code already says what it does. A comment explains a
   choice, a non-obvious invariant, or cites the paper and equation the code follows.
-- **No dead text.** Delete commented-out code, stale TODOs and comments that no longer match.
+- **No dead text.** Delete commented-out code, stale TODOs and comments that no longer match,
+  and the `dbg!` and prints a debugging session left behind.
 
 ## 6. Numbers and constants
 
@@ -109,5 +114,6 @@ without fear. Every rule below serves that aim; when a rule and the aim disagree
 ## 9. Formatting and text
 
 - **`rustfmt` decides the layout** (`max_width = 150`). No hand alignment, no `#[rustfmt::skip]`.
+  rustfmt leaves comments alone: wrap them yourself, within the same 150 columns.
 - **UI text is short:** a word or a short phrase on the screen. Explanations go into Help and
   tooltips, and every shown text is translated (docs/languages.md).

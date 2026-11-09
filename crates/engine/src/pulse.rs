@@ -649,7 +649,8 @@ mod tests {
         // The input's frequency sweeps down (the delay rises with f): high first.
         let swept: Vec<f64> = p.input_frequency.iter().copied().filter(|x| x.is_finite()).collect();
         assert!(swept.first() > swept.last(), "{:?} … {:?}", swept.first(), swept.last());
-        // A straight slope: the best linear chirp, as the closed form's −1/D.
+        // A straight slope: the best linear chirp, as the closed form's −1/D (Agrawal, Nonlinear
+        // Fiber Optics, 5th ed., §3.2).
         let straight: Vec<f64> = freqs.iter().map(|&f| f - f0).map(|nu| -2.0 * PI * (tau0 * nu + 0.5 * d * nu * nu)).collect();
         let exact = through_phase(&freqs, &mag, &straight, Chirp { f0, width, rate: -1.0 / d }).map_or(0.0, |p| p.compression());
         let (_, q) = optimize(&freqs, &mag, &straight, f0, width).unwrap_or_else(|e| panic!("{e}"));

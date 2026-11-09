@@ -11,7 +11,16 @@ J. 24(2), 1981; L. Diazzi, D. Panozzo, A. Vaxman, M. Attene, *Constrained Delaun
 tetrahedrization: a robust and practical approach*, ACM TOG 42(6), 2023; J. Tournois, C.
 Wormser, P. Alliez, M. Desbrun, *Interleaving Delaunay refinement and optimization for practical
 isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. R. Shewchuk,
-*Aggressive tetrahedral mesh improvement*, Proc. 16th International Meshing Roundtable, 2007.
+*Aggressive tetrahedral mesh improvement*, Proc. 16th International Meshing Roundtable, 2007. And
+O. Devillers, S. Pion, M. Teillaud, *Walking in a triangulation*, Int. J. Found. Comput. Sci.
+13(2):181–199, 2002 (point location); H. Si, K. Gärtner, *Meshing piecewise linear complexes by
+constrained Delaunay tetrahedralizations*, Proc. 14th International Meshing Roundtable, 2005
+(segment recovery); P. M. Knupp, *Algebraic mesh quality metrics*, SIAM J. Sci. Comput.
+23(1):193–218, 2001, A. Johnen, J.-F. Remacle, C. Geuzaine, *Geometrical validity of curvilinear
+finite elements*, J. Comput. Phys. 233:359–372, 2013, and G. Farin, *Curves and Surfaces for
+CAGD*, 5th ed., Morgan Kaufmann 2002, ch. 17–18 (element quality and validity); C. Ericson,
+*Real-Time Collision Detection*, Morgan Kaufmann 2005, §5.1.5 and ch. 6 (closest points,
+overlap tests).
 - S. W. Sloan, *A fast algorithm for generating constrained Delaunay triangulations*, Computers
   & Structures 47(3):441–450, 1993 — recovering the intersection segments in each triangle a
   Boolean splits, by flipping the edges that cross them (`emcraft-mesh::csg`).

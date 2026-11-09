@@ -1,5 +1,6 @@
 //! Fields from the solution coefficients: E and H at points (beyond a symmetry plane, the
-//! images of those inside; beyond a rotational sector, the field inside turned on and phased), their L² error against an exact field, and integrals of them over
+//! images of those inside; beyond a rotational sector, the field inside turned on and phased),
+//! their L² error against an exact field, and integrals of them over
 //! the volume and the walls.
 
 use emcraft_model::units::angular;
