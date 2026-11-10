@@ -20,6 +20,11 @@
     "Cascade": "縦続接続",
     "Synthesize filter": "フィルタ合成",
     "Coupling matrix": "結合行列",
+    "Tolerance analysis": "公差解析",
+    "Tolerance": "公差",
+    "{names} · {n} draws": "{names} · {n} 回の抽出",
+    " · yield {share} % ({low}–{high} %)": " · 歩留まり {share} %（{low}〜{high} %）",
+    "Tolerance analysis of {names}: {n} draws by {solve}{failed}{yield}": "{names} の公差解析：{solve} で {n} 回の抽出{failed}{yield}",
     "Material from S": "S から材料定数",
     "Noise figure": "雑音指数",
     "FILTER": "フィルタ",
@@ -894,6 +899,9 @@
     "input": "入力",
     "output": "出力",
     "roughness": "粗さ",
+    "samples": "抽出数",
+    "seed": "種",
+    "spec": "規格",
     "temperature": "温度",
     "stop": "終了",
     "Confirm conditions": "条件を確定",
@@ -2092,6 +2100,18 @@
         "solve": "各点での解析：{\"command\", \"params\"}",
         "outputs": "保持する Sパラメータ、例 [\"s11\", \"s21\"]（既定はすべて）",
         "surrogate": "一部の点だけを解析し残りを予測する：{\"budget\": N}、N は 2 からグリッドの点数まで（3 点以上のグリッド）"
+      }
+    },
+    "study.tolerance": {
+      "label": "公差解析",
+      "doc": "モンテカルロ公差解析：各変数を今の値のまわりに、`sigma` の正規分布か ± `tolerance` の一様分布で、互いに独立に `samples` 回抽出する（`seed` で種を決める専用の生成器なので、毎回同じ抽出になる）。抽出ごとに履歴からモデルを作り直し（履歴がメッシュを作るならメッシュも）、`solve` で解く。返り値は各 S パラメータの、各周波数での |S| [dB] の平均・σ・最小・最大。`spec` があれば歩留まり（すべての規格を満たす抽出の割合：`start`〜`stop` か掃引全体で |S| が `max_db` 以下、または `min_db` 以上）を 95 % Wilson 区間とともに返す。抽出はスタディとして残り、スタディのビューは各抽出、その平均、規格を描く。",
+      "params": {
+        "variables": "抽出する変数：[{\"name\": \"w\", \"sigma\": 0.05}]（正規）または [{\"name\": \"w\", \"tolerance\": 0.1}]（± の一様）、変数の単位で（最大 8）",
+        "samples": "抽出の回数（既定 50、2〜400）",
+        "seed": "生成器の種（既定 1）：別の種なら別の抽出",
+        "solve": "各点で実行する解析：{\"command\": \"solve.frequency\", \"params\": {…}}",
+        "outputs": "残す S パラメータ、例 [\"s11\", \"s21\"]（既定はすべて）",
+        "spec": "歩留まりの規格：[{\"output\": \"s11\", \"max_db\": -15, \"start\": 9, \"stop\": 11}] または `min_db`（|S| 以上）。周波数は表示単位（最大 16）"
       }
     },
     "study.optimize": {

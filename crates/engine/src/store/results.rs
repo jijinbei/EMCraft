@@ -542,6 +542,9 @@ impl StoredDispersion {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct StoredStudy {
     optimize: bool,
+    /// A tolerance analysis' spreads, specifications and seed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tolerance: Option<crate::study::tolerance::Setup>,
     variables: Vec<String>,
     /// Each grid axis' length (a sweep's).
     grid: Vec<usize>,
@@ -630,6 +633,7 @@ impl StoredStudy {
         }
         Ok(StoredStudy {
             optimize: st.kind == Kind::Optimize,
+            tolerance: st.tolerance.as_deref().cloned(),
             variables: st.variables.clone(),
             grid: st.grid.iter().map(Vec::len).collect(),
             solve: st.solve.clone(),
@@ -658,6 +662,16 @@ impl StoredStudy {
         }
         if !self.grid.is_empty() && self.grid.iter().product::<usize>() != self.rows.len() {
             return Err("a grid sweep has a row for each point of its grid".into());
+        }
+        if let Some(tol) = &self.tolerance {
+            let finite = tol.spreads.iter().all(|s| s.nominal.is_finite() && s.width.is_finite() && s.width > 0.0)
+                && tol.specs.iter().all(|s| s.db.is_finite() && s.start.is_none_or(f64::is_finite) && s.stop.is_none_or(f64::is_finite));
+            if !finite || tol.spreads.len() > crate::study::MAX_OPTIMIZED || tol.specs.len() > crate::study::tolerance::MAX_SPECS {
+                return Err(
+                    "a tolerance analysis draws at most 8 variables, each with a finite positive spread, against at most 16 finite specifications"
+                        .into(),
+                );
+            }
         }
         let mut nums = In::read(r, &self.numbers, "the study")?;
         let grid = self.grid.iter().map(|n| nums.fs(*n)).collect::<Result<Vec<_>, _>>()?;
@@ -694,7 +708,11 @@ impl StoredStudy {
         nums.done()?;
         let (solve, frequency_unit) = (text(self.solve)?, text(self.frequency_unit)?);
         Ok(Study {
-            kind: if self.optimize { Kind::Optimize } else { Kind::Sweep },
+            kind: match (self.optimize, &self.tolerance) {
+                (true, _) => Kind::Optimize,
+                (false, Some(_)) => Kind::Tolerance,
+                (false, None) => Kind::Sweep,
+            },
             variables: texts(self.variables)?,
             grid,
             solve,
@@ -704,6 +722,7 @@ impl StoredStudy {
             best: self.best,
             converged: self.converged,
             surrogate,
+            tolerance: self.tolerance.map(Box::new),
         })
     }
 }

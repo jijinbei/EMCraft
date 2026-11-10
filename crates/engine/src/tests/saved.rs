@@ -178,6 +178,7 @@ fn tables_read_back_exactly() {
         best: Some(1),
         converged: true,
         surrogate: Some(crate::study::Surrogate { solves: 2, lengths: vec![0.3, 0.5], at_best: Some((-21.0, 0.4)) }),
+        tolerance: None,
     }));
     let (t, opened) = reopened(&mut s, "tables", true);
     assert_eq!(opened["left_out"].as_array().map(Vec::len), Some(0), "{opened}");
@@ -320,6 +321,7 @@ mod properties {
                         best,
                         converged: optimize,
                         surrogate: lengths.map(|lengths| crate::study::Surrogate { solves: 3, lengths, at_best: Some((-1.0, 0.1)) }),
+                        tolerance: None,
                     }
                 },
             )

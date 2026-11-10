@@ -547,6 +547,13 @@ overlap tests).
   largest predictive variance, the rest predicted with their σ.
 - M. Abramowitz, I. A. Stegun, *Handbook of Mathematical Functions*, NBS 1964, 7.1.5 and 7.1.14 —
   erfc for the normal distribution in the expected improvement.
+- E. B. Wilson, *Probable inference, the law of succession, and statistical inference*, J. Amer.
+  Statist. Assoc. 22(158):209–212, 1927 — the score interval of a yield (`study.tolerance`'s 95 %
+  bounds); G. L. Steele, D. Lea, C. H. Flood, *Fast splittable pseudorandom number generators*,
+  OOPSLA 2014 — SplitMix64, the draws' generator, the same on every machine for a seed; G. E. P.
+  Box, M. E. Muller, *A note on the generation of random normal deviates*, Ann. Math. Statist.
+  29(2):610–611, 1958 — normal deviates (`emcraft-engine::study::tolerance`; oracle
+  `tolerance-lossy-line`).
 ## Periodic structures
 - G. Floquet, *Sur les équations différentielles linéaires à coefficients périodiques*, Ann.
   Sci. ÉNS 12:47–88, 1883 — fields of a periodic structure as E(r + L) = e^{−jψ}E(r).

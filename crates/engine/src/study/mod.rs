@@ -30,6 +30,7 @@ mod optimize;
 mod point;
 mod simplex;
 mod sweep;
+pub mod tolerance;
 mod variables;
 
 use emcraft_model::units::decibels;
@@ -38,6 +39,7 @@ use serde_json::{Map, Value, json};
 
 pub use self::optimize::optimize;
 pub use self::sweep::sweep;
+pub use self::tolerance::{Statistics, tolerance, wilson};
 pub use self::variables::{delete, list, variable};
 pub use crate::view::study::{Slice, chart};
 
@@ -62,6 +64,8 @@ pub const MAX_OPTIMIZED: usize = 8;
 pub enum Kind {
     Sweep,
     Optimize,
+    /// A Monte Carlo tolerance analysis ([`tolerance`]).
+    Tolerance,
 }
 
 /// One point of a study: the variables' values and what the solve gave there (display units).
@@ -131,7 +135,7 @@ impl Row {
         let mut row = Map::new();
         match kind {
             Kind::Sweep if swept == 1 => row.insert("value".into(), json!(self.values.first())),
-            Kind::Sweep | Kind::Optimize => row.insert("values".into(), json!(self.values)),
+            Kind::Sweep | Kind::Optimize | Kind::Tolerance => row.insert("values".into(), json!(self.values)),
         };
         if let Some(o) = self.objective {
             row.insert("objective".into(), json!(o));
@@ -226,6 +230,8 @@ pub struct Study {
     pub converged: bool,
     /// The surrogate that chose the points: a sweep's `surrogate`, a Bayesian optimization.
     pub surrogate: Option<Surrogate>,
+    /// A tolerance analysis' spreads, specifications and seed.
+    pub tolerance: Option<Box<tolerance::Setup>>,
 }
 
 impl Study {
@@ -278,6 +284,20 @@ impl Study {
                 reply["converged"] = json!(self.converged);
                 if let Some(b) = self.best.and_then(|b| self.rows.get(b)) {
                     reply["best"] = json!({"values": b.values, "objective": b.objective});
+                }
+            }
+            Kind::Tolerance => {
+                reply["variables"] = json!(self.variables);
+                reply["samples"] = json!(self.rows.len());
+                if let Some(t) = &self.tolerance {
+                    reply["spreads"] = json!(t.spreads);
+                    reply["seed"] = json!(t.seed);
+                }
+                let (stats, yielded) = Statistics::of(self).to_json(self);
+                reply["statistics"] = stats;
+                if let Some(y) = yielded {
+                    reply["spec"] = json!(self.goal);
+                    reply["yield"] = y;
                 }
             }
         }

@@ -22,6 +22,7 @@ pub fn summary(study: &Study) -> String {
             Some((m, s)) => trf(t!(" · Bayesian, surrogate {mean} ± {sigma}"), args!(mean = short(m), sigma = short(s))),
             None => tr(t!(" · Bayesian")).to_owned(),
         },
+        Kind::Tolerance => String::new(),
     };
     format!("{}{extra}", plain_summary(study))
 }
@@ -40,6 +41,24 @@ fn plain_summary(study: &Study) -> String {
             )
         }
         Kind::Sweep => trf(t!("Sweep of {names}: {n} values by {solve}{failed}"), args!(names = names, n = n, solve = solve, failed = failed)),
+        Kind::Tolerance => {
+            let stats = emcraft_engine::study::Statistics::of(study);
+            let has_spec = study.tolerance.as_ref().is_some_and(|t| !t.specs.is_empty());
+            let yielded = if has_spec {
+                let (lo, hi) = emcraft_engine::study::wilson(stats.passed, stats.solved);
+                let share = 100.0 * stats.passed as f64 / stats.solved.max(1) as f64;
+                trf(
+                    t!(" · yield {share} % ({low}–{high} %)"),
+                    args!(share = format!("{share:.0}"), low = format!("{:.0}", 100.0 * lo), high = format!("{:.0}", 100.0 * hi)),
+                )
+            } else {
+                String::new()
+            };
+            trf(
+                t!("Tolerance analysis of {names}: {n} draws by {solve}{failed}{yield}"),
+                args!(names = names, n = n, solve = solve, failed = failed, yield = yielded),
+            )
+        }
         Kind::Optimize => {
             let best = study.best.and_then(|b| study.rows.get(b)).map(|r| {
                 let at: Vec<String> = study.variables.iter().zip(&r.values).map(|(n, v)| format!("{n} = {}", short(*v))).collect();

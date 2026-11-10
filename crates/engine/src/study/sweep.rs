@@ -70,6 +70,7 @@ pub fn sweep(s: &mut Session, p: &Params) -> Result<Value> {
         best: None,
         converged: true,
         surrogate,
+        tolerance: None,
     };
     let reply = study.to_json();
     s.results.study = Some(Arc::new(study));

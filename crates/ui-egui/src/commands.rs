@@ -161,6 +161,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("project.variable.delete", None, Some(Glyph::Variable), false),
     ui("project.variables", None, Some(Glyph::Variable), false),
     ui("study.sweep", Some(t!("Sweep").en()), Some(Glyph::ParamSweep), true),
+    ui("study.tolerance", Some(t!("Tolerance").en()), Some(Glyph::ParamSweep), true),
     ui("study.optimize", Some(t!("Optimize").en()), Some(Glyph::Optimize), true),
     ui("view.study", None, Some(Glyph::Chart), false),
     ui("theme.check", None, None, false),

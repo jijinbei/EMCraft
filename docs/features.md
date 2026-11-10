@@ -1535,6 +1535,19 @@ Sweeps a variable, or several on a grid: for each value (each point of the grid:
 | `outputs` | array |  | no | the S-parameters kept, such as ["s11", "s21"] (default all) |
 | `surrogate` | object |  | no | solve only some points and predict the rest: {"budget": N}, N from 2 to the grid's points (a grid of 3 or more) |
 
+## `study.tolerance` — Tolerance analysis
+
+Monte Carlo tolerance analysis: each variable drawn about its value as it stands — normal with its `sigma`, or uniform within ± its `tolerance` — independently, `samples` times (a generator of its own seeded by `seed`, so the same draws every time); at each draw the model is rebuilt from the history (meshed when the history meshes) and solved by `solve`. The reply gives each S-parameter's mean, σ, least and greatest |S| in dB at each frequency over the draws, and with `spec` the yield — the share of the draws meeting every bound (|S| at most `max_db` or at least `min_db`, over `start`–`stop` or the whole sweep) — with its 95 % Wilson interval. The draws are kept as the study: the Study view draws each one, their mean and the bounds.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `variables` | array |  | yes | the variables drawn: [{"name": "w", "sigma": 0.05}] (normal) or [{"name": "w", "tolerance": 0.1}] (uniform within ±), in the variables' units (at most 8) |
+| `samples` | integer |  | no | the draws (default 50, 2 to 400) |
+| `seed` | integer |  | no | the generator's seed (default 1): another seed, other draws |
+| `solve` | object |  | yes | the solve at each point: {"command", "params"} |
+| `outputs` | array |  | no | the S-parameters kept, such as ["s11", "s21"] (default all) |
+| `spec` | array |  | no | bounds for the yield: [{"output": "s11", "max_db": -15, "start": 9, "stop": 11}] or `min_db` (|S| at least); frequencies in the display unit (at most 16) |
+
 ## `study.optimize` — Optimize
 
 Finds the variables' values within their bounds that minimize a goal, by the Nelder–Mead simplex (Comput. J. 7(4):308–313, 1965) on the range scaled to [0, 1], from the current values; each point is the model rebuilt from the history and solved by `solve`. Goals (`type`): `min_max_db` (the largest |S| over the frequencies, default s11: a reflection), `max_min_db` (the smallest |S|, default s21: a transmission), `target_db` (|S| at `target` dB), `eigenfrequency` (mode `mode`, default 1, at `target` in display units), `maximize` or `minimize` (a number the solve gives: `quantity`). The model is left at the best point (undo goes back); every evaluation is kept. `method` `bayesian` searches instead by Bayesian optimization (Jones, Schonlau & Welch, J. Global Optim. 13:455–492, 1998): the current values and 2d Halton points solved, then each time the point of the largest expected improvement under a Gaussian-process surrogate of every value solved (Matérn 5/2, a length scale per variable by the marginal likelihood), until that improvement falls below `tolerance` × the spread of the values solved or the solves run out; every value reported is a solve, and the reply's `best.predicted` gives the surrogate's goal ± σ there and `surrogate` its length scales. The reply's `method` says which ran.

@@ -1,0 +1,21 @@
+{
+  "note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.",
+  "values": {
+    "mean_db": {
+      "band": 0.00004500091003718431,
+      "value": -0.9100361843182967
+    },
+    "sigma_db": {
+      "band": 8.68931538301171e-11,
+      "value": 0.0776129062357884
+    },
+    "solved": {
+      "band": 0.000500040000001,
+      "value": 40.0
+    },
+    "yield": {
+      "band": 0.0002400004900019343,
+      "value": 0.4
+    }
+  }
+}

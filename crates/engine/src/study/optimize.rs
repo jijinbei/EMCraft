@@ -205,6 +205,7 @@ pub fn optimize(s: &mut Session, p: &Params) -> Result<Value> {
         best: Some(best),
         converged,
         surrogate,
+        tolerance: None,
     };
     // The model at the optimum: the definitions given the best values, the model rebuilt.
     let set: Vec<(String, Value)> = study.variables.iter().zip(&study.rows[best].values).map(|(n, v)| (n.clone(), json!(v))).collect();

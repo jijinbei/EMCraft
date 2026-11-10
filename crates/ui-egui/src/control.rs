@@ -224,7 +224,11 @@ fn field_state(app: &EmcraftApp) -> Value {
 fn study_state(app: &EmcraftApp) -> Option<Value> {
     app.session.results().study.as_ref().map(|s| {
         json!({
-            "kind": if s.kind == emcraft_engine::study::Kind::Sweep { "sweep" } else { "optimize" },
+            "kind": match s.kind {
+                emcraft_engine::study::Kind::Sweep => "sweep",
+                emcraft_engine::study::Kind::Optimize => "optimize",
+                emcraft_engine::study::Kind::Tolerance => "tolerance",
+            },
             "variables": s.variables, "rows": s.rows.len(), "converged": s.converged,
             "best": s.best.and_then(|b| s.rows.get(b)).map(|r| r.values.clone()),
             "chart": app.views.study.chart.key().map(|k| format!("{k:?}")), "parameter": app.views.study.parameter,

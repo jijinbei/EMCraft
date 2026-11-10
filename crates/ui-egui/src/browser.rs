@@ -816,8 +816,12 @@ fn results(app: &EmcraftApp) -> Vec<Row> {
             emcraft_engine::study::Kind::Sweep if study.is_grid() => (t!("Parameter sweep"), t!("{names} · {n} points")),
             emcraft_engine::study::Kind::Sweep => (t!("Parameter sweep"), t!("{names} · {n} values")),
             emcraft_engine::study::Kind::Optimize => (t!("Optimization"), t!("{names} · {n} solves")),
+            emcraft_engine::study::Kind::Tolerance => (t!("Tolerance analysis"), t!("{names} · {n} draws")),
         };
-        let glyph = if study.kind == emcraft_engine::study::Kind::Sweep { Glyph::ParamSweep } else { Glyph::Optimize };
+        let glyph = match study.kind {
+            emcraft_engine::study::Kind::Sweep | emcraft_engine::study::Kind::Tolerance => Glyph::ParamSweep,
+            emcraft_engine::study::Kind::Optimize => Glyph::Optimize,
+        };
         let detail = words(detail, args!(names = study.variables.join(", "), n = study.rows.len()));
         rows.push(node("result:study", name(title), Some(detail), glyph, Act::Show(View::Study)));
     }

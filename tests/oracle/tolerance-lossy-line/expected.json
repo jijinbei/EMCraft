@@ -1,0 +1,59 @@
+{
+ "title": "Tolerance analysis of a lossy WR-90 line 30 ± 5 mm long (uniform): the spread of its loss and the yield of |S21| ≥ −0.9 dB",
+ "kind": "theory",
+ "source": "A matched lossy line's loss in dB is linear in its length, |S21|dB = −8.686 α L with 8.686 α = 0.030100 dB/mm at 10 GHz (lossy-line's closed form: γ = √((π/a)² − k0² εr(1 − j tan δ)), D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.3). With L uniform in 30 ± 5 mm: the mean |S21| is that at 30 mm, −0.90301 dB; its σ is 0.030100 × 5/√3 = 0.086892 dB; and the share meeting |S21| ≥ −0.9 dB (L ≤ 29.900 mm) is (29.900 − 25)/10 = 0.49000. Evaluated separately from EMCraft's code; the draws are random, so each quantity's tolerance is three standard errors of its estimate from 40 draws.",
+ "quantities": [
+  {
+   "id": "mean_db",
+   "quantity": "mean |S21| over the 40 draws (dB)",
+   "measure": {
+    "step": "tol",
+    "pointer": "/statistics/s21/0/mean_db"
+   },
+   "value": -0.9030097512771205,
+   "tolerance": {
+    "absolute": 0.045
+   },
+   "reason": "three standard errors of a mean of 40 uniform draws (σ/√40 = 0.0137 dB), with the solve's own 0.005 dB"
+  },
+  {
+   "id": "sigma_db",
+   "quantity": "σ of |S21| over the draws (dB)",
+   "measure": {
+    "step": "tol",
+    "pointer": "/statistics/s21/0/sigma_db"
+   },
+   "value": 0.0868921538301171,
+   "tolerance": {
+    "relative": 0.22
+   },
+   "reason": "three standard errors of a sample σ of 40 uniform draws: √((μ4/σ⁴ − 1)/4N) = √(0.8/160) = 7 % each"
+  },
+  {
+   "id": "yield",
+   "quantity": "share of draws with |S21| ≥ −0.9 dB",
+   "measure": {
+    "step": "tol",
+    "pointer": "/yield/fraction"
+   },
+   "value": 0.49000093429933467,
+   "tolerance": {
+    "absolute": 0.24
+   },
+   "reason": "three standard errors of a share of 40 draws, √(p(1 − p)/40) = 0.079"
+  },
+  {
+   "id": "solved",
+   "quantity": "draws solved",
+   "measure": {
+    "step": "tol",
+    "pointer": "/yield/solved"
+   },
+   "value": 40,
+   "tolerance": {
+    "absolute": 0.5
+   },
+   "reason": "a count: every draw is a valid line, none fails"
+  }
+ ]
+}

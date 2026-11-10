@@ -325,3 +325,50 @@ fn a_variables_label_is_kept_and_checked() {
     assert!(s.execute("project.variable", &json!({"name": "u", "value": 1, "label": "x".repeat(81)})).is_err());
     assert!(s.execute("project.variable", &json!({"name": "u", "value": 1, "label": "two\nlines"})).is_err());
 }
+
+/// A tolerance analysis draws the same points for the same seed, keeps them as the study with
+/// its spreads, reads its yield from its specification, survives a project file, and refuses
+/// what it cannot draw.
+#[test]
+fn a_tolerance_analysis_repeats_with_its_seed_and_reads_its_yield() {
+    let mut s = filter(8.0);
+    let run = |s: &mut Session, seed: u64| {
+        s.execute(
+            "study.tolerance",
+            &json!({"variables": [{"name": "l", "sigma": 0.5}], "samples": 3, "seed": seed,
+                "solve": {"command": "solve.frequency", "params": {"frequencies": [9]}},
+                "spec": [{"output": "s21", "min_db": -60}]}),
+        )
+        .unwrap()
+    };
+    let a = run(&mut s, 5);
+    let b = run(&mut s, 5);
+    assert_eq!(a, b, "the same seed draws the same points");
+    assert_ne!(a["rows"], run(&mut s, 6)["rows"]);
+    assert_eq!(a["samples"], 3);
+    assert_eq!(a["yield"]["solved"], 3);
+    assert_eq!(a["yield"]["passed"], 3, "a filter passes −60 dB: {}", a["yield"]);
+    assert!(a["statistics"]["s21"][0]["sigma_db"].as_f64().unwrap() > 0.0);
+    // Its chart: the draws, their mean and the bound.
+    let st = s.results.study.clone().unwrap();
+    let chart = crate::study::chart(&st, Some("s21"), &crate::study::Slice::default()).unwrap();
+    assert!(chart.title.contains("yield") && chart.series.iter().any(|x| x.key == "mean") && chart.series.iter().any(|x| x.key == "spec"));
+    // Saved and opened again: the same study.
+    let path = super::super::tests::scratch("tolerance.emcraft");
+    s.execute("file.save", &json!({"path": path})).unwrap();
+    let mut t = Session::new();
+    t.execute("file.open", &json!({"path": path})).unwrap();
+    assert_eq!(t.results.study.as_ref().unwrap().to_json(), st.to_json());
+    for bad in [
+        json!({"variables": [], "solve": {"command": "solve.frequency", "params": {}}}),
+        json!({"variables": [{"name": "nope", "sigma": 1}], "solve": {"command": "solve.frequency", "params": {}}}),
+        json!({"variables": [{"name": "l", "sigma": 1, "tolerance": 1}], "solve": {"command": "solve.frequency", "params": {}}}),
+        json!({"variables": [{"name": "l", "sigma": -1}], "solve": {"command": "solve.frequency", "params": {}}}),
+        json!({"variables": [{"name": "l", "sigma": 1}], "samples": 1, "solve": {"command": "solve.frequency", "params": {}}}),
+        json!({"variables": [{"name": "l", "sigma": 1}], "solve": {"command": "solve.frequency", "params": {}}, "spec": [{"output": "x", "max_db": 1}]}),
+        json!({"variables": [{"name": "l", "sigma": 1}], "solve": {"command": "solve.frequency", "params": {}}, "spec": [{"output": "s11"}]}),
+        json!({"variables": [{"name": "l", "sigma": 1}], "solve": {"command": "solve.frequency", "params": {}}, "spec": [{"output": "s11", "max_db": 1, "start": 9, "stop": 8}]}),
+    ] {
+        assert!(s.execute("study.tolerance", &bad).is_err(), "{bad}");
+    }
+}

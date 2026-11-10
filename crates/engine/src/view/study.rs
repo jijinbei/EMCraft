@@ -86,6 +86,13 @@ pub fn chart_with_units(study: &Study, parameter: Option<&str>, slice: &Slice, u
         return optimization_chart(study);
     }
     let parameters = study.parameters();
+    if study.kind == Kind::Tolerance {
+        let p = match parameter {
+            Some(p) => parameters.iter().find(|n| n.eq_ignore_ascii_case(p)).cloned(),
+            None => parameters.first().cloned(),
+        };
+        return tolerance_chart(study, &p.ok_or_else(nothing_to_chart)?);
+    }
     let parameter = match parameter {
         Some(p) => Some(
             parameters
@@ -420,4 +427,39 @@ fn modes_chart(study: &Study, ok: &[&Row], free: usize, units: &[Option<String>]
     let x = padded_axis(&axis_name(study, units, free), ok.iter().filter_map(|r| value(r, free)));
     let y = padded_axis(&format!("frequency ({fu})"), series.iter().flat_map(|s| s.points.iter().map(|q| q[1])));
     Ok(Chart::new(format!("Eigenmodes as {} varies", variable(study, free, "")), x, y, series))
+}
+
+/// A tolerance analysis' |S| in dB against frequency: every draw a thin grey line, their mean
+/// bold, the specifications on `p` dashed over their bands.
+fn tolerance_chart(study: &Study, p: &str) -> Result<Chart> {
+    let fu = &study.frequency_unit;
+    let label = tex(p);
+    let mut series = Vec::new();
+    for (i, r) in study.rows.iter().filter(|r| r.error.is_none()).enumerate() {
+        let Some(db) = r.db(p) else { continue };
+        let points: Vec<[f64; 2]> = r.frequencies.iter().zip(&db).map(|(f, d)| [*f, d.max(DB_FLOOR)]).collect();
+        let name = if i == 0 { format!("{} draws", study.rows.len()) } else { String::new() };
+        series.push(Series { width: Some(1.0), ..Series::new("draws", name, Pen::Muted, Style::Line, points) });
+    }
+    if series.is_empty() {
+        return Err(nothing_to_chart());
+    }
+    let stats = crate::study::Statistics::of(study);
+    if let Some((_, at)) = stats.spreads.iter().find(|(n, _)| n.eq_ignore_ascii_case(p)) {
+        series.push(Series::new("mean", "mean", Pen::Series(0), Style::Line, at.iter().map(|s| [s.frequency, s.mean.max(DB_FLOOR)]).collect()));
+    }
+    let (f0, f1) = span(series.iter().flat_map(|s| s.points.iter().map(|q| q[0])));
+    for (k, spec) in study.tolerance.iter().flat_map(|t| t.specs.iter()).filter(|s| s.output.eq_ignore_ascii_case(p)).enumerate() {
+        let (a, b) = (spec.start.unwrap_or(f0), spec.stop.unwrap_or(f1));
+        let name = if k == 0 { "specification".to_owned() } else { String::new() };
+        series.push(Series::new("spec", name, Pen::Ink, Style::Dashed, vec![[a, spec.db], [b, spec.db]]));
+    }
+    let x = if f1 > f0 { Axis::new(&format!("frequency ({fu})"), f0, f1) } else { padded_axis(&format!("frequency ({fu})"), [f0].into_iter()) };
+    let y = db_axis(&format!("{label} (dB)"), &series);
+    let title = if study.tolerance.as_ref().is_some_and(|t| !t.specs.is_empty()) {
+        format!("{label}: yield {} of {} ({:.0} %)", stats.passed, stats.solved, 100.0 * stats.passed as f64 / stats.solved.max(1) as f64)
+    } else {
+        format!("{label} over {} draws of {}", stats.solved, study.variables.join(", "))
+    };
+    Ok(Chart::new(title, x, y, series))
 }
