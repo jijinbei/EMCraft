@@ -4,9 +4,8 @@
 use emcraft_render::Pen;
 use emcraft_render::axes::Axis;
 use emcraft_render::chart::{Chart, Series, Style};
-use serde_json::Value;
 
-use crate::open::{FarAsk, FarRows, FarSolver, far_rows, plane_wave};
+use crate::open::{Antenna, FarAsk, FarRow, FarRows, FarSolver, Measure, far_rows, plane_wave};
 use crate::{Result, Session};
 
 emcraft_macros::named_enum! {
@@ -51,16 +50,15 @@ emcraft_macros::named_enum! {
 }
 
 impl FarComponent {
-    /// The far-field row's dBi of this share of the directivity; `None` for E_θ's and E_φ's,
-    /// read from the field itself.
-    fn key(self) -> Option<&'static str> {
+    /// An antenna row's dBi of this share of the directivity; `None` for the total and for E_θ's
+    /// and E_φ's, read from the field itself.
+    fn dbi(self, a: &Antenna) -> Option<f64> {
         match self {
-            FarComponent::Total => Some("directivity_dbi"),
-            FarComponent::Theta | FarComponent::Phi => None,
-            FarComponent::Right => Some("directivity_rhcp_dbi"),
-            FarComponent::Left => Some("directivity_lhcp_dbi"),
-            FarComponent::Co => Some("directivity_co_dbi"),
-            FarComponent::Cross => Some("directivity_cross_dbi"),
+            FarComponent::Total | FarComponent::Theta | FarComponent::Phi => None,
+            FarComponent::Right => Some(a.directivity_rhcp_dbi),
+            FarComponent::Left => Some(a.directivity_lhcp_dbi),
+            FarComponent::Co => Some(a.directivity_co_dbi),
+            FarComponent::Cross => Some(a.directivity_cross_dbi),
         }
     }
 }
@@ -139,38 +137,48 @@ pub fn pattern_chart_in(s: &Session, view: &PatternView) -> Result<Chart> {
     let co_polar = if view.co_polar.is_finite() { view.co_polar.to_radians() } else { 0.0 };
     let FarRows { frequency: f, rows, .. } = far_rows(s, &dirs, &FarAsk { solver: view.solver, frequency: view.frequency, co_polar })?;
     let scattering = plane_wave(s).is_some();
-    let (key, exact_key, label) = match (scattering, view.quantity) {
-        (true, _) => ("rcs_dbsm", "exact_rcs", "RCS (dBsm)"),
-        (false, FarQuantity::Directivity) => ("directivity_dbi", "exact_directivity", "directivity (dBi)"),
-        (false, FarQuantity::Gain) => ("gain_dbi", "", "gain (dBi)"),
-        (false, FarQuantity::Realized) => ("realized_gain_dbi", "", "realized gain (dBi)"),
+    let label = match (scattering, view.quantity) {
+        (true, _) => "RCS (dBsm)",
+        (false, FarQuantity::Directivity) => "directivity (dBi)",
+        (false, FarQuantity::Gain) => "gain (dBi)",
+        (false, FarQuantity::Realized) => "realized gain (dBi)",
     };
-    if !scattering && view.quantity != FarQuantity::Directivity && rows.first().is_some_and(|r| r.get(key).is_none()) {
+    // The quantity asked in a direction (dB), and the closed form's.
+    let value = |row: &FarRow| match (&row.measure, view.quantity) {
+        (Measure::Rcs(r), _) => Some(r.rcs_dbsm),
+        (Measure::Antenna(a), FarQuantity::Directivity) => Some(a.directivity_dbi),
+        (Measure::Antenna(a), FarQuantity::Gain) => a.gain.map(|g| g.gain_dbi),
+        (Measure::Antenna(a), FarQuantity::Realized) => a.gain.map(|g| g.realized_gain_dbi),
+    };
+    let l = s.display.length.from_si(1.0);
+    let exact_of = |row: &FarRow| match (&row.measure, view.quantity) {
+        (Measure::Rcs(r), _) => r.exact_rcs.map(|x| 10.0 * (x / (l * l)).log10()),
+        (Measure::Antenna(a), FarQuantity::Directivity) => a.exact_directivity.map(|x| 10.0 * x.log10()),
+        (Measure::Antenna(_), _) => None,
+    };
+    if !scattering && view.quantity != FarQuantity::Directivity && rows.first().is_some_and(|r| value(r).is_none()) {
         return Err(crate::EngineError::failed(format!("no {}: the model has no feed (a lumped or waveguide port)", view.quantity.label())));
     }
-    let l = s.display.length.from_si(1.0);
-    let db = |v: &Value| v.as_f64().map(|x| if scattering { 10.0 * (x / (l * l)).log10() } else { 10.0 * x.log10() });
     // A polarization's share of the power in a direction, in dB.
-    let share = |row: &Value| -> f64 {
+    let share = |row: &FarRow| -> f64 {
         if view.component == FarComponent::Total {
             return 0.0;
         }
-        if let Some(k) = view.component.key() {
-            return match (row[k].as_f64(), row["directivity_dbi"].as_f64()) {
-                (Some(part), Some(all)) => part - all,
-                // No such share (a part of nothing, or a plane wave's rows): not drawn.
-                _ => f64::NAN,
+        if !matches!(view.component, FarComponent::Theta | FarComponent::Phi) {
+            return match &row.measure {
+                Measure::Antenna(a) => view.component.dbi(a).map_or(f64::NAN, |part| part - a.directivity_dbi),
+                // A plane wave's rows have no such share: not drawn.
+                Measure::Rcs(_) => f64::NAN,
             };
         }
-        let mag = |k: &str| row[k]["mag"].as_f64().unwrap_or(0.0);
-        let (t, p) = (mag("e_theta").powi(2), mag("e_phi").powi(2));
+        let (t, p) = (row.e_theta.norm().powi(2), row.e_phi.norm().powi(2));
         let part = if view.component == FarComponent::Theta { t } else { p };
         if t + p > 0.0 { 10.0 * (part / (t + p)).log10() } else { f64::NEG_INFINITY }
     };
     let ours: Vec<[f64; 2]> =
-        rows.iter().zip(&sweep).filter_map(|(row, a)| Some([*a, row[key].as_f64()? + share(row)])).filter(|q| !q[1].is_nan()).collect();
-    let exact: Vec<[f64; 2]> = if view.component == FarComponent::Total && !exact_key.is_empty() {
-        rows.iter().zip(&sweep).filter_map(|(row, a)| Some([*a, db(&row[exact_key])?])).collect()
+        rows.iter().zip(&sweep).filter_map(|(row, a)| Some([*a, value(row)? + share(row)])).filter(|q| !q[1].is_nan()).collect();
+    let exact: Vec<[f64; 2]> = if view.component == FarComponent::Total {
+        rows.iter().zip(&sweep).filter_map(|(row, a)| Some([*a, exact_of(row)?])).collect()
     } else {
         Vec::new()
     };
