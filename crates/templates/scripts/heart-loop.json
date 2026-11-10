@@ -3,7 +3,7 @@
  {"command": "project.variable", "params": {"name": "r", "label": "wire radius", "value": 0.5, "quantity": "length"}},
  {"command": "geometry.import", "params": {"path": "template:heart-wire.solidcraft", "parameters": {"W": "=W", "r": "=r"}, "open": true, "thickness": 15, "margin": 30, "tolerance": 0.3}},
  {"command": "mesh.generate", "params": {"per_wavelength": 5, "frequency": 2.45}},
- {"command": "model.port.lumped", "params": {"name": "feed", "from": ["=30 + 0.486779*W + r", "=30 + r", "=30 + 0.94322*r"], "to": ["=30 + 0.513221*W + r", "=30 + r", "=30 + 0.94322*r"], "impedance": 50, "radius": "=r"}},
+ {"command": "model.port.lumped", "params": {"name": "feed", "from": ["=30 + 0.486779*W + r", "=30 + r", "=30 + 0.94322*r"], "to": ["=30 + 0.513221*W + r", "=30 + r", "=30 + 0.94322*r"], "impedance": 50, "radius": "=r/5"}},
  {"command": "project.setup", "params": {"kind": "radiation", "frequency": 2.45}},
  {"command": "solve.radiation", "params": {"frequency": 2.45, "order": 1}},
  {"command": "results.far_field", "params": {"theta": [0, 30, 60, 90, 120, 150, 180], "phi": 0}}
