@@ -1,0 +1,86 @@
+[
+  {
+    "note": "The analyses read from a sweep: each from its button's dialog, the last one drawn — a noise figure against frequency, then a temperature's numbers"
+  },
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "file.sample",
+      "params": {
+        "name": "highpass"
+      }
+    }
+  },
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "solve.frequency",
+      "params": {
+        "start": 7,
+        "stop": 9,
+        "points": 3,
+        "order": 1
+      }
+    }
+  },
+  {
+    "until": {
+      "busy": false,
+      "inspect": {
+        "model.results.frequencies": 3
+      }
+    },
+    "timeout": 120
+  },
+  {
+    "call": "ui.set",
+    "params": {
+      "view": "analyses"
+    }
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "view": "analyses",
+      "handles": [
+        "analysis:results.noise",
+        "analysis:results.thermal"
+      ]
+    }
+  },
+  {
+    "click": "analysis:results.noise"
+  },
+  {
+    "frames": 2
+  },
+  {
+    "click": "dialog:ok"
+  },
+  {
+    "until": {
+      "busy": false,
+      "view": "analyses"
+    },
+    "timeout": 60
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "view": "analyses",
+      "handles": [
+        "chart:analyses"
+      ],
+      "inspect": {
+        "chart": "*"
+      }
+    }
+  },
+  {
+    "shot": "noise-figure"
+  }
+]

@@ -363,6 +363,7 @@ fn chart_style(app: &EmcraftApp) -> Value {
         View::FarField => ChartId::Pattern,
         View::Dispersion => ChartId::Dispersion,
         View::Study => ChartId::Study,
+        View::Analyses => ChartId::Analyses,
         _ => return Value::Null,
     };
     json!({

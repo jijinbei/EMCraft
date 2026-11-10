@@ -31,6 +31,7 @@ emcraft_macros::named_enum! {
         Pattern = "pattern" => "far field",
         Dispersion = "dispersion" => "dispersion",
         Study = "study" => "study",
+        Analyses = "analyses" => "analyses",
     }
 }
 
@@ -470,6 +471,10 @@ pub fn chart_of(s: &Session, id: ChartId) -> Result<Chart> {
             let study = s.results.study.as_ref().ok_or(EngineError::NotSolved { what: "study", run: "study.sweep or study.optimize" })?;
             let slice = crate::view::study::Slice::named(study, None)?;
             crate::view::chart_with_units(study, None, &slice, &crate::view::variable_units(s, study))
+        }
+        // Drawn from a reply the session does not keep: the window's own.
+        ChartId::Analyses => {
+            Err(EngineError::NotSolved { what: "analysis", run: "results.material, results.noise, results.active or results.breakdown" })
         }
     }
 }

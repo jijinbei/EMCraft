@@ -54,6 +54,11 @@ fn scenario_network_views() {
 }
 
 #[test]
+fn scenario_analyses() {
+    scenario("analyses");
+}
+
+#[test]
 fn scenario_filter_coupling() {
     scenario("filter_coupling");
 }

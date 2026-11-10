@@ -16,6 +16,7 @@ use crate::theme::Tokens;
 use crate::view3d::View3d;
 use crate::{Action, Actions, EmcraftApp, Hint, Picture, Style, UiExt, View, scenario};
 
+mod analyses;
 mod chart_style;
 mod dispersion;
 mod far_field;
@@ -132,6 +133,7 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
                 View::Eigenmodes => eigenmodes(app, st, ui, out),
                 View::Study => show_chart::<StudyView>(app, st, ui, out),
                 View::Dispersion => show_chart::<Dispersion>(app, st, ui, out),
+                View::Analyses => show_chart::<analyses::Analyses>(app, st, ui, out),
             };
             // The 3D views fill the card; Home scrolls down; the results both ways.
             match app.place.view() {

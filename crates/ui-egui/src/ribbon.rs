@@ -66,7 +66,7 @@ pub const TABS: &[(RibbonTab, &[(&str, &[&str])])] = &[
         &[
             // The solve itself is Run's (step 6), its device Setup's (step 3).
             (t!("PERIODIC").en(), &["solve.dispersion"]),
-            (t!("STUDY").en(), &["project.variable", "study.sweep", "study.optimize"]),
+            (t!("STUDY").en(), &["project.variable", "study.sweep", "study.optimize", "study.tolerance"]),
         ],
     ),
     (
@@ -79,6 +79,7 @@ pub const TABS: &[(RibbonTab, &[(&str, &[&str])])] = &[
                 &["results.import", "results.measured", "results.network", "results.mixed_mode", "results.equivalent", "circuit.cascade"],
             ),
             (t!("FILTER").en(), &["filter.synthesize", "results.coupling"]),
+            // The analyses read from a sweep are the Analyses view's buttons.
         ],
     ),
 ];

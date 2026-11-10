@@ -87,6 +87,11 @@ impl EmcraftApp {
                 self.replies.pulse = Some(reply.clone());
                 self.place = self.place.show(View::Pulse);
             }
+            id if crate::state::ANALYSES.contains(&id) => {
+                let run = self.replies.analysis.as_ref().map_or(0, |a| a.run + 1);
+                self.replies.analysis = Some(crate::state::Analysis { command: id.to_owned(), reply: reply.clone(), run });
+                self.place = self.place.show(View::Analyses);
+            }
             "results.tdr" => {
                 self.views.tdr.params = crate::state::TdrParams::of(params);
                 self.place = self.place.show(View::Tdr);

@@ -161,6 +161,7 @@ emcraft_macros::named_enum! {
         ChartDispersion = "chart:dispersion",
         ChartPattern = "chart:pattern",
         ChartStudy = "chart:study",
+        ChartAnalyses = "chart:analyses",
         PictureField = "picture:field",
         FieldPlotZoom = "field:plot:zoom",
         FieldPlotWidth = "field:plot:width",
@@ -367,6 +368,8 @@ pub enum Handle<'a> {
     TdrMode(&'a str),
     PulseChirp(&'a str),
     PulseShow(&'a str),
+    /// The Analyses view's button for an analysis (its command): `analysis:results.noise`.
+    Analysis(&'a str),
     /// Which of a cell's Bloch waves the pulse goes through (from 1): `pulse:wave:2`.
     PulseWave(usize),
     /// What the S-parameter chart shows: `sparameters:show:phase`.
@@ -471,6 +474,7 @@ impl fmt::Display for Handle<'_> {
             Handle::PulseChirp(c) => write!(f, "pulse:chirp:{c}"),
             Handle::PulseWave(k) => write!(f, "pulse:wave:{k}"),
             Handle::PulseShow(s) => write!(f, "pulse:show:{s}"),
+            Handle::Analysis(c) => write!(f, "analysis:{c}"),
             Handle::SParameters(what) => write!(f, "sparameters:show:{what}"),
             Handle::StyleAxis(axis, part) => write!(f, "chart:style:{axis}:{part}"),
             Handle::Legend(at) => write!(f, "chart:legend:{at}"),

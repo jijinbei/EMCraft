@@ -194,6 +194,8 @@ pub enum SharedChart {
     Dispersion,
     /// A cut through the far-field pattern.
     Pattern(PatternSettings),
+    /// An analysis read from the sweep, by its run.
+    Analysis(u64),
 }
 
 /// The far-field view's cut, its angle (degrees: φ of a φ cut, θ of a θ cut) and component.
@@ -322,6 +324,19 @@ pub struct Replies {
     pub pulse: Option<Value>,
     /// The last coupling matrix (`filter.synthesize`, `results.coupling`).
     pub coupling: Option<Value>,
+    /// The last analysis read from the sweep ([`ANALYSES`]): its command, reply and run count.
+    pub analysis: Option<Analysis>,
+}
+
+/// The analyses read from a sweep that the Analyses view shows, in its buttons' order.
+pub const ANALYSES: [&str; 5] = ["results.material", "results.noise", "results.active", "results.breakdown", "results.thermal"];
+
+/// An analysis' reply as the Analyses view keeps it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Analysis {
+    pub command: String,
+    pub reply: Value,
+    pub run: u64,
 }
 
 /// `geometry.import.inspect`'s reply for the file (and STL unit) `key` names, or why not.

@@ -25,6 +25,8 @@ emcraft_macros::named_enum! {
         Study = "study" => "Study",
         /// A periodic cell's dispersion diagram.
         Dispersion = "dispersion" => "Dispersion",
+        /// The analyses read from a sweep: material, noise, active reflection, power, temperature.
+        Analyses = "analyses" => "Analyses",
     }
 }
 emcraft_macros::named_serde!(View);
@@ -98,7 +100,7 @@ impl View {
         match self {
             View::Model => Glyph::Box,
             View::Pcb => Glyph::Part,
-            View::SParameters => Glyph::Chart,
+            View::SParameters | View::Analyses => Glyph::Chart,
             View::Tdr | View::Pulse => Glyph::Time,
             View::Field => Glyph::FieldLines,
             View::PortModes => Glyph::PortModes,
@@ -128,6 +130,7 @@ impl View {
             View::Eigenmodes => Some(t!("No eigenmodes yet: Run (step 6).")),
             View::Study => Some(t!("No study yet: define a variable, then Sweep or Optimize (step 5).")),
             View::Dispersion => Some(t!("No dispersion diagram yet: periodic boundaries (step 4), then Dispersion (step 5).")),
+            View::Analyses => None,
         }
     }
 
@@ -179,6 +182,7 @@ impl View {
             View::Eigenmodes => r.eigen.is_some(),
             View::Study => r.study.is_some(),
             View::Dispersion => r.dispersion.is_some(),
+            View::Analyses => r.sweep.is_some() || app.replies.analysis.is_some(),
         }
     }
 
@@ -206,6 +210,6 @@ mod tests {
         }
         assert_eq!(View::Tdr.label(), "TDR");
         assert_eq!(View::PortModes.id(), "port_modes");
-        assert_eq!(View::COUNT, 12);
+        assert_eq!(View::COUNT, 13);
     }
 }

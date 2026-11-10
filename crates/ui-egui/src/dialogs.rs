@@ -558,6 +558,20 @@ pub fn initial(command: &str, s: &Session) -> Value {
             json!({"order": 4, "return_loss": 20, "zeros": [], "center": middle, "bandwidth": band.map_or(0.5, |(a, z)| 0.1 * (z - a))})
         }
         "results.coupling" => json!({"order": 4, "zeros": 0, "center": middle, "bandwidth": band.map_or(0.5, |(a, z)| 0.3 * (z - a))}),
+        // The analyses read from the sweep: a 10 mm sample, a scan to 60°, 100 W at the sweep's
+        // first frequency.
+        "results.material" => json!({"length": 10}),
+        "results.active" => json!({"start": 0, "stop": 60, "points": 13}),
+        "results.breakdown" => json!({"breakdown": 3}),
+        "results.thermal" => {
+            let f = s.results().sweep.as_ref().and_then(|sw| sw.results.first()).map(|r| fu.from_si(r.frequency));
+            json!({"power": 100, "frequency": f, "wall_temperature": 20})
+        }
+        // A tolerance analysis of the first variable, σ a hundredth of its value.
+        "study.tolerance" => {
+            let first = s.variables().iter().next().map(|(n, v)| json!({"name": n, "sigma": (0.01 * v.abs()).max(1e-3)}));
+            json!({"variables": first.into_iter().collect::<Vec<_>>(), "samples": 20, "solve": {"command": "solve.frequency", "params": {"frequencies": [middle]}}})
+        }
         // The highest solved frequency of the sweep, as the field view opens on.
         "view.animation" => {
             let f = s.results().sweep.as_ref().and_then(|sw| sw.results.last()).map(|r| fu.from_si(r.frequency));

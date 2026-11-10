@@ -13,6 +13,7 @@
 //! The `view.*` commands that write them as PNGs are in `commands`; what the charts share
 //! (axes, the dB scale) in `chart`.
 
+pub mod analyses;
 pub(crate) mod chart;
 pub(crate) mod commands;
 mod dispersion;
