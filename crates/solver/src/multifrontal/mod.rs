@@ -28,9 +28,11 @@ use rayon::prelude::*;
 use crate::sparse::Csr;
 
 mod analysis;
+mod memory;
 
 pub use analysis::Analysis;
 pub(crate) use analysis::fill;
+pub(crate) use memory::{Plan, Shape, available_memory, products};
 
 /// The largest frontal matrix (rows) a factorization may form: m² complex entries.
 pub const MAX_FRONT: usize = 20_000;
@@ -49,6 +51,16 @@ pub enum FactorError {
     Scratch(String),
     #[error("the device failed: {0}")]
     Device(String),
+    #[error(
+        "the factorization needs {:.1} GB of memory, {:.1} GB can be used: coarsen the mesh or lower the order",
+        *needs as f64 / 1e9,
+        *available as f64 / 1e9
+    )]
+    OutOfMemory { needs: u64, available: u64 },
+    #[error("the factor needs {:.1} GB, beyond the {:.1} GB budget (an unsymmetric factor is kept in memory)", *needs as f64 / 1e9, *budget as f64 / 1e9)]
+    FactorTooLarge { needs: u64, budget: u64 },
+    #[error("the factorization's threads: {0}")]
+    Threads(String),
 }
 
 /// A supernode's dense frontal matrix, column-major m × m.
@@ -239,6 +251,7 @@ fn subtree<K: FrontKernel>(
     root: usize,
     list: Vec<(usize, Vec<usize>)>,
 ) -> Result<Subtree<K::Node>, FactorError> {
+    let _alone = memory::SubtreeGuard::enter();
     let mut pending: BTreeMap<usize, Vec<Update>> = BTreeMap::new();
     let mut out = Subtree { root, nodes: Vec::with_capacity(list.len()), update: None, counts: Counts::default() };
     for (s, rows) in list {
@@ -255,13 +268,17 @@ fn subtree<K: FrontKernel>(
     Ok(out)
 }
 
-/// Factors every supernode of `an` with `kernel`: the light subtrees on threads, the top after
-/// them on the calling thread (where [`crate::accel`]'s device is). Returns the nodes by
-/// supernode and the counts.
-pub(crate) fn factor_tree<K: FrontKernel>(kernel: &K, an: &Analysis) -> Result<(Vec<K::Node>, Counts), FactorError> {
+/// The threads a factorization may use: the machine's.
+pub(crate) fn threads() -> usize {
+    std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
+}
+
+/// Factors every supernode of `an` with `kernel` on `threads` threads (a [`Plan`]'s): the light
+/// subtrees on threads, the top after them on the calling thread (where [`crate::accel`]'s
+/// device is). Returns the nodes by supernode and the counts.
+pub(crate) fn factor_tree<K: FrontKernel>(kernel: &K, an: &Analysis, threads: usize) -> Result<(Vec<K::Node>, Counts), FactorError> {
     let ns = an.supernodes();
     let tree = Tree::new(an);
-    let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let (tasks, top) = tree.split(threads);
 
     let mut nodes: Vec<Option<K::Node>> = (0..ns).map(|_| None).collect();
@@ -269,7 +286,15 @@ pub(crate) fn factor_tree<K: FrontKernel>(kernel: &K, an: &Analysis) -> Result<(
     // Each task's subtree: its rows taken out for the thread.
     let jobs: Vec<(usize, Vec<(usize, Vec<usize>)>)> =
         tasks.iter().map(|&s| (s, (tree.first[s]..=s).map(|t| (t, super_rows[t].take().unwrap_or_default())).collect())).collect();
-    let done: Vec<Result<Subtree<K::Node>, FactorError>> = jobs.into_par_iter().map(|(root, list)| subtree(kernel, an, &tree, root, list)).collect();
+    let factor_jobs = || -> Vec<Result<Subtree<K::Node>, FactorError>> {
+        jobs.into_par_iter().map(|(root, list)| subtree(kernel, an, &tree, root, list)).collect()
+    };
+    // Fewer threads than the machine's: a pool of that many.
+    let done = if threads >= self::threads().min(rayon::current_num_threads()) {
+        factor_jobs()
+    } else {
+        rayon::ThreadPoolBuilder::new().num_threads(threads).build().map_err(|e| FactorError::Threads(e.to_string()))?.install(factor_jobs)
+    };
     // Updates waiting for a top supernode: (child, update).
     let mut pending: Vec<Vec<(usize, Update)>> = (0..ns).map(|_| Vec::new()).collect();
     let mut counts = Counts::default();

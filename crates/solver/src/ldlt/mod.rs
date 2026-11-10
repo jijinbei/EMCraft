@@ -33,7 +33,7 @@ use std::sync::Arc;
 use emcraft_model::Point3;
 use num_complex::Complex64 as C;
 
-use crate::multifrontal::{Counts, Eliminated, Front, FrontKernel, Update, check, factor_tree, fill};
+use crate::multifrontal::{Counts, Eliminated, Front, FrontKernel, Plan, Shape, Update, available_memory, check, factor_tree, fill, threads};
 use crate::sparse::Csr;
 
 mod front;
@@ -95,6 +95,10 @@ struct Kernel {
     tau: f64,
     store: Store,
 }
+
+/// The LDLᵀ's fronts: each update the lower triangle of m − k rows (by column), the factor the
+/// front's first k columns, which may go to disk.
+const SHAPE: Shape = Shape { update: |mu| mu * (mu + 1) / 2, kept: |k, m| k * m, out_of_core: true };
 
 impl FrontKernel for Kernel {
     type Node = Supernode;
@@ -209,6 +213,11 @@ impl Ldlt {
     /// Factors `a` with an [`Analysis`] of its pattern made before (the same pattern: a sweep's
     /// frequencies share one), skipping the ordering and the symbolic factorization.
     pub fn factor_analysed(a: &Csr, an: &Analysis, budget: u64) -> Result<Ldlt, FactorError> {
+        Ldlt::factor_on(a, an, budget, threads())
+    }
+
+    /// [`Ldlt::factor_analysed`] on at most `threads` threads.
+    fn factor_on(a: &Csr, an: &Analysis, budget: u64, threads: usize) -> Result<Ldlt, FactorError> {
         let t0 = std::time::Instant::now();
         check(a, an)?;
         // Equilibrate, so the static-pivot threshold below means the same for every unknown.
@@ -222,9 +231,11 @@ impl Ldlt {
             }
         }
         let tau = f64::EPSILON.sqrt() * scaled.max_abs();
-        let kernel = Kernel { a_cols: lower_columns(&scaled, &an.inv), tau, store: Store::new(budget) };
+        let a_cols = lower_columns(&scaled, &an.inv);
         drop(scaled);
-        let (supernodes, counts) = factor_tree(&kernel, an)?;
+        let plan = Plan::new(an, SHAPE, budget, available_memory(), threads)?;
+        let kernel = Kernel { a_cols, tau, store: Store::new(plan.in_memory) };
+        let (supernodes, counts) = factor_tree(&kernel, an, plan.threads)?;
         let scratch = kernel.store.into_scratch()?;
         let bytes_on_disk = scratch.as_ref().map_or(0, |s| s.end);
         Ok(Ldlt {
@@ -274,6 +285,25 @@ mod tests {
         let r = b.iter().zip(&ax).fold(0.0f64, |m, (b, a)| m.max((b - a).norm()));
         let xn = x.iter().fold(0.0f64, |m, v| m.max(v.norm()));
         r / (a.max_abs() * xn)
+    }
+
+    #[test]
+    fn the_factor_is_the_same_on_any_number_of_threads() {
+        // Large enough for subtrees on threads and threaded products in the top: one thread,
+        // fewer (a pool of their own) and the machine's give the same solution, bit for bit.
+        let mut rng = Rng(17);
+        let (a, xyz) = grid_matrix(20, 18, 16, C::new(-1.0, 0.3), &mut rng);
+        let an = Analysis::new(&a, &xyz, 0).unwrap();
+        let b: Vec<C> = (0..a.n).map(|_| rng.c()).collect();
+        let solve = |threads: usize| {
+            let f = Ldlt::factor_on(&a, &an, u64::MAX, threads).unwrap();
+            let mut x = b.clone();
+            f.solve(&mut x).unwrap();
+            x.iter().flat_map(|z| [z.re.to_bits(), z.im.to_bits()]).collect::<Vec<u64>>()
+        };
+        let all = solve(threads());
+        assert_eq!(solve(1), all);
+        assert_eq!(solve(3), all);
     }
 
     #[test]

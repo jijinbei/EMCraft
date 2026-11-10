@@ -30,11 +30,12 @@
 use std::ops::Range;
 
 use faer::linalg::matmul::matmul;
-use faer::{Accum, MatMut, MatRef, Par};
+use faer::{Accum, MatMut, MatRef};
 use num_complex::Complex64 as C;
 
 use crate::multifrontal::{
-    Analysis, Counts, Eliminated, FactorError, Front, FrontKernel, MAX_FRONT, Update, check, factor_tree, refine, refine_many,
+    Analysis, Counts, Eliminated, FactorError, Front, FrontKernel, MAX_FRONT, Plan, Shape, Update, available_memory, check, factor_tree, products,
+    refine, refine_many, threads,
 };
 use crate::sparse::Csr;
 
@@ -196,7 +197,7 @@ fn update_trailing(f: &mut [C], m: usize, block: Range<usize>) {
     let lm = MatRef::from_column_major_slice(&left[b0 * m..], m, nb).subrows(b1, below);
     let um = MatRef::from_column_major_slice(&ublock, nb, below);
     let fm = MatMut::from_column_major_slice_mut(right, m, below);
-    let par = if below * below * nb < PARALLEL_WORK { Par::Seq } else { Par::rayon(0) };
+    let par = products(below * below * nb, PARALLEL_WORK);
     matmul(fm.submatrix_mut(b1, 0, below, below), Accum::Add, lm, um, C::new(-1.0, 0.0), par);
 }
 
@@ -225,26 +226,17 @@ fn by_position(a: &Csr, inv: &[usize], row_scale: &[f64], col_scale: &[f64]) -> 
     (lower, upper, norm)
 }
 
-/// Refuses a factor that would not fit in `budget` bytes (both triangles of every front's
-/// columns), or a front beyond [`MAX_FRONT`], before any of it is made.
-fn check_size(an: &Analysis, budget: u64) -> Result<(), FactorError> {
-    let mut bytes: u64 = 0;
-    for s in 0..an.supernodes() {
-        let (k, m) = (an.columns(s).len() as u64, an.super_rows[s].len() as u64);
-        if m as usize > MAX_FRONT {
-            return Err(FactorError::FrontTooLarge { rows: m as usize, limit: MAX_FRONT });
-        }
-        bytes = bytes.saturating_add(16 * (2 * k * m).saturating_sub(k * k));
+/// Refuses a front beyond [`MAX_FRONT`] before any of it is made.
+fn check_fronts(an: &Analysis) -> Result<(), FactorError> {
+    match (0..an.supernodes()).map(|s| an.super_rows[s].len()).max() {
+        Some(m) if m > MAX_FRONT => Err(FactorError::FrontTooLarge { rows: m, limit: MAX_FRONT }),
+        _ => Ok(()),
     }
-    if bytes > budget {
-        return Err(FactorError::Scratch(format!(
-            "the LU factor needs {:.1} GB, beyond the {:.1} GB budget (the unsymmetric factor is kept in memory)",
-            bytes as f64 / 1e9,
-            budget as f64 / 1e9
-        )));
-    }
-    Ok(())
 }
+
+/// The LU's fronts: each update full (m − k rows square), the factor both triangles of the
+/// front's first k rows and columns, kept in memory.
+const SHAPE: Shape = Shape { update: |mu| mu * mu, kept: |k, m| k * m + k * (m - k), out_of_core: false };
 
 /// The LU's fronts: R A C by position and the static-pivot threshold.
 struct Kernel {
@@ -298,7 +290,9 @@ impl FrontKernel for Kernel {
         for j in 0..mu {
             upart.extend_from_slice(&f[(k + j) * m..(k + j) * m + k]);
         }
+        // The factor keeps k columns: the front's m × m freed (truncating keeps its allocation).
         f.truncate(k * m);
+        f.shrink_to_fit();
         let counts = Counts { perturbed, two_by_two: 0, entries: k * m + k * mu, largest_front: 0 };
         Ok(Eliminated { node: Node { rows, eqs, k, l: f, u: upart }, update, counts })
     }
@@ -310,11 +304,13 @@ impl Lu {
     pub fn factor_analysed(a: &Csr, an: &Analysis, budget: u64) -> Result<Lu, FactorError> {
         let t0 = std::time::Instant::now();
         check(a, an)?;
-        check_size(an, budget)?;
+        check_fronts(an)?;
+        // Refused when the factor does not fit beside its fronts.
+        let plan = Plan::new(an, SHAPE, budget, available_memory(), threads())?;
         let (row_scale, col_scale) = scalings(a);
         let (lower, upper, norm) = by_position(a, &an.inv, &row_scale, &col_scale);
         let kernel = Kernel { lower, upper, tau: f64::EPSILON.sqrt() * norm };
-        let (nodes, counts) = factor_tree(&kernel, an)?;
+        let (nodes, counts) = factor_tree(&kernel, an, plan.threads)?;
         Ok(Lu {
             n: a.n,
             perm: an.perm.clone(),
@@ -464,6 +460,6 @@ mod tests {
         let mut rng = Rng(3);
         let (a, xyz) = grid_matrix(5, 5, 5, C::new(4.0, 0.0), &mut rng);
         let an = Analysis::new(&a, &xyz, 0).unwrap();
-        assert!(matches!(Lu::factor_analysed(&a, &an, 1000), Err(FactorError::Scratch(_))));
+        assert!(matches!(Lu::factor_analysed(&a, &an, 1000), Err(FactorError::FactorTooLarge { budget: 1000, .. })));
     }
 }

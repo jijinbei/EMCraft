@@ -29,19 +29,16 @@ pub(super) struct Scratch {
     pub end: u64,
 }
 
-/// Bytes of factor kept in memory before the rest goes to the scratch file: the environment's
-/// `EMCRAFT_FACTOR_MEMORY_GB`, else a quarter of the memory the system reports available (Linux; the
-/// fronts and update matrices need the rest), else
-/// 8 GB.
+/// The most bytes of factor kept in memory before the rest goes to the scratch file: the
+/// environment's `EMCRAFT_FACTOR_MEMORY_GB`, else no cap of its own — the factorization's
+/// [`crate::multifrontal::Plan`] keeps in memory what the system's available memory leaves
+/// beside its fronts.
 pub(crate) fn memory_budget() -> u64 {
-    if let Some(gb) = std::env::var("EMCRAFT_FACTOR_MEMORY_GB").ok().and_then(|v| v.trim().parse::<f64>().ok()).filter(|g| g.is_finite() && *g >= 0.0)
-    {
-        return (gb * 1e9) as u64;
-    }
-    let available = std::fs::read_to_string("/proc/meminfo").ok().and_then(|t| {
-        t.lines().find(|l| l.starts_with("MemAvailable:")).and_then(|l| l.split_whitespace().nth(1)).and_then(|kb| kb.parse::<u64>().ok())
-    });
-    available.map_or(8_000_000_000, |kb| kb * 1024 / 4)
+    std::env::var("EMCRAFT_FACTOR_MEMORY_GB")
+        .ok()
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .filter(|g| g.is_finite() && *g >= 0.0)
+        .map_or(u64::MAX, |gb| (gb * 1e9) as u64)
 }
 
 /// The directories for scratch files, in the order tried: `EMCRAFT_SCRATCH`, then

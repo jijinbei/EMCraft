@@ -403,6 +403,10 @@ overlap tests).
   equations*, ACM TOMS 9(3):302–325, 1983; J. W. H. Liu, *The multifrontal method for sparse
   matrix solution: theory and practice*, SIAM Review 34(1):82–109, 1992 — the multifrontal
   method.
+- J. W. H. Liu, *On the storage requirement in the out-of-core multifrontal method for sparse
+  factorization*, ACM TOMS 12(3):249–264, 1986 — the fronts and updates alive at once, followed
+  through the tree: the memory plan (`multifrontal::memory`) that picks the threads and the
+  factor's share in memory, or refuses before the first front.
 - C. Ashcraft, R. Grimes, *The influence of relaxed supernode partitions on the multifrontal
   method*, ACM TOMS 15(4):291–309, 1989; Y. Chen, T. A. Davis, W. W. Hager, S. Rajamanickam,
   *Algorithm 887: CHOLMOD*, ACM TOMS 35(3):22, 2008 — relaxed amalgamation and its thresholds.

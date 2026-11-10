@@ -4,11 +4,11 @@
 use std::ops::Range;
 
 use faer::linalg::matmul::triangular::{BlockStructure, matmul};
-use faer::{Accum, MatMut, MatRef, Par};
+use faer::{Accum, MatMut, MatRef};
 use num_complex::Complex64 as C;
 
 use crate::accel::{Accelerator, DeviceError};
-use crate::multifrontal::FactorError;
+use crate::multifrontal::{FactorError, products};
 
 const ALPHA: f64 = 0.640_388_203_202_208; // (1 + √17)/8
 
@@ -270,7 +270,7 @@ impl<'a> Elimination<'a> {
 
 /// dst −= l c within a block's panel, threaded from [`PANEL_PARALLEL`] entries.
 fn panel_update(dst: MatMut<'_, C>, l: MatRef<'_, C>, c: MatRef<'_, C>) {
-    let par = if dst.nrows() * dst.ncols() >= PANEL_PARALLEL { Par::rayon(0) } else { Par::Seq };
+    let par = products(dst.nrows() * dst.ncols(), PANEL_PARALLEL);
     matmul(dst, BlockStructure::Rectangular, Accum::Add, l, BlockStructure::Rectangular, c, BlockStructure::Rectangular, C::new(-1.0, 0.0), par);
 }
 
@@ -321,7 +321,7 @@ fn update_below(f: &mut [C], m: usize, k: usize, block: Range<usize>, pivots: &[
     let (left, right) = f.split_at_mut(be * m);
     let lm = MatRef::from_column_major_slice(&left[b0 * m..], m, nb).subrows(be, below);
     let kp = k.saturating_sub(be).min(below);
-    let par = if below * below * nb < PARALLEL_WORK { Par::Seq } else { Par::rayon(0) };
+    let par = products(below * below * nb, PARALLEL_WORK);
     let wm = MatRef::from_column_major_slice(&w, below, nb);
     // The columns be.. of the front, rows from be: column c of `right` is front column be + c.
     let mut fm = MatMut::from_column_major_slice_mut(right, m, m - be);
