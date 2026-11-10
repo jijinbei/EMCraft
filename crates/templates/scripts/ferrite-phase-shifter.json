@@ -1,0 +1,14 @@
+[
+ {"command": "project.variable", "params": {"name": "w", "label": "slab width", "value": 2, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "x", "label": "slab offset from the side wall", "value": 4, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "h0", "label": "internal bias field (Oe)", "value": 1000}},
+ {"command": "project.variable", "params": {"name": "ms", "label": "magnetization 4πMs (G)", "value": 1780}},
+ {"command": "model.material.create", "params": {"name": "yig", "eps_r": 13, "ferrite": {"magnetization": "=ms", "bias": "=h0", "axis": "y"}}},
+ {"command": "geometry.solid", "params": {"shape": "box", "size": [22.86, 10.16, 40]}},
+ {"command": "geometry.inclusion", "params": {"shape": "box", "size": ["=w", 8.16, 20], "at": ["=x", 1, 10], "material": "yig"}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "project.setup", "params": {"kind": "frequency", "start": 8.5, "stop": 11.5, "points": 13, "order": 2}},
+ {"command": "solve.frequency", "params": {"start": 8.5, "stop": 11.5, "points": 13, "order": 2}}
+]

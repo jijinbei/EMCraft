@@ -293,6 +293,20 @@ pub const TEMPLATES: &[Template] = &[
         kinds: &[Analysis::Frequency],
     },
     Template {
+        name: "ferrite-phase-shifter",
+        label: "Ferrite phase shifter: a 2 mm YIG slab (4πMs = 1780 G, εr = 13) off the middle of WR-90, biased across the height at 1000 Oe, 20 mm long: non-reciprocal — the wave going one way lags the other by tens of degrees, |S21| = |S12| (solved by LU, a frequency at a time)",
+        script: include_str!("../scripts/ferrite-phase-shifter.json"),
+        marks: "{}",
+        kinds: &[Analysis::Frequency],
+    },
+    Template {
+        name: "material-sample",
+        label: "Material measurement: a sample (εr = 4, tan δ = 0.01) 8 mm long filling WR-90 between 10 mm of empty guide each side, its S over X band; after Run, Material from S (the Analyses view) reads εr and μr back by Nicolson–Ross–Weir",
+        script: include_str!("../scripts/material-sample.json"),
+        marks: "{}",
+        kinds: &[Analysis::Frequency],
+    },
+    Template {
         name: "termination",
         label: "Matched load: a lossy wedge (εr = 1.5, tan δ = 0.5) 90 mm long, 1 mm clear of the walls, against the short at the end of a WR-90 guide; one port: |S11| below 0.06 over the band",
         script: include_str!("../scripts/termination.json"),

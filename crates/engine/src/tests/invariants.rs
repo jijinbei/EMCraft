@@ -72,7 +72,9 @@ fn invariants(name: &str) {
     let c = s.execute("results.check", &json!({})).unwrap();
     let (gain, asym, unitary) =
         (c["largest_singular_value"].as_f64().unwrap(), c["reciprocity_error"].as_f64().unwrap(), c["unitarity_error"].as_f64().unwrap());
-    assert!(c["passive"] == true && asym < 1e-9, "{name}: {c}");
+    // A magnetized ferrite's point is its non-reciprocity: S ≠ Sᵀ, still passive.
+    let gyrotropic = s.model.materials.iter().any(|m| m.ferrite.is_some());
+    assert!(c["passive"] == true && (asym < 1e-9) != gyrotropic, "{name}: {c}");
     // A resistor (a Wilkinson divider's) absorbs only some excitations: passive, not unitary.
     let resistive = s.model.elements.iter().any(|e| e.resistance > 0.0);
     if lossy(&s) {
@@ -123,7 +125,8 @@ templates! {
     pcb_coupled_line: "pcb-coupled-line",
     pcb_bend: "pcb-bend",
     pcb_wilkinson: "pcb-wilkinson",
-    pcb_ring: "pcb-ring";
+    pcb_ring: "pcb-ring",
+    material_sample: "material-sample";
     heavy:
     corrugated_guide: "corrugated-guide" ("25 s: a sweep of 22 frequencies on 130 000 unknowns"),
     h_bend_radius: "h-bend-radius" ("4 s: its arcs"),
@@ -133,6 +136,7 @@ templates! {
     magic_tee: "magic-tee" ("13 s: its posts"),
     coaxial_line: "coaxial-line" ("8 s: its inner conductor"),
     termination: "termination" ("43 s: its wedge"),
+    ferrite_phase_shifter: "ferrite-phase-shifter" ("15 s: its slab, solved by LU a frequency at a time"),
 }
 
 #[test]

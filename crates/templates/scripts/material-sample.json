@@ -1,0 +1,13 @@
+[
+ {"command": "project.variable", "params": {"name": "er", "label": "the sample's permittivity", "value": 4}},
+ {"command": "project.variable", "params": {"name": "tand", "label": "the sample's loss tangent", "value": 0.01}},
+ {"command": "project.variable", "params": {"name": "d", "label": "sample length", "value": 8, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "g", "label": "empty guide each side", "value": 10, "quantity": "length"}},
+ {"command": "model.material.create", "params": {"name": "sample", "eps_r": "=er", "loss_tangent": "=tand"}},
+ {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [{"length": "=g", "material": "vacuum"}, {"length": "=d", "material": "sample"}, {"length": "=g", "material": "vacuum"}]}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},
+ {"command": "project.setup", "params": {"kind": "frequency", "start": 8.2, "stop": 12.4, "points": 22, "order": 2}},
+ {"command": "solve.frequency", "params": {"start": 8.2, "stop": 12.4, "points": 22, "order": 2}}
+]
