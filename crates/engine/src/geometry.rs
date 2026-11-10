@@ -600,7 +600,7 @@ struct Fitted {
 /// design's exact surfaces by source face) each face takes its source face's instead.
 fn surface(b: emcraft_io::Surface, source: &[u32], fit: bool, known: Option<&[Option<FaceSurface>]>, fitted: &mut Fitted) -> Shape {
     let surfaces = match known {
-        Some(known) => {
+        Some(known) if fit => {
             let mut out = vec![None; b.tags.iter().map(|t| *t as usize + 1).max().unwrap_or(0)];
             for (tag, src) in b.tags.iter().zip(source) {
                 if let (Some(slot), Some(f)) = (out.get_mut(*tag as usize), known.get(*src as usize)) {
@@ -610,7 +610,7 @@ fn surface(b: emcraft_io::Surface, source: &[u32], fit: bool, known: Option<&[Op
             out
         }
         None if fit => emcraft_io::fit::fit_faces(&b, source),
-        None => Vec::new(),
+        _ => Vec::new(),
     };
     for f in surfaces.iter().flatten() {
         match f {

@@ -34,8 +34,9 @@ pub use analysis::Analysis;
 pub(crate) use analysis::fill;
 pub(crate) use memory::{Plan, Shape, available_memory, products};
 
-/// The largest frontal matrix (rows) a factorization may form: m² complex entries.
-pub const MAX_FRONT: usize = 20_000;
+/// The largest frontal matrix (rows) a factorization may form: m² complex entries (40 GB at the
+/// limit; the [`Plan`] refuses before that what the memory cannot hold).
+pub const MAX_FRONT: usize = 50_000;
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum FactorError {

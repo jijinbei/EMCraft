@@ -16,7 +16,7 @@ use std::cell::Cell;
 
 use faer::Par;
 
-use super::{Analysis, FactorError, Tree};
+use super::{Analysis, FactorError, MAX_FRONT, Tree};
 
 /// The share of the available memory a factorization plans to use: the rest is left for what
 /// runs beside it (the matrices, the right-hand sides and fields, the allocator's slack).
@@ -24,6 +24,8 @@ const HEADROOM: f64 = 0.8;
 
 /// The factor's memory when the system does not say what it has available (bytes).
 const UNKNOWN_BUDGET: u64 = 8_000_000_000;
+/// The largest front (rows) when the system does not say what it has available: 6.4 GB.
+const UNKNOWN_FRONT: usize = 20_000;
 
 /// What a factorization's fronts leave behind, by its kernel: the entries of the update for the
 /// parent (`update(m − k)`), the entries the factor keeps of a front (`kept(k, m)`), and whether
@@ -65,6 +67,7 @@ impl Plan {
     /// at most the `threads` largest of their own peaks at once beside the updates the finished
     /// ones leave; the top then runs alone.
     pub(crate) fn new(an: &Analysis, shape: Shape, budget: u64, available: Option<u64>, threads: usize) -> Result<Plan, FactorError> {
+        check_fronts(an, if available.is_some() { MAX_FRONT } else { UNKNOWN_FRONT })?;
         let tree = Tree::new(an);
         let factor = 16 * factor_entries(an, shape);
         if !shape.out_of_core && factor > budget {
@@ -93,6 +96,14 @@ impl Plan {
             }
             t = t.div_ceil(2);
         }
+    }
+}
+
+/// Refuses a front beyond `limit` rows, before any front is made.
+fn check_fronts(an: &Analysis, limit: usize) -> Result<(), FactorError> {
+    match an.super_rows.iter().map(Vec::len).max() {
+        Some(rows) if rows > limit => Err(FactorError::FrontTooLarge { rows, limit }),
+        _ => Ok(()),
     }
 }
 
@@ -213,6 +224,10 @@ mod tests {
         let factor = 16 * factor_entries(&an, LU);
         assert!(matches!(Plan::new(&an, LU, u64::MAX, room(lu), 1), Err(FactorError::OutOfMemory { .. })));
         assert_eq!(Plan::new(&an, LU, u64::MAX, room(lu + factor), 1).unwrap().threads, 1);
+        // A front beyond the limit: refused before any is made.
+        let largest = an.super_rows.iter().map(Vec::len).max().unwrap();
+        assert_eq!(check_fronts(&an, largest - 1), Err(FactorError::FrontTooLarge { rows: largest, limit: largest - 1 }));
+        assert_eq!(check_fronts(&an, largest), Ok(()));
         // Not known: every thread, the factor's memory capped.
         assert_eq!(Plan::new(&an, LDLT, u64::MAX, None, 8).unwrap().in_memory, UNKNOWN_BUDGET);
     }

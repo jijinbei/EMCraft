@@ -101,6 +101,21 @@ fn the_corrugated_wall_bends_the_elements_onto_its_sine() {
     assert!(worst < 1e-6, "{worst}");
 }
 
+/// `fit_surfaces: false` keeps a design's faces faceted, as it does an STL's: the corrugated
+/// wall's elements stay straight.
+#[test]
+fn a_design_imported_without_fitting_stays_faceted() {
+    let mut steps: Vec<crate::Step> = crate::template_steps("corrugated-guide", &json!(null)).unwrap();
+    steps.retain(|s| !s.command.starts_with("mesh.") && !s.command.starts_with("solve."));
+    for step in steps.iter_mut().filter(|s| s.command == "geometry.import") {
+        step.params["fit_surfaces"] = json!(false);
+    }
+    let mut s = Session::new();
+    s.run_steps(&steps).unwrap();
+    s.execute("mesh.generate", &json!({"size": 5})).unwrap();
+    assert!(s.model.mesh.as_ref().unwrap().curved.is_empty());
+}
+
 /// The corrugated guide's wave is an equation curve of its parameters, the number of periods
 /// `n` a plain number (no unit): changed, the guide is longer by the periods added, its wall's
 /// points placed again from the formula.

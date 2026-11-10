@@ -34,8 +34,8 @@ use faer::{Accum, MatMut, MatRef};
 use num_complex::Complex64 as C;
 
 use crate::multifrontal::{
-    Analysis, Counts, Eliminated, FactorError, Front, FrontKernel, MAX_FRONT, Plan, Shape, Update, available_memory, check, factor_tree, products,
-    refine, refine_many, threads,
+    Analysis, Counts, Eliminated, FactorError, Front, FrontKernel, Plan, Shape, Update, available_memory, check, factor_tree, products, refine,
+    refine_many, threads,
 };
 use crate::sparse::Csr;
 
@@ -226,14 +226,6 @@ fn by_position(a: &Csr, inv: &[usize], row_scale: &[f64], col_scale: &[f64]) -> 
     (lower, upper, norm)
 }
 
-/// Refuses a front beyond [`MAX_FRONT`] before any of it is made.
-fn check_fronts(an: &Analysis) -> Result<(), FactorError> {
-    match (0..an.supernodes()).map(|s| an.super_rows[s].len()).max() {
-        Some(m) if m > MAX_FRONT => Err(FactorError::FrontTooLarge { rows: m, limit: MAX_FRONT }),
-        _ => Ok(()),
-    }
-}
-
 /// The LU's fronts: each update full (m − k rows square), the factor both triangles of the
 /// front's first k rows and columns, kept in memory.
 const SHAPE: Shape = Shape { update: |mu| mu * mu, kept: |k, m| k * m + k * (m - k), out_of_core: false };
@@ -304,7 +296,6 @@ impl Lu {
     pub fn factor_analysed(a: &Csr, an: &Analysis, budget: u64) -> Result<Lu, FactorError> {
         let t0 = std::time::Instant::now();
         check(a, an)?;
-        check_fronts(an)?;
         // Refused when the factor does not fit beside its fronts.
         let plan = Plan::new(an, SHAPE, budget, available_memory(), threads())?;
         let (row_scale, col_scale) = scalings(a);
