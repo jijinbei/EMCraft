@@ -152,6 +152,62 @@ fn lumped_ports_feed_antennas() {
 }
 
 #[test]
+fn far_fields_give_gains_and_polarization() {
+    // Two 1 mm gaps crossed at the centre, x and y, driven by currents in quadrature (the y one
+    // 90° behind): on the z axis E ∝ x̂ − jŷ, right-hand circular (IEEE) — axial ratio 0 dB,
+    // the left-hand share far below. Gains: G = D·P_rad/P_in, G_realized = D·P_rad/P_avail, and
+    // P_in = P_avail (1 − |S11|²) for a source in series with its impedance, so their ratio is
+    // the mismatch (Balanis, Antenna Theory, 4th ed., §2.9).
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "box", "size": [40, 40, 40]})).unwrap();
+    s.execute("model.open", &json!({"thickness": 10})).unwrap();
+    s.execute("mesh.generate", &json!({"per_wavelength": 4, "frequency": 10})).unwrap();
+    s.execute("model.port.lumped", &json!({"name": "x", "from": [19.5, 20, 20], "to": [20.5, 20, 20], "impedance": 1e9, "voltage": 1e9})).unwrap();
+    s.execute(
+        "model.port.lumped",
+        &json!({"name": "y", "from": [20, 19.5, 20], "to": [20, 20.5, 20], "impedance": 1e9, "voltage": 1e9, "phase": -90}),
+    )
+    .unwrap();
+    s.execute("solve.radiation", &json!({"frequency": 10})).unwrap();
+    let ff = s.execute("results.far_field", &json!({"theta": [0, 90], "phi": 0})).unwrap();
+    let top = &ff["points"][0];
+    let num = |v: &serde_json::Value, k: &str| v[k].as_f64().unwrap_or_else(|| panic!("{k}: {v}"));
+    assert_eq!(top["sense"], "right", "{top}");
+    assert!(num(top, "axial_ratio_db") < 1.0, "{top}");
+    assert!(num(top, "directivity_rhcp_dbi") - num(top, "directivity_lhcp_dbi") > 20.0, "{top}");
+    approx::assert_abs_diff_eq!(num(top, "directivity_rhcp_dbi"), num(top, "directivity_dbi"), epsilon = 0.05);
+    // In the plane of the gaps at φ = 0 the y gap's field reaches (E_φ), the x gap's hardly (it
+    // points along the gap): nearly linear, the ellipse tens of dB long.
+    let side = &ff["points"][1];
+    assert!(num(side, "axial_ratio_db") > 20.0, "{side}");
+    // Ludwig 3 about x̂ at φ = 0: E_φ is cross-polar; about ŷ, co-polar.
+    approx::assert_abs_diff_eq!(num(side, "directivity_cross_dbi"), num(side, "directivity_dbi"), epsilon = 0.1);
+    let about_y = s.execute("results.far_field", &json!({"theta": [90], "phi": 0, "co_polar": 90})).unwrap();
+    approx::assert_abs_diff_eq!(num(&about_y["points"][0], "directivity_co_dbi"), num(side, "directivity_cross_dbi"), epsilon = 1e-9);
+    // A z current element's field is E_θ alone: linear exactly as rounding allows.
+    let ff = emcraft_solver::radiation::FarField {
+        theta: 1.0,
+        phi: 0.3,
+        e_theta: emcraft_solver::Complex64::new(1.0, 0.0),
+        e_phi: emcraft_solver::Complex64::new(0.0, 0.0),
+    };
+    assert!(ff.axial_ratio().is_infinite());
+    // The gains against the powers the solve reports.
+    let r = s.execute("solve.radiation", &json!({"frequency": 10})).unwrap();
+    let ff = s.execute("results.far_field", &json!({"theta": [0]})).unwrap();
+    let row = &ff["points"][0];
+    let (d, g, gr) = (num(row, "directivity"), num(row, "gain"), num(row, "realized_gain"));
+    approx::assert_abs_diff_eq!(g / d, num(&r, "radiation_efficiency"), epsilon = 1e-12);
+    let input = num(&r, "input_power");
+    let mismatch: f64 = r["ports"].as_array().unwrap().iter().map(|p| num(p, "power") / (1.0 - p["s11"]["mag"].as_f64().unwrap().powi(2))).sum();
+    // 1 − |S11|² is a few 1e-9 against a gigaohm source: eight digits are left of it.
+    approx::assert_abs_diff_eq!(gr / g, input / mismatch, epsilon = 1e-6 * input / mismatch);
+    assert!(s.execute("results.far_field", &json!({"co_polar": 1000})).is_err());
+    let path = scratch("pattern-gain.png");
+    s.execute("view.pattern", &json!({"path": path, "quantity": "realized_gain", "component": "rhcp", "points": 19})).unwrap();
+}
+
+#[test]
 fn ports_on_faces_go_with_open_boundaries() {
     let mut s = Session::new();
     // A face port needs a solid; with an open box ports must be on faces.

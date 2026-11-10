@@ -1,7 +1,8 @@
 //! The far-field pattern: a cut (θ varying at an azimuth φ, or φ varying at a polar angle θ),
-//! its angle, and the field's total or one polarization's share.
+//! its angle, what it measures (directivity, gain, realized gain) and the field's total or one
+//! polarization's share (E_θ, E_φ, circular, Ludwig-3 co and cross about x̂).
 
-use emcraft_engine::view::{Cut, FarComponent, PatternView};
+use emcraft_engine::view::{Cut, FarComponent, FarQuantity, PatternView};
 
 use super::*;
 use crate::state::PatternSettings;
@@ -37,6 +38,16 @@ impl ChartView for FarField {
                 p.angle = angle;
             }
             ui.separator();
+            for q in FarQuantity::ALL {
+                let r = ui.named(
+                    pill(crate::lang::lookup(q.label()), p.quantity == q, 10, crate::theme::Emphasis::Normal),
+                    Handle::PatternQuantity(q.id()),
+                );
+                if r.hint(t!("directivity, or gain: with the losses, and realized: with the mismatch too")).clicked() {
+                    p.quantity = q;
+                }
+            }
+            ui.separator();
             for c in FarComponent::ALL {
                 let r = ui.named(
                     pill(crate::lang::lookup(c.label()), p.component == c, 10, crate::theme::Emphasis::Normal),
@@ -52,7 +63,7 @@ impl ChartView for FarField {
 
     fn chart(app: &EmcraftApp, key: &SharedChart) -> Result<emcraft_render::chart::Chart, String> {
         let SharedChart::Pattern(p) = key else { return Err("not a pattern".into()) };
-        let view = PatternView { cut: p.cut, angle: p.angle, component: p.component, ..PatternView::default() };
+        let view = PatternView { cut: p.cut, angle: p.angle, quantity: p.quantity, component: p.component, ..PatternView::default() };
         emcraft_engine::view::pattern_chart_in(&app.session, &view).map_err(|e| e.to_string())
     }
 }

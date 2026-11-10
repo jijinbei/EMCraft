@@ -198,17 +198,24 @@ pub enum SharedChart {
     Analysis(u64),
 }
 
-/// The far-field view's cut, its angle (degrees: φ of a φ cut, θ of a θ cut) and component.
+/// The far-field view's cut, its angle (degrees: φ of a φ cut, θ of a θ cut), quantity and
+/// component.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PatternSettings {
     pub cut: emcraft_engine::view::Cut,
     pub angle: f64,
+    pub quantity: emcraft_engine::view::FarQuantity,
     pub component: emcraft_engine::view::FarComponent,
 }
 
 impl Default for PatternSettings {
     fn default() -> Self {
-        PatternSettings { cut: emcraft_engine::view::Cut::Phi, angle: 0.0, component: emcraft_engine::view::FarComponent::Total }
+        PatternSettings {
+            cut: emcraft_engine::view::Cut::Phi,
+            angle: 0.0,
+            quantity: emcraft_engine::view::FarQuantity::Directivity,
+            component: emcraft_engine::view::FarComponent::Total,
+        }
     }
 }
 

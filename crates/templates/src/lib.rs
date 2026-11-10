@@ -635,6 +635,14 @@ pub const TEMPLATES: &[Template] = &[
         group: Group::Antennas,
     },
     Template {
+        name: "heart-loop",
+        label: "Heart-shaped wire loop at 2.45 GHz, a SolidCraft design: a 0.5 mm wire bent into a heart W wide (a loop about a wavelength round), fed across a 1 mm gap at its tip by a 50 Ω lumped port: input impedance, gain, polarization and pattern",
+        script: include_str!("../scripts/heart-loop.json"),
+        marks: include_str!("../scripts/heart-loop.marks.json"),
+        kinds: &[Analysis::Radiation],
+        group: Group::Antennas,
+    },
+    Template {
         name: "patch-antenna",
         label: "Inset-fed microstrip patch antenna at 10 GHz on 0.787 mm of εr = 2.2 over a finite ground, a board in an open region: S11 about −17 dB, about 7 dBi broadside",
         script: include_str!("../scripts/patch-antenna.json"),
@@ -738,6 +746,7 @@ pub const DESIGNS: &[Design] = &[
     Design { file: "corrugated-e.solidcraft", bytes: include_bytes!("../designs/corrugated-e.solidcraft") },
     Design { file: "corrugated-cell.solidcraft", bytes: include_bytes!("../designs/corrugated-cell.solidcraft") },
     Design { file: "helical-cell.solidcraft", bytes: include_bytes!("../designs/helical-cell.solidcraft") },
+    Design { file: "heart-wire.solidcraft", bytes: include_bytes!("../designs/heart-wire.solidcraft") },
 ];
 
 /// The design a path names, `template:<file>`; `None` for any other path (a file of the

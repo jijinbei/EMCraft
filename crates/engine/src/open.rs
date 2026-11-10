@@ -258,7 +258,7 @@ impl Exact {
 
 /// Directivity (dBi) for sources, radar cross-section (display area, and dB of m²) for a plane
 /// wave, in one direction; with the closed form's where it applies.
-fn describe(s: &Session, r: &Radiated, exact: &Exact, ff: &FarField) -> Value {
+fn describe(s: &Session, r: &Radiated, exact: &Exact, ff: &FarField, ask: &FarAsk) -> Value {
     let f = r.result.frequency;
     let [dir, _, _] = Vec3::spherical(ff.theta, ff.phi);
     let mut out = json!({"theta": ff.theta.to_degrees(), "phi": ff.phi.to_degrees(), "e_theta": phasor(ff.e_theta), "e_phi": phasor(ff.e_phi)});
@@ -269,8 +269,7 @@ fn describe(s: &Session, r: &Radiated, exact: &Exact, ff: &FarField) -> Value {
         out["rcs_dbsm"] = json!(10.0 * rcs.log10());
     } else {
         let d = 4.0 * PI * ff.magnitude_squared() / (2.0 * ETA0 * r.power);
-        out["directivity"] = json!(d);
-        out["directivity_dbi"] = json!(10.0 * d.log10());
+        polarized(&mut out, d, ff, fem_feeds(s, &r.result).map(|f| f.gains(r.power)), ask.co_polar);
     }
     match exact {
         Exact::Mie { .. } => {
@@ -329,15 +328,97 @@ pub(crate) struct FarRows {
     pub rows: Vec<Value>,
 }
 
+/// What a far field is read from and how its polarization is split: the solver (the frequency
+/// domain's, or the time domain's at the frequency nearest `frequency`, Hz) and the co-polar
+/// direction at the pole (radians from x̂ toward ŷ) of Ludwig's third definition.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct FarAsk {
+    pub solver: Option<FarSolver>,
+    pub frequency: Option<f64>,
+    pub co_polar: f64,
+}
+
 /// Far-field rows in the directions given (radians), from the frequency-domain solve or, when
-/// asked (`solver` "time_domain") or the only one there, the time domain's at the frequency
-/// nearest `frequency` (Hz).
-pub(crate) fn far_rows(s: &Session, dirs: &[(f64, f64)], solver: Option<FarSolver>, frequency: Option<f64>) -> Result<FarRows> {
-    let use_td = match solver {
+/// asked (`solver` "time_domain") or the only one there, the time domain's.
+pub(crate) fn far_rows(s: &Session, dirs: &[(f64, f64)], ask: &FarAsk) -> Result<FarRows> {
+    let use_td = match ask.solver {
         Some(solver) => solver == FarSolver::TimeDomain,
         None => s.results.radiation.is_none() && s.results.td_radiation.is_some(),
     };
-    if use_td { time_domain_far_rows(s, dirs, frequency) } else { fem_far_rows(s, dirs) }
+    if use_td { time_domain_far_rows(s, dirs, ask) } else { fem_far_rows(s, dirs, ask) }
+}
+
+/// The powers an antenna's gains are counted against: what its feeds deliver to it and what
+/// their sources have available (what a matched antenna would take).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Feeds {
+    accepted: f64,
+    available: f64,
+}
+
+/// The ratios of `radiated` power to a [`Feeds`]' powers: radiation efficiency, and the
+/// efficiency with the mismatch counted too.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Gains {
+    efficiency: f64,
+    realized: f64,
+}
+
+impl Feeds {
+    fn gains(self, radiated: f64) -> Gains {
+        let over = |p: f64| if p > 0.0 { radiated / p } else { f64::NAN };
+        Gains { efficiency: over(self.accepted), realized: over(self.available) }
+    }
+}
+
+/// The power incident on a feed that takes `accepted` and reflects `s11`: accepted / (1 − |S11|²);
+/// unknown when it reflects (nearly) everything.
+fn incident(accepted: f64, s11: emcraft_solver::Complex64) -> f64 {
+    let taken = 1.0 - s11.norm_sqr();
+    if taken > 1e-12 { accepted / taken } else { f64::NAN }
+}
+
+/// The frequency-domain solve's feeds: its lumped ports (each source's available power
+/// |V|²/8R) or its waveguide feed; `None` without either (a plane wave, current elements).
+fn fem_feeds(s: &Session, r: &OpenResult) -> Option<Feeds> {
+    if !r.ports.is_empty() {
+        let accepted = r.ports.iter().map(|p| p.power).sum();
+        let available =
+            s.model.lumped.iter().map(|lp| (lp.voltage[0] * lp.voltage[0] + lp.voltage[1] * lp.voltage[1]) / (8.0 * lp.impedance.get())).sum();
+        return Some(Feeds { accepted, available });
+    }
+    r.feed.map(|(s11, accepted)| Feeds { accepted, available: incident(accepted, s11) })
+}
+
+/// A source's far field in one direction, beyond its directivity `d`: the gain and realized gain
+/// (with its feeds' `gains`), the polarization ellipse's axial ratio (dB; `null` for linear)
+/// and sense, and the directivity's shares in right- and left-hand circular and in Ludwig-3
+/// co- and cross-polar about `co_polar` (radians from x̂), each in dBi.
+fn polarized(out: &mut Value, d: f64, ff: &FarField, gains: Option<Gains>, co_polar: f64) {
+    let dbi = |x: f64| json!(10.0 * x.log10());
+    out["directivity"] = json!(d);
+    out["directivity_dbi"] = dbi(d);
+    if let Some(g) = gains {
+        out["gain"] = json!(d * g.efficiency);
+        out["gain_dbi"] = dbi(d * g.efficiency);
+        out["realized_gain"] = json!(d * g.realized);
+        out["realized_gain_dbi"] = dbi(d * g.realized);
+    }
+    let total = ff.magnitude_squared();
+    let share = |part: f64| if total > 0.0 { d * part / total } else { 0.0 };
+    let (right, left) = ff.circular();
+    let (co, cross) = ff.ludwig3(co_polar);
+    out["directivity_rhcp_dbi"] = dbi(share(right.norm_sqr()));
+    out["directivity_lhcp_dbi"] = dbi(share(left.norm_sqr()));
+    out["directivity_co_dbi"] = dbi(share(co.norm_sqr()));
+    out["directivity_cross_dbi"] = dbi(share(cross.norm_sqr()));
+    let ar = ff.axial_ratio();
+    out["axial_ratio_db"] = if ar.is_finite() { json!(20.0 * ar.log10()) } else { Value::Null };
+    out["sense"] = json!(match () {
+        _ if !ar.is_finite() => "linear",
+        _ if right.norm() > left.norm() => "right",
+        _ => "left",
+    });
 }
 
 /// The azimuth φ (degrees, 0 to 345 by 15) of the strongest direction of the last open solve's
@@ -346,25 +427,25 @@ pub(crate) fn far_rows(s: &Session, dirs: &[(f64, f64)], solver: Option<FarSolve
 pub fn strongest_azimuth(s: &Session) -> Option<f64> {
     let dirs: Vec<(f64, f64)> =
         (0..24).flat_map(|j| (0..18).map(move |i| (f64::from(5 + 10 * i).to_radians(), f64::from(15 * j).to_radians()))).collect();
-    let far = far_rows(s, &dirs, None, None).ok()?;
+    let far = far_rows(s, &dirs, &FarAsk::default()).ok()?;
     let strength = |v: &Value| v.get("directivity").or_else(|| v.get("rcs")).and_then(Value::as_f64).filter(|x| x.is_finite());
     let best = far.rows.iter().zip(&dirs).filter_map(|(v, d)| Some((strength(v)?, d.1))).max_by(|a, b| a.0.total_cmp(&b.0))?;
     Some(best.1.to_degrees().round())
 }
 
 /// The frequency-domain solve's far field, with the closed form's where it applies.
-fn fem_far_rows(s: &Session, dirs: &[(f64, f64)]) -> Result<FarRows> {
+fn fem_far_rows(s: &Session, dirs: &[(f64, f64)], ask: &FarAsk) -> Result<FarRows> {
     let r = solved(s)?;
     let exact = Exact::of(s, r.result.frequency);
-    let rows = emcraft_solver::radiation::far_fields(&r.huygens, dirs).iter().map(|x| describe(s, &r, &exact, x)).collect();
+    let rows = emcraft_solver::radiation::far_fields(&r.huygens, dirs).iter().map(|x| describe(s, &r, &exact, x, ask)).collect();
     Ok(FarRows { frequency: r.result.frequency, power: r.power, rows })
 }
 
 /// The time domain's far field at its frequency nearest `frequency` (its first without one),
 /// with a lone dipole's directivity.
-fn time_domain_far_rows(s: &Session, dirs: &[(f64, f64)], frequency: Option<f64>) -> Result<FarRows> {
+fn time_domain_far_rows(s: &Session, dirs: &[(f64, f64)], ask: &FarAsk) -> Result<FarRows> {
     let r = s.results.td_radiation.clone().ok_or(EngineError::NotSolved { what: "time-domain open problem", run: "solve.time_domain" })?;
-    let fi = frequency.and_then(|f| crate::numbers::nearest(&r.frequencies, f)).unwrap_or(0);
+    let fi = ask.frequency.and_then(|f| crate::numbers::nearest(&r.frequencies, f)).unwrap_or(0);
     let f = r.frequencies.get(fi).copied().ok_or_else(|| EngineError::failed("no frequencies"))?;
     let power = r.radiated.get(fi).copied().unwrap_or(f64::NAN);
     let lone = lone_dipole(s);
@@ -372,6 +453,7 @@ fn time_domain_far_rows(s: &Session, dirs: &[(f64, f64)], frequency: Option<f64>
     // with the Mie series' for a lone sphere.
     let scattering = plane_wave(s).is_some();
     let exact = if scattering { Exact::of(s, f) } else { Exact::None };
+    let feeds = time_domain_feeds(s, &r, fi);
     let l = s.display.length.from_si(1.0);
     let rows = dirs
         .iter()
@@ -388,8 +470,8 @@ fn time_domain_far_rows(s: &Session, dirs: &[(f64, f64)], frequency: Option<f64>
                 return v;
             }
             let d = r.directivity(fi, theta, phi).unwrap_or(f64::NAN);
-            v["directivity"] = json!(d);
-            v["directivity_dbi"] = json!(10.0 * d.log10());
+            let ff = FarField { theta, phi, e_theta: et, e_phi: ep };
+            polarized(&mut v, d, &ff, feeds.map(|f| f.gains(power)), ask.co_polar);
             if let Some((_, axis)) = lone {
                 let cos_a = axis.dot(Vec3::spherical(theta, phi)[0]).clamp(-1.0, 1.0);
                 v["exact_directivity"] = json!(1.5 * (1.0 - cos_a * cos_a));
@@ -400,10 +482,32 @@ fn time_domain_far_rows(s: &Session, dirs: &[(f64, f64)], frequency: Option<f64>
     Ok(FarRows { frequency: f, power, rows })
 }
 
+/// The time domain's lumped ports at frequency `fi`: the power each delivers and, from its
+/// reflection against its impedance, the power its source has available.
+fn time_domain_feeds(s: &Session, r: &emcraft_fdtd::open::OpenRun, fi: usize) -> Option<Feeds> {
+    if r.ports.is_empty() {
+        return None;
+    }
+    let mut feeds = Feeds { accepted: 0.0, available: 0.0 };
+    for (pr, lp) in r.ports.iter().zip(&s.model.lumped) {
+        let (Some(z), Some(power)) = (pr.impedance.get(fi), pr.power.get(fi)) else { continue };
+        let z0 = lp.impedance.get();
+        feeds.accepted += power;
+        feeds.available += incident(*power, (*z - z0) / (*z + z0));
+    }
+    Some(feeds)
+}
+
+/// The far-field request's `co_polar` (degrees from x̂ toward ŷ; default 0), in radians.
+pub(crate) fn co_polar(p: &Params) -> Result<f64> {
+    Ok(p.number("co_polar").check(|a| (-360.0..=360.0).contains(a), "−360 to 360 degrees").or(0.0)?.to_radians())
+}
+
 pub fn results_far_field(s: &mut Session, p: &Params) -> Result<Value> {
     let (theta, phi) = angles(p)?;
     let dirs: Vec<(f64, f64)> = theta.iter().map(|t| (t.to_radians(), phi.to_radians())).collect();
-    let far = far_rows(s, &dirs, p.choice("solver").optional()?, p.frequency("frequency").optional()?)?;
+    let ask = FarAsk { solver: p.choice("solver").optional()?, frequency: p.frequency("frequency").optional()?, co_polar: co_polar(p)? };
+    let far = far_rows(s, &dirs, &ask)?;
     Ok(json!({"frequency": s.show_frequency(far.frequency), "power": far.power, "points": far.rows}))
 }
 

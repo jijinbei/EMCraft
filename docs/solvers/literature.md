@@ -541,6 +541,15 @@ overlap tests).
   through the Fresnel integrals (M. Abramowitz, I. A. Stegun, *Handbook of Mathematical
   Functions*, 1964, §7.3, table 7.7 for their test values) (`emcraft-theory::horn`, the
   reference of the oracle's `design-horn`).
+- C. A. Balanis, *Antenna Theory*, 4th ed., Wiley 2016, §2.9 and §2.17 — gain as directivity
+  times the radiation efficiency and realized gain with the mismatch (1 − |Γ|²) too, the
+  available power of a source in series with its impedance |V|²/8R; *IEEE Standard Definitions
+  of Terms for Antennas*, IEEE Std 145-2013 — the sense of circular polarization seen along the
+  wave's travel; W. L. Stutzman, *Polarization in Electromagnetic Systems*, 2nd ed., Artech House
+  2018, §2.4 — the circular components E_R, E_L = (E_θ ± jE_φ)/√2 and the axial ratio
+  (|E_R| + |E_L|)/||E_R| − |E_L||; A. C. Ludwig, *The definition of cross polarization*, IEEE
+  Trans. AP 21(1):116–119, 1973 — the third definition's co- and cross-polar components
+  (`emcraft-solver::radiation::FarField`, `results.far_field`).
 
 ## Parameter studies
 - J. A. Nelder, R. Mead, *A simplex method for function minimization*, Comput. J. 7(4):308–313,

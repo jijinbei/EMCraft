@@ -144,6 +144,15 @@
     "Back to the port's face": "ポートの面に戻す",
     "Band pass": "バンドパス",
     "Blank": "空のプロジェクト",
+    "Co-polar direction": "主偏波の向き",
+    "RHCP": "右旋円偏波",
+    "LHCP": "左旋円偏波",
+    "co-polar": "主偏波",
+    "cross-polar": "交差偏波",
+    "directivity": "指向性",
+    "gain": "利得",
+    "realized gain": "実効利得",
+    "directivity, or gain: with the losses, and realized: with the mismatch too": "指向性、損失を含む利得、不整合も含む実効利得",
     "Filters": "フィルタ",
     "Guides and lines": "導波管・線路",
     "Bends, tees and steps": "曲がり・T 分岐・段差",
@@ -2090,17 +2099,18 @@
     },
     "results.far_field": {
       "label": "遠方界",
-      "doc": "直近の放射解析の遠方界（r e^{jkr} E_θ, E_φ）を極角 `theta`、方位角 `phi`（度）で求める。Huygens 箱の等価電流からの近傍界–遠方界変換による。波源では指向性、平面波ではレーダー断面積を、適用できる場合は閉形式解とともに示す。",
+      "doc": "直近の放射解析の遠方界（r e^{jkr} E_θ, E_φ）を極角 `theta`、方位角 `phi`（度）で求める。Huygens 箱の等価電流からの近傍界–遠方界変換による。平面波ではレーダー断面積を示す。波源では指向性に加え、集中定数ポートまたは導波管ポートで給電していれば利得（指向性 × 放射電力／給電が渡す電力）と実効利得（電源の有能電力に対する比：不整合も含む）を示し、偏波として楕円の軸比（`axial_ratio_db`、直線偏波なら null）と回転の向き（`right`、`left`、`linear`。IEEE：波の進む向きに見る）、右旋・左旋円偏波と Ludwig 第 3 定義の主偏波・交差偏波それぞれの指向性（dBi）も示す。適用できる場合は閉形式解とともに示す。",
       "params": {
         "theta": "極角（度、既定 0〜180 を 10 刻み）",
         "phi": "方位角（度、既定 0）",
         "solver": "`fem`（solve.radiation）または `time_domain`（solve.time_domain）。既定はある方、両方あれば FEM",
-        "frequency": "時間領域の周波数（最も近い解析済みのもの）"
+        "frequency": "時間領域の周波数（最も近い解析済みのもの）",
+        "co_polar": "主偏波の向き（Ludwig 第 3 定義の主偏波・交差偏波の基準）、天頂で x から y へ測った角度（度、既定 0：x）"
       }
     },
     "view.pattern": {
       "label": "放射パターンのチャート",
-      "doc": "遠方界の放射パターンの断面を PNG に書き出す：方位角 `phi` での θ に対する断面（`cut` phi、既定）、または天頂角 `theta` での 0〜360° の φ に対する断面（`cut` theta）。波源では指向性（dBi）、平面波ではレーダー断面積（dBsm）を、全体または一方の偏波の分（`component`）で、適用できる場合は（全体の）閉形式解に重ねる。グラフのスタイル（view.chart.style）で描く。",
+      "doc": "遠方界の放射パターンの断面を PNG に書き出す：方位角 `phi` での θ に対する断面（`cut` phi、既定）、または天頂角 `theta` での 0〜360° の φ に対する断面（`cut` theta）。波源では指向性・利得・実効利得（`quantity`、dBi）、平面波ではレーダー断面積（dBsm）を、全体または一方の偏波の分（`component`：E_θ、E_φ、円偏波、`co_polar` を基準とする Ludwig 第 3 定義の主偏波・交差偏波）で、適用できる場合は（全体の）閉形式解に重ねる。グラフのスタイル（view.chart.style）で描く。",
       "params": {
         "path": "書き出す PNG ファイル",
         "theme": "組み込みテーマ（`light`（既定）、`dark`、`mono`、`graphite`、`sepia`、`midnight`、`forest`）またはテーマファイルのパス（docs/themes.md）",
@@ -2112,7 +2122,9 @@
         "frequency": "時間領域の周波数（最も近い解析済みのもの）",
         "cut": "`phi`：方位角 `phi` で θ を変える（既定）。`theta`：天頂角 `theta` で φ を変える",
         "theta": "θ カットの天頂角（度、0〜180、既定 90）",
-        "component": "`total`（既定）、`theta`（E_θ の分）または `phi`（E_φ の分）"
+        "component": "`total`（既定）、または一方の偏波の分：`theta`（E_θ）、`phi`（E_φ）、`rhcp`、`lhcp`、`co`、`cross`（Ludwig 第 3 定義）",
+        "co_polar": "主偏波の向き（Ludwig 第 3 定義の主偏波・交差偏波の基準）、天頂で x から y へ測った角度（度、既定 0：x）",
+        "quantity": "波源の `directivity`（指向性、既定）、`gain`（利得）、`realized_gain`（実効利得）（後の 2 つは給電が必要）"
       }
     },
     "file.sample": {
@@ -2678,6 +2690,7 @@
     "coupled-filter": "平行結合ストリップ線路バンドパスフィルタ：50 Ω の給電線の間で端どうしを結合した 3 つの半波長共振器、4 mm 間隔の導体板の間に PTFE、4.66–5.34 GHz（Cohn 1958）",
     "inductive-post": "WR-90 を壁から壁まで貫く 3 mm の導体ポスト、ブール差で箱から切り抜く：強い並列インダクタンス",
     "loaded-sphere": "半径 10 mm の球形空洞共振器と同心のセラミック球（εr = 4、半径 4 mm）：節点どうしで接合した 2 つの材料領域、11.26 GHz の TM11 三重縮退",
+    "heart-loop": "ハート形ワイヤーループ（2.45 GHz、SolidCraft 設計）：半径 0.5 mm のワイヤーを幅 W のハート形に曲げたもの（周長およそ 1 波長）、先端の 1 mm の隙間を 50 Ω の集中定数ポートで給電：入力インピーダンス、利得、偏波、放射パターン",
     "dipole": "完全整合層で内張りした箱の中の 10 GHz、1 mm の電流素子：放射電力と指向性をヘルツダイポールと比較",
     "halfwave-dipole": "集中定数ポートで給電する 10 GHz の半波長ワイヤダイポール（半径 0.5 mm、ギャップ 1 mm）：入力インピーダンス、S11、電力収支、放射パターン",
     "open-waveguide": "金属ブロックに開けた開口端 WR-90 溝から 10 GHz で放射、溝の閉じた端の導波管ポートで給電：S11、利得、放射パターン",
@@ -2852,6 +2865,7 @@
     "transformer width": "変成器の幅",
     "wall conductivity (S/m)": "壁の導電率 (S/m)",
     "wall thickness": "壁の厚さ",
+    "heart width": "ハートの幅",
     "wire radius": "線の半径"
   }
 }

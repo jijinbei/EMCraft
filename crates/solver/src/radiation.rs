@@ -72,6 +72,64 @@ impl FarField {
     pub fn magnitude_squared(&self) -> f64 {
         self.e_theta.norm_sqr() + self.e_phi.norm_sqr()
     }
+
+    /// The right- and left-hand circular components (IEEE Std 145: the sense seen along the
+    /// wave's travel, r̂ = θ̂ × φ̂; time dependence e^{jωt}): E_R = (E_θ + jE_φ)/√2 and
+    /// E_L = (E_θ − jE_φ)/√2, the field E_R (θ̂ − jφ̂)/√2 + E_L (θ̂ + jφ̂)/√2, their powers
+    /// summing to the whole (W. L. Stutzman, *Polarization in Electromagnetic Systems*, 2nd ed.,
+    /// Artech House 2018, §2.4).
+    ///
+    /// ```
+    /// use emcraft_solver::radiation::FarField;
+    /// use num_complex::Complex64 as C;
+    /// // θ̂ − jφ̂: turning from θ̂ to φ̂ as time runs, right-handed about r̂.
+    /// let rhcp = FarField { theta: 0.5, phi: 0.0, e_theta: C::new(1.0, 0.0), e_phi: C::new(0.0, -1.0) };
+    /// let (r, l) = rhcp.circular();
+    /// assert!((r.norm() - 2f64.sqrt()).abs() < 1e-15 && l.norm() < 1e-15);
+    /// assert!((rhcp.axial_ratio() - 1.0).abs() < 1e-12);
+    /// ```
+    pub fn circular(&self) -> (C, C) {
+        let j = C::new(0.0, 1.0);
+        let s = std::f64::consts::FRAC_1_SQRT_2;
+        ((self.e_theta + j * self.e_phi) * s, (self.e_theta - j * self.e_phi) * s)
+    }
+
+    /// The polarization ellipse's axial ratio, major over minor axis: (|E_R| + |E_L|) /
+    /// ||E_R| − |E_L|| — 1 for circular, +∞ for linear (and for no field).
+    ///
+    /// ```
+    /// use emcraft_solver::radiation::FarField;
+    /// use num_complex::Complex64 as C;
+    /// let linear = FarField { theta: 0.5, phi: 0.0, e_theta: C::new(1.0, 0.0), e_phi: C::new(1.0, 0.0) };
+    /// assert!(linear.axial_ratio().is_infinite());
+    /// // E_φ half E_θ and in quadrature: an ellipse 2 to 1.
+    /// let ellipse = FarField { theta: 0.5, phi: 0.0, e_theta: C::new(1.0, 0.0), e_phi: C::new(0.0, 0.5) };
+    /// assert!((ellipse.axial_ratio() - 2.0).abs() < 1e-12);
+    /// ```
+    pub fn axial_ratio(&self) -> f64 {
+        let (r, l) = self.circular();
+        let (r, l) = (r.norm(), l.norm());
+        let minor = (r - l).abs();
+        if minor > 1e-12 * (r + l) { (r + l) / minor } else { f64::INFINITY }
+    }
+
+    /// Ludwig's third definition of co- and cross-polar components (A. C. Ludwig, "The
+    /// definition of cross polarization", IEEE Trans. AP 21(1):116–119, 1973), the co-polar
+    /// direction at the pole `reference` radians from x̂ toward ŷ (0: x̂, π/2: ŷ): with
+    /// ψ = φ − reference, co = E_θ cos ψ − E_φ sin ψ and cross = E_θ sin ψ + E_φ cos ψ.
+    ///
+    /// ```
+    /// use emcraft_solver::radiation::FarField;
+    /// use num_complex::Complex64 as C;
+    /// // An x-directed field on the z axis seen at φ = 90°: E_φ = −1, all co-polar to x̂.
+    /// let f = FarField { theta: 0.0, phi: std::f64::consts::FRAC_PI_2, e_theta: C::new(0.0, 0.0), e_phi: C::new(-1.0, 0.0) };
+    /// let (co, cross) = f.ludwig3(0.0);
+    /// assert!((co.re - 1.0).abs() < 1e-15 && cross.norm() < 1e-15);
+    /// ```
+    pub fn ludwig3(&self, reference: f64) -> (C, C) {
+        let (s, c) = (self.phi - reference).sin_cos();
+        (self.e_theta * c - self.e_phi * s, self.e_theta * s + self.e_phi * c)
+    }
 }
 
 /// The Huygens box: each face a third of the layer's thickness inside the layer's inner face (in

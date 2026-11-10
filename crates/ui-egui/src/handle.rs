@@ -394,9 +394,11 @@ pub enum Handle<'a> {
     Probe(usize),
     ProbeDelete(usize),
     ProbeMark(usize),
-    /// The far-field cut and component: `pattern:cut:theta`, `pattern:component:phi`.
+    /// The far-field cut, component and quantity: `pattern:cut:theta`, `pattern:component:phi`,
+    /// `pattern:quantity:gain`.
     PatternCut(&'a str),
     PatternComponent(&'a str),
+    PatternQuantity(&'a str),
 }
 
 impl From<Fixed> for Handle<'_> {
@@ -489,6 +491,7 @@ impl fmt::Display for Handle<'_> {
             Handle::ProbeMark(i) => write!(f, "probe:mark:{i}"),
             Handle::PatternCut(cut) => write!(f, "pattern:cut:{cut}"),
             Handle::PatternComponent(c) => write!(f, "pattern:component:{c}"),
+            Handle::PatternQuantity(q) => write!(f, "pattern:quantity:{q}"),
         }
     }
 }

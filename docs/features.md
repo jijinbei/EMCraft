@@ -1491,18 +1491,19 @@ Solves the open problem at one frequency: the field the sources radiate (or the 
 
 ## `results.far_field` — Far field
 
-The far field (r e^{jkr} E_θ, E_φ) of the last radiation solve at polar angles `theta` and azimuth `phi` (degrees), by the near-to-far transform of the Huygens box's equivalent currents: directivity for sources, radar cross-section for a plane wave, with the closed forms where they apply.
+The far field (r e^{jkr} E_θ, E_φ) of the last radiation solve at polar angles `theta` and azimuth `phi` (degrees), by the near-to-far transform of the Huygens box's equivalent currents: radar cross-section for a plane wave, and for sources directivity, gain (directivity × the power radiated over the power the feeds deliver) and realized gain (over the power their sources have available: the mismatch counted too) where lumped ports or a waveguide port feed it, and the polarization — the ellipse's axial ratio (`axial_ratio_db`, null when linear) and sense (`right`, `left` or `linear`, IEEE: seen along the wave's travel), the directivity's shares in right- and left-hand circular and in Ludwig-3 co- and cross-polar (dBi) — with the closed forms where they apply.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `theta` | array |  | no | polar angles in degrees (default 0 to 180 by 10) |
 | `phi` | number |  | no | the azimuth in degrees (default 0) |
+| `co_polar` | number |  | no | the co-polar direction of Ludwig-3 co- and cross-polar, in degrees from x toward y at the pole (default 0: x) |
 | `solver` | string |  | no | `fem` (solve.radiation) or `time_domain` (solve.time_domain); default whichever there is, the FEM's first |
 | `frequency` | number | frequency | no | the time domain's frequency (the nearest solved) |
 
 ## `view.pattern` — Pattern chart
 
-Writes a PNG of a cut through the far-field pattern: against θ at azimuth `phi` (`cut` phi, the default) or against φ from 0 to 360° at polar angle `theta` (`cut` theta); directivity in dBi for sources, radar cross-section in dBsm for a plane wave, all of it or one polarization's share (`component`), over the closed form (the total's) where it applies; in the chart's style (view.chart.style).
+Writes a PNG of a cut through the far-field pattern: against θ at azimuth `phi` (`cut` phi, the default) or against φ from 0 to 360° at polar angle `theta` (`cut` theta); directivity, gain or realized gain (`quantity`) in dBi for sources, radar cross-section in dBsm for a plane wave, all of it or one polarization's share (`component`: E_θ, E_φ, circular, Ludwig-3 co or cross about `co_polar`), over the closed form (the total's) where it applies; in the chart's style (view.chart.style).
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -1511,7 +1512,9 @@ Writes a PNG of a cut through the far-field pattern: against θ at azimuth `phi`
 | `cut` | string |  | no | `phi`: θ varies at azimuth `phi` (default); `theta`: φ varies at polar angle `theta` |
 | `phi` | number |  | no | the azimuth in degrees (default 0) |
 | `theta` | number |  | no | the polar angle of a θ cut in degrees, 0 to 180 (default 90) |
-| `component` | string |  | no | `total` (default), `theta` (E_θ's share) or `phi` (E_φ's) |
+| `quantity` | string |  | no | a source's `directivity` (default), `gain` or `realized_gain` (needs a feed) |
+| `component` | string |  | no | `total` (default), or a polarization's share: `theta` (E_θ), `phi` (E_φ), `rhcp`, `lhcp`, `co` or `cross` (Ludwig 3) |
+| `co_polar` | number |  | no | the co-polar direction of Ludwig-3 co- and cross-polar, in degrees from x toward y at the pole (default 0: x) |
 | `points` | integer |  | no | angles along the cut, 13 to 721 (default 91) |
 | `width` | integer |  | no | pixels (default 1000) |
 | `height` | integer |  | no | pixels (default 600) |

@@ -347,7 +347,8 @@ fn details(app: &EmcraftApp, v: &mut Value) {
         json!(app.views.eigen_table.as_ref().map(|e| e.cavity.iter().map(|c| c.as_ref().map(|c| c["transit"].clone())).collect::<Vec<_>>()));
     v["field"]["db"] = json!(app.field.view.db);
     v["field"]["contours"] = json!(app.field.view.contours);
-    v["pattern"] = json!({"cut": app.views.pattern.cut.id(), "angle": app.views.pattern.angle, "component": app.views.pattern.component.id()});
+    let pattern = &app.views.pattern;
+    v["pattern"] = json!({"cut": pattern.cut.id(), "angle": pattern.angle, "quantity": pattern.quantity.id(), "component": pattern.component.id()});
     v["estimate"] =
         json!({"run": estimate(crate::steps::run_estimate(app)), "dialog": estimate(app.workflow.dialog_estimate.as_ref().map(|e| &e.reply))});
 }

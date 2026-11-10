@@ -1,5 +1,5 @@
 [
-  {"note": "Where the far field is observed: a φ cut (θ varies) or a θ cut (φ varies) at an angle, the total or one polarization's share; the same through view.pattern"},
+  {"note": "Where the far field is observed: a φ cut (θ varies) or a θ cut (φ varies) at an angle, the total or one polarization's share (circular, Ludwig 3 too), directivity or a fed antenna's gains; the same through view.pattern"},
   {"call": "engine.script", "params": {"commands": [
     {"command": "geometry.solid", "params": {"shape": "box", "size": [60, 60, 60]}},
     {"command": "model.open", "params": {"thickness": 15}},
@@ -22,5 +22,21 @@
   {"call": "engine.execute", "params": {"command": "view.pattern", "params": {"path": "$TMP/cut.png", "cut": "theta", "theta": 90, "component": "phi", "points": 37}}},
   {"click": "pattern:cut:phi"},
   {"frames": 2},
-  {"expect": {"inspect": {"pattern.cut": "phi", "pattern.angle": 0.0, "pattern.component": "theta"}}}
+  {"expect": {"inspect": {"pattern.cut": "phi", "pattern.angle": 0.0, "pattern.component": "theta"}}},
+  {"note": "Gains need a feed: a current element has none, the chart says so"},
+  {"click": "pattern:quantity:gain"},
+  {"frames": 2},
+  {"expect": {"inspect": {"pattern.quantity": "gain"}}},
+  {"call": "engine.script", "params": {"commands": [
+    {"command": "source.clear", "params": {}},
+    {"command": "model.port.lumped", "params": {"name": "x", "from": [29.5, 30, 30], "to": [30.5, 30, 30], "impedance": 50}},
+    {"command": "model.port.lumped", "params": {"name": "y", "from": [30, 29.5, 30], "to": [30, 30.5, 30], "impedance": 50, "phase": -90}},
+    {"command": "solve.radiation", "params": {"frequency": 10, "order": 1}}
+  ]}},
+  {"until": {"busy": false}, "timeout": 120},
+  {"click": "pattern:quantity:realized_gain"},
+  {"click": "pattern:component:rhcp"},
+  {"frames": 2},
+  {"expect": {"inspect": {"pattern.quantity": "realized_gain", "pattern.component": "rhcp", "chart": "*"}, "handles": ["chart:pattern", "pattern:component:lhcp", "pattern:component:co", "pattern:component:cross"]}},
+  {"shot": "far-field-realized-rhcp"}
 ]

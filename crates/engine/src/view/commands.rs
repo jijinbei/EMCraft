@@ -198,8 +198,8 @@ pub fn study(s: &mut Session, p: &Params) -> Result<Value> {
 }
 
 /// A far-field pattern's settings from command parameters: the cut (`phi`, the default, or
-/// `theta`) at its angle (`phi` or `theta`, degrees), the component, the angles drawn, the
-/// solver and frequency.
+/// `theta`) at its angle (`phi` or `theta`, degrees), the quantity, the component and its
+/// co-polar direction, the angles drawn, the solver and frequency.
 pub fn pattern_view(p: &Params) -> Result<super::PatternView> {
     let cut = p.pick("cut").or(super::Cut::Phi)?;
     let angle = match cut {
@@ -209,7 +209,9 @@ pub fn pattern_view(p: &Params) -> Result<super::PatternView> {
     Ok(super::PatternView {
         cut,
         angle,
+        quantity: p.pick("quantity").or(super::FarQuantity::Directivity)?,
         component: p.pick("component").or(super::FarComponent::Total)?,
+        co_polar: crate::open::co_polar(p)?.to_degrees(),
         points: p.integer("points", 13..=721).or(91)?,
         solver: p.choice("solver").optional()?,
         frequency: p.frequency("frequency").optional()?,

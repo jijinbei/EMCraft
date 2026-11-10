@@ -39,6 +39,7 @@ pub fn param_label(command: &str, name: &'static str) -> &'static str {
         (_, "command") => t!("Command").en(),
         (_, "compare") => t!("Compare with").en(),
         (_, "component") => t!("Component").en(),
+        (_, "co_polar") => t!("Co-polar direction").en(),
         (_, "conductivity") => t!("Conductivity").en(),
         (_, "copy") => t!("Save a copy").en(),
         (_, "count") => t!("Count").en(),

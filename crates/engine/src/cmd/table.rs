@@ -11,7 +11,7 @@ use crate::open::FarSolver;
 use crate::project::Format as TouchstoneFormat;
 use crate::solve::{Device, LinearSolver, Strategy};
 use crate::tdr::Mode as TdrMode;
-use crate::view::{Component, Cut, FarComponent, Plane, SDisplay};
+use crate::view::{Component, Cut, FarComponent, FarQuantity, Plane, SDisplay};
 use crate::views::{ChartId, LegendAt, Scale};
 
 use crate::project::Effect;
@@ -87,6 +87,8 @@ const FAR_SOLVER: ParamSpec =
         .one_of(&FarSolver::IDS);
 const FAR_FREQUENCY: ParamSpec = opt("frequency", K::Number, "the time domain's frequency (the nearest solved)").of(F);
 const PHI: ParamSpec = opt("phi", K::Number, "the azimuth in degrees (default 0)");
+const CO_POLAR: ParamSpec =
+    opt("co_polar", K::Number, "the co-polar direction of Ludwig-3 co- and cross-polar, in degrees from x toward y at the pole (default 0: x)");
 
 // An edit's new name.
 const RENAME: ParamSpec = opt("rename", K::String, "a new name, unique");
@@ -1905,10 +1907,11 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "results.far_field",
         label: "Far field",
-        doc: "The far field (r e^{jkr} E_θ, E_φ) of the last radiation solve at polar angles `theta` and azimuth `phi` (degrees), by the near-to-far transform of the Huygens box's equivalent currents: directivity for sources, radar cross-section for a plane wave, with the closed forms where they apply.",
+        doc: "The far field (r e^{jkr} E_θ, E_φ) of the last radiation solve at polar angles `theta` and azimuth `phi` (degrees), by the near-to-far transform of the Huygens box's equivalent currents: radar cross-section for a plane wave, and for sources directivity, gain (directivity × the power radiated over the power the feeds deliver) and realized gain (over the power their sources have available: the mismatch counted too) where lumped ports or a waveguide port feed it, and the polarization — the ellipse's axial ratio (`axial_ratio_db`, null when linear) and sense (`right`, `left` or `linear`, IEEE: seen along the wave's travel), the directivity's shares in right- and left-hand circular and in Ludwig-3 co- and cross-polar (dBi) — with the closed forms where they apply.",
         params: &[
             opt("theta", K::Array, "polar angles in degrees (default 0 to 180 by 10)"),
             PHI,
+            CO_POLAR,
             FAR_SOLVER,
             FAR_FREQUENCY,
         ],
@@ -1919,14 +1922,16 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "view.pattern",
         label: "Pattern chart",
-        doc: "Writes a PNG of a cut through the far-field pattern: against θ at azimuth `phi` (`cut` phi, the default) or against φ from 0 to 360° at polar angle `theta` (`cut` theta); directivity in dBi for sources, radar cross-section in dBsm for a plane wave, all of it or one polarization's share (`component`), over the closed form (the total's) where it applies; in the chart's style (view.chart.style).",
+        doc: "Writes a PNG of a cut through the far-field pattern: against θ at azimuth `phi` (`cut` phi, the default) or against φ from 0 to 360° at polar angle `theta` (`cut` theta); directivity, gain or realized gain (`quantity`) in dBi for sources, radar cross-section in dBsm for a plane wave, all of it or one polarization's share (`component`: E_θ, E_φ, circular, Ludwig-3 co or cross about `co_polar`), over the closed form (the total's) where it applies; in the chart's style (view.chart.style).",
         params: &[
             PNG,
             THEME,
             opt("cut", K::String, "`phi`: θ varies at azimuth `phi` (default); `theta`: φ varies at polar angle `theta`").one_of(&Cut::IDS),
             PHI,
             opt("theta", K::Number, "the polar angle of a θ cut in degrees, 0 to 180 (default 90)"),
-            opt("component", K::String, "`total` (default), `theta` (E_θ's share) or `phi` (E_φ's)").one_of(&FarComponent::IDS),
+            opt("quantity", K::String, "a source's `directivity` (default), `gain` or `realized_gain` (needs a feed)").one_of(&FarQuantity::IDS),
+            opt("component", K::String, "`total` (default), or a polarization's share: `theta` (E_θ), `phi` (E_φ), `rhcp`, `lhcp`, `co` or `cross` (Ludwig 3)").one_of(&FarComponent::IDS),
+            CO_POLAR,
             opt("points", K::Integer, "angles along the cut, 13 to 721 (default 91)"),
             WIDTH,
             HEIGHT,
