@@ -20,6 +20,7 @@
     "Cascade": "縦続接続",
     "Synthesize filter": "フィルタ合成",
     "Coupling matrix": "結合行列",
+    "Active reflection": "アクティブ反射",
     "Tolerance analysis": "公差解析",
     "Tolerance": "公差",
     "{names} · {n} draws": "{names} · {n} 回の抽出",
@@ -900,6 +901,9 @@
     "output": "出力",
     "roughness": "粗さ",
     "samples": "抽出数",
+    "positions": "位置",
+    "weights": "重み",
+    "angles": "角度",
     "seed": "種",
     "spec": "規格",
     "temperature": "温度",
@@ -1357,6 +1361,21 @@
         "data": "`sweep`（既定）または測定値の名前",
         "input": "入力ポート（既定 1）",
         "output": "出力ポート（既定 2）"
+      }
+    },
+    "results.active": {
+      "label": "アクティブ反射",
+      "doc": "アレイの S パラメータからアクティブ反射係数を求める。全素子を a_n = w_n e^{−jk₀ û·r_n}（ビームを û (θ, φ) に向ける）で同時に駆動すると、素子 m が受ける反射は Γ_m = Σ_n S_mn a_n / a_m になる。走査したアレイの中で素子が受ける不整合で、結合のため走査によって変わる（Pozar, IEEE Trans. AP-42, 1994）。素子の位置は `positions`（S の要素ごとに 1 つ）。要素がモデルの集中定数ポートなら、既定はその中点。`weights` は振幅のテーパ（既定は一様）。走査方向は `angles` [[θ, φ], …]、または `start` から `stop` の θ（`points` 個）か 1 つの `theta`、平面は `phi`（既定は正面方向）。周波数と方向ごとに、各素子の |Γ| [dB] と位相を返す。",
+      "params": {
+        "data": "`sweep`（既定）または測定値の名前",
+        "positions": "各要素の素子の位置 [x, y, z]（既定は集中定数ポートの中点）",
+        "weights": "各素子の振幅（既定 1）",
+        "angles": "走査方向 [[θ, φ], …]、度（最大 361）",
+        "theta": "1 つの走査角 θ、度（既定 0、正面方向）",
+        "start": "走査の最初の θ、度",
+        "stop": "最後の θ",
+        "points": "start から stop までの θ の数（既定 19）",
+        "phi": "走査面の φ、度（既定 0）"
       }
     },
     "results.check": {

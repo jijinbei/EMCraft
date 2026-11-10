@@ -1,0 +1,21 @@
+{
+  "note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.",
+  "values": {
+    "g1_across_deg": {
+      "band": 0.00030011932272677836,
+      "value": -119.23634053422515
+    },
+    "g1_db": {
+      "band": 5.000903010751278e-6,
+      "value": -0.9024877589587506
+    },
+    "g1_deg": {
+      "band": 0.00030011957194959235,
+      "value": -119.48556428405884
+    },
+    "g2_deg": {
+      "band": 0.00030011907350396437,
+      "value": -118.98711662490277
+    }
+  }
+}

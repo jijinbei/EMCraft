@@ -28,6 +28,7 @@
 /// cargo builds the engine again when they change.
 const _TRANSLATIONS: &[u8] = include_bytes!("../../../locales/ja.json");
 
+mod active;
 mod adapt;
 pub mod archive;
 mod args;

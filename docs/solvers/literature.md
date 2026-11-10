@@ -367,6 +367,10 @@ overlap tests).
   generalized for nonreciprocal linear networks*, J. Appl. Phys. 26:599–602, 1955 — a passive
   network's noise correlation kT(I − SSᴴ), which lets a two-port cut from it be read alone
   (`emcraft-engine::noise`, `results.noise`; oracle `noise-lossy-line`).
+- D. M. Pozar, *The active element pattern*, IEEE Trans. Antennas Propag. 42(8):1176–1178, 1994;
+  R. C. Hansen, *Phased Array Antennas*, 2nd ed., Wiley 2009, §7.2 — the active reflection of a
+  scanned array's element, Γ_m = Σ_n S_mn a_n / a_m with the steering phases a_n = e^{−jk₀ û·r_n}
+  (`emcraft-engine::active`, `results.active`; oracle `active-line`).
 
 ## Sparse direct solution
 - A. George, *Nested dissection of a regular finite element mesh*, SIAM J. Numer. Anal.
@@ -554,6 +558,7 @@ overlap tests).
   Box, M. E. Muller, *A note on the generation of random normal deviates*, Ann. Math. Statist.
   29(2):610–611, 1958 — normal deviates (`emcraft-engine::study::tolerance`; oracle
   `tolerance-lossy-line`).
+
 ## Periodic structures
 - G. Floquet, *Sur les équations différentielles linéaires à coefficients périodiques*, Ann.
   Sci. ÉNS 12:47–88, 1883 — fields of a periodic structure as E(r + L) = e^{−jψ}E(r).

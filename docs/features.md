@@ -399,6 +399,22 @@ The noise figure of a passive two-port at one physical temperature, from its S a
 | `input` | integer |  | no | the input port (default 1) |
 | `output` | integer |  | no | the output port (default 2) |
 
+## `results.active` — Active reflection
+
+An array's active reflection coefficients from its S-parameters: every element driven at once by a_n = w_n e^{−jk₀ û·r_n}, which steers the beam toward û (θ, φ), so element m sees Γ_m = Σ_n S_mn a_n / a_m — the mismatch it works into in the scanned array, coupling making it depend on the scan (Pozar, IEEE Trans. AP-42, 1994). The elements' places `positions` (one per S entry), or the middles of the model's lumped ports when the entries are they; `weights` an amplitude taper (default uniform). Scan directions as `angles` [[θ, φ], …], or θ from `start` to `stop` (`points`) or one `theta`, at `phi` (default broadside). Per frequency and direction: each element's |Γ| (dB) and phase.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `data` | string |  | no | `sweep` (default) or a measurement's name |
+| `positions` | array | length | no | each entry's element position [x, y, z] (default the lumped ports' middles) |
+| `weights` | array |  | no | each element's amplitude (default 1) |
+| `angles` | array |  | no | scan directions [[θ, φ], …] in degrees (at most 361) |
+| `theta` | number |  | no | one scan angle θ in degrees (default 0, broadside) |
+| `start` | number |  | no | the first θ of a scan in degrees |
+| `stop` | number |  | no | the last θ |
+| `points` | integer |  | no | θ values from start to stop (default 19) |
+| `phi` | number |  | no | the scan plane's φ in degrees (default 0) |
+
 ## `results.check` — Check results
 
 The sweep's physics checks: passivity (the largest singular value of S over the frequencies, ≤ 1 when passive), reciprocity (max |S − Sᵀ|) and unitarity (max |SᴴS − 1|, 0 when lossless).

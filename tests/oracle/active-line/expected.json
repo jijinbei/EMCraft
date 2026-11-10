@@ -1,0 +1,119 @@
+{
+ "title": "A matched lossy WR-90 line as a two-element array: its active reflections scanned along it and across it",
+ "kind": "theory",
+ "source": "A matched line seen as a two-element array, its ports the elements at z = 0 and 30 mm: S11 = S22 = 0 and S21 = e^{−γL}, γ = √((π/a)² − k0² εr(1 − j tan δ)) (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.3), so driven as a_n = e^{−jk0 û·r_n} element 1 sees Γ1 = S12 a2/a1 = e^{−γL} e^{−jk0 L cos θ} and element 2 Γ2 = e^{−γL} e^{+jk0 L cos θ} (Pozar, IEEE Trans. AP-42, 1994): at broadside along z |Γ| = e^{−αL} and the phases −βL ∓ k0L; across (θ = 90°) the plain S21. Evaluated separately from EMCraft's code",
+ "quantities": [
+  {
+   "id": "g1_db",
+   "quantity": "|Γ1| scanned along z (dB)",
+   "measure": {
+    "command": "results.active",
+    "params": {
+     "positions": [
+      [
+       0,
+       0,
+       0
+      ],
+      [
+       0,
+       0,
+       30
+      ]
+     ],
+     "theta": 0
+    },
+    "pointer": "/points/0/scan/0/elements/0/db"
+   },
+   "value": -0.9030097512771205,
+   "tolerance": {
+    "absolute": 0.005
+   },
+   "reason": "|S21|'s accuracy (lossy-line: second-order elements of 3 mm)"
+  },
+  {
+   "id": "g1_deg",
+   "quantity": "arg Γ1 scanned along z (degrees)",
+   "measure": {
+    "command": "results.active",
+    "params": {
+     "positions": [
+      [
+       0,
+       0,
+       0
+      ],
+      [
+       0,
+       0,
+       30
+      ]
+     ],
+     "theta": 0
+    },
+    "pointer": "/points/0/scan/0/elements/0/deg"
+   },
+   "value": -119.5719485923675,
+   "tolerance": {
+    "absolute": 0.3
+   },
+   "reason": "S21's phase error over 30 mm (lossy-line), the scan's phase exact"
+  },
+  {
+   "id": "g2_deg",
+   "quantity": "arg Γ2 scanned along z (degrees)",
+   "measure": {
+    "command": "results.active",
+    "params": {
+     "positions": [
+      [
+       0,
+       0,
+       0
+      ],
+      [
+       0,
+       0,
+       30
+      ]
+     ],
+     "theta": 0
+    },
+    "pointer": "/points/0/scan/0/elements/1/deg"
+   },
+   "value": -119.07350296435912,
+   "tolerance": {
+    "absolute": 0.3
+   },
+   "reason": "as Γ1, the scan's phase the other way"
+  },
+  {
+   "id": "g1_across_deg",
+   "quantity": "arg Γ1 scanned across the line (θ = 90°, degrees)",
+   "measure": {
+    "command": "results.active",
+    "params": {
+     "positions": [
+      [
+       0,
+       0,
+       0
+      ],
+      [
+       0,
+       0,
+       30
+      ]
+     ],
+     "theta": 90
+    },
+    "pointer": "/points/0/scan/0/elements/0/deg"
+   },
+   "value": -119.3227257783633,
+   "tolerance": {
+    "absolute": 0.3
+   },
+   "reason": "no path difference across the line: S21's own phase"
+  }
+ ]
+}
