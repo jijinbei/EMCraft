@@ -131,6 +131,58 @@ impl Driven {
     }
 }
 
+/// The largest electric field of a solution: its peak over time (V/m) and where.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PeakField {
+    pub value: f64,
+    pub at: Point3,
+}
+
+/// The largest |e(t)| over a cycle of the phasor `e` (e(t) = Re(e e^{jωt})): the major
+/// semi-axis of its ellipse, √((|e|² + |e·e|)/2) — |e| for a linearly polarized field.
+///
+/// ```
+/// use emcraft_model::CVec3;
+/// use num_complex::Complex64 as C;
+/// // Linear: its length; circular (x + jy): one, not √2.
+/// let linear = CVec3::new(C::new(3.0, 0.0), C::new(0.0, 0.0), C::new(4.0, 0.0));
+/// assert!((emcraft_solver::driven::time_peak(linear) - 5.0).abs() < 1e-12);
+/// let circular = CVec3::new(C::new(1.0, 0.0), C::new(0.0, 1.0), C::new(0.0, 0.0));
+/// assert!((emcraft_solver::driven::time_peak(circular) - 1.0).abs() < 1e-12);
+/// ```
+pub fn time_peak(e: CVec3) -> f64 {
+    let squared = e.x.norm_sqr() + e.y.norm_sqr() + e.z.norm_sqr();
+    let dot = e.x * e.x + e.y * e.y + e.z * e.z;
+    (0.5 * (squared + dot.norm())).sqrt()
+}
+
+impl Driven {
+    /// The largest electric field of the coefficients `x` ([`time_peak`]), over the points of
+    /// each tetrahedron's rule and its corners, outside the matched layer; `None` for no
+    /// tetrahedra. The corners reach the walls, where the largest fields of irises and posts are;
+    /// sampled so, the largest value overshoots the true one by the elements' interpolation error
+    /// (3 % for a guide's TE10 with second-order elements of λ/10, less as they shrink) — the safe
+    /// side for breakdown. The field at a metal edge grows as the mesh refines (it is singular
+    /// there): the value is the mesh's.
+    pub fn peak_e(&self, x: &[C], frequency: f64) -> Result<Option<PeakField>> {
+        let in_pml = self.pml_tets();
+        let n = rule_points(self.order);
+        let corners = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]];
+        let mut best: Option<PeakField> = None;
+        for t in (0..self.mesh.tets.len()).filter(|t| !in_pml.contains(t)) {
+            let el = self.element_of(t)?;
+            let points = el.rule(n).into_iter().map(|(l, _)| l).chain(corners);
+            for l in points {
+                let value = time_peak(self.field_in((t, &el), l, x, frequency, Field::E));
+                if value.is_finite() && best.is_none_or(|b| value > b.value) {
+                    best = Some(PeakField { value, at: el.point(l) });
+                }
+            }
+        }
+        Ok(best)
+    }
+}
+
 /// A field with its components' signs changed.
 fn flipped(mut v: CVec3, signs: [f64; 3]) -> CVec3 {
     for (k, s) in signs.iter().enumerate() {

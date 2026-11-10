@@ -20,6 +20,8 @@
     "Cascade": "縦続接続",
     "Synthesize filter": "フィルタ合成",
     "Coupling matrix": "結合行列",
+    "Power handling": "耐電力",
+    "Temperature": "温度",
     "Active reflection": "アクティブ反射",
     "Tolerance analysis": "公差解析",
     "Tolerance": "公差",
@@ -901,6 +903,10 @@
     "output": "出力",
     "roughness": "粗さ",
     "samples": "抽出数",
+    "breakdown": "放電電界",
+    "power": "電力",
+    "wall_temperature": "壁の温度",
+    "thermal_conductivity": "熱伝導率",
     "positions": "位置",
     "weights": "重み",
     "angles": "角度",
@@ -1378,6 +1384,25 @@
         "phi": "走査面の φ、度（既定 0）"
       }
     },
+    "results.breakdown": {
+      "label": "耐電力",
+      "doc": "構造が放電するまでに運べる電力：`excitation` に 1 W 入射したときの解いた場の最大電界 E₁（1 周期でのピーク）を、整合層の外の全要素でサンプルして求め、その位置と、放電強度 E_b（`breakdown`、既定は空気の 3 MV/m）に達する電力 (E_b/E₁)² W を返す。解いた周波数ごと（または `frequency` の 1 つ）。最大電界はメッシュによる値：金属の縁では電界が特異でメッシュを細かくするほど大きくなるので、鋭い角は実際より低く読める。角を丸めるか、そこを細かくする。",
+      "params": {
+        "breakdown": "放電電界 E_b、MV/m（既定 3、空気）",
+        "excitation": "1 W で駆動するポート（既定は駆動ポート）",
+        "frequency": "解いた周波数の 1 つだけ（既定はすべて）"
+      }
+    },
+    "results.thermal": {
+      "label": "温度",
+      "doc": "解いた場の損失が上げる定常温度：`excitation` に `power` W 入射し、誘電・磁性損失（½ωε₀ε″|E|² + ½ωμ₀μ″|H|²）を熱源に、各材料の `thermal_conductivity`（真空は空気）で熱が伝わる。壁は `wall_temperature` の放熱体（壁自身の損失は壁から抜ける）、ポートと対称面は断熱。メッシュの頂点上の 1 次要素で解く。返り値は場が置く熱、最も熱い点とその温度、各材料の最高温度。",
+      "params": {
+        "power": "入射電力、W（既定 1）",
+        "excitation": "電力が入るポート（既定は駆動ポート）",
+        "frequency": "解いた周波数（掃引が複数解いたときは必須）",
+        "wall_temperature": "壁（放熱体）の温度、°C（既定 20）"
+      }
+    },
     "results.check": {
       "label": "結果のチェック",
       "doc": "掃引の物理チェック：受動性（全周波数での S の最大特異値。受動なら ≤ 1）、相反性（max |S − Sᵀ|）、ユニタリ性（max |SᴴS − 1|。無損失なら 0）。",
@@ -1400,6 +1425,7 @@
         "mu_r": "比透磁率 μr > 0（既定 1）",
         "loss_tangent": "誘電損失正接 tan δ、0〜1e9（既定 0）：ε = εr(1 − j tan δ)",
         "magnetic_loss_tangent": "磁性損失正接 tan δm、0〜1e9（既定 0）：μ = μr(1 − j tan δm)",
+        "thermal_conductivity": "熱伝導率 k、W/(m·K)、results.thermal 用（PTFE 0.25、アルミナ 30。真空は空気の 0.026）",
         "debye": "Debye 極 `[{\"delta_eps\", \"frequency\"}]`：χ = Δε/(1 + jω/ω_r)、Δε > 0、緩和周波数 f_r = 1/(2πτ) > 0（周波数）",
         "lorentz": "Lorentz 極 `[{\"delta_eps\", \"frequency\", \"damping\"}]`：χ = Δε ω₀²/(ω₀² − ω² + jωγ)、Δε > 0、共振周波数 f₀ = ω₀/2π > 0、減衰 γ/2π > 0（周波数）",
         "drude": "Drude 極 `[{\"plasma_frequency\", \"damping\"}]`：χ = −ω_p²/(ω² − jωγ)、プラズマ周波数 ω_p/2π > 0、減衰 γ/2π > 0（周波数）"
@@ -2195,6 +2221,7 @@
         "mu_r": "比透磁率 μr > 0",
         "loss_tangent": "誘電損失正接 tan δ、0〜1e9",
         "magnetic_loss_tangent": "磁性損失正接 tan δm、0〜1e9",
+        "thermal_conductivity": "熱伝導率 k、W/(m·K)、results.thermal 用（PTFE 0.25、アルミナ 30。真空は空気の 0.026）",
         "debye": "Debye 極 `[{\"delta_eps\", \"frequency\"}]`、材料の極を置き換える（周波数）",
         "lorentz": "Lorentz 極 `[{\"delta_eps\", \"frequency\", \"damping\"}]`、材料の極を置き換える（周波数）",
         "drude": "Drude 極 `[{\"plasma_frequency\", \"damping\"}]`、材料の極を置き換える（周波数）"

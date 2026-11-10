@@ -198,3 +198,27 @@ fn material_noise_and_rough_walls_refuse_hostile_parameters() {
     let n = s.execute("results.noise", &json!({})).unwrap();
     assert!(n["points"].as_array().unwrap().iter().all(|p| p["nf_db"].as_f64().is_none_or(|f| f >= -1e-9)), "{n}");
 }
+
+#[test]
+fn power_handling_and_temperature_refuse_hostile_parameters() {
+    let mut s = highpass();
+    for (command, params) in [
+        ("results.breakdown", json!({"breakdown": 0})),
+        ("results.breakdown", json!({"breakdown": 1e9})),
+        ("results.breakdown", json!({"excitation": "nope"})),
+        ("results.breakdown", json!({"frequency": 123.456})),
+        ("results.thermal", json!({"power": 0})),
+        ("results.thermal", json!({"power": 1e12})),
+        ("results.thermal", json!({"wall_temperature": -300})),
+        // The highpass sweep solved several frequencies: one must be named.
+        ("results.thermal", json!({})),
+    ] {
+        assert!(s.execute(command, &params).is_err(), "{command} {params}");
+    }
+    // Its filling has no thermal conductivity: named in the refusal.
+    let f = s.results.sweep().unwrap().results[0].frequency / 1e9;
+    let e = s.execute("results.thermal", &json!({"frequency": f})).unwrap_err().to_string();
+    assert!(e.contains("thermal conductivity"), "{e}");
+    let b = s.execute("results.breakdown", &json!({})).unwrap();
+    assert!(b["points"].as_array().unwrap().iter().all(|p| p["max_power"].as_f64().is_some_and(|w| w > 0.0)), "{b}");
+}

@@ -1,0 +1,58 @@
+{
+ "title": "A low-loss dielectric filling WR-90, 100 W at 10 GHz: the heat it absorbs and the temperature it reaches, the walls a 20 °C sink",
+ "kind": "theory",
+ "source": "A matched line of a low-loss dielectric (εr = 2.2, tan δ = 0.002, k = 0.25 W/(m·K)) filling 30 mm of WR-90, 100 W incident at 10 GHz: it absorbs P(1 − e^{−2αL}) = 2.0579 W (α of γ = √((π/a)² − k0² εr(1 − j tan δ)), D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.3), deposited as q = ½ωε₀ε″|E|² = q₀ sin²(πx/a), |E₀|² = 4Z_TE P/(ab). With the walls a sink and the attenuation over the line small (e^{−2αL} = 0.98), the temperature solves −k∇²T = q̄ sin²(πx/a) on the a × b section, q̄ the mean over the length, T = 0 on its sides (Zienkiewicz & Taylor's heat conduction): by the double sine series (m odd to 79, n odd to 399), the rise at the centre is 23.18 K. Evaluated separately from EMCraft's code",
+ "quantities": [
+  {
+   "id": "heat",
+   "quantity": "heat the field deposits for 100 W (W)",
+   "measure": {
+    "command": "results.thermal",
+    "params": {
+     "power": 100,
+     "wall_temperature": 20
+    },
+    "pointer": "/heat"
+   },
+   "value": 2.057944989689098,
+   "tolerance": {
+    "relative": 0.005
+   },
+   "reason": "the absorbed power read from the field's loss density, |S21|'s accuracy (lossy-line: about 1e-3 dB of 0.09 dB) and the rule's quadrature"
+  },
+  {
+   "id": "max_rise",
+   "quantity": "largest temperature rise (K)",
+   "measure": {
+    "command": "results.thermal",
+    "params": {
+     "power": 100,
+     "wall_temperature": 20
+    },
+    "pointer": "/max_rise"
+   },
+   "value": 23.182876958030327,
+   "tolerance": {
+    "relative": 0.03
+   },
+   "reason": "linear elements of 2 mm across 10.16 mm (about 1 % at the peak), and the heat's 2 % fall along the line, which the section's 2D solution averages away"
+  },
+  {
+   "id": "max_temperature",
+   "quantity": "hottest temperature (°C), the walls at 20 °C",
+   "measure": {
+    "command": "results.thermal",
+    "params": {
+     "power": 100,
+     "wall_temperature": 20
+    },
+    "pointer": "/max_temperature"
+   },
+   "value": 43.18287695803033,
+   "tolerance": {
+    "absolute": 0.7
+   },
+   "reason": "the rise's 3 % on the walls' 20 °C"
+  }
+ ]
+}

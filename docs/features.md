@@ -415,6 +415,27 @@ An array's active reflection coefficients from its S-parameters: every element d
 | `points` | integer |  | no | θ values from start to stop (default 19) |
 | `phi` | number |  | no | the scan plane's φ in degrees (default 0) |
 
+## `results.breakdown` — Power handling
+
+The power the structure carries before its field breaks down: the largest field E₁ (its peak over the cycle) of the solved field for 1 W incident at `excitation`, sampled over every element outside a matched layer, where it is, and the power (E_b/E₁)² W at which it reaches the breakdown strength E_b (`breakdown`, air's 3 MV/m by default). Per solved frequency (or the one `frequency`). The largest field is the mesh's: at a metal edge the field is singular and grows as the mesh refines, so a sharp corner reads less than it is — round it, or refine there.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `breakdown` | number |  | no | the breakdown field E_b in MV/m (default 3, air) |
+| `excitation` | string |  | no | the port driven with 1 W (default the driven one) |
+| `frequency` | number | frequency | no | one solved frequency only (default every one) |
+
+## `results.thermal` — Temperature
+
+The steady temperature the solved field's losses raise: `power` watts incident at `excitation`, the dielectric and magnetic losses (½ωε₀ε″|E|² + ½ωμ₀μ″|H|²) the heat source, conducted at each material's `thermal_conductivity` (vacuum is air), the walls a heat sink at `wall_temperature` (their own loss leaves through them), the ports and symmetry planes adiabatic. Linear elements on the mesh's corners. The reply gives the heat the field deposits, the hottest point and its temperature, and each material's hottest temperature.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `power` | number |  | no | the incident power in W (default 1) |
+| `excitation` | string |  | no | the port the power comes in at (default the driven one) |
+| `frequency` | number | frequency | no | the solved frequency (needed when the sweep solved several) |
+| `wall_temperature` | number |  | no | the walls' (heat sink's) temperature in °C (default 20) |
+
 ## `results.check` — Check results
 
 The sweep's physics checks: passivity (the largest singular value of S over the frequencies, ≤ 1 when passive), reciprocity (max |S − Sᵀ|) and unitarity (max |SᴴS − 1|, 0 when lossless).
@@ -441,6 +462,7 @@ A linear, isotropic material, lossless unless it has a loss tangent (dielectric 
 | `mu_r` | number |  | no | relative permeability μr > 0 (default 1) |
 | `loss_tangent` | number |  | no | dielectric loss tangent tan δ, 0 to 1e9 (default 0): ε = εr(1 − j tan δ) |
 | `magnetic_loss_tangent` | number |  | no | magnetic loss tangent tan δm, 0 to 1e9 (default 0): μ = μr(1 − j tan δm) |
+| `thermal_conductivity` | number |  | no | thermal conductivity k in W/(m·K) for results.thermal (PTFE 0.25, alumina 30; vacuum is air, 0.026) |
 | `debye` | array | frequency | no | Debye poles `[{"delta_eps", "frequency"}]`: χ = Δε/(1 + jω/ω_r), Δε > 0, relaxation frequency f_r = 1/(2πτ) > 0 (frequency) |
 | `lorentz` | array | frequency | no | Lorentz poles `[{"delta_eps", "frequency", "damping"}]`: χ = Δε ω₀²/(ω₀² − ω² + jωγ), Δε > 0, resonance f₀ = ω₀/2π > 0, damping γ/2π > 0 (frequencies) |
 | `drude` | array | frequency | no | Drude poles `[{"plasma_frequency", "damping"}]`: χ = −ω_p²/(ω² − jωγ), plasma frequency ω_p/2π > 0, damping γ/2π > 0 (frequencies) |
@@ -457,6 +479,7 @@ Changes a material: its properties (as model.material.create takes them; `debye`
 | `mu_r` | number |  | no | relative permeability μr > 0 |
 | `loss_tangent` | number |  | no | dielectric loss tangent tan δ, 0 to 1e9 |
 | `magnetic_loss_tangent` | number |  | no | magnetic loss tangent tan δm, 0 to 1e9 |
+| `thermal_conductivity` | number |  | no | thermal conductivity k in W/(m·K) for results.thermal (PTFE 0.25, alumina 30; vacuum is air, 0.026) |
 | `debye` | array | frequency | no | Debye poles `[{"delta_eps", "frequency"}]`, replacing the material's (frequency) |
 | `lorentz` | array | frequency | no | Lorentz poles `[{"delta_eps", "frequency", "damping"}]`, replacing the material's (frequencies) |
 | `drude` | array | frequency | no | Drude poles `[{"plasma_frequency", "damping"}]`, replacing the material's (frequencies) |

@@ -62,6 +62,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("results.material", Some(t!("Material from S").en()), Some(Glyph::Material), false),
     ui("results.noise", Some(t!("Noise figure").en()), Some(Glyph::Chart), false),
     ui("results.active", Some(t!("Active reflection").en()), Some(Glyph::Chart), false),
+    ui("results.breakdown", Some(t!("Power handling").en()), Some(Glyph::Chart), false),
+    ui("results.thermal", Some(t!("Temperature").en()), Some(Glyph::Chart), false),
     ui("results.check", Some(t!("Checks").en()), Some(Glyph::Check), false),
     ui("units.set", Some(t!("Units").en()), Some(Glyph::Units), false),
     ui("model.material.create", Some(t!("Material").en()), Some(Glyph::Material), false),

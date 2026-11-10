@@ -371,6 +371,15 @@ overlap tests).
   R. C. Hansen, *Phased Array Antennas*, 2nd ed., Wiley 2009, §7.2 — the active reflection of a
   scanned array's element, Γ_m = Σ_n S_mn a_n / a_m with the steering phases a_n = e^{−jk₀ û·r_n}
   (`emcraft-engine::active`, `results.active`; oracle `active-line`).
+- D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §3.3, eq. 3.90 — the power a
+  guide's TE10 carries, P = ab|E₀|²/(4Z_TE), whose field at breakdown bounds the power it handles
+  (`emcraft-engine::breakdown`, `results.breakdown`; the field's peak over the cycle,
+  `emcraft-solver::driven::time_peak`; oracle `breakdown-guide`).
+- O. C. Zienkiewicz, R. L. Taylor, *The Finite Element Method*, vol. 1, 5th ed., 2000, §3.2 and
+  ch. 7 — steady heat conduction on linear tetrahedra, the element conductivity k V ∇λᵢ·∇λⱼ and
+  load ∫ q λᵢ dV, the field's loss density the source and the walls a sink
+  (`emcraft-solver::driven::thermal`, `results.thermal`; oracle `thermal-lossy-line`, against the
+  section's double sine series).
 
 ## Sparse direct solution
 - A. George, *Nested dissection of a regular finite element mesh*, SIAM J. Numer. Anal.

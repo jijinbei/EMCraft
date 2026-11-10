@@ -81,9 +81,14 @@ pub fn material_edit(s: &mut Session, p: &Params) -> Result<Value> {
     let material = Material::new(name, p.number("eps_r").or(old.eps_r.get())?, p.number("mu_r").or(old.mu_r.get())?)?
         .with_loss_tangent(p.number("loss_tangent").or(old.loss_tangent.get())?)?
         .with_magnetic_loss_tangent(p.number("magnetic_loss_tangent").or(old.magnetic_loss_tangent.get())?)?
-        .with_dispersion(pole_count(dispersion)?)?;
-    // A new name alone changes no result; anything else every one.
-    let physics = Material { name: old.name.clone(), ..material.clone() } != old;
+        .with_dispersion(pole_count(dispersion)?)?
+        .with_thermal_conductivity(match p.number("thermal_conductivity").optional()? {
+            Some(k) => Some(k),
+            None if p.cleared("thermal_conductivity") => None,
+            None => old.thermal_conductivity.map(emcraft_model::Positive::get),
+        })?;
+    // A new name or thermal conductivity changes no field result; anything else every one.
+    let physics = Material { name: old.name.clone(), thermal_conductivity: old.thermal_conductivity, ..material.clone() } != old;
     s.model.replace_material(i, material)?;
     if physics {
         s.results.invalidate(Change::Geometry);

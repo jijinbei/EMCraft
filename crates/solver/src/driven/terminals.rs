@@ -74,6 +74,16 @@ impl Driven {
         out
     }
 
+    /// The power (W) an entry's excitation brings in: 1 W for a lumped port's or a terminal's
+    /// power wave, a waveguide port's unit wave of its first mode ([`Driven::incident_power`]).
+    /// `None` where the port's mode carries no real power (below its cut-off).
+    pub fn entry_power(&self, entry: &SPort, frequency: f64) -> Option<f64> {
+        if self.ports.is_empty() || entry.terminal.is_some() {
+            return Some(1.0);
+        }
+        self.incident_power(entry.port, frequency).filter(|p| p.is_finite() && *p > 0.0)
+    }
+
     /// The excitations, one per entry of S: (port, mode). A terminal port excites each of its
     /// first modes, one per conductor.
     pub(crate) fn excitations(&self) -> Vec<(usize, usize)> {

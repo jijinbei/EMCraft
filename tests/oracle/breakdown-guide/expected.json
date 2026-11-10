@@ -1,0 +1,35 @@
+{
+ "title": "Empty WR-90 at 10 GHz: the largest field for 1 W and the power at which air breaks down",
+ "kind": "theory",
+ "source": "TE10 in an empty a × b guide carries P = ab|E0|²/(4Z_TE), Z_TE = η0 k0/β (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.3, eq. 3.90), its field largest on the centre line, E0 = √(4Z_TE P/(ab)): for WR-90 at 10 GHz, Z_TE = 498.97 Ω, E0 = 2931.5 V/m at 1 W, and air (3 MV/m) breaks down at ab E_b²/(4Z_TE) = 1.0473 MW. Evaluated separately from EMCraft's code",
+ "quantities": [
+  {
+   "id": "peak_field",
+   "quantity": "largest field for 1 W at 10 GHz (V/m)",
+   "measure": {
+    "command": "results.breakdown",
+    "params": {},
+    "pointer": "/points/0/peak_field"
+   },
+   "value": 2931.461201211004,
+   "tolerance": {
+    "relative": 0.05
+   },
+   "reason": "the largest of the field sampled at every element's rule points and corners picks the interpolation's largest overshoot: +3 % with second-order elements of 3 mm (+1.8 % at the rule points alone, +0.8 % of those at 2 mm: it converges), on the safe side for breakdown"
+  },
+  {
+   "id": "max_power",
+   "quantity": "power at air's breakdown (W)",
+   "measure": {
+    "command": "results.breakdown",
+    "params": {},
+    "pointer": "/points/0/max_power"
+   },
+   "value": 1047307.4873146407,
+   "tolerance": {
+    "relative": 0.1
+   },
+   "reason": "twice the peak field's (the power goes as its inverse square), low: the safe side"
+  }
+ ]
+}

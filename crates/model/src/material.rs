@@ -30,7 +30,16 @@ pub struct Material {
     /// Dispersion: poles whose susceptibilities add to the permittivity ([`Material::eps_at`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dispersion: Vec<Pole>,
+    /// Thermal conductivity k (W/(m·K)) for a temperature solve; vacuum's is air's
+    /// ([`AIR_THERMAL_CONDUCTIVITY`]) when `None`, any other lossy material's must be given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thermal_conductivity: Option<Positive>,
 }
+
+/// Air's thermal conductivity at room temperature (W/(m·K)), taken for vacuum.
+pub const AIR_THERMAL_CONDUCTIVITY: f64 = 0.026;
+/// The highest thermal conductivity a material takes (W/(m·K)): above diamond's (about 2000).
+pub const MAX_THERMAL_CONDUCTIVITY: f64 = 1e4;
 
 /// The most poles one material may carry.
 pub const MAX_POLES: usize = 16;
@@ -173,7 +182,20 @@ impl Material {
             loss_tangent: LossTangent::ZERO,
             magnetic_loss_tangent: LossTangent::ZERO,
             dispersion: Vec::new(),
+            thermal_conductivity: None,
         })
+    }
+
+    /// The same material with a thermal conductivity (W/(m·K), above 0 and at most
+    /// [`MAX_THERMAL_CONDUCTIVITY`]), or none.
+    pub fn with_thermal_conductivity(mut self, k: Option<f64>) -> Result<Material> {
+        if let Some(k) = k
+            && !(k > 0.0 && k <= MAX_THERMAL_CONDUCTIVITY)
+        {
+            return Err(invalid("thermal conductivity", format!("must be above 0 and at most {MAX_THERMAL_CONDUCTIVITY} W/(m·K), got {k}")));
+        }
+        self.thermal_conductivity = k.map(|k| Positive::named("thermal conductivity", k)).transpose()?;
+        Ok(self)
     }
 
     /// The same material with a dielectric loss tangent (finite, 0 to [`MAX_LOSS_TANGENT`]).
@@ -265,6 +287,7 @@ impl Material {
             loss_tangent: LossTangent::ZERO,
             magnetic_loss_tangent: LossTangent::ZERO,
             dispersion: Vec::new(),
+            thermal_conductivity: None,
         }
     }
 }
