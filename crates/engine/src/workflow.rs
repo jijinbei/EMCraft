@@ -70,7 +70,7 @@ impl Step {
         Some(match id {
             "project.analysis" | "units.set" => Step::Intent,
             "project.setup" => Step::Setup,
-            _ if id.starts_with("geometry.") || id == "file.sample" || id == "model.material.create" => Step::Geometry,
+            _ if id.starts_with("geometry.") || id == "file.sample" || id.starts_with("model.material.") => Step::Geometry,
             _ if id.starts_with("model.port.") || id.starts_with("source.") || id == "solve.port_modes" => Step::Excitation,
             "model.region" | "model.background" | "model.walls" | "model.open" | "model.symmetry" => Step::Boundaries,
             "mesh.generate" | "project.estimate" => Step::Mesh,

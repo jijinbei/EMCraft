@@ -54,6 +54,11 @@ fn scenario_network_views() {
 }
 
 #[test]
+fn scenario_browser_steps() {
+    scenario("browser_steps");
+}
+
+#[test]
 fn scenario_analyses() {
     scenario("analyses");
 }

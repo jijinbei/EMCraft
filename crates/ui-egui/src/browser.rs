@@ -236,6 +236,16 @@ impl Row {
         self.item.is_some() || self.act.edits()
     }
 
+    /// The workflow step its edit command belongs to ([`crate::steps::Step::of_command`]).
+    pub fn step(&self) -> Option<crate::steps::Step> {
+        let command = match (&self.item, &self.act) {
+            (Some(item), _) => item.edit,
+            (None, Act::Edit(id) | Act::EditWith(id, _)) => id,
+            _ => return None,
+        };
+        crate::steps::Step::of_command(command)
+    }
+
     /// What a double-click (or Edit) asks for: its item's edit dialog, else its command's.
     pub fn edit_action(&self) -> Option<Action> {
         match &self.item {
@@ -982,6 +992,11 @@ fn browser_row(app: &EmcraftApp, ui: &mut egui::Ui, r: &Row, out_of_date: bool, 
         out.push(Action::Select { row, picks: picks.to_vec() });
     } else if resp.clicked() {
         out.push(Action::Select { row: Some(key.clone()), picks: r.pick.into_iter().collect() });
+        // A row of the model takes the workflow to its step (the mesh's to Mesh, a port's to
+        // Excitation), whose panel shows it; a double-click edits it.
+        if let Some(step) = r.step().filter(|s| app.place.step() != Some(*s)) {
+            out.push(Action::OpenStep(Some(step)));
+        }
         match &r.act {
             Act::Show(v) => out.push(Action::ShowView(*v)),
             Act::Run(command, params) => out.push(Action::run(command, params.clone())),
@@ -1037,17 +1052,24 @@ fn visibility_eye(app: &EmcraftApp, ui: &egui::Ui, rect: Rect, object: &emcraft_
     eye
 }
 
+/// How far below the line box a subscript's glyphs reach, as a share of the font's size.
+const SUBSCRIPT_DROP: f32 = 0.35;
+
 /// A port's role at the right of its row: its mark's colour as a soft pill, the role in short
 /// with the S-parameter set as mathematics. The rectangle it took.
 fn role_pill(ui: &egui::Ui, rect: Rect, role: &PortRole) -> Rect {
     let t = &Tokens::get();
     let galley = ui.painter().layout_job(crate::math::rich(&role.text(), t.font_small, t.text));
-    let size = galley.size() + vec2(12.0, 2.0);
+    // A subscript drops below the line box by about a third of the font's size (crate::math):
+    // room for it under the text.
+    let drop = SUBSCRIPT_DROP * t.font_small;
+    let inked = galley.rect;
+    let size = inked.size() + vec2(12.0, 4.0 + drop);
     let pill = Rect::from_min_size(pos2(rect.right() - 4.0 - size.x, rect.center().y - size.y / 2.0), size);
     let ink = role.colour();
     ui.painter().rect_filled(pill, size.y / 2.0, ink.gamma_multiply(0.2));
     ui.painter().rect_stroke(pill, size.y / 2.0, Stroke::new(1.0, ink), egui::StrokeKind::Inside);
-    ui.painter().galley(pill.min + vec2(6.0, 1.0), galley, t.text);
+    ui.painter().galley(pill.min + vec2(6.0, 2.0) - inked.min.to_vec2(), galley, t.text);
     pill
 }
 

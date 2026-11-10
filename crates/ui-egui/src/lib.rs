@@ -602,6 +602,9 @@ pub enum UiError {
     Refused(String),
 }
 
+/// The window's application id, the name of its desktop entry (`emcraft.desktop`).
+pub const APP_ID: &str = "emcraft";
+
 /// Opens the desktop app; `sample` is opened and solved at once. `control` is the control
 /// channel's request queue (`emcraft --control PORT`).
 pub fn run(sample: Option<String>, control: Option<Receiver<ControlRequest>>) -> eframe::Result {
@@ -616,6 +619,9 @@ pub fn run_with(sample: Option<String>, host: Host, control: impl FnOnce(&egui::
     let options = |renderer| eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("EMCraft")
+            // The desktop's id for the window: a dock shows the icon of `emcraft.desktop`
+            // (`cargo xtask desktop` writes it), Wayland's compositors ignoring a window's own.
+            .with_app_id(APP_ID)
             .with_icon(egui::IconData { rgba: emcraft_render::icon::rgba(64), width: 64, height: 64 })
             .with_inner_size([1500.0, 960.0])
             .with_min_inner_size([900.0, 600.0]),

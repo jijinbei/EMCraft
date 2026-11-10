@@ -38,6 +38,37 @@ pub fn icon(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// The sides of the desktop icon written into the hicolor theme.
+const DESKTOP_SIDES: [u32; 4] = [48, 64, 128, 256];
+
+/// Writes the desktop entry `emcraft.desktop` and its icon into the user's data directory
+/// (`$XDG_DATA_HOME`, else `~/.local/share`): a Linux desktop's dock and menu show EMCraft's
+/// icon for its window (whose application id is `emcraft`) instead of a generic one. It runs
+/// `emcraft` from the PATH (or `exec`).
+pub fn desktop(exec: Option<&str>) -> Result<(), String> {
+    let data = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+        .ok_or("desktop: neither XDG_DATA_HOME nor HOME is set")?;
+    let write = |path: PathBuf, bytes: &[u8]| -> Result<(), String> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        }
+        std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+        println!("desktop: wrote {}", path.display());
+        Ok(())
+    };
+    for side in DESKTOP_SIDES {
+        let png = emcraft_render::icon::png(side).ok_or("desktop: the PNG encoder failed")?;
+        write(data.join(format!("icons/hicolor/{side}x{side}/apps/emcraft.png")), &png)?;
+    }
+    let exec = exec.unwrap_or("emcraft");
+    let entry = format!(
+        "[Desktop Entry]\nType=Application\nName=EMCraft\nComment=Electromagnetic field simulator\nExec={exec} %f\nIcon=emcraft\nTerminal=false\nCategories=Science;Engineering;\nStartupWMClass=emcraft\n"
+    );
+    write(data.join("applications/emcraft.desktop"), entry.as_bytes())
+}
+
 /// The installer's licence page: which licences apply, then both texts, with Windows line ends.
 pub fn licence_text(root: &Path) -> Result<String, String> {
     let read = |name: &str| std::fs::read_to_string(root.join(name)).map_err(|e| format!("{name}: {e}"));

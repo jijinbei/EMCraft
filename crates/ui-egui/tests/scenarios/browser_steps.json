@@ -1,0 +1,16 @@
+[
+  {"note": "A click on a row of the model takes the workflow to its step, whose panel shows it; a double-click edits it"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"call": "ui.set", "params": {"step": "geometry"}},
+  {"frames": 2},
+  {"click": "row:mesh"},
+  {"frames": 2},
+  {"expect": {"inspect": {"workflow.step": "mesh"}}},
+  {"click": "row:port:1"},
+  {"frames": 2},
+  {"expect": {"inspect": {"workflow.step": "excitation"}}},
+  {"click": "row:material:ptfe-like"},
+  {"frames": 2},
+  {"expect": {"inspect": {"workflow.step": "geometry"}}},
+  {"shot": "row-to-step"}
+]

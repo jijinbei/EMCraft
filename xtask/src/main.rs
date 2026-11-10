@@ -54,6 +54,9 @@ commands:
                   150 columns
   icon            write apps/emcraft/assets/emcraft.ico (the app icon, drawn by
                   emcraft_render::icon)
+  desktop [--exec CMD]
+                  write emcraft.desktop and its icon into the user's data directory, so a
+                  Linux desktop's dock shows EMCraft's icon (the window's app id is emcraft)
   font-subset     write the embedded fonts' subsets from the full fonts beside them
                   (crates/ui-egui/fonts/full, crates/render/fonts/full), checked glyph by
                   glyph against them
@@ -82,6 +85,7 @@ fn main() -> ExitCode {
         Some("colours" | "colors") => colours::run(&root()),
         Some("style") => style::run(&root()),
         Some("icon") => installer::icon(&root()),
+        Some("desktop") => installer::desktop(rest.iter().position(|a| *a == "--exec").and_then(|i| rest.get(i + 1)).copied()),
         Some("font-subset") => font_subset(),
         Some("installer-windows") => installer::windows(&root(), &rest),
         Some("ci") => cmd_ci(),

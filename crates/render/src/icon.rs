@@ -85,6 +85,26 @@ pub fn rgba(side: u32) -> Vec<u8> {
     out
 }
 
+/// The icon at `side` × `side` pixels as a PNG file (a desktop entry's icon); `None` when the
+/// encoder fails.
+///
+/// ```
+/// let png = emcraft_render::icon::png(256).unwrap();
+/// assert_eq!(&png[1..4], b"PNG");
+/// ```
+pub fn png(side: u32) -> Option<Vec<u8>> {
+    let side = side.clamp(1, MAX_SIDE);
+    let mut buf = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut buf, side, side);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut w = enc.write_header().ok()?;
+        w.write_image_data(&rgba(side)).ok()?;
+    }
+    Some(buf)
+}
+
 /// A Windows `.ico` file of the icon at [`ICO_SIDES`], each a 32-bit bitmap: read by every
 /// Windows tool, and the same bytes in every build (a PNG entry would depend on the encoder's
 /// features). `None` only when a size overflows the format.
