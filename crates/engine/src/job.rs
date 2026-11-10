@@ -121,10 +121,37 @@ fn time_domain(s: &Session, band: Band, points: std::num::NonZeroUsize, cell: em
 /// `solve.run`: runs the confirmed settings, as their solve runs (its reply, with `run`
 /// naming the command and parameters).
 pub fn run(s: &mut Session, _: &Params) -> Result<Value> {
+    if s.model.job.setup().is_none() && !own_runs(s).is_empty() {
+        return run_own(s);
+    }
     let (command, params) = run_of(s)?;
     let mut reply = s.execute(command, &params)?;
     if let Value::Object(o) = &mut reply {
         o.insert("run".into(), json!({"command": command, "params": params}));
     }
     Ok(reply)
+}
+
+/// The solves a project records that no kind of analysis' settings make (a periodic cell's
+/// Bloch waves, a body of revolution's runs, a pulse through the time domain): a sample's own,
+/// in the order recorded.
+pub fn own_runs(s: &Session) -> Vec<String> {
+    let made = |c: &str| crate::workflow::ANALYSES.iter().any(|a| a.solve == c) || c == "solve.dispersion";
+    s.runs.iter().filter(|r| !made(&r.command)).map(|r| r.command.clone()).collect()
+}
+
+/// `solve.run` with no settings confirmed: the project's own solves ([`own_runs`]) run again,
+/// in order (the last one's reply, with `run` naming it).
+fn run_own(s: &mut Session) -> Result<Value> {
+    let mut last = Value::Null;
+    for command in own_runs(s) {
+        crate::progress::check()?;
+        last = crate::runs::rerun(s, &Params::new(&json!({"command": command}), s.display))?;
+    }
+    if let Value::Object(o) = &mut last
+        && let Some(rerun) = o.remove("rerun")
+    {
+        o.insert("run".into(), rerun);
+    }
+    Ok(last)
 }

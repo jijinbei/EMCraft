@@ -162,15 +162,37 @@ fn a_part_is_inspected_without_importing_it() {
     assert!(s.model.domain.solid.is_none());
 }
 
-/// The pulse compressor opens solved: its cell's Bloch wave over the band below the stop band
-/// (TE11 cut-off ×1.35 up to the Bragg frequency less 0.1 h), and the 20 ns pulse it sends
-/// through 3 m, the chirp matched to the delay, compressed well over ×4 and to under 2 ns; the
-/// pulse kept with the project for its view.
+/// A sample whose solves are its own (a periodic cell's Bloch waves, which no kind of
+/// analysis' settings make) opens at once, unsolved: the solve recorded as its run, the pulse
+/// that reads it kept for its view, no settings to confirm; Run runs the recorded solve.
 #[test]
-#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
-fn the_pulse_compressor_opens_with_its_bloch_wave_and_compresses_its_pulse() {
+fn a_bloch_sample_opens_unsolved_and_run_runs_its_own_solve() {
     let mut s = Session::new();
     s.execute("file.sample", &json!({"name": "pulse-compressor"})).unwrap();
+    assert!(s.results.bloch.is_none(), "opening must not solve");
+    assert_eq!(crate::job::own_runs(&s), ["solve.revolution.bloch"]);
+    let kept = s.views.pulse.clone().unwrap();
+    assert!(kept["frequency"].is_number() && kept["length"].is_number(), "{kept}");
+    let status = s.execute("project.status", &json!({})).unwrap();
+    assert!(!status.to_string().contains("settings are not confirmed"), "{status}");
+    // Every solve declares itself one, so a sample never solves while it opens.
+    for c in crate::COMMANDS.iter().filter(|c| c.id.starts_with("solve.")) {
+        let quick = ["solve.port_modes", "solve.device", "solve.devices", "solve.run", "solve.rerun"];
+        assert!(quick.contains(&c.id) || c.effect == crate::Effect::Solve, "{} is not declared a solve", c.id);
+    }
+}
+
+/// The pulse compressor, run: its cell's Bloch wave over the band below the stop band (TE11
+/// cut-off ×1.35 up to the Bragg frequency less 0.1 h), and the 20 ns pulse it sends through
+/// 3 m, the chirp matched to the delay, compressed well over ×4 and to under 2 ns; the pulse
+/// kept with the project for its view.
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn the_pulse_compressor_runs_its_bloch_wave_and_compresses_its_pulse() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "pulse-compressor"})).unwrap();
+    let ran = s.execute("solve.run", &json!({})).unwrap();
+    assert_eq!(ran["run"]["command"], "solve.revolution.bloch");
     let b = s.results.bloch.as_ref().unwrap();
     assert!((b.period - 0.016).abs() < 1e-9 && b.waves.len() == 1 && b.waves[0].gamma.len() == 121);
     let kept = s.views.pulse.clone().unwrap();
@@ -179,13 +201,14 @@ fn the_pulse_compressor_opens_with_its_bloch_wave_and_compresses_its_pulse() {
     assert_eq!(pulse["chirp"], "matched");
 }
 
-/// The helical compressor: its cell's Bloch waves in 3D, the third (TE11 of one rotation coupled
+/// The helical compressor, run: its cell's Bloch waves in 3D, the third (TE11 of one rotation coupled
 /// to TE21 near its cut-off) dispersing strongly; the kept pulse comes out short and clean.
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
-fn the_helical_compressor_opens_with_its_3d_bloch_waves_and_compresses_its_pulse() {
+fn the_helical_compressor_runs_its_3d_bloch_waves_and_compresses_its_pulse() {
     let mut s = Session::new();
     s.execute("file.sample", &json!({"name": "helical-compressor"})).unwrap();
+    s.execute("solve.run", &json!({})).unwrap();
     let b = s.results.bloch.as_ref().unwrap();
     assert!((b.period - 0.036).abs() < 1e-9 && b.waves.len() == 3 && b.waves[2].gamma.len() == 9);
     let kept = s.views.pulse.clone().unwrap();

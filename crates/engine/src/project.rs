@@ -322,6 +322,7 @@ pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
     })?;
     let mut fresh = s.fresh();
     // Without `solve`, the sample's solves are recorded as its runs, not run.
+    let mut unsolved = false;
     for (i, step) in script.iter().enumerate() {
         crate::progress::report(i, script.len(), &step.command)?;
         let spec =
@@ -329,6 +330,15 @@ pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
         if spec.effect == Effect::Solve && !solve {
             let run = Run { command: step.command.clone(), params: step.params.clone(), units: fresh.display };
             crate::runs::record(&mut fresh.runs, run);
+            unsolved = true;
+        } else if unsolved && step.command.starts_with("results.") {
+            // A reading of a solve not run yet: a pulse's settings kept for its view (made once
+            // the solves have run), the rest left for after them.
+            if step.command == "results.pulse" {
+                let vars = fresh.variables.clone();
+                let params = Params::new(&step.params, fresh.display).with_variables(&vars);
+                crate::results::keep_pulse_view(&mut fresh, &params).map_err(|e| e.in_step(i + 1, &step.command))?;
+            }
         } else {
             fresh.execute(&step.command, &step.params).map_err(|e| e.in_step(i + 1, &step.command))?;
         }

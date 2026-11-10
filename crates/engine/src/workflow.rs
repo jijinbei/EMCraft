@@ -549,7 +549,9 @@ fn setup(s: &Session) -> StepState {
     if !has_geometry(s) {
         st.note(Status::Waiting, emcraft_i18n::text!("waits for the geometry"), Some("geometry.waveguide"));
     }
-    if s.model.job.setup().is_none() {
+    // A project with solves of its own (a periodic cell's Bloch waves) runs those: no settings
+    // to confirm.
+    if s.model.job.setup().is_none() && crate::job::own_runs(s).is_empty() {
         st.note(Status::Todo, emcraft_i18n::text!("the run's settings are not confirmed yet: check them and confirm"), Some("project.setup"));
     }
     st

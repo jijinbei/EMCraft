@@ -356,11 +356,24 @@ pub(crate) const PULSE_POINTS: usize = 512;
 /// `results.pulse`: a chirped pulse through the two-port ([`crate::pulse`]).
 pub fn pulse(s: &mut Session, p: &Params) -> Result<Value> {
     let reply = pulse_of(s, p)?;
-    // Kept for the pulse view, as numbers (the expressions' values): the carrier and width the
-    // pulse had, the length and the chirp asked for.
+    s.views.pulse = Some(pulse_view(p, reply["frequency"].clone(), reply["width"].clone())?);
+    Ok(reply)
+}
+
+/// A pulse's settings kept for the pulse view without making it (a sample opened without its
+/// solves: the view makes it once they have run), the carrier and width as numbers.
+pub(crate) fn keep_pulse_view(s: &mut Session, p: &Params) -> Result<()> {
+    let number = |key: &str| p.number(key).optional().map(|v| v.map_or(Value::Null, |x| json!(x)));
+    s.views.pulse = Some(pulse_view(p, number("frequency")?, number("width")?)?);
+    Ok(())
+}
+
+/// The pulse view's settings: the carrier and width the pulse had, the length, bandwidth,
+/// chirp and wave asked for, as numbers (the expressions' values).
+fn pulse_view(p: &Params, frequency: Value, width: Value) -> Result<Value> {
     let mut kept = serde_json::Map::new();
-    kept.insert("frequency".into(), reply["frequency"].clone());
-    kept.insert("width".into(), reply["width"].clone());
+    kept.insert("frequency".into(), frequency);
+    kept.insert("width".into(), width);
     if let Some(l) = p.number("length").optional()? {
         kept.insert("length".into(), json!(l));
     }
@@ -373,8 +386,7 @@ pub fn pulse(s: &mut Session, p: &Params) -> Result<Value> {
     if let Some(w) = p.integer("wave", 1..=64).optional()? {
         kept.insert("wave".into(), json!(w));
     }
-    s.views.pulse = Some(Value::Object(kept));
-    Ok(reply)
+    Ok(Value::Object(kept))
 }
 
 fn pulse_of(s: &Session, p: &Params) -> Result<Value> {
