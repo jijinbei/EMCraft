@@ -89,13 +89,19 @@ impl Driven {
     /// The power (W) the magnetically lossy materials absorb for the coefficients `x`:
     /// ½ ω μ₀ ∫ μ″ |H|² dV, μ = μ′ − jμ″ (fields in peak values).
     pub fn magnetic_loss(&self, x: &[C], frequency: f64) -> Result<f64> {
-        if !self.media.magnetically_lossy() {
-            return Ok(0.0);
-        }
         let omega = angular(frequency);
-        let loss = |t: usize| -self.mu_of(t).im;
-        let total = self.integrate_field(x, frequency, Field::H, |t| loss(t) != 0.0, |t, h| loss(t) * h.norm_sqr())?;
-        Ok(0.5 * omega * MU0 * total)
+        let mut total = 0.0;
+        if self.media.magnetically_lossy() {
+            let loss = |t: usize| -self.mu_of(t).im;
+            total += 0.5 * omega * MU0 * self.integrate_field(x, frequency, Field::H, |t| loss(t) != 0.0, |t, h| loss(t) * h.norm_sqr())?;
+        }
+        // A lossy ferrite's: its Polder tensor's anti-Hermitian part.
+        let n = super::assembly::rule_points(self.order);
+        for t in (0..self.mesh.tets.len()).filter(|t| self.media.ferrite(*t).is_some_and(|f| f.linewidth > 0.0)) {
+            let el = self.element_of(t)?;
+            total += el.rule(n).into_iter().map(|(l, w)| w * self.ferrite_loss_at((t, &el), l, x, frequency)).sum::<f64>();
+        }
+        Ok(total)
     }
 
     /// The power (W) walls `wall` would absorb for a field computed with perfectly conducting

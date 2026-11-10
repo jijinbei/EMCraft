@@ -1,0 +1,6 @@
+[
+ {"command": "model.material.create", "params": {"name": "yig", "eps_r": 13, "ferrite": {"magnetization": 1780, "bias": 3000, "axis": "y"}}},
+ {"command": "geometry.solid", "params": {"shape": "box", "size": [22.86, 10.16, 30], "material": "yig"}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "solve.eigenmodes", "params": {"near": 1.7, "count": 1, "order": 2}, "id": "eigen"}
+]

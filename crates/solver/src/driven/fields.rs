@@ -93,6 +93,18 @@ impl Driven {
         }
     }
 
+    /// The power density (W/m³) a magnetized ferrite absorbs at barycentric `l` of tetrahedron
+    /// `t`: −½ω Im(H*·B), B = −∇ × E/(jω) and H = [μ]⁻¹B — for a scalar μ = μ₀(μ′ − jμ″) the
+    /// familiar ½ωμ₀μ″|H|², for the Polder tensor its anti-Hermitian part's.
+    pub(crate) fn ferrite_loss_at(&self, (t, el): (usize, &Element), l: [f64; 4], x: &[C], frequency: f64) -> f64 {
+        let omega = angular(frequency);
+        let curl: CVec3 = self.dofs_of(t).zip(&el.curl_values(l)).filter_map(|(u, v)| Some(*v * x.get(u.get()?).copied().unwrap_or_default())).sum();
+        let b = -curl / C::new(0.0, omega);
+        let h = self.field_in((t, el), l, x, frequency, Field::H);
+        let hb = h.x.conj() * b.x + h.y.conj() * b.y + h.z.conj() * b.z;
+        -0.5 * omega * hb.im
+    }
+
     /// ‖field − exact‖ and ‖exact‖ in L²(Ω), by quadrature on every tetrahedron.
     pub fn l2_error(&self, x: &[C], frequency: f64, which: Field, exact: impl Fn(Point3) -> CVec3) -> Result<(f64, f64)> {
         let n = rule_points(self.order);

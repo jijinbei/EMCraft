@@ -96,7 +96,7 @@ impl Driven {
 
     /// Factors a periodic cell's bordered system `a` (unsymmetric) by LU, its unknowns at
     /// `points` and then its `border`.
-    pub(super) fn factor_lu(&self, a: &Csr, points: &[Point3], border: usize) -> Result<Lu> {
+    pub(crate) fn factor_lu(&self, a: &Csr, points: &[Point3], border: usize) -> Result<Lu> {
         let (mut f, analysis) = self.factor_with(a, points, border, |an| Ok(Lu::factor_analysed(a, an, memory_budget())?))?;
         f.analysis_seconds = analysis;
         Ok(f)

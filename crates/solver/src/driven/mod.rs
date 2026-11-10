@@ -357,9 +357,6 @@ impl Driven {
     /// problem whose modes perturbation theory gives Q factors from.
     pub fn cavity(model: &Model, order: Order) -> Result<Driven> {
         refuse_open(model)?;
-        if model.materials.iter().any(|m| m.ferrite.is_some()) {
-            return Err(invalid("eigenmodes", "not supported yet: a ferrite (its tensor makes the eigenproblem unsymmetric)"));
-        }
         Driven::build(model, order, Ends::Closed, Walls::Perfect)
     }
 
@@ -646,6 +643,19 @@ impl Driven {
     /// and their sparsity pattern, for eigenmode analysis.
     pub(crate) fn matrices(&self) -> (&Csr, &[C], &[C]) {
         (&self.pattern, &self.stiffness, &self.mass)
+    }
+
+    /// The curl–curl matrix at `frequency`: K with each ferrite's parts at its Polder tensor
+    /// there (K itself without ferrites).
+    pub(crate) fn stiffness_at(&self, frequency: f64) -> Vec<C> {
+        let mut k = self.stiffness.clone();
+        for f in &self.ferrite_stiffness {
+            let nu = f.ferrite.nu(frequency);
+            for (x, ((tr, sk), ax)) in k.iter_mut().zip(f.transverse.iter().zip(&f.skew).zip(&f.axial)) {
+                *x += nu.diagonal * *tr + nu.off * *sk + *ax;
+            }
+        }
+        k
     }
 }
 

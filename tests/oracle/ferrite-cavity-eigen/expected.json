@@ -1,0 +1,20 @@
+{
+ "title": "The ferrite-filled box's TE101 as an eigenmode: a nonlinear eigenproblem settled by a fixed point",
+ "kind": "theory",
+ "source": "The ferrite-cavity case's box (22.86 × 10.16 × 30 mm, YIG-like εr = 13, 4πMs = 1780 G, H₀ = 3000 Oe across its height) as an eigenproblem: TE101 resonates where k₀² εr μe(f) = (π/a)² + (π/d)², μe = (μ² − κ²)/μ of the Polder tensor (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §9.1, §9.3), 1.801425 GHz by bisection. The tensor depends on the frequency, so the solver follows the mode by a fixed point (the modes at the tensor of its last frequency) until it settles. Evaluated separately from EMCraft's code",
+ "quantities": [
+  {
+   "id": "f_te101",
+   "quantity": "TE101 resonance (GHz)",
+   "measure": {
+    "step": "eigen",
+    "pointer": "/modes/0/frequency"
+   },
+   "value": 1.8014253801244526,
+   "tolerance": {
+    "relative": 0.0005
+   },
+   "reason": "second-order elements of 3 mm, 12 a wavelength in the filling: seen within 1e-5. κ enters only through μe, so leaving the tensor's skew part out would move the resonance by 0.3 %"
+  }
+ ]
+}

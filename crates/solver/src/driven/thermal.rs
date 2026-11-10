@@ -50,9 +50,6 @@ impl Driven {
     /// power over the excitation's unit wave) at `frequency`, each tetrahedron conducting heat
     /// at `conductivity(t)` (W/(m·K), > 0).
     pub fn temperature(&self, x: &[C], frequency: f64, scale: f64, conductivity: impl Fn(usize) -> f64) -> Result<TemperatureRise> {
-        if self.media.ferrites().iter().any(|f| f.linewidth > 0.0) {
-            return Err(invalid("temperature", "not supported yet: a lossy ferrite's heat (its loss is the Polder tensor's)"));
-        }
         let omega = angular(frequency);
         let mesh = &self.mesh;
         // The walls' nodes are held at the sink's temperature.
@@ -107,14 +104,17 @@ impl Driven {
             }
             // The heat source: the field's loss density at the rule's points.
             let (e_loss, m_loss) = (-self.eps_at(t, frequency).im, -self.mu_of(t).im);
-            if in_pml.contains(&t) || !(e_loss > 0.0 || m_loss > 0.0) {
+            let lossy_ferrite = self.media.ferrite(t).is_some_and(|f| f.linewidth > 0.0);
+            if in_pml.contains(&t) || !(e_loss > 0.0 || m_loss > 0.0 || lossy_ferrite) {
                 continue;
             }
             let el = self.element_of(t)?;
             for (l, w) in el.rule(rule) {
                 let e = self.field_in((t, &el), l, x, frequency, Field::E);
                 let mut q = 0.5 * omega * eps0() * e_loss * (e.x.norm_sqr() + e.y.norm_sqr() + e.z.norm_sqr());
-                if m_loss > 0.0 {
+                if lossy_ferrite {
+                    q += self.ferrite_loss_at((t, &el), l, x, frequency);
+                } else if m_loss > 0.0 {
                     let h = self.field_in((t, &el), l, x, frequency, Field::H);
                     q += 0.5 * omega * MU0 * m_loss * (h.x.norm_sqr() + h.y.norm_sqr() + h.z.norm_sqr());
                 }

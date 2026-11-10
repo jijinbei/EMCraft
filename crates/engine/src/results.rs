@@ -25,7 +25,8 @@ pub(crate) fn eigenmode_table(s: &Session) -> Result<Value> {
         .collect();
     let mut reply =
         json!({"frequency_unit": s.display.frequency.symbol(), "unknowns": e.driven.dofs.unknowns, "iterations": e.iterations, "modes": modes});
-    let exact = exact_resonances(s);
+    // The closed forms are an isotropic filling's: none for a ferrite's.
+    let exact = if s.model.materials.iter().any(|m| m.ferrite.is_some()) { Vec::new() } else { exact_resonances(s) };
     if !exact.is_empty() {
         let rows: Vec<Value> = exact.into_iter().map(|(f, name)| json!({"mode": name, "frequency": s.show_frequency(f)})).collect();
         reply["exact"] = json!(rows);

@@ -733,9 +733,32 @@ fn a_ferrite_refuses_what_it_cannot_do_yet() {
     .unwrap();
     let e = s.execute("solve.frequency", &json!({"frequencies": [9]})).unwrap_err().to_string();
     assert!(e.contains("ferrite"), "{e}");
-    let e = s.execute("solve.eigenmodes", &json!({"near": 2, "count": 1})).unwrap_err().to_string();
-    assert!(e.contains("ferrite"), "{e}");
     // Kept and read back by the material's values.
     let v = s.execute("project.values", &json!({"command": "model.material.edit", "name": "yig"})).unwrap();
     assert_eq!(v["ferrite"]["axis"], "y");
+}
+
+/// A lossy ferrite (its linewidth) absorbs what the ports do not get back: the heat the field
+/// deposits for 1 W, −½ω Im(H*·B) over the slab, is 1 − |S11|² − |S21|² (power balance, an
+/// identity of the discrete system up to the quadrature).
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn a_lossy_ferrites_heat_is_what_the_ports_lose() {
+    let mut s = Session::new();
+    s.run_script(&json!([
+        {"command": "model.material.create", "params": {"name": "yig", "eps_r": 13, "thermal_conductivity": 6,
+            "ferrite": {"magnetization": 1780, "bias": 3000, "linewidth": 200, "axis": "y"}}},
+        {"command": "geometry.solid", "params": {"shape": "box", "size": [22.86, 10.16, 40]}},
+        {"command": "geometry.inclusion", "params": {"shape": "box", "size": [2, 8.16, 20], "at": [4, 1, 10], "material": "yig"}},
+        {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}},
+        {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}},
+        {"command": "mesh.generate", "params": {"size": 6}},
+        {"command": "solve.frequency", "params": {"frequencies": [10], "order": 2}}
+    ]))
+    .unwrap();
+    let pt = s.execute("results.sparameters", &json!({})).unwrap()["points"][0].clone();
+    let lost = 1.0 - pt["s11"]["mag"].as_f64().unwrap().powi(2) - pt["s21"]["mag"].as_f64().unwrap().powi(2);
+    let heat = s.execute("results.thermal", &json!({"power": 1, "excitation": "1"})).unwrap()["heat"].as_f64().unwrap();
+    assert!(lost > 0.01, "the slab absorbs: {lost}");
+    assert!((heat - lost).abs() < 1e-6, "heat {heat} against lost {lost}");
 }

@@ -377,7 +377,11 @@ overlap tests).
   permeability μe = (μ² − κ²)/μ) — a magnetized ferrite's permeability, assembled as the inverse
   tensor's three parts on the pattern, the unsymmetric system solved by LU
   (`emcraft-model::ferrite`, `emcraft-solver::driven::assembly::FerriteStiffness`; oracle
-  `ferrite-cavity`; the non-reciprocal slab and its mirror image, Onsager, in the tests).
+  `ferrite-cavity`; the non-reciprocal slab and its mirror image, Onsager, in the tests). A
+  ferrite cavity's eigenproblem is nonlinear in the frequency (the tensor's) and unsymmetric:
+  each mode followed by a fixed point, shift-invert by sparse LU, complex Ritz values (oracle
+  `ferrite-cavity-eigen`); a lossy ferrite's absorbed power −½ω Im(H*·B), the tensor's
+  anti-Hermitian part (power balance to 1e-6 in the tests).
 - D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §3.3, eq. 3.90 — the power a
   guide's TE10 carries, P = ab|E₀|²/(4Z_TE), whose field at breakdown bounds the power it handles
   (`emcraft-engine::breakdown`, `results.breakdown`; the field's peak over the cycle,

@@ -287,7 +287,9 @@ impl Arithmetic for Complex {
 
     fn q_materials(driven: &Driven, vector: &[C], value: C, frequency: f64, _: f64) -> Result<(Option<f64>, Option<f64>)> {
         let omega = complex_omega(value);
-        if !(omega.im.abs() > 0.0) {
+        // An imaginary part at rounding's level (a lossless ferrite's unsymmetric system) is no
+        // loss: no Q.
+        if !(omega.im.abs() > LOSSLESS * omega.re.abs()) {
             return Ok((None, None));
         }
         let q = omega.re / (2.0 * omega.im.abs());
@@ -355,10 +357,41 @@ fn symmetric_ritz(y: &[Vec<C>], ky: &[Vec<C>], my: &[Vec<C>]) -> Result<(Vec<f64
 /// The `count` modes nearest σ = k_near² by shift-invert subspace iteration in arithmetic `A`,
 /// with the number of iterations it took.
 fn iterate<A: Arithmetic>(model: &Model, driven: &Driven, count: usize, sigma: f64) -> Result<(Vec<Mode>, usize)> {
-    let (pattern, stiffness, mass) = driven.matrices();
+    let (_, stiffness, _) = driven.matrices();
+    iterate_with::<A>(model, driven, count, sigma, stiffness)
+}
+
+/// The shift-inverted system's factor: LDLᵀ for a symmetric one, LU for a ferrite's.
+enum ShiftInvert {
+    Symmetric(Ldlt),
+    Unsymmetric(crate::lu::Lu),
+}
+
+impl ShiftInvert {
+    fn solve_many(&self, ys: &mut [Vec<C>]) -> Result<()> {
+        match self {
+            ShiftInvert::Symmetric(f) => Ok(f.solve_many(ys)?),
+            ShiftInvert::Unsymmetric(f) => {
+                for y in ys {
+                    f.solve(y)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+/// [`iterate`] with the curl–curl matrix `stiffness` (a ferrite's at a frequency).
+fn iterate_with<A: Arithmetic>(model: &Model, driven: &Driven, count: usize, sigma: f64, stiffness: &[C]) -> Result<(Vec<Mode>, usize)> {
+    let (pattern, _, mass) = driven.matrices();
     let m = Matrices { pattern, stiffness, mass };
     let n = pattern.n;
-    let factor = Ldlt::factor(&A::shifted(m, sigma), &driven.dofs.points)?;
+    let shifted = A::shifted(m, sigma);
+    let factor = if driven.has_ferrite() {
+        ShiftInvert::Unsymmetric(driven.factor_lu(&shifted, &driven.dofs.points, 0)?)
+    } else {
+        ShiftInvert::Symmetric(Ldlt::factor(&shifted, &driven.dofs.points)?)
+    };
     let q = (count + count.max(8)).min(n);
     let mut x = start_vectors::<f64>(q, n, 0x2545_f491_4f6c_dd1d);
     // The gradients of the nodal functions through the Whitney functions, those of nodes on a
@@ -422,6 +455,50 @@ fn iterate<A: Arithmetic>(model: &Model, driven: &Driven, count: usize, sigma: f
     Ok((modes, iterations))
 }
 
+/// A complex resonance whose imaginary part is below this share of its real part is lossless
+/// (Q above 5e11: rounding's).
+const LOSSLESS: f64 = 1e-12;
+
+/// The most passes of a ferrite mode's fixed point.
+const MAX_FIXED_POINT: usize = 40;
+/// A ferrite mode's frequency settles when a pass moves it by less than this share.
+const FIXED_POINT_SETTLED: f64 = 1e-10;
+
+/// A cavity with a ferrite: its Polder tensor depends on the frequency, so the eigenproblem is
+/// nonlinear in it. Each of the `count` modes nearest `near` of the tensor at `near` is
+/// followed by a fixed point — the modes of the tensor at its frequency, the one nearest it
+/// kept — until its frequency settles ([`FIXED_POINT_SETTLED`]); modes that settle on one
+/// another are kept once. Its system is unsymmetric: shift-invert by LU, complex Ritz values.
+fn ferrite_modes(model: &Model, driven: &Driven, count: usize, near: f64) -> Result<(Vec<Mode>, usize)> {
+    let k = |f: f64| wavenumber(f).powi(2);
+    let (first, mut iterations) = iterate_with::<Complex>(model, driven, count, k(near), &driven.stiffness_at(near))?;
+    let mut modes: Vec<Mode> = Vec::new();
+    for start in first {
+        let mut f = start.frequency;
+        let mut settled = None;
+        for _ in 0..MAX_FIXED_POINT {
+            crate::driven::check_frequency(f)?;
+            let (found, it) = iterate_with::<Complex>(model, driven, 1, k(f), &driven.stiffness_at(f))?;
+            iterations += it;
+            let Some(mode) = found.into_iter().min_by(|a, b| (a.frequency - f).abs().total_cmp(&(b.frequency - f).abs())) else { break };
+            let moved = (mode.frequency - f).abs();
+            f = mode.frequency;
+            if moved <= FIXED_POINT_SETTLED * f {
+                settled = Some(mode);
+                break;
+            }
+        }
+        let mode = settled.ok_or_else(|| {
+            invalid("ferrite eigenmodes", format!("a mode near {:.6e} Hz did not settle in {MAX_FIXED_POINT} passes", start.frequency))
+        })?;
+        if !modes.iter().any(|m| (m.frequency - mode.frequency).abs() <= 1e-7 * mode.frequency) {
+            modes.push(mode);
+        }
+    }
+    modes.sort_by(|a, b| a.frequency.total_cmp(&b.frequency));
+    Ok((modes, iterations))
+}
+
 /// The `count` modes of the model's guide closed into a cavity nearest above and below
 /// `near` (Hz): the lowest ones when `near` is a little above them.
 pub fn eigenmodes(model: &Model, order: Order, count: usize, near: f64) -> Result<Eigen> {
@@ -453,6 +530,10 @@ pub fn eigenmodes(model: &Model, order: Order, count: usize, near: f64) -> Resul
     }
     let k_near = wavenumber(near);
     let sigma = k_near * k_near;
+    if driven.has_ferrite() {
+        let (modes, iterations) = ferrite_modes(model, &driven, count, near)?;
+        return Ok(Eigen { driven, modes, iterations, families: Vec::new() });
+    }
     let lossy = mass.iter().any(|m| m.im != 0.0) || stiffness.iter().any(|k| k.im != 0.0);
     let (modes, iterations) = if lossy { iterate::<Complex>(model, &driven, count, sigma)? } else { iterate::<Real>(model, &driven, count, sigma)? };
     Ok(Eigen { driven, modes, iterations, families: Vec::new() })
