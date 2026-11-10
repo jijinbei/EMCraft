@@ -144,6 +144,16 @@
     "Back to the port's face": "ポートの面に戻す",
     "Band pass": "バンドパス",
     "Blank": "空のプロジェクト",
+    "Filters": "フィルタ",
+    "Guides and lines": "導波管・線路",
+    "Bends, tees and steps": "曲がり・T 分岐・段差",
+    "Couplers and dividers": "結合器・分配器",
+    "Loads, materials and ferrites": "終端・材料・フェライト",
+    "Periodic guides and compressors": "周期導波管・パルス圧縮器",
+    "Cavities and resonators": "空洞・共振器",
+    "Antennas": "アンテナ",
+    "Scattering": "散乱",
+    "Board checks": "基板チェック",
     "Bodies": "物体",
     "Body": "物体",
     "Body material": "物体の材料",
@@ -2117,7 +2127,7 @@
     },
     "file.templates": {
       "label": "テンプレート",
-      "doc": "`file.sample` が開くテンプレート：それぞれの名前、説明、パラメータ（スクリプトが定義する変数：名前、値、何を測るか、表示単位）。",
+      "doc": "`file.sample` が開くテンプレート：それぞれの名前、説明、対応する解析の種類、グループ（何を扱うか：`filters`、`lines`、`junctions`、`couplers`、`materials`、`periodic`、`resonators`、`dispersion`、`antennas`、`scattering`、`boards`）、パラメータ（スクリプトが定義する変数：名前、値、何を測るか、表示単位）。",
       "params": {}
     },
     "project.variable": {
@@ -2666,7 +2676,6 @@
     "circular-guide": "円形導波管、半径 10 mm、長さ 30 mm、非構造メッシュ：ベッセルモードで閉じたポートを通る TE11（遮断 8.79 GHz）",
     "coaxial-line": "PTFE 同軸線路、導体半径 1 mm と 3.5 mm、長さ 20 mm：環状断面で解いたモードのポートを通る TEM",
     "coupled-filter": "平行結合ストリップ線路バンドパスフィルタ：50 Ω の給電線の間で端どうしを結合した 3 つの半波長共振器、4 mm 間隔の導体板の間に PTFE、4.66–5.34 GHz（Cohn 1958）",
-    "coupler": "ストリップ線路の結合線路形方向性結合器：5 GHz で 1/4 波長の 2 本のストリップ、各端がそれぞれ端子（4 ポート、50 Ω）、後方に 10 dB 結合し、もう一方のストリップの遠端はアイソレーション（Pozar §7.6）",
     "inductive-post": "WR-90 を壁から壁まで貫く 3 mm の導体ポスト、ブール差で箱から切り抜く：強い並列インダクタンス",
     "loaded-sphere": "半径 10 mm の球形空洞共振器と同心のセラミック球（εr = 4、半径 4 mm）：節点どうしで接合した 2 つの材料領域、11.26 GHz の TM11 三重縮退",
     "dipole": "完全整合層で内張りした箱の中の 10 GHz、1 mm の電流素子：放射電力と指向性をヘルツダイポールと比較",

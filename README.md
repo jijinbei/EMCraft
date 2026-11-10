@@ -20,13 +20,19 @@ silicon): the **Build** workflow's artifacts (`.github/workflows/build.yml`).
 
 Samples (the start page's templates, their dimensions variables):
 
-- **Waveguides:** `highpass`, `iris-bandpass`, `straight`, `taper`, `termination`, bends and
-  tees (`h-bend`, `e-bend`, `h-bend-radius`, `e-bend-radius`, `h-tee`, `e-tee`, `magic-tee`),
-  `cross-guide-coupler`, `coupled-filter`, `coupler`, `inductive-post`, `circular-guide`,
-  `coaxial-line`.
-- **Microstrip circuits:** `pcb-stub-filter`, `pcb-lowpass`, `pcb-quarter-wave`,
-  `pcb-branch-line`, `pcb-coupled-line`, `pcb-bend`, `pcb-wilkinson` (its isolating resistor a lumped
-  element), `pcb-ring`.
+- **S-parameters**, by what they model (the start page's headings):
+  - *Filters:* `highpass`, `iris-bandpass`, `coupled-filter` (stripline), `pcb-stub-filter`,
+    `pcb-lowpass`.
+  - *Guides and lines:* `straight`, `circular-guide`, `coaxial-line`, `taper`,
+    `pcb-quarter-wave`.
+  - *Bends, tees and steps:* `h-bend`, `e-bend`, `h-bend-radius`, `e-bend-radius`, `h-tee`,
+    `e-tee`, `magic-tee`, `inductive-post`, `pcb-bend`.
+  - *Couplers and dividers:* `cross-guide-coupler`, `pcb-branch-line`, `pcb-coupled-line`,
+    `pcb-wilkinson` (its isolating resistor a lumped element).
+  - *Loads, materials and ferrites:* `termination`, `material-sample`, `ferrite-phase-shifter`.
+  - *Periodic guides and compressors:* `corrugated-guide`, `pulse-compressor`,
+    `helical-compressor`.
+  - *Resonators:* `pcb-ring`.
 - **Resonators:** `cavity`, `cylinder-cavity`, `sphere-cavity`, `coaxial-cavity`, `slab-cavity`,
   `loaded-sphere`, `dielectric-resonator`, `combline-resonator`, `reentrant-cavity`.
 - **Dispersion diagrams:** `dispersion-guide`, `dispersion-loaded`, `dispersion-iris`,

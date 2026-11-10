@@ -4,6 +4,8 @@
   {"click": "home:purpose:frequency"},
   {"frames": 2},
   {"expect": {"inspect": {"purpose": "frequency"}, "handles": ["sample:h-bend-radius", "sample:e-bend-radius", "sample:e-tee", "sample:magic-tee", "sample:cross-guide-coupler"], "hidden": ["sample:cavity"]}},
+  {"call": "ui.scroll", "params": {"x": 400, "y": 500, "delta": -30}},
+  {"frames": 2},
   {"click": "sample:h-bend-radius"},
   {"frames": 3},
   {"expect": {"inspect": {"template.name": "h-bend-radius", "template.fields.r": "28.6", "template.preview": true, "template.error": null}, "handles": ["template:field:r", "template:preview", "template:open"]}},

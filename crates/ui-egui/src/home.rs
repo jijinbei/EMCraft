@@ -8,6 +8,7 @@ use std::collections::HashMap;
 
 use egui::{Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
 use emcraft_engine::Session;
+use emcraft_engine::templates::Group;
 use emcraft_render::view3d::{Camera, StandardView};
 use serde_json::Value;
 
@@ -357,44 +358,70 @@ fn purposes(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     }
 }
 
+/// The templates for the chosen kind (every one without), under a heading for each group of
+/// what they model; with a kind, a button beside the heading that begins an empty project for it.
 fn samples(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {
-    heading(ui, t!("Templates"));
     let purpose = app.home.purpose;
-    let list: Vec<&emcraft_engine::templates::Template> =
-        emcraft_engine::templates::TEMPLATES.iter().filter(|s| purpose.is_none_or(|k| s.kinds.contains(&k))).collect();
-    let mut chosen = None;
-    let mut blank = false;
-    // With a purpose, the first card begins an empty project for it.
-    let offset = usize::from(purpose.is_some());
-    grid(ui, list.len() + offset, |ui, i| {
-        if i < offset {
-            if ui
-                .named(card(None, Glyph::New, tr(t!("Blank")), tr(t!("An empty project for this analysis")), false), Fixed::HomeBlank.into())
-                .clicked()
-            {
-                blank = true;
-            }
-            return;
-        }
-        let s = list[i - offset];
-        // Drawn off the frame, again in a new theme (the view's ground and the scene's colours
-        // are its).
-        let slot = thumbs.entry(s.name).or_insert_with(|| Thumb::start(ui.ctx(), s.name));
-        slot.refresh(ui.ctx(), s.name);
-        let pic = &mut slot.picture;
-        // Its description in brief as its name, the rest under it; the whole on hover.
-        let about = sample_label(s.name);
-        let (title, rest) = title_and_rest(about);
-        let rest = if rest.is_empty() { s.name } else { rest };
-        if ui.named(card(pic.as_mut(), Glyph::Sample, title, rest, false), Handle::Sample(s.name)).on_hover_text(about).clicked() {
-            chosen = Some(s.name.to_owned());
+    ui.horizontal(|ui| {
+        ui.text(Style::Heading, t!("Templates"));
+        if purpose.is_some() {
+            ui.add_space(Tokens::get().space_12);
+            let blank = crate::ui_kit::styled(t!("Blank"), false);
+            let new = Action::File(FileAction::Request(Then::New));
+            ui.act(true, blank, Fixed::HomeBlank.into(), new, out).hint(t!("An empty project for this analysis"));
         }
     });
+    ui.add_space(Tokens::get().space_4);
+    let shown = |s: &&emcraft_engine::templates::Template| purpose.is_none_or(|k| s.kinds.contains(&k));
+    let mut chosen = None;
+    // The groups that hold templates of the chosen kind's own first, then those it is a second
+    // use of (a patch antenna among the board checks).
+    let own = |g: Group| emcraft_engine::templates::TEMPLATES.iter().any(|s| s.group == g && purpose.is_none_or(|k| s.kinds.first() == Some(&k)));
+    let mut groups = Group::ALL;
+    groups.sort_by_key(|g| !own(*g));
+    for group in groups {
+        let list: Vec<&emcraft_engine::templates::Template> =
+            emcraft_engine::templates::TEMPLATES.iter().filter(|s| s.group == group).filter(shown).collect();
+        if list.is_empty() {
+            continue;
+        }
+        ui.text(Style::Strong, group_title(group));
+        ui.add_space(Tokens::get().space_4);
+        grid(ui, list.len(), |ui, i| {
+            let s = list[i];
+            // Drawn off the frame, again in a new theme (the view's ground and the scene's
+            // colours are its).
+            let slot = thumbs.entry(s.name).or_insert_with(|| Thumb::start(ui.ctx(), s.name));
+            slot.refresh(ui.ctx(), s.name);
+            let pic = &mut slot.picture;
+            // Its description in brief as its name, the rest under it; the whole on hover.
+            let about = sample_label(s.name);
+            let (title, rest) = title_and_rest(about);
+            let rest = if rest.is_empty() { s.name } else { rest };
+            if ui.named(card(pic.as_mut(), Glyph::Sample, title, rest, false), Handle::Sample(s.name)).on_hover_text(about).clicked() {
+                chosen = Some(s.name.to_owned());
+            }
+        });
+    }
     if let Some(name) = chosen {
         out.push(Action::Template(Some(name)));
     }
-    if blank {
-        out.push(Action::File(FileAction::Request(Then::New)));
+}
+
+/// A group's heading on the start page.
+fn group_title(group: Group) -> crate::lang::Text {
+    match group {
+        Group::Filters => t!("Filters"),
+        Group::Lines => t!("Guides and lines"),
+        Group::Junctions => t!("Bends, tees and steps"),
+        Group::Couplers => t!("Couplers and dividers"),
+        Group::Materials => t!("Loads, materials and ferrites"),
+        Group::Periodic => t!("Periodic guides and compressors"),
+        Group::Resonators => t!("Cavities and resonators"),
+        Group::Dispersion => t!("Dispersion"),
+        Group::Antennas => t!("Antennas"),
+        Group::Scattering => t!("Scattering"),
+        Group::Boards => t!("Board checks"),
     }
 }
 

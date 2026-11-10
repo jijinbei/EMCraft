@@ -186,7 +186,7 @@ overlap tests).
 - D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §7.6 — the coupled-line
   directional coupler by its even and odd modes, matched and isolated between ports of
   √(Z₀ₑZ₀ₒ), coupled and through waves 90° apart (`emcraft-theory::coupled::coupler`; oracle
-  `coupled-line-coupler-4port`, the `coupler` sample).
+  `coupled-line-coupler-4port`).
 - J. Meixner, *The behavior of electromagnetic fields at edges*, IEEE Trans. AP 20(4):442–446,
   1972 — E ∝ r^{−1/2} at a strip's edge, why the structured mesh closes in harder there than at
   an iris' (`emcraft-mesh`, `strip_edge`).

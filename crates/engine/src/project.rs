@@ -287,7 +287,7 @@ pub fn template_marks(name: &str, values: &Value) -> Result<Vec<TemplateMark>> {
         .collect()
 }
 
-/// `file.templates`: the templates, each with its label and parameters.
+/// `file.templates`: the templates, each with its label, parameters, kinds and group.
 pub fn templates(s: &mut Session, _: &Params) -> Result<Value> {
     let d = s.display;
     let list: Vec<Value> = emcraft_templates::TEMPLATES
@@ -305,7 +305,7 @@ pub fn templates(s: &mut Session, _: &Params) -> Result<Value> {
                     json!({"name": p.name, "value": p.value, "quantity": p.quantity, "unit": unit})
                 })
                 .collect();
-            json!({"name": t.name, "label": t.label, "parameters": parameters, "kinds":t.kinds.iter().map(|k| k.id()).collect::<Vec<_>>()})
+            json!({"name": t.name, "label": t.label, "parameters": parameters, "kinds": t.kinds.iter().map(|k| k.id()).collect::<Vec<_>>(), "group": t.group.id()})
         })
         .collect();
     Ok(json!({"templates": list}))

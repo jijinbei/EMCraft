@@ -116,7 +116,6 @@ templates! {
     e_tee: "e-tee",
     circular_guide: "circular-guide",
     coupled_filter: "coupled-filter",
-    coupler: "coupler",
     taper: "taper",
     pcb_stub_filter: "pcb-stub-filter",
     pcb_lowpass: "pcb-lowpass",
@@ -159,10 +158,10 @@ fn entries(r: &Value) -> Vec<Value> {
 
 #[test]
 fn templates_built_again_are_the_same_bit_for_bit() {
-    // A structured guide, an unstructured prism, a curved solid, an imported design and terminal
-    // ports: built again from nothing, the same mesh and the same S. (`mesh.adapt`'s passes have
+    // A structured guide, an unstructured prism, a curved solid, an imported design and lumped
+    // ports on microstrips: built again from nothing, the same mesh and the same S. (`mesh.adapt`'s passes have
     // their own test, `adapt.rs`.)
-    for name in ["highpass", "h-tee", "circular-guide", "taper", "coupler"] {
+    for name in ["highpass", "h-tee", "circular-guide", "taper", "pcb-coupled-line"] {
         let ((a, ra), (b, rb)) = (swept(name), swept(name));
         assert_eq!(a.model.mesh, b.model.mesh, "{name}");
         let e = entries(&ra);

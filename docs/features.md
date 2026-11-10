@@ -1531,7 +1531,7 @@ Replaces the session with a sample model (`highpass`: the waveguide high-pass fi
 
 ## `file.templates` — Templates
 
-The templates `file.sample` opens: each one's name, label, supported analysis kinds and parameters (the variables its script defines: name, value, what it measures and its display unit).
+The templates `file.sample` opens: each one's name, label, supported analysis kinds, group (what it models: `filters`, `lines`, `junctions`, `couplers`, `materials`, `periodic`, `resonators`, `dispersion`, `antennas`, `scattering`, `boards`) and parameters (the variables its script defines: name, value, what it measures and its display unit).
 
 No parameters.
 
