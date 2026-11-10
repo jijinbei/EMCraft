@@ -85,7 +85,7 @@ pub struct CommandText {
 #[derive(Debug, Default)]
 pub struct Language {
     pub id: &'static str,
-    /// Its name in itself ("English", "日本語").
+    /// Its name, in English ("English", "Japanese"): the language menu is readable in any font.
     pub name: String,
     pub strings: HashMap<String, String>,
     pub commands: HashMap<String, CommandText>,

@@ -16,7 +16,7 @@ fn japanese() -> &'static Language {
 fn the_built_in_languages_load() {
     assert_eq!(problems(), &[] as &[String]);
     assert_eq!(ids(), ["en", "ja"]);
-    assert_eq!(japanese().name, "日本語");
+    assert_eq!(japanese().name, "Japanese");
 }
 
 #[test]

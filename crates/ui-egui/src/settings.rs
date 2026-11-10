@@ -214,8 +214,17 @@ fn font(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 
 fn language(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     heading(ui, t!("Language"), t!("The language of the window. It changes at once."));
-    let list: Vec<(&str, &str, &str)> = crate::lang::languages().iter().map(|l| (l.id, l.name.as_str(), l.id)).collect();
-    choices(ui, out, "language", app.prefs.language(), &list, |id| Action::Pref(Pref::Language(id.to_owned())));
+    // A menu of every language, each named in English (any font draws it).
+    let current = app.prefs.language();
+    let languages = crate::lang::languages();
+    let shown = languages.iter().find(|l| l.id == current).map_or(current, |l| l.name.as_str());
+    let r = egui::ComboBox::from_id_salt("settings:language").width(180.0).selected_text(shown).show_ui(ui, |ui| {
+        for l in languages {
+            let item = egui::Button::selectable(l.id == current, l.name.as_str());
+            ui.act(true, item, Handle::Setting("language", l.id), Action::Pref(Pref::Language(l.id.to_owned())), out);
+        }
+    });
+    crate::scenario::publish_target(Fixed::LanguageMenu, r.response.rect);
     font(app, ui, out);
     gap(ui);
     heading(ui, t!("What stays in English"), t!("The engine's messages and errors, the field plots' words, the command ids, and the command line."));
