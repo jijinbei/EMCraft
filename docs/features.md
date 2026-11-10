@@ -533,7 +533,7 @@ Reads a part: an STL file (one body) or a 3MF package, such as SolidCraft's expo
 | `thickness` | number | length | no | the layer's thickness with `open` (default a quarter of the band's longest wavelength) |
 | `fit_surfaces` | boolean |  | no | recover each face's exact surface — a plane, cylinder, sphere, cone or torus fitted to its vertices, kept when every vertex lies on it — so the mesh follows curved faces as it does native ones (default true); false keeps them faceted |
 | `parameters` | object |  | no | a SolidCraft design (.sc, .solidcraft) only: its parameters set before it is evaluated, name → a number in the unit the design shows it in, an expression of the project's variables read as such a number ("=a"), or an expression the design evaluates ("3 mm"); its faces then carry the design's exact surfaces, not fitted ones |
-| `tolerance` | number | length | no | a SolidCraft design only: the chord tolerance of its tessellation (default 2e-4 of each body's size) |
+| `tolerance` | number | length | no | a SolidCraft design only: the chord tolerance of its tessellation (default 2e-3 of each body's size; the mesh's curved elements follow the exact surfaces) |
 
 ## `geometry.import.inspect` — Inspect a part
 
