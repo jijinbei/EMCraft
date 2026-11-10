@@ -1404,7 +1404,7 @@ A lumped (discrete) port: the feed of an antenna, a gap from `from` to `to` (usu
 | `impedance` | number |  | no | the source's internal impedance in ohms (default 50) |
 | `voltage` | number |  | no | the source's voltage in volts, peak (default 1) |
 | `phase` | number |  | no | the source's phase in degrees (default 0) |
-| `radius` | number | length | no | spread the current round a band of this radius about the gap's line (a wire's radius, for a gap cut in a wire); default 0, the line itself |
+| `radius` | number | length | no | spread the current round a band of this radius about the gap's line (for a gap cut in a wire, a fifth of its radius: the band inside its ends, each line run on to the metal); default 0, the line itself |
 
 ## `model.element.create` — Lumped element
 

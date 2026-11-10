@@ -165,16 +165,43 @@ struct Piece {
     tet: usize,
 }
 
-/// ∫ Nᵢ · ŝ dl along the segment from `a` to `b` (ŝ its direction), for every unknown: the
-/// segment is clipped to each tetrahedron it crosses (barycentric coordinates are linear along
-/// it), and each stretch between the clips' breakpoints is integrated once, in one of the
-/// tetrahedra holding it (the tangential component along the line is the same in all of them),
-/// by four-point Gauss rules.
-fn line_vector(space: &Space, a: Point3, b: Point3) -> Result<Vec<(usize, f64)>> {
-    let mesh = space.mesh;
+/// How far past either end a gap's line may run on to the conductor there, a share of its length.
+const REACH: f64 = 0.5;
+
+/// The gap's line from `a` to `b` run on past either end, through the air, to the conductor
+/// that end faces when one lies within [`REACH`] of its length. A line ending short of its
+/// terminal — a band's line off a wire's axis where the wire's end is not square to the gap (a
+/// bent wire's), or a point set a little off the metal — leaves its current's charge in the
+/// air: a capacitance in series with the gap that grows as the mesh resolves it (a wire loop's
+/// second-order reactance ran 65 Ω capacitive with a band's lines ending 1–10 µm short of the
+/// wire's slanted ends). An end with no conductor within reach, or already on one, stays.
+fn onto_conductors(space: &Space, a: Point3, b: Point3) -> (Point3, Point3) {
     let d = b - a;
-    let len = d.norm();
-    let s = d / len;
+    let (from, to) = (a - d * REACH, b + d * REACH);
+    // The stretches of the longer line in the mesh, joined where they touch.
+    let mut spans: Vec<(f64, f64)> = pieces(space, from, to).iter().map(|p| (p.from, p.to)).collect();
+    spans.sort_by(|x, y| x.0.total_cmp(&y.0));
+    let mut joined: Vec<(f64, f64)> = Vec::new();
+    for (lo, hi) in spans {
+        match joined.last_mut() {
+            Some(last) if lo <= last.1 + BARYCENTRIC => last.1 = last.1.max(hi),
+            _ => joined.push((lo, hi)),
+        }
+    }
+    // The gap's own ends and its middle, as fractions of the longer line.
+    let whole = 1.0 + 2.0 * REACH;
+    let (ta, tb) = (REACH / whole, (1.0 + REACH) / whole);
+    let Some(&(lo, hi)) = joined.iter().find(|s| s.0 <= 0.5 && 0.5 <= s.1) else { return (a, b) };
+    let at = |t: f64| from + (to - from) * t;
+    let start = if lo > BARYCENTRIC && lo < ta { at(lo) } else { a };
+    let end = if hi < 1.0 - BARYCENTRIC && hi > tb { at(hi) } else { b };
+    (start, end)
+}
+
+/// The stretches of the segment from `a` to `b` inside each tetrahedron it crosses (barycentric
+/// coordinates are linear along it), as fractions of the segment.
+fn pieces(space: &Space, a: Point3, b: Point3) -> Vec<Piece> {
+    let mesh = space.mesh;
     let mut pieces: Vec<Piece> = Vec::new();
     // Only the tetrahedra whose boxes meet the segment's.
     for t in emcraft_mesh::tets_near(mesh, emcraft_model::Aabb::new(a.min(b), a.max(b))) {
@@ -209,6 +236,19 @@ fn line_vector(space: &Space, a: Point3, b: Point3) -> Result<Vec<(usize, f64)>>
             pieces.push(Piece { from: t0.max(0.0), to: t1.min(1.0), tet: t });
         }
     }
+    pieces
+}
+
+/// ∫ Nᵢ · ŝ dl along the gap's line from `a` to `b` (ŝ its direction), run on to the conductors
+/// at its ends ([`onto_conductors`]), for every unknown: each stretch between the breakpoints
+/// of its [`pieces`] is integrated once, in one of the tetrahedra holding it (the tangential
+/// component along the line is the same in all of them), by four-point Gauss rules.
+fn line_vector(space: &Space, a: Point3, b: Point3) -> Result<Vec<(usize, f64)>> {
+    let (a, b) = onto_conductors(space, a, b);
+    let d = b - a;
+    let len = d.norm();
+    let s = d / len;
+    let pieces = pieces(space, a, b);
     let mut cuts: Vec<f64> = pieces.iter().flat_map(|p| [p.from, p.to]).collect();
     cuts.sort_by(f64::total_cmp);
     cuts.dedup_by(|x, y| (*x - *y).abs() < BARYCENTRIC);
@@ -230,4 +270,42 @@ fn line_vector(space: &Space, a: Point3, b: Point3) -> Result<Vec<(usize, f64)>>
         }
     }
     Ok(out.into_iter().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::driven::Dofs;
+    use emcraft_fem::Order;
+    use emcraft_mesh::Topology;
+    use emcraft_model::Mesh;
+
+    /// The unit cube of air in six tetrahedra (Kuhn's), the metal all round it.
+    fn cube() -> Mesh {
+        let nodes = (0..8).map(|i| Point3::new((i & 1) as f64, ((i >> 1) & 1) as f64, ((i >> 2) & 1) as f64)).collect();
+        let paths = [[1, 2, 4], [1, 4, 2], [2, 1, 4], [2, 4, 1], [4, 1, 2], [4, 2, 1]];
+        let tets = paths.iter().map(|p| [0, p[0], p[0] + p[1], 7]).collect();
+        Mesh { nodes, tets, tet_material: vec![0; 6], ..Mesh::default() }
+    }
+
+    #[test]
+    fn a_gap_line_ending_short_of_the_metal_runs_on_to_it() {
+        let mesh = cube();
+        let topo = Topology::new(&mesh);
+        let dofs = Dofs::new(Order::Two, &mesh, &topo, &[]).unwrap();
+        let space = Space { mesh: &mesh, topo: &topo, dofs: &dofs };
+        let p = |z: f64| Point3::new(0.3, 0.4, z);
+        // 0.1 short of the floor and ceiling: run on to them, the same line as one drawn there.
+        let (a, b) = onto_conductors(&space, p(0.1), p(0.9));
+        assert!(a.distance(p(0.0)) < 1e-9 && b.distance(p(1.0)) < 1e-9, "{a:?} {b:?}");
+        let (short, whole) = (line_vector(&space, p(0.1), p(0.9)).unwrap(), line_vector(&space, p(0.0), p(1.0)).unwrap());
+        assert_eq!(short.len(), whole.len());
+        for ((i, x), (j, y)) in short.iter().zip(&whole) {
+            assert_eq!(i, j);
+            approx::assert_abs_diff_eq!(x, y, epsilon = 1e-12);
+        }
+        // Metal beyond reach (half the line's length), or none short of the line's ends: stays.
+        assert_eq!(onto_conductors(&space, p(0.45), p(0.55)), (p(0.45), p(0.55)));
+        assert_eq!(onto_conductors(&space, p(-0.2), p(1.2)), (p(-0.2), p(1.2)));
+    }
 }
