@@ -32,6 +32,9 @@ impl Driven {
     /// and read. Waveguide ports only, not a periodic cell.
     pub fn generalized(&self, frequency: f64) -> Result<Generalized> {
         check_frequency(frequency)?;
+        if self.has_ferrite() {
+            return Err(invalid("generalized scattering matrix", "not supported yet: with a ferrite (its system is unsymmetric)"));
+        }
         if self.tie.is_some() || self.ports.is_empty() || !self.lumped.is_empty() || self.has_terminals() {
             return Err(invalid("generalized scattering matrix", "needs waveguide ports alone (no lumped or terminal ports, not a periodic cell)"));
         }

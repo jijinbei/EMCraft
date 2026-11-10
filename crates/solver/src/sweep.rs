@@ -248,9 +248,10 @@ where
         residual,
         tolerance: o.tolerance,
     };
-    // A periodic cell's phases change with the frequency (and its system is not symmetric):
-    // not supported yet in the reduced basis, so each frequency is solved in full.
-    if d.tie.is_some() {
+    // A periodic cell's phases change with the frequency (and its system is not symmetric), a
+    // ferrite's tensor too: not supported yet in the reduced basis, so each frequency is solved
+    // in full.
+    if d.tie.is_some() || d.has_ferrite() {
         let mut results = Vec::with_capacity(nf);
         for (k, f) in frequencies.iter().enumerate() {
             each(SweepStep { max_full: nf, ..step(k, 0, 0, None) })?;

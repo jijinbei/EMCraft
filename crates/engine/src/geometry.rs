@@ -17,9 +17,26 @@ pub fn material(s: &mut Session, p: &Params) -> Result<Value> {
     let material = Material::new(name, p.number("eps_r").required()?, p.number("mu_r").or(1.0)?)?
         .with_loss_tangent(p.number("loss_tangent").or(0.0)?)?
         .with_magnetic_loss_tangent(p.number("magnetic_loss_tangent").or(0.0)?)?;
-    let material = material.with_dispersion(poles(p)?)?.with_thermal_conductivity(p.number("thermal_conductivity").optional()?)?;
+    let material =
+        material.with_dispersion(poles(p)?)?.with_thermal_conductivity(p.number("thermal_conductivity").optional()?)?.with_ferrite(ferrite(p)?)?;
     s.model.add_material(material)?;
     Ok(json!({"name": name}))
+}
+
+/// A material's magnetization `ferrite`: {"magnetization" (4πMs, G), "bias" (internal H₀,
+/// Oe), "linewidth" (ΔH, Oe, default 0), "axis" (default z)}; none when absent.
+pub(crate) fn ferrite(p: &Params) -> Result<Option<emcraft_model::ferrite::Ferrite>> {
+    let Some(v) = p.raw("ferrite").filter(|v| !v.is_null()) else { return Ok(None) };
+    if !v.is_object() {
+        return Err(p.error("ferrite", "must be an object: {\"magnetization\": 1780, \"bias\": 1000, \"linewidth\": 20, \"axis\": \"z\"}"));
+    }
+    let f = p.nested(v, "ferrite");
+    Ok(Some(emcraft_model::ferrite::Ferrite {
+        magnetization: f.number("magnetization").required()?,
+        bias: f.number("bias").required()?,
+        linewidth: f.number("linewidth").or(0.0)?,
+        axis: f.choice("axis").or(Axis::Z)?,
+    }))
 }
 
 /// A material's dispersion poles from `debye`, `lorentz` and `drude` (frequencies in display

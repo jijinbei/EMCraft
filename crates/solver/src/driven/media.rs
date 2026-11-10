@@ -2,6 +2,7 @@
 //! permeability μr(1 − j tan δ_m), and for a dispersive material (Debye, Lorentz or Drude poles)
 //! its εr(ω) at each frequency instead.
 
+use emcraft_model::ferrite::Ferrite;
 use emcraft_model::{Material, Mesh, Model};
 use num_complex::Complex64 as C;
 
@@ -17,6 +18,10 @@ pub(crate) struct Media {
     dispersive_of: Vec<Slot>,
     /// The dispersive materials, in the model's order (deterministic).
     dispersive: Vec<Material>,
+    /// Per tetrahedron, its material's index into `ferrites` (none if not a ferrite).
+    ferrite_of: Vec<Slot>,
+    /// The ferrites, in the model's order.
+    ferrites: Vec<Ferrite>,
 }
 
 impl Media {
@@ -28,15 +33,25 @@ impl Media {
             index[i] = Slot::new(dispersive.len());
             dispersive.push(m.clone());
         }
+        let mut ferrite_index = vec![Slot::NONE; model.materials.len()];
+        let mut ferrites = Vec::new();
+        for (i, m) in model.materials.iter().enumerate() {
+            if let Some(f) = m.ferrite {
+                ferrite_index[i] = Slot::new(ferrites.len());
+                ferrites.push(f);
+            }
+        }
         let (mut eps, mut mu, mut dispersive_of) = (Vec::with_capacity(n), Vec::with_capacity(n), Vec::with_capacity(n));
+        let mut ferrite_of = Vec::with_capacity(n);
         for t in 0..n {
             let k = mesh.tet_material.get(t).copied();
             let m = k.and_then(|k| model.materials.get(k as usize)).ok_or_else(|| invalid("mesh", format!("tetrahedron {t} has no material")))?;
             eps.push(C::new(m.eps_r.get(), -m.eps_r.get() * m.loss_tangent.get()));
             mu.push(m.mu_c());
             dispersive_of.push(k.and_then(|k| index.get(k as usize)).copied().unwrap_or(Slot::NONE));
+            ferrite_of.push(k.and_then(|k| ferrite_index.get(k as usize)).copied().unwrap_or(Slot::NONE));
         }
-        Ok(Media { eps, mu, dispersive_of, dispersive })
+        Ok(Media { eps, mu, dispersive_of, dispersive, ferrite_of, ferrites })
     }
 
     /// The dispersive materials: those whose permittivity depends on the frequency.
@@ -67,6 +82,21 @@ impl Media {
     /// Tetrahedron `t`'s complex relative permeability μr(1 − j tan δ_m).
     pub(crate) fn mu(&self, t: usize) -> C {
         self.mu.get(t).copied().unwrap_or(C::new(1.0, 0.0))
+    }
+
+    /// The ferrites: the materials whose permeability is a Polder tensor.
+    pub(crate) fn ferrites(&self) -> &[Ferrite] {
+        &self.ferrites
+    }
+
+    /// Tetrahedron `t`'s ferrite (an index into [`Media::ferrites`]), if it is one.
+    pub(crate) fn ferrite_of(&self, t: usize) -> Option<usize> {
+        self.ferrite_of.get(t).and_then(|d| d.get())
+    }
+
+    /// Tetrahedron `t`'s ferrite itself, if it is one.
+    pub(crate) fn ferrite(&self, t: usize) -> Option<&Ferrite> {
+        self.ferrite_of(t).and_then(|i| self.ferrites.get(i))
     }
 
     /// Whether any tetrahedron's permeability has losses.

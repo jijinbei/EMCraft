@@ -50,6 +50,9 @@ impl Driven {
     /// power over the excitation's unit wave) at `frequency`, each tetrahedron conducting heat
     /// at `conductivity(t)` (W/(m·K), > 0).
     pub fn temperature(&self, x: &[C], frequency: f64, scale: f64, conductivity: impl Fn(usize) -> f64) -> Result<TemperatureRise> {
+        if self.media.ferrites().iter().any(|f| f.linewidth > 0.0) {
+            return Err(invalid("temperature", "not supported yet: a lossy ferrite's heat (its loss is the Polder tensor's)"));
+        }
         let omega = angular(frequency);
         let mesh = &self.mesh;
         // The walls' nodes are held at the sink's temperature.

@@ -1,0 +1,24 @@
+{
+ "title": "A box cavity filled with a magnetized ferrite: its TE101 resonance through the Polder tensor's effective permeability",
+ "kind": "theory",
+ "source": "A box cavity a × b × d = 22.86 × 10.16 × 30 mm filled with a ferrite (εr = 13; 4πMs = 1780 G, internal bias H₀ = 3000 Oe along y, across the height): with the filling whole, TE101's field keeps sin(πx/a) sin(πz/d) and sees the effective permeability μe = (μ² − κ²)/μ of the Polder tensor (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §9.1, eqs. 9.25–9.26: μ = 1 + f₀f_m/(f₀² − f²), κ = f f_m/(f₀² − f²), f₀ = 2.8 MHz/Oe × H₀, f_m = 2.8 MHz/G × 4πMs; §9.3, the transversely biased filled guide's μe), so it resonates where k₀² εr μe(f) = (π/a)² + (π/d)²: by bisection, f = 1.801425 GHz (μ = 1.6219, κ = 0.1334, μe = 1.6110). Evaluated separately from EMCraft's code",
+ "quantities": [
+  {
+   "id": "f_res",
+   "quantity": "TE101 resonance: the frequency of least |S11| at a small probe (GHz)",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points",
+    "minimum": {
+     "x": "/frequency",
+     "y": "/s11/mag"
+    }
+   },
+   "value": 1.8014253801244526,
+   "tolerance": {
+    "relative": 0.001
+   },
+   "reason": "second-order elements of 3 mm (12 a wavelength in the filling) and the probe's loading of the mode, which pulls the resonance a little; seen within 2e-4. κ enters only through μe, so a wrong sign or place of the tensor's skew part moves the resonance by percents"
+  }
+ ]
+}

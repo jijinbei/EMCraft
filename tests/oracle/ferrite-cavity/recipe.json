@@ -1,0 +1,7 @@
+[
+ {"command": "model.material.create", "params": {"name": "yig", "eps_r": 13, "loss_tangent": 0.0005, "ferrite": {"magnetization": 1780, "bias": 3000, "axis": "y"}}},
+ {"command": "geometry.solid", "params": {"shape": "box", "size": [22.86, 10.16, 30], "material": "yig"}},
+ {"command": "model.port.lumped", "params": {"name": "probe", "from": [3, 0, 4], "to": [3, 1.5, 4], "impedance": 50, "radius": 0.3}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "solve.frequency", "params": {"start": 1.799, "stop": 1.804, "points": 21, "order": 2}, "id": "solve"}
+]

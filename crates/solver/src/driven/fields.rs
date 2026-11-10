@@ -74,6 +74,17 @@ impl Driven {
         match which {
             Field::E => field,
             // H = −∇ × E / (jωμ).
+            // In a ferrite H = [μ]⁻¹ B: B = −∇ × E/(jω), the inverse Polder tensor in 1/μ₀.
+            Field::H if let Some(f) = self.media.ferrite(t) => {
+                let b = -field / C::new(0.0, angular(frequency) * MU0);
+                let nu = f.nu(frequency);
+                let (ax, bx, cx) = f.axes();
+                let mut h = b;
+                h[bx] = nu.diagonal * b[bx] + nu.off * b[cx];
+                h[cx] = -nu.off * b[bx] + nu.diagonal * b[cx];
+                h[ax] = b[ax];
+                h
+            }
             Field::H => {
                 let mu = self.mu_of(t);
                 let omega_mu0 = angular(frequency) * MU0;

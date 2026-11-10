@@ -371,6 +371,13 @@ overlap tests).
   R. C. Hansen, *Phased Array Antennas*, 2nd ed., Wiley 2009, §7.2 — the active reflection of a
   scanned array's element, Γ_m = Σ_n S_mn a_n / a_m with the steering phases a_n = e^{−jk₀ û·r_n}
   (`emcraft-engine::active`, `results.active`; oracle `active-line`).
+- D. Polder, *On the theory of ferromagnetic resonance*, Phil. Mag. 40(300):99–115, 1949; D. M.
+  Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §9.1 (eqs. 9.25–9.28, the tensor with
+  e^{jωt}, the linewidth's loss) and §9.3 (the transversely biased filled guide's effective
+  permeability μe = (μ² − κ²)/μ) — a magnetized ferrite's permeability, assembled as the inverse
+  tensor's three parts on the pattern, the unsymmetric system solved by LU
+  (`emcraft-model::ferrite`, `emcraft-solver::driven::assembly::FerriteStiffness`; oracle
+  `ferrite-cavity`; the non-reciprocal slab and its mirror image, Onsager, in the tests).
 - D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §3.3, eq. 3.90 — the power a
   guide's TE10 carries, P = ab|E₀|²/(4Z_TE), whose field at breakdown bounds the power it handles
   (`emcraft-engine::breakdown`, `results.breakdown`; the field's peak over the cycle,

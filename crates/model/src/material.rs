@@ -34,6 +34,10 @@ pub struct Material {
     /// ([`AIR_THERMAL_CONDUCTIVITY`]) when `None`, any other lossy material's must be given.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thermal_conductivity: Option<Positive>,
+    /// A magnetized ferrite: the permeability the Polder tensor ([`crate::ferrite`]) instead of
+    /// μr, which is then 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ferrite: Option<crate::ferrite::Ferrite>,
 }
 
 /// Air's thermal conductivity at room temperature (W/(m·K)), taken for vacuum.
@@ -183,7 +187,21 @@ impl Material {
             magnetic_loss_tangent: LossTangent::ZERO,
             dispersion: Vec::new(),
             thermal_conductivity: None,
+            ferrite: None,
         })
+    }
+
+    /// The same material magnetized as `ferrite` (checked), or not; a ferrite's μr is 1 and its
+    /// magnetic loss its linewidth's.
+    pub fn with_ferrite(mut self, ferrite: Option<crate::ferrite::Ferrite>) -> Result<Material> {
+        if ferrite.is_some() && (self.mu_r.get() != 1.0 || !self.magnetic_loss_tangent.is_zero()) {
+            return Err(invalid(
+                "ferrite",
+                "takes μr = 1 and no magnetic loss tangent: its permeability is the Polder tensor, its loss the linewidth's",
+            ));
+        }
+        self.ferrite = ferrite.map(crate::ferrite::Ferrite::checked).transpose()?;
+        Ok(self)
     }
 
     /// The same material with a thermal conductivity (W/(m·K), above 0 and at most
@@ -268,13 +286,21 @@ impl Material {
 
     /// Whether the material absorbs (a loss tangent, dielectric or magnetic, or dispersion).
     pub fn is_lossy(&self) -> bool {
-        !self.loss_tangent.is_zero() || self.is_magnetically_lossy() || self.is_dispersive()
+        !self.loss_tangent.is_zero() || self.is_magnetically_lossy() || self.is_dispersive() || self.ferrite.is_some_and(|f| f.linewidth > 0.0)
     }
 
     /// Checks what the types of its fields leave open: a name, at most [`MAX_POLES`] poles (a
     /// material built field by field has not been through the constructors).
     pub fn checked(&self) -> Result<()> {
         named("material name", &self.name)?;
+        if let Some(k) = self.thermal_conductivity
+            && k.get() > MAX_THERMAL_CONDUCTIVITY
+        {
+            return Err(invalid("thermal conductivity", format!("at most {MAX_THERMAL_CONDUCTIVITY} W/(m·K)")));
+        }
+        if self.ferrite.is_some() {
+            self.clone().with_ferrite(self.ferrite)?;
+        }
         check_pole_count(self.dispersion.len())
     }
 
@@ -288,6 +314,7 @@ impl Material {
             magnetic_loss_tangent: LossTangent::ZERO,
             dispersion: Vec::new(),
             thermal_conductivity: None,
+            ferrite: None,
         }
     }
 }

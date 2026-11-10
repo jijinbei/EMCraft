@@ -210,6 +210,8 @@ pub struct Driven {
     /// Per dispersive material ([`Media::dispersive_materials`], in that order), its
     /// unit-permittivity mass matrix on the pattern (its tetrahedra are not in `mass`).
     pub(crate) dispersive_mass: Vec<Vec<f64>>,
+    /// Per ferrite, its curl–curl parts, scaled by its Polder tensor at each frequency.
+    pub(crate) ferrite_stiffness: Vec<assembly::FerriteStiffness>,
     /// Walls of finite conductivity.
     pub(crate) wall: Option<WallLoss>,
     /// The boundary faces that are walls (indices into the mesh's).
@@ -355,6 +357,9 @@ impl Driven {
     /// problem whose modes perturbation theory gives Q factors from.
     pub fn cavity(model: &Model, order: Order) -> Result<Driven> {
         refuse_open(model)?;
+        if model.materials.iter().any(|m| m.ferrite.is_some()) {
+            return Err(invalid("eigenmodes", "not supported yet: a ferrite (its tensor makes the eigenproblem unsymmetric)"));
+        }
         Driven::build(model, order, Ends::Closed, Walls::Perfect)
     }
 
@@ -392,6 +397,20 @@ impl Driven {
         let dofs = Dofs::new(order, &mesh, &topo, &faces.fixed)?;
         let media = Media::new(model, &mesh)?;
         let pml = Layer::of(model, &mesh)?;
+        // A ferrite only inside: not on a port's face (its modes are an isotropic medium's), not
+        // in the matched layer (its stretch is an isotropic medium's).
+        if !media.ferrites().is_empty() {
+            let ferrite_tet = |t: u32| media.ferrite_of(t as usize).is_some();
+            if faces.ports.iter().flatten().filter_map(|&i| mesh.boundary.get(i)).any(|b| ferrite_tet(b.tet)) {
+                return Err(invalid(
+                    "ferrite",
+                    "not supported yet: a port on a ferrite's face; put the port in the guide's isotropic filling, a little away",
+                ));
+            }
+            if pml.as_ref().is_some_and(|l| l.tets().iter().any(|t| media.ferrite_of(*t).is_some())) {
+                return Err(invalid("ferrite", "not supported yet: a ferrite in the perfectly matched layer"));
+            }
+        }
         let space = Space { mesh: &mesh, topo: &topo, dofs: &dofs };
         let ports = model
             .ports
@@ -448,6 +467,7 @@ impl Driven {
             stiffness: volume.stiffness,
             mass: volume.mass,
             dispersive_mass: volume.dispersive,
+            ferrite_stiffness: volume.ferrite,
             pattern,
             wall,
             walls: faces.walls,
@@ -493,6 +513,9 @@ impl Driven {
         let t0 = std::time::Instant::now();
         let system = self.system(frequency)?;
         let assembly = t0.elapsed().as_secs_f64();
+        if self.has_ferrite() {
+            return Ok((self.solve_unsymmetric(frequency, system, assembly)?, Vec::new()));
+        }
         if self.iterative && self.order == Order::Two {
             return Ok((self.solve_iterative(frequency, system, assembly)?, Vec::new()));
         }
@@ -551,6 +574,22 @@ impl Driven {
         let read = self.s_parameters(&terms, std::mem::take(&mut solved.fields), frequency)?;
         solved.fields = read.fields;
         Ok((solved.result(frequency, read.s, read.impedances), extra))
+    }
+
+    /// Whether a ferrite's Polder tensor makes the system unsymmetric (and the structure
+    /// non-reciprocal): it is then solved by LU, a frequency at a time.
+    pub fn has_ferrite(&self) -> bool {
+        !self.ferrite_stiffness.is_empty()
+    }
+
+    /// A frequency whose system is unsymmetric (a ferrite's) solved by sparse LU.
+    fn solve_unsymmetric(&self, frequency: f64, system: System, assembly: f64) -> Result<FrequencyResult> {
+        let System { a, rhs, terms, border } = system;
+        let f = self.factor_lu(&a, &self.dofs.points, border)?;
+        let mut solved = solution::solve_each(&f, &a, &rhs, self.dofs.unknowns, assembly)?;
+        let read = self.s_parameters(&terms, std::mem::take(&mut solved.fields), frequency)?;
+        solved.fields = read.fields;
+        Ok(solved.result(frequency, read.s, read.impedances))
     }
 
     /// A frequency solved by GMRES preconditioned by the first-order part ([`pmg`]).

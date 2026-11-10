@@ -32,6 +32,7 @@ pub mod domain;
 pub mod edit;
 pub mod element;
 pub mod error;
+pub mod ferrite;
 pub mod geom;
 pub mod job;
 pub mod material;

@@ -63,6 +63,20 @@ pub(super) struct VolumeMatrices {
     pub mass: Vec<C>,
     /// Per dispersive material, the unit-permittivity mass matrix of its tetrahedra.
     pub dispersive: Vec<Vec<f64>>,
+    /// Per ferrite, its tetrahedra's curl–curl parts ([`FerriteStiffness`]).
+    pub ferrite: Vec<FerriteStiffness>,
+}
+
+/// A ferrite's curl–curl term split by the inverse Polder tensor's entries, each a real matrix
+/// on the pattern that does not depend on the frequency: ∫ (c_b c_b′ + c_c c_c′) (times ν_d),
+/// ∫ (c_b c_c′ − c_c c_b′) (times ν_o) and ∫ c_a c_a′ (times 1), c the basis functions' curls,
+/// a the bias axis and b, c the transverse ones ([`emcraft_model::ferrite`]).
+#[derive(Clone, Debug)]
+pub(crate) struct FerriteStiffness {
+    pub ferrite: emcraft_model::ferrite::Ferrite,
+    pub transverse: Vec<f64>,
+    pub skew: Vec<f64>,
+    pub axial: Vec<f64>,
 }
 
 impl<'a> Space<'a> {
@@ -116,14 +130,23 @@ impl<'a> Space<'a> {
         let mut kk = pattern.zeroed();
         let mut mm = kk.clone();
         let mut md: Vec<Csr> = media.dispersive_materials().iter().map(|_| kk.clone()).collect();
+        let mut kf: Vec<[Csr; 3]> = media.ferrites().iter().map(|_| [kk.clone(), kk.clone(), kk.clone()]).collect();
         let mut cache = ElementCache::default();
         for t in (0..self.mesh.tets.len()).filter(|t| keep(*t)) {
             let (s, m) = cache.matrices(self, t)?;
             let unknowns = self.unknowns(t);
             let n = unknowns.len();
             let (eps, mu, dispersive) = (media.eps(t), media.mu(t), media.dispersive_of(t));
+            let ferrite = media.ferrite_of(t).and_then(|f| Some((f, *media.ferrites().get(f)?)));
+            if let Some((f, fe)) = ferrite
+                && let Some(parts) = kf.get_mut(f)
+            {
+                self.ferrite_parts(t, &fe, &unknowns, parts)?;
+            }
             for Coupling { i, j, row, col } in couplings(&unknowns) {
-                kk.add(row, col, per_mu(s[i * n + j], mu));
+                if ferrite.is_none() {
+                    kk.add(row, col, per_mu(s[i * n + j], mu));
+                }
                 let (target, e) = match dispersive.and_then(|d| md.get_mut(d)) {
                     Some(d) => (d, C::new(1.0, 0.0)),
                     None => (&mut mm, eps),
@@ -131,7 +154,31 @@ impl<'a> Space<'a> {
                 target.add(row, col, e * m[i * n + j]);
             }
         }
-        Ok(VolumeMatrices { stiffness: kk.val, mass: mm.val, dispersive: md.iter().map(real_parts).collect() })
+        let ferrite = media
+            .ferrites()
+            .iter()
+            .zip(&kf)
+            .map(|(f, [tr, sk, ax])| FerriteStiffness { ferrite: *f, transverse: real_parts(tr), skew: real_parts(sk), axial: real_parts(ax) })
+            .collect();
+        Ok(VolumeMatrices { stiffness: kk.val, mass: mm.val, dispersive: md.iter().map(real_parts).collect(), ferrite })
+    }
+
+    /// Adds ferrite tetrahedron `t`'s curl–curl parts ([`FerriteStiffness`]) into `parts`
+    /// (transverse, skew, axial), by quadrature of its basis functions' curls.
+    fn ferrite_parts(&self, t: usize, ferrite: &emcraft_model::ferrite::Ferrite, unknowns: &[Slot], parts: &mut [Csr; 3]) -> Result<()> {
+        let el = self.element(t)?;
+        let (a, b, c) = ferrite.axes();
+        for (l, w) in el.rule(rule_points(self.order())) {
+            let curls = el.curl_values(l);
+            for Coupling { i, j, row, col } in couplings(unknowns) {
+                let (Some(ci), Some(cj)) = (curls.get(i), curls.get(j)) else { continue };
+                let [tr, sk, ax] = parts;
+                tr.add(row, col, C::new(w * (ci[b] * cj[b] + ci[c] * cj[c]), 0.0));
+                sk.add(row, col, C::new(w * (ci[b] * cj[c] - ci[c] * cj[b]), 0.0));
+                ax.add(row, col, C::new(w * ci[a] * cj[a], 0.0));
+            }
+        }
+        Ok(())
     }
 
     /// The walls' tangential mass matrix ∫ N_i,t · N_j,t dS over the boundary faces `walls`.
@@ -256,6 +303,13 @@ impl Driven {
         for (c, md) in self.dispersive_scales(frequency).into_iter().zip(&self.dispersive_mass) {
             for (x, m) in a.val.iter_mut().zip(md) {
                 *x -= c * *m;
+            }
+        }
+        // Ferrites: ν_d K_t + ν_o K_s + K_a at this frequency's Polder tensor.
+        for f in &self.ferrite_stiffness {
+            let nu = f.ferrite.nu(frequency);
+            for (x, ((tr, sk), ax)) in a.val.iter_mut().zip(f.transverse.iter().zip(&f.skew).zip(&f.axial)) {
+                *x += nu.diagonal * *tr + nu.off * *sk + *ax;
             }
         }
         self.add_pml(&mut a, k0)?;

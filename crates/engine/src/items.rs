@@ -86,7 +86,8 @@ pub fn material_edit(s: &mut Session, p: &Params) -> Result<Value> {
             Some(k) => Some(k),
             None if p.cleared("thermal_conductivity") => None,
             None => old.thermal_conductivity.map(emcraft_model::Positive::get),
-        })?;
+        })?
+        .with_ferrite(if p.has("ferrite") { crate::geometry::ferrite(p)? } else { old.ferrite })?;
     // A new name or thermal conductivity changes no field result; anything else every one.
     let physics = Material { name: old.name.clone(), thermal_conductivity: old.thermal_conductivity, ..material.clone() } != old;
     s.model.replace_material(i, material)?;

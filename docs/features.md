@@ -463,6 +463,7 @@ A linear, isotropic material, lossless unless it has a loss tangent (dielectric 
 | `loss_tangent` | number |  | no | dielectric loss tangent tan δ, 0 to 1e9 (default 0): ε = εr(1 − j tan δ) |
 | `magnetic_loss_tangent` | number |  | no | magnetic loss tangent tan δm, 0 to 1e9 (default 0): μ = μr(1 − j tan δm) |
 | `thermal_conductivity` | number |  | no | thermal conductivity k in W/(m·K) for results.thermal (PTFE 0.25, alumina 30; vacuum is air, 0.026) |
+| `ferrite` | object |  | no | a magnetized ferrite, its permeability the Polder tensor: {"magnetization": 4πMs in G, "bias": internal field H₀ in Oe, "linewidth": ΔH in Oe (default 0), "axis": x, y or z (default z)}; μr stays 1 (`null` removes it) |
 | `debye` | array | frequency | no | Debye poles `[{"delta_eps", "frequency"}]`: χ = Δε/(1 + jω/ω_r), Δε > 0, relaxation frequency f_r = 1/(2πτ) > 0 (frequency) |
 | `lorentz` | array | frequency | no | Lorentz poles `[{"delta_eps", "frequency", "damping"}]`: χ = Δε ω₀²/(ω₀² − ω² + jωγ), Δε > 0, resonance f₀ = ω₀/2π > 0, damping γ/2π > 0 (frequencies) |
 | `drude` | array | frequency | no | Drude poles `[{"plasma_frequency", "damping"}]`: χ = −ω_p²/(ω² − jωγ), plasma frequency ω_p/2π > 0, damping γ/2π > 0 (frequencies) |
@@ -480,6 +481,7 @@ Changes a material: its properties (as model.material.create takes them; `debye`
 | `loss_tangent` | number |  | no | dielectric loss tangent tan δ, 0 to 1e9 |
 | `magnetic_loss_tangent` | number |  | no | magnetic loss tangent tan δm, 0 to 1e9 |
 | `thermal_conductivity` | number |  | no | thermal conductivity k in W/(m·K) for results.thermal (PTFE 0.25, alumina 30; vacuum is air, 0.026) |
+| `ferrite` | object |  | no | a magnetized ferrite, its permeability the Polder tensor: {"magnetization": 4πMs in G, "bias": internal field H₀ in Oe, "linewidth": ΔH in Oe (default 0), "axis": x, y or z (default z)}; μr stays 1 (`null` removes it) |
 | `debye` | array | frequency | no | Debye poles `[{"delta_eps", "frequency"}]`, replacing the material's (frequency) |
 | `lorentz` | array | frequency | no | Lorentz poles `[{"delta_eps", "frequency", "damping"}]`, replacing the material's (frequencies) |
 | `drude` | array | frequency | no | Drude poles `[{"plasma_frequency", "damping"}]`, replacing the material's (frequencies) |

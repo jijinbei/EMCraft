@@ -113,6 +113,9 @@ fn material(m: &Model, p: &Params, d: Display) -> Result<Value> {
         "name": mat.name, "eps_r": mat.eps_r, "mu_r": mat.mu_r,
         "loss_tangent": mat.loss_tangent, "magnetic_loss_tangent": mat.magnetic_loss_tangent,
     });
+    if let Some(f) = mat.ferrite {
+        v["ferrite"] = json!({"magnetization": f.magnetization, "bias": f.bias, "linewidth": f.linewidth, "axis": f.axis.id()});
+    }
     if let Some(k) = mat.thermal_conductivity {
         v["thermal_conductivity"] = json!(k.get());
     }

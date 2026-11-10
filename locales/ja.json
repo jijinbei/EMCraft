@@ -903,6 +903,7 @@
     "output": "出力",
     "roughness": "粗さ",
     "samples": "抽出数",
+    "ferrite": "フェライト",
     "breakdown": "放電電界",
     "power": "電力",
     "wall_temperature": "壁の温度",
@@ -1426,6 +1427,7 @@
         "loss_tangent": "誘電損失正接 tan δ、0〜1e9（既定 0）：ε = εr(1 − j tan δ)",
         "magnetic_loss_tangent": "磁性損失正接 tan δm、0〜1e9（既定 0）：μ = μr(1 − j tan δm)",
         "thermal_conductivity": "熱伝導率 k、W/(m·K)、results.thermal 用（PTFE 0.25、アルミナ 30。真空は空気の 0.026）",
+        "ferrite": "磁化したフェライト。透磁率は Polder テンソル：{\"magnetization\": 4πMs [G]、\"bias\": 内部磁界 H₀ [Oe]、\"linewidth\": ΔH [Oe]（既定 0）、\"axis\": x・y・z（既定 z）}。μr は 1 のまま（`null` で外す）",
         "debye": "Debye 極 `[{\"delta_eps\", \"frequency\"}]`：χ = Δε/(1 + jω/ω_r)、Δε > 0、緩和周波数 f_r = 1/(2πτ) > 0（周波数）",
         "lorentz": "Lorentz 極 `[{\"delta_eps\", \"frequency\", \"damping\"}]`：χ = Δε ω₀²/(ω₀² − ω² + jωγ)、Δε > 0、共振周波数 f₀ = ω₀/2π > 0、減衰 γ/2π > 0（周波数）",
         "drude": "Drude 極 `[{\"plasma_frequency\", \"damping\"}]`：χ = −ω_p²/(ω² − jωγ)、プラズマ周波数 ω_p/2π > 0、減衰 γ/2π > 0（周波数）"
@@ -2222,6 +2224,7 @@
         "loss_tangent": "誘電損失正接 tan δ、0〜1e9",
         "magnetic_loss_tangent": "磁性損失正接 tan δm、0〜1e9",
         "thermal_conductivity": "熱伝導率 k、W/(m·K)、results.thermal 用（PTFE 0.25、アルミナ 30。真空は空気の 0.026）",
+        "ferrite": "磁化したフェライト。透磁率は Polder テンソル：{\"magnetization\": 4πMs [G]、\"bias\": 内部磁界 H₀ [Oe]、\"linewidth\": ΔH [Oe]（既定 0）、\"axis\": x・y・z（既定 z）}。μr は 1 のまま（`null` で外す）",
         "debye": "Debye 極 `[{\"delta_eps\", \"frequency\"}]`、材料の極を置き換える（周波数）",
         "lorentz": "Lorentz 極 `[{\"delta_eps\", \"frequency\", \"damping\"}]`、材料の極を置き換える（周波数）",
         "drude": "Drude 極 `[{\"plasma_frequency\", \"damping\"}]`、材料の極を置き換える（周波数）"

@@ -671,3 +671,71 @@ fn a_straight_cells_bloch_waves_in_3d_are_the_guides_own() {
     assert!(p["delay"].as_f64().unwrap() > 3.0, "{}", p["delay"]);
     assert!(s.execute("results.pulse", &json!({"frequency": 12, "width": 2, "length": 1000, "wave": 4})).is_err());
 }
+
+/// A ferrite slab off the guide's middle, biased across the height, is a non-reciprocal phase
+/// shifter: lossless (S unitary), |S21| = |S12| but their phases apart; above the ferrite's
+/// resonance (κ < 0) the wave going +z on the side x < a/2, whose H turns negatively about +y,
+/// sees μ − κ > μ and lags more (Pozar §9.1, 9.3). Mirrored across the guide's middle the bias
+/// is reversed for the wave (an axial vector), so S21 and S12 trade places (Onsager).
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn a_ferrite_slab_is_a_lossless_non_reciprocal_phase_shifter() {
+    let solve = |x: f64| {
+        let mut s = Session::new();
+        s.run_script(&json!([
+            {"command": "model.material.create", "params": {"name": "yig", "eps_r": 13, "ferrite": {"magnetization": 1780, "bias": 1000, "axis": "y"}}},
+            {"command": "geometry.solid", "params": {"shape": "box", "size": [22.86, 10.16, 40]}},
+            {"command": "geometry.inclusion", "params": {"shape": "box", "size": [2, 8.16, 20], "at": [x, 1, 10], "material": "yig"}},
+            {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}},
+            {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}},
+            {"command": "mesh.generate", "params": {"size": 6}},
+            {"command": "solve.frequency", "params": {"frequencies": [10], "order": 2}}
+        ]))
+        .unwrap();
+        let check = s.execute("results.check", &json!({})).unwrap();
+        assert!(check["unitarity_error"].as_f64().unwrap() < 1e-9, "{check}");
+        let pt = s.execute("results.sparameters", &json!({})).unwrap()["points"][0].clone();
+        let phase = |k: &str| pt[k]["deg"].as_f64().unwrap();
+        assert!((pt["s21"]["mag"].as_f64().unwrap() - pt["s12"]["mag"].as_f64().unwrap()).abs() < 1e-9);
+        (phase("s21"), phase("s12"))
+    };
+    let wrap = |d: f64| (d + 540.0).rem_euclid(360.0) - 180.0;
+    let (s21, s12) = solve(4.0);
+    let lag = wrap(s12 - s21);
+    assert!(lag > 5.0, "S21 lags S12 by {lag}°");
+    let (m21, m12) = solve(22.86 - 4.0 - 2.0);
+    assert!(wrap(m21 - s12).abs() < 2.0 && wrap(m12 - s21).abs() < 2.0, "mirrored {m21} {m12} against {s12} {s21}");
+}
+
+/// A ferrite's numbers are checked, and what it cannot be part of yet is refused, named.
+#[test]
+fn a_ferrite_refuses_what_it_cannot_do_yet() {
+    let mut s = Session::new();
+    for bad in [
+        json!({"magnetization": 0, "bias": 1000}),
+        json!({"magnetization": 1780, "bias": -1}),
+        json!({"magnetization": 1780, "bias": 1000, "linewidth": -5}),
+        json!({"magnetization": 1780}),
+        json!({"magnetization": 1780, "bias": 1000, "axis": "w"}),
+    ] {
+        assert!(s.execute("model.material.create", &json!({"name": "f", "eps_r": 13, "ferrite": bad})).is_err(), "{bad}");
+    }
+    assert!(
+        s.execute("model.material.create", &json!({"name": "f", "eps_r": 13, "mu_r": 2, "ferrite": {"magnetization": 1780, "bias": 1000}})).is_err()
+    );
+    s.run_script(&json!([
+        {"command": "model.material.create", "params": {"name": "yig", "eps_r": 13, "ferrite": {"magnetization": 1780, "bias": 3000, "axis": "y"}}},
+        {"command": "geometry.solid", "params": {"shape": "box", "size": [22.86, 10.16, 20], "material": "yig"}},
+        {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 1}},
+        {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 1}},
+        {"command": "mesh.generate", "params": {"size": 8}}
+    ]))
+    .unwrap();
+    let e = s.execute("solve.frequency", &json!({"frequencies": [9]})).unwrap_err().to_string();
+    assert!(e.contains("ferrite"), "{e}");
+    let e = s.execute("solve.eigenmodes", &json!({"near": 2, "count": 1})).unwrap_err().to_string();
+    assert!(e.contains("ferrite"), "{e}");
+    // Kept and read back by the material's values.
+    let v = s.execute("project.values", &json!({"command": "model.material.edit", "name": "yig"})).unwrap();
+    assert_eq!(v["ferrite"]["axis"], "y");
+}
