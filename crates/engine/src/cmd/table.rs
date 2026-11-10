@@ -744,7 +744,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("thickness", K::Number, "the layer's thickness with `open` (default a quarter of the band's longest wavelength)").of(L),
             opt("fit_surfaces", K::Boolean, "recover each face's exact surface — a plane, cylinder, sphere, cone or torus fitted to its vertices, kept when every vertex lies on it — so the mesh follows curved faces as it does native ones (default true); false keeps them faceted"),
             opt("parameters", K::Object, "a SolidCraft design (.sc, .solidcraft) only: its parameters set before it is evaluated, name → a number in the unit the design shows it in, an expression of the project's variables read as such a number (\"=a\"), or an expression the design evaluates (\"3 mm\"); its faces then carry the design's exact surfaces, not fitted ones"),
-            opt("tolerance", K::Number, "a SolidCraft design only: the chord tolerance of its tessellation (default 2e-4 of each body's size)").of(L),
+            opt("tolerance", K::Number, "a SolidCraft design only: the chord tolerance of its tessellation (default 2e-3 of each body's size; the mesh's curved elements follow the exact surfaces)").of(L),
         ],
         effect: Effect::Record,
         invalidates: Some(Change::Geometry),

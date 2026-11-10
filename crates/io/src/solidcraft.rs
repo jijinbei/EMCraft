@@ -95,13 +95,20 @@ pub fn parameters(bytes: &[u8]) -> Result<Vec<Parameter>> {
         .collect())
 }
 
+/// The chord tolerance a design is tessellated at when none is given, as a share of each body's
+/// size: 2e-3, a twentieth of a millimetre on a 25 mm part. The mesh's own curved elements follow
+/// the design's exact surfaces, so the tessellation only has to carry the shape to the mesher;
+/// SolidCraft's own default (2e-4, for drawing) made curved walls' triangles a third of a typical
+/// element and thin, and the mesher spent most of its time mending the tetrahedra on them (a
+/// helical guide: 37 s for 90 000 tetrahedra, 8 s for 25 000 at this tolerance).
+pub const MESH_TOLERANCE: f64 = 2e-3;
+
 /// The design's bodies with `overrides` (parameter name, expression as the design takes it:
-/// `3 mm`, `w / 2`) at chord tolerance `tolerance_mm`.
+/// `3 mm`, `w / 2`) at chord tolerance `tolerance_mm` ([`MESH_TOLERANCE`] of each body's size
+/// when `None`).
 pub fn read(bytes: &[u8], overrides: &[(String, String)], tolerance_mm: Option<f64>) -> Result<Vec<Body>> {
-    let mut options = sx::Options::default().with_overrides(overrides.iter().map(|(n, e)| (n.as_str(), e.as_str())));
-    if let Some(t) = tolerance_mm {
-        options = options.with_tolerance(sx::Tolerance::Absolute(t));
-    }
+    let tolerance = tolerance_mm.map_or(sx::Tolerance::Relative(MESH_TOLERANCE), sx::Tolerance::Absolute);
+    let options = sx::Options::default().with_overrides(overrides.iter().map(|(n, e)| (n.as_str(), e.as_str()))).with_tolerance(tolerance);
     let snapshot = design(bytes)?.snapshot(&options).map_err(failed)?;
     let triangles = snapshot.triangle_count();
     if triangles > MAX_TRIANGLES {
@@ -172,7 +179,8 @@ mod tests {
         assert!(Arc::ptr_eq(&a, &kept.design(POST).unwrap()), "the same bytes reuse the design");
         let fresh: Vec<Body> = {
             let d = sx::open(POST).unwrap();
-            let s = d.snapshot(&sx::Options::default().with_override("d", "4 mm")).unwrap();
+            let options = sx::Options::default().with_override("d", "4 mm").with_tolerance(sx::Tolerance::Relative(MESH_TOLERANCE));
+            let s = d.snapshot(&options).unwrap();
             s.bodies.iter().map(body).collect::<Result<_>>().unwrap()
         };
         let overrides = [("d".to_string(), "4 mm".to_string())];

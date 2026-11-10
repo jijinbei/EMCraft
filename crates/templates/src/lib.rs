@@ -287,7 +287,7 @@ pub const TEMPLATES: &[Template] = &[
     },
     Template {
         name: "helical-compressor",
-        label: "Helical pulse compressor: one 36 mm period of a circular guide (radius 14 mm) whose wall turns as a three-lobed helix, r0 + h cos(3φ − 2πz/p), a SolidCraft sweep with a twist; its Bloch waves solved in 3D (solve.bloch, a few minutes) — the helix couples one rotation of TE11 with TE21 near its cut-off, a wave whose delay rises steeply with frequency — and a 12 ns chirped pulse through 3 m of it, the chirp matched: compressed about ×10 to 0.8 ns with no tail to speak of",
+        label: "Helical pulse compressor: one 36 mm period of a circular guide (radius 14 mm) whose wall turns as a three-lobed helix, r0 + h cos(3φ − 2πz/p), a SolidCraft sweep with a twist; its Bloch waves solved in 3D (solve.bloch on Run, about a minute) — the helix couples one rotation of TE11 with TE21 near its cut-off, a wave whose delay rises steeply with frequency — and a 12 ns chirped pulse through 3 m of it, the chirp matched: compressed about ×10 to 0.8 ns with no tail to speak of",
         script: include_str!("../scripts/helical-compressor.json"),
         marks: "{}",
         kinds: &[Analysis::Frequency],
