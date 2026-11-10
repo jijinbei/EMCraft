@@ -275,7 +275,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         }
         Region::Box { .. } => {
             let margin = p.positive_length("margin").optional()?;
-            let shape = with_surfaces(&mut parts, |b| air_box(p, b, margin, layer.thickness.map(Metres::get), layer.quarter))?;
+            let shape = air_box(p, &mut parts, margin, layer.thickness.map(Metres::get), layer.quarter)?;
             s.model.set_solid(Solid { shape, material: material.clone() })?;
             None
         }
@@ -321,10 +321,29 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
 
 /// A body read from a part: its surface, each triangle's face as read (a B-rep face, before the
 /// split by angle) and, for a SolidCraft design, each face's exact surface.
+#[derive(Clone)]
 struct PartBody {
     body: emcraft_io::Surface,
     source: Vec<u32>,
     exact: Option<Vec<Option<FaceSurface>>>,
+}
+
+impl PartBody {
+    /// The body moved by `d`: its triangles and its exact surfaces together (moved apart, the
+    /// mesh would bend its elements onto surfaces left where the design drew them).
+    fn moved(&mut self, d: emcraft_model::Vec3) {
+        self.body.positions.iter_mut().for_each(|q| *q += d);
+        if let Some(exact) = &mut self.exact {
+            for f in exact.iter_mut() {
+                *f = f.take().map(|f| f.moved(d));
+            }
+        }
+    }
+}
+
+/// The lowest corner of `parts`' boxes (each coordinate's least).
+fn lowest(parts: &[PartBody]) -> [f64; 3] {
+    parts.iter().flat_map(|b| b.body.positions.iter()).fold([f64::INFINITY; 3], |m, q| [0, 1, 2].map(|d| m[d].min(q[d])))
 }
 
 /// The bodies of the part at `path` (`unit` m per file unit): a SolidCraft design's at the
@@ -346,16 +365,6 @@ fn read_part(p: &Params, path: &str, unit: f64) -> Result<Vec<PartBody>> {
         return Err(EngineError::failed(format!("`{path}` holds no body")));
     }
     Ok(parts)
-}
-
-/// `f` on the parts' surfaces, which it may move.
-fn with_surfaces<R>(parts: &mut [PartBody], f: impl FnOnce(&mut [emcraft_io::Surface]) -> R) -> R {
-    let mut surfaces: Vec<emcraft_io::Surface> = parts.iter_mut().map(|b| std::mem::take(&mut b.body)).collect();
-    let out = f(&mut surfaces);
-    for (b, surface) in parts.iter_mut().zip(surfaces) {
-        b.body = surface;
-    }
-    out
 }
 
 /// A metal body as the cavity's wall: its triangles, no exact surfaces.
@@ -439,18 +448,16 @@ fn choose_region(s: &mut Session, p: &Params, parts: &mut [PartBody], materials:
         return Err(p.error("margin", "a cavity is the air inside the bodies' own bounding box: it takes no margin"));
     }
     let region = if explicit_cavity {
-        Region::Cavity(with_surfaces(parts, |b| enclosed_air(s, b, materials, keep.unwrap_or_default(), material))?)
+        Region::Cavity(enclosed_air(s, parts, materials, keep.unwrap_or_default(), material)?)
     } else if boxed {
         Region::Box { why_no_cavity: None }
     } else if tried {
         // Metal bodies enclosing air: it is the region. Bodies that enclose none (a part in
         // air) lie in a box of air.
-        let mut moved: Vec<emcraft_io::Surface> = parts.iter().map(|b| b.body.clone()).collect();
+        let mut moved = parts.to_vec();
         match enclosed_air(s, &mut moved, materials, keep.unwrap_or_default(), material) {
             Ok(c) => {
-                for (b, m) in parts.iter_mut().zip(moved) {
-                    b.body = m;
-                }
+                parts.clone_from_slice(&moved);
                 Region::Cavity(c)
             }
             Err(e) => Region::Box { why_no_cavity: Some(e.to_string()) },
@@ -546,24 +553,23 @@ emcraft_macros::named_serde!(Keep);
 /// other materials' too) moved with the box to the origin. Records the metal bodies in `placed`.
 fn enclosed_air(
     s: &mut Session,
-    bodies: &mut [emcraft_io::Surface],
+    bodies: &mut [PartBody],
     materials: &[(String, String)],
     keep: Keep,
     material: &str,
 ) -> Result<emcraft_mesh::cavity::Cavity> {
-    let metal = |b: &emcraft_io::Surface| material_of(materials, &b.name) == crate::bodies::METAL;
-    let walls: Vec<&emcraft_io::Surface> = bodies.iter().filter(|b| metal(b)).collect();
+    let metal = |b: &PartBody| material_of(materials, &b.body.name) == crate::bodies::METAL;
+    let walls: Vec<PartBody> = bodies.iter().filter(|b| metal(b)).cloned().collect();
     if walls.is_empty() {
         return Err(EngineError::failed("a cavity is the air metal bodies enclose: every body is given another material"));
     }
-    let lo = walls.iter().flat_map(|b| b.positions.iter()).fold([f64::INFINITY; 3], |m, q| [0, 1, 2].map(|d| m[d].min(q[d])));
+    let lo = lowest(&walls);
     let shift = emcraft_model::Vec3::new(-lo[0], -lo[1], -lo[2]);
-    for b in bodies.iter_mut() {
-        b.positions.iter_mut().for_each(|q| *q += shift);
-    }
+    bodies.iter_mut().for_each(|b| b.moved(shift));
     let walls: Vec<(String, emcraft_mesh::csg::Surface)> = bodies
         .iter()
         .filter(|b| metal(b))
+        .map(|b| &b.body)
         .map(|b| {
             (b.name.clone(), emcraft_mesh::csg::Surface { positions: b.positions.clone(), triangles: b.triangles.clone(), tags: b.tags.clone() })
         })
@@ -669,9 +675,9 @@ fn body_materials(p: &Params, bodies: &[emcraft_io::Surface]) -> Result<Vec<(Str
 /// The box of air around `bodies`, from the origin, the bodies moved into it: `margin` beyond
 /// them all; by default a quarter of their largest extent, or with a layer of `thickness` as
 /// much layer again and a `quarter` wavelength of air.
-fn air_box(p: &Params, bodies: &mut [emcraft_io::Surface], margin: Option<f64>, thickness: Option<f64>, quarter: Option<f64>) -> Result<Shape> {
-    let lo = bodies.iter().flat_map(|b| b.positions.iter()).fold([f64::INFINITY; 3], |m, q| [0, 1, 2].map(|d| m[d].min(q[d])));
-    let hi = bodies.iter().flat_map(|b| b.positions.iter()).fold([f64::NEG_INFINITY; 3], |m, q| [0, 1, 2].map(|d| m[d].max(q[d])));
+fn air_box(p: &Params, bodies: &mut [PartBody], margin: Option<f64>, thickness: Option<f64>, quarter: Option<f64>) -> Result<Shape> {
+    let lo = lowest(bodies);
+    let hi = bodies.iter().flat_map(|b| b.body.positions.iter()).fold([f64::NEG_INFINITY; 3], |m, q| [0, 1, 2].map(|d| m[d].max(q[d])));
     let extent = (0..3).map(|d| hi[d] - lo[d]).fold(0.0f64, f64::max);
     let margin = match (margin, thickness) {
         (Some(m), Some(t)) if m <= t => {
@@ -682,9 +688,7 @@ fn air_box(p: &Params, bodies: &mut [emcraft_io::Surface], margin: Option<f64>, 
         (None, None) => 0.25 * extent,
     };
     let shift = emcraft_model::Vec3::new(margin - lo[0], margin - lo[1], margin - lo[2]);
-    for b in bodies.iter_mut() {
-        b.positions.iter_mut().for_each(|q| *q += shift);
-    }
+    bodies.iter_mut().for_each(|b| b.moved(shift));
     let size = emcraft_model::Vec3::new(hi[0] - lo[0] + 2.0 * margin, hi[1] - lo[1] + 2.0 * margin, hi[2] - lo[2] + 2.0 * margin);
     Ok(Shape::Box { size: BoxSize::new(size)? })
 }
@@ -985,4 +989,24 @@ pub fn find_rotation(s: &mut Session, p: &Params) -> Result<Value> {
     let mut reply = rotation_shown(s);
     reply["group"] = json!(found.group());
     Ok(reply)
+}
+
+#[cfg(test)]
+mod tests {
+    use emcraft_model::{FaceSurface, Point3, Vec3};
+
+    use super::PartBody;
+
+    /// A body moves with its exact surfaces (the box of air shifts both).
+    #[test]
+    fn a_part_moves_with_its_exact_surfaces() {
+        let body = emcraft_io::Surface { name: "post".into(), positions: vec![Point3::new(1.0, 0.0, 0.0)], triangles: Vec::new(), tags: Vec::new() };
+        let post = FaceSurface::Cylinder { origin: Point3::ORIGIN, axis: Vec3::unit(2), radius: 1.0 };
+        let mut part = PartBody { body, source: Vec::new(), exact: Some(vec![Some(post), None]) };
+        let d = Vec3::new(0.03, 0.02, 0.01);
+        part.moved(d);
+        assert_eq!(part.body.positions, vec![Point3::new(1.03, 0.02, 0.01)]);
+        let moved = FaceSurface::Cylinder { origin: Point3::new(0.03, 0.02, 0.01), axis: Vec3::unit(2), radius: 1.0 };
+        assert_eq!(part.exact, Some(vec![Some(moved), None]));
+    }
 }

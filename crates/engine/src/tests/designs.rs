@@ -101,6 +101,23 @@ fn the_corrugated_wall_bends_the_elements_onto_its_sine() {
     assert!(worst < 1e-6, "{worst}");
 }
 
+/// A design placed in a box of air moves with its exact surfaces: the heart's wire (one swept
+/// NURBS face) bends its elements onto the wire where the box put it, not where the design drew
+/// it (they were left behind, and no edge was bent).
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn a_design_in_a_box_bends_its_elements_onto_its_moved_surfaces() {
+    let mut s = Session::new();
+    let import = json!({"path": "template:heart-wire.solidcraft", "open": true, "thickness": 15, "margin": 30, "tolerance": 0.4});
+    s.execute("geometry.import", &import).unwrap();
+    s.execute("mesh.generate", &json!({"size": 20})).unwrap();
+    let mesh = s.model.mesh.as_ref().unwrap();
+    assert!(mesh.curved.len() > 1000, "{}", mesh.curved.len());
+    // Each bent midpoint on the wire: within its radius (0.5 mm) of the swept curve's
+    // tessellated surface, which lies in the box (all of it beyond the 30 mm margin).
+    assert!(mesh.curved.iter().all(|(_, p)| p.x > 0.0299 && p.y > 0.0299 && p.z > 0.0299), "a midpoint left outside the box");
+}
+
 /// `fit_surfaces: false` keeps a design's faces faceted, as it does an STL's: the corrugated
 /// wall's elements stay straight.
 #[test]
