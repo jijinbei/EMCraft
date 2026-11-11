@@ -314,23 +314,6 @@ pub(super) fn facing_plane(length: emcraft_model::units::Length, lo: [f64; 3], f
     Faced { lo, hi, view }
 }
 
-impl Built {
-    /// The parts drawn over the picture (labels, legend, bounds), without the scene.
-    pub(super) fn clone_shallow(&self) -> Built {
-        Built {
-            scene: Default::default(),
-            gpu_scene: None,
-            arrows: Vec::new(),
-            labels: self.labels.clone(),
-            legend: self.legend.clone(),
-            colour_bar: self.colour_bar.clone(),
-            arrow_legend: self.arrow_legend.clone(),
-            bounds: self.bounds.or_else(|| self.scene.bounds()),
-            cache: Default::default(),
-        }
-    }
-}
-
 /// The legend over the picture's top-left corner: the field's colour bar (its quantity, the
 /// gradient and its ticks), the arrows (each an arrow in its colour with what it shows and its
 /// scale), then the swatches of everything else.

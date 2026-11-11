@@ -4,8 +4,10 @@
 use emcraft_model::mesh::Boundary;
 use emcraft_model::{End, Model};
 
-use super::style::{material_rgb, plane_alpha, sc, symmetry_rgb, wall_style};
+use super::style::{Colours, material_rgb, plane_alpha, symmetry_rgb, wall_style};
 use super::surface::{Kind, PeriodicPlanes, Surface};
+use emcraft_render::view3d::Scene;
+
 use super::{Built, Overlay, Pick, p3};
 
 /// A boundary face for its edges: its nodes, the key whose change draws an edge (a port's end,
@@ -13,9 +15,10 @@ use super::{Built, Overlay, Pick, p3};
 type Face = ([u32; 3], u32, bool);
 
 /// The mesh's boundary faces and, for materials, the faces between materials.
-pub(super) fn from_mesh(session: &emcraft_engine::Session, overlay: Overlay, out: &mut Built, selected_material: Option<usize>) {
+pub(super) fn from_mesh(colours: &Colours, session: &emcraft_engine::Session, overlay: Overlay, selected_material: Option<usize>) -> Built {
     let m = session.model();
-    let Some(mesh) = &m.mesh else { return };
+    let Some(mesh) = &m.mesh else { return Built::default() };
+    let mut scene = Scene::default();
     let node = |n: u32| mesh.nodes.get(n as usize).map(|p| p3(*p));
     let tet_mat = |t: u32| mesh.tet_material.get(t as usize).copied().unwrap_or(0) as usize;
     let surface = Surface::of(m, mesh);
@@ -39,15 +42,15 @@ pub(super) fn from_mesh(session: &emcraft_engine::Session, overlay: Overlay, out
         let kind = surface.kind(i);
         let (mut color, mut alpha) = match f.tag {
             // A periodic boundary is no wall either: tied to the opposite face.
-            _ if port.is_none() && periodic.holds(mesh, &f.nodes) => (sc().periodic, plane_alpha(m, overlay, tet_mat(f.tet))),
+            _ if port.is_none() && periodic.holds(mesh, &f.nodes) => (colours.scene.periodic, plane_alpha(colours, m, overlay, tet_mat(f.tet))),
             // A symmetry plane is no wall: its own colour in every overlay.
-            Boundary::Symmetry(kind) => (symmetry_rgb(kind), plane_alpha(m, overlay, tet_mat(f.tet))),
-            _ => wall_style(m, overlay, port.is_some(), tet_mat(f.tet), kind),
+            Boundary::Symmetry(kind) => (symmetry_rgb(colours, kind), plane_alpha(colours, m, overlay, tet_mat(f.tet))),
+            _ => wall_style(colours, m, overlay, port.is_some(), tet_mat(f.tet), kind),
         };
         // A port is still selectable when its filling is hidden, but must not retain the
         // hidden dielectric's colour and look like a material cap across the empty bore.
         if port.is_some() && m.materials.get(tet_mat(f.tet)).is_some_and(|mat| session.views().hidden_materials.contains(&mat.name)) {
-            color = sc().port_soft;
+            color = colours.scene.port_soft;
             alpha = 25;
         }
         let pick = port.map_or_else(|| if m.waveguide().is_some() { Pick::Guide } else { Pick::Solid }, Pick::Port);
@@ -55,10 +58,10 @@ pub(super) fn from_mesh(session: &emcraft_engine::Session, overlay: Overlay, out
         if overlay == Overlay::Mesh {
             // The volume mesh's faces with their edges, drawn on the GPU on each triangle (the
             // air's faint: the mesh's sizes inside matter more), the face itself as it is.
-            let wire = (super::style::wire_rgb(), if air { WIRE_ALPHA / 3 } else { WIRE_ALPHA });
-            out.scene.tagged(pick.tag(), |s| s.wired_tri([a, b, c], color, alpha, wire));
+            let wire = (colours.wire, if air { WIRE_ALPHA / 3 } else { WIRE_ALPHA });
+            scene.tagged(pick.tag(), |s| s.wired_tri([a, b, c], color, alpha, wire));
         } else if alpha > 0 {
-            out.scene.tagged(pick.tag(), |s| s.tri(a, b, c, color, alpha));
+            scene.tagged(pick.tag(), |s| s.tri(a, b, c, color, alpha));
         }
         let key = match f.tag {
             Boundary::Port(k) if port.is_some() => 1 + k,
@@ -66,9 +69,7 @@ pub(super) fn from_mesh(session: &emcraft_engine::Session, overlay: Overlay, out
         };
         faces.push((f.nodes, key, air));
     }
-    if let Some(t) = m.domain.wall_thickness
-        && m.domain.open.is_none()
-    {
+    let shell = m.domain.wall_thickness.filter(|_| m.domain.open.is_none()).map(|t| {
         let inside = match m.waveguide() {
             Some(_) => {
                 let (lo, hi) = mesh.nodes.iter().fold(([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]), |(lo, hi), q| {
@@ -78,12 +79,11 @@ pub(super) fn from_mesh(session: &emcraft_engine::Session, overlay: Overlay, out
             }
             None => inside(m, mesh, &surface, &periodic),
         };
-        super::shell::draw(m, overlay, &inside, t.get(), out);
-    }
-    if overlay != Overlay::Mesh || selected_material.is_some() {
-        material_regions(m, mesh, overlay, selected_material, out);
-    }
-    outline_edges(mesh, &faces, overlay, out);
+        super::shell::draw(colours, m, overlay, &inside, t.get())
+    });
+    let regions = (overlay != Overlay::Mesh || selected_material.is_some()).then(|| material_regions(colours, m, mesh, overlay, selected_material));
+    let edges = outline_edges(colours, mesh, &faces, overlay);
+    [Some(Built::of(scene)), shell, regions.map(Built::of), Some(Built::of(edges))].into_iter().flatten().fold(Built::default(), Built::merge)
 }
 
 /// The mesh's outer walls, turned out of the inside, and the ports and planes they end on.
@@ -113,7 +113,8 @@ fn inside(m: &Model, mesh: &emcraft_model::Mesh, surface: &Surface, periodic: &P
 
 /// The complete closed surface of each material region, including faces next to walls.
 /// Shared faces within one region are omitted; vacuum is shown only while selected.
-fn material_regions(m: &Model, mesh: &emcraft_model::Mesh, overlay: Overlay, selected: Option<usize>, out: &mut Built) {
+fn material_regions(colours: &Colours, m: &Model, mesh: &emcraft_model::Mesh, overlay: Overlay, selected: Option<usize>) -> Scene {
+    let mut scene = Scene::default();
     let material = |t: u32| mesh.tet_material.get(t as usize).copied().unwrap_or(0) as usize;
     let mut keyed = Vec::with_capacity(mesh.tets.len() * 4);
     for (t, tet) in mesh.tets.iter().enumerate() {
@@ -143,9 +144,10 @@ fn material_regions(m: &Model, mesh: &emcraft_model::Mesh, overlay: Overlay, sel
                 Overlay::Field => 65,
                 _ => 220,
             };
-            out.scene.tagged(Pick::Material(mat).tag(), |s| s.tri(p3(a), p3(b), p3(c), material_rgb(m, mat), alpha));
+            scene.tagged(Pick::Material(mat).tag(), |s| s.tri(p3(a), p3(b), p3(c), material_rgb(colours, m, mat), alpha));
         }
     }
+    scene
 }
 
 /// The opacity of the mesh's edges in the Mesh step (the air's a third of it).
@@ -153,9 +155,10 @@ const WIRE_ALPHA: u8 = 90;
 
 /// The outline of the boundary `faces` (sharp folds, and where the faces' keys change); the
 /// Mesh step draws every edge on its triangles instead ([`emcraft_render::view3d::Scene::wired_tri`]).
-fn outline_edges(mesh: &emcraft_model::Mesh, faces: &[Face], overlay: Overlay, out: &mut Built) {
+fn outline_edges(colours: &Colours, mesh: &emcraft_model::Mesh, faces: &[Face], overlay: Overlay) -> Scene {
+    let mut scene = Scene::default();
     if overlay == Overlay::Mesh {
-        return;
+        return scene;
     }
     let node = |n: u32| mesh.nodes.get(n as usize).copied();
     let normal = |i: usize| {
@@ -185,21 +188,17 @@ fn outline_edges(mesh: &emcraft_model::Mesh, faces: &[Face], overlay: Overlay, o
         let air = group.iter().all(|e| faces.get(e.1).is_some_and(|f| f.2));
         let [a, b] = group[0].0;
         if show && let (Some(a), Some(b)) = (node(a), node(b)) {
-            out.scene.line(
-                p3(a),
-                p3(b),
-                if overlay == Overlay::Mesh { super::style::wire_rgb() } else { sc().edge },
-                if air { alpha / 3 } else { alpha },
-            );
+            scene.line(p3(a), p3(b), if overlay == Overlay::Mesh { colours.wire } else { colours.scene.edge }, if air { alpha / 3 } else { alpha });
         }
     }
+    scene
 }
 
 /// The mesh cut across `axis` (0 x, 1 y, 2 z) at `at` (m): each tetrahedron the plane crosses
 /// gives its polygon perimeter, without a triangulation diagonal or a filled face. Shared
 /// edges are drawn once. With `wire`, internal edges show the volume mesh; otherwise only
 /// the domain's outline and material boundaries remain. Coordinates are SI metres.
-pub(crate) fn slice(m: &Model, axis: usize, at: f64, wire: bool) -> emcraft_render::view3d::Scene {
+pub fn slice(m: &Model, axis: usize, at: f64, wire: bool, colour: emcraft_render::Rgb) -> emcraft_render::view3d::Scene {
     let mut out = emcraft_render::view3d::Scene::default();
     let Some(mesh) = &m.mesh else { return out };
     if axis > 2 || !at.is_finite() {
@@ -267,7 +266,7 @@ pub(crate) fn slice(m: &Model, axis: usize, at: f64, wire: bool) -> emcraft_rend
     }
     for (a, b, count, _, interface) in edges.into_values() {
         if wire || count == 1 || interface {
-            out.line(a, b, super::style::wire_rgb(), if count == 1 || interface { 255 } else { 210 });
+            out.line(a, b, colour, if count == 1 || interface { 255 } else { 210 });
         }
     }
     out

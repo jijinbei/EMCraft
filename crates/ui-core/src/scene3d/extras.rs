@@ -5,7 +5,7 @@
 use emcraft_model::{End, Model, Source};
 
 use super::geometry::{BOX_EDGES, ROUND, box_corner};
-use super::style::sc;
+use super::style::Colours;
 use super::{Built, Label, Overlay, Pick, p3};
 use crate::lang::args;
 
@@ -117,19 +117,19 @@ fn port_z(m: &Model, p: &emcraft_model::Port) -> Option<f64> {
 
 /// The direction from a port's face into the model along its axis: up from a port at the start
 /// (or on a face with the guide above it), down from one at the end.
-pub(crate) fn port_inward(p: &emcraft_model::Port) -> f64 {
+pub fn port_inward(p: &emcraft_model::Port) -> f64 {
     if p.end == End::Start { 1.0 } else { -1.0 }
 }
 
 /// The unit vector from a port's face into the model (its axis, signed by [`port_inward`]).
-pub(crate) fn port_normal(p: &emcraft_model::Port) -> [f64; 3] {
+pub fn port_normal(p: &emcraft_model::Port) -> [f64; 3] {
     let mut n = [0.0; 3];
     n[p.frame().axis.index()] = port_inward(p);
     n
 }
 
 /// A port's face's bounding rectangle in 3D, counter-clockwise in its own axes (u, v).
-pub(crate) fn port_quad(m: &Model, p: &emcraft_model::Port) -> Option<[[f64; 3]; 4]> {
+pub fn port_quad(m: &Model, p: &emcraft_model::Port) -> Option<[[f64; 3]; 4]> {
     let face = port_face(m, p);
     let frame = p.frame();
     let emcraft_model::port::FrameAxes { u, v, .. } = frame.axes();
@@ -151,17 +151,18 @@ pub(crate) fn port_quad(m: &Model, p: &emcraft_model::Port) -> Option<[[f64; 3];
 }
 
 /// The centre of a quadrilateral (the mean of its corners).
-pub(crate) fn quad_centre(q: &[[f64; 3]; 4]) -> [f64; 3] {
+pub fn quad_centre(q: &[[f64; 3]; 4]) -> [f64; 3] {
     [0, 1, 2].map(|k| 0.25 * (q[0][k] + q[1][k] + q[2][k] + q[3][k]))
 }
 
 /// The symmetry planes, meshed or not: each a faint rectangle across the model's box, framed, in
 /// its wall's colour (the model is drawn whole either way, so the mesh's own faces on the plane,
 /// which follow the model's cut, are not drawn); a plane hidden by its eye is left out.
-pub(super) fn symmetry_planes(session: &emcraft_engine::Session, out: &mut Built) {
+pub(super) fn symmetry_planes(colours: &Colours, session: &emcraft_engine::Session, bounds: Option<([f64; 3], [f64; 3])>) -> Built {
+    let mut out = Built::default();
     use emcraft_engine::visibility::{DisplayObject, GeometryObject};
     let m = session.model();
-    let Some((lo, hi)) = out.bounds else { return };
+    let Some((lo, hi)) = bounds else { return out };
     for s in &m.domain.symmetry {
         if !session.views().visible(&DisplayObject::Geometry(GeometryObject::Symmetry(s.axis))) {
             continue;
@@ -176,21 +177,23 @@ pub(super) fn symmetry_planes(session: &emcraft_engine::Session, out: &mut Built
             p
         };
         let q = [at(lo[u], lo[v]), at(hi[u], lo[v]), at(hi[u], hi[v]), at(lo[u], hi[v])];
-        let color = super::style::symmetry_rgb(s.kind);
+        let color = super::style::symmetry_rgb(colours, s.kind);
         out.scene.tri(q[0], q[1], q[2], color, 80);
         out.scene.tri(q[0], q[2], q[3], color, 80);
         for i in 0..4 {
             out.scene.line(q[i], q[(i + 1) % 4], color, 235);
         }
     }
+    out
 }
 
 /// A rotational symmetry's sector, drawn faint as its two cut half-planes from the axis out to
 /// the model's extent: the faces tied by the harmonic's phase.
-pub(super) fn sector_cuts(m: &Model, out: &mut Built) {
-    let (Some(r), Some((lo, hi))) = (m.domain.rotation, out.bounds) else { return };
+pub(super) fn sector_cuts(colours: &Colours, m: &Model, bounds: Option<([f64; 3], [f64; 3])>) -> Built {
+    let mut out = Built::default();
+    let (Some(r), Some((lo, hi))) = (m.domain.rotation, bounds) else { return out };
     let reach = [lo[0], hi[0]].iter().flat_map(|x| [lo[1], hi[1]].map(|y| (x - r.centre[0]).hypot(y - r.centre[1]))).fold(0.0, f64::max);
-    let colour = sc().periodic;
+    let colour = colours.scene.periodic;
     for phi in [r.start(), r.start() + r.angle()] {
         let (s, c) = phi.sin_cos();
         let (x, y) = (r.centre[0] + reach * c, r.centre[1] + reach * s);
@@ -201,14 +204,16 @@ pub(super) fn sector_cuts(m: &Model, out: &mut Built) {
             out.scene.line(q[i], q[(i + 1) % 4], colour, 235);
         }
     }
+    out
 }
 
 /// Ports' labels (`driven`: the input's index), lumped ports, sources and the open boundary's
 /// layer.
-pub(super) fn extras(m: &Model, driven: Option<usize>, overlay: Overlay, out: &mut Built) {
-    let size = out.bounds.map_or(0.01, |(lo, hi)| ((hi[0] - lo[0]).powi(2) + (hi[1] - lo[1]).powi(2) + (hi[2] - lo[2]).powi(2)).sqrt());
+pub(super) fn extras(colours: &Colours, m: &Model, driven: Option<usize>, overlay: Overlay, bounds: Option<([f64; 3], [f64; 3])>) -> Built {
+    let mut out = Built::default();
+    let size = bounds.map_or(0.01, |(lo, hi)| ((hi[0] - lo[0]).powi(2) + (hi[1] - lo[1]).powi(2) + (hi[2] - lo[2]).powi(2)).sqrt());
     if matches!(overlay, Overlay::Ports | Overlay::Plain | Overlay::Boundaries) {
-        ports(m, driven, overlay, size, out);
+        out = out.merge(ports(colours, m, driven, overlay, size));
     }
     // World-space glyphs, depth tested and shaded by WGSL, for every workflow overlay.
     for (i, p) in m.ports.iter().enumerate() {
@@ -222,7 +227,7 @@ pub(super) fn extras(m: &Model, driven: Option<usize>, overlay: Overlay, out: &m
         let mut side = [0.0; 3];
         side[u] = 1.0;
         let n = port_normal(p);
-        let arrow = |origin, from, to, color| crate::gpu3d::Arrow {
+        let arrow = |origin, from, to, color| super::Arrow {
             start: along(origin, n, from * len),
             end: along(origin, n, to * len),
             color,
@@ -230,33 +235,33 @@ pub(super) fn extras(m: &Model, driven: Option<usize>, overlay: Overlay, out: &m
             motion: None,
         };
         if driven == Some(i) {
-            out.arrows.push(arrow(along(c, side, 0.14 * width.min(height)), -1.1, -0.15, sc().port_input));
-            out.arrows.push(arrow(along(c, side, -0.14 * width.min(height)), -0.15, -1.1, sc().port_input));
+            out.arrows.push(arrow(along(c, side, 0.14 * width.min(height)), -1.1, -0.15, colours.scene.port_input));
+            out.arrows.push(arrow(along(c, side, -0.14 * width.min(height)), -0.15, -1.1, colours.scene.port_input));
         } else {
-            out.arrows.push(arrow(c, -0.15, -1.1, sc().port_output));
+            out.arrows.push(arrow(c, -0.15, -1.1, colours.scene.port_output));
         }
     }
     let strong = overlay == Overlay::Ports;
     for (i, p) in m.lumped.iter().enumerate() {
         let (a, b) = (p3(p.from), p3(p.to));
-        out.arrows.push(crate::gpu3d::Arrow { start: a, end: b, color: sc().port, section_clip: false, motion: None });
+        out.arrows.push(super::Arrow { start: a, end: b, color: colours.scene.port, section_clip: false, motion: None });
         // A small box round the gap's middle to pick it by.
         let (c, h) = (midpoint(a, b), 0.012 * size);
-        out.scene.tagged(Pick::Lumped(i).tag(), |s| s.cuboid(c.map(|v| v - h), c.map(|v| v + h), sc().port, 255));
+        out.scene.tagged(Pick::Lumped(i).tag(), |s| s.cuboid(c.map(|v| v - h), c.map(|v| v + h), colours.scene.port, 255));
         if strong {
             out.labels.push(Label {
                 at: midpoint(a, b),
                 text: crate::lang::trf(t!("Lumped port {name}"), args!(name = p.name)),
-                color: sc().port,
+                color: colours.scene.port,
                 facing: None,
                 anchor: None,
             });
         }
     }
-    for s in &m.sources {
-        sources(s, strong, size, out);
-    }
-    open_boundary(m, overlay, out);
+    let sources = m.sources.iter().map(|s| sources(colours, s, strong, size, bounds));
+    out = sources.fold(out, Built::merge);
+    out = out.merge(open_boundary(colours, m, overlay, bounds));
+    out
 }
 
 fn midpoint(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
@@ -264,13 +269,14 @@ fn midpoint(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 }
 
 /// `a` moved by `k` along `d`.
-pub(crate) fn along(a: [f64; 3], d: [f64; 3], k: f64) -> [f64; 3] {
+pub fn along(a: [f64; 3], d: [f64; 3], k: f64) -> [f64; 3] {
     [a[0] + d[0] * k, a[1] + d[1] * k, a[2] + d[2] * k]
 }
 
 /// The ports' labels, each with its role (`driven` the input), and, when ports are the
 /// subject, their outlines.
-fn ports(m: &Model, driven: Option<usize>, overlay: Overlay, size: f64, out: &mut Built) {
+fn ports(colours: &Colours, m: &Model, driven: Option<usize>, overlay: Overlay, size: f64) -> Built {
+    let mut out = Built::default();
     for (i, p) in m.ports.iter().enumerate() {
         let Some(q) = port_quad(m, p) else { continue };
         let c = quad_centre(&q);
@@ -282,9 +288,9 @@ fn ports(m: &Model, driven: Option<usize>, overlay: Overlay, size: f64, out: &mu
         // the other way, into the model.
         let out_of = along(c, port_normal(p), -0.15 * size);
         let (text, color) = if driven == Some(i) {
-            (crate::lang::trf(t!("Port {name} · in"), args!(name = p.name)), sc().port_input)
+            (crate::lang::trf(t!("Port {name} · in"), args!(name = p.name)), colours.scene.port_input)
         } else {
-            (crate::lang::trf(t!("Port {name} · out"), args!(name = p.name)), sc().port_output)
+            (crate::lang::trf(t!("Port {name} · out"), args!(name = p.name)), colours.scene.port_output)
         };
         out.labels.push(Label { at: out_of, text, color, facing, anchor: Some(c) });
         if overlay == Overlay::Ports {
@@ -294,40 +300,50 @@ fn ports(m: &Model, driven: Option<usize>, overlay: Overlay, size: f64, out: &mu
             }
         }
     }
+    out
 }
 
 /// A source: a dipole as a short line along its direction, a plane wave as a line coming in
 /// towards the model's middle.
-fn sources(s: &Source, strong: bool, size: f64, out: &mut Built) {
+fn sources(colours: &Colours, s: &Source, strong: bool, size: f64, bounds: Option<([f64; 3], [f64; 3])>) -> Built {
+    let mut out = Built::default();
     match *s {
         Source::Dipole { at, direction, .. } => {
             let (a, d) = (p3(at), [direction.x, direction.y, direction.z]);
             let h = 0.08 * size;
-            out.scene.line(along(a, d, -h), along(a, d, h), sc().source, 255);
+            out.scene.line(along(a, d, -h), along(a, d, h), colours.scene.source, 255);
             if strong {
-                out.labels.push(Label { at: a, text: crate::lang::tr(t!("Dipole")).into(), color: sc().source, facing: None, anchor: None });
+                out.labels.push(Label { at: a, text: crate::lang::tr(t!("Dipole")).into(), color: colours.scene.source, facing: None, anchor: None });
             }
         }
         Source::PlaneWave { direction, .. } => {
-            if let Some((lo, hi)) = out.bounds {
+            if let Some((lo, hi)) = bounds {
                 let c = midpoint(lo, hi);
                 let d = [direction.x, direction.y, direction.z];
                 let h = 0.5 * size;
                 let a = along(c, d, -h);
-                out.scene.line(a, [c[0] - d[0] * 0.3 * h, c[1] - d[1] * 0.3 * h, c[2] - d[2] * 0.3 * h], sc().source, 255);
+                out.scene.line(a, [c[0] - d[0] * 0.3 * h, c[1] - d[1] * 0.3 * h, c[2] - d[2] * 0.3 * h], colours.scene.source, 255);
                 if strong {
-                    out.labels.push(Label { at: a, text: crate::lang::tr(t!("Plane wave")).into(), color: sc().source, facing: None, anchor: None });
+                    out.labels.push(Label {
+                        at: a,
+                        text: crate::lang::tr(t!("Plane wave")).into(),
+                        color: colours.scene.source,
+                        facing: None,
+                        anchor: None,
+                    });
                 }
             }
         }
     }
+    out
 }
 
 /// The open boundary: the layer's inner face as a frame. When boundaries are the subject, the
 /// layer's thickness is shaded as a band round each outer face (a picture frame), so what lies
 /// inside stays clear, and its corners join the inner frame's.
-fn open_boundary(m: &Model, overlay: Overlay, out: &mut Built) {
-    let (Some(o), Some((lo, hi))) = (&m.domain.open, out.bounds) else { return };
+fn open_boundary(colours: &Colours, m: &Model, overlay: Overlay, bounds: Option<([f64; 3], [f64; 3])>) -> Built {
+    let mut out = Built::default();
+    let (Some(o), Some((lo, hi))) = (&m.domain.open, bounds) else { return out };
     let t = o.thickness;
     let (a, b) = ([lo[0] + t, lo[1] + t, lo[2] + t], [hi[0] - t, hi[1] - t, hi[2] - t]);
     if overlay == Overlay::Boundaries {
@@ -345,17 +361,18 @@ fn open_boundary(m: &Model, overlay: Overlay, out: &mut Built) {
                 let (u0, u1, v0, v1) = (lo[u], hi[u], lo[v], hi[v]);
                 let (ui0, ui1, vi0, vi1) = (u0 + t, u1 - t, v0 + t, v1 - t);
                 for (x0, x1, y0, y1) in [(u0, u1, v0, vi0), (u0, u1, vi1, v1), (u0, ui0, vi0, vi1), (ui1, u1, vi0, vi1)] {
-                    out.scene.quad([at(x0, y0), at(x1, y0), at(x1, y1), at(x0, y1)], sc().pml, 70);
+                    out.scene.quad([at(x0, y0), at(x1, y0), at(x1, y1), at(x0, y1)], colours.scene.pml, 70);
                 }
             }
         }
         for i in 0..8 {
-            out.scene.line(box_corner(lo, hi, i), box_corner(a, b, i), sc().pml, 200);
+            out.scene.line(box_corner(lo, hi, i), box_corner(a, b, i), colours.scene.pml, 200);
         }
         // On the band, at a corner of the outer box.
-        out.labels.push(Label { at: [hi[0], hi[1], lo[2] + 0.5 * t], text: "PML".into(), color: sc().pml, facing: None, anchor: None });
+        out.labels.push(Label { at: [hi[0], hi[1], lo[2] + 0.5 * t], text: "PML".into(), color: colours.scene.pml, facing: None, anchor: None });
     }
     for (i, j) in BOX_EDGES {
-        out.scene.line(box_corner(a, b, i), box_corner(a, b, j), sc().pml, 255);
+        out.scene.line(box_corner(a, b, i), box_corner(a, b, j), colours.scene.pml, 255);
     }
+    out
 }

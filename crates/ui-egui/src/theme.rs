@@ -109,6 +109,11 @@ pub fn scene() -> Scene {
     CURRENT.with_borrow(|(t, _)| t.scene)
 }
 
+/// The current theme's colours for the 3D view's scene.
+pub fn scene_colours() -> crate::scene3d::Colours {
+    CURRENT.with_borrow(|(t, _)| crate::scene3d::Colours::of(t))
+}
+
 /// What cached pictures were drawn in.
 pub fn key() -> ThemeKey {
     CURRENT.with_borrow(|(t, _)| t.key())

@@ -1,10 +1,35 @@
 //! The 3D scene's tests: every overlay of the samples builds, faces are told apart, ports
 //! land where they belong.
 
-use super::style::{sc, wall_style};
+use super::style::wall_style;
 use super::surface::{Kind, Surface};
 use super::*;
 use serde_json::json;
+
+/// The light theme's colours, which the scenes here are drawn in.
+fn colours() -> Colours {
+    Colours::of(&crate::theme::Themes::load(None).get("light"))
+}
+
+fn sc() -> crate::theme::Scene {
+    colours().scene
+}
+
+fn build(s: &Session, overlay: Overlay) -> Built {
+    super::build(s, overlay, &colours())
+}
+
+fn build_with(s: &Session, overlay: Overlay, fields: &[FieldLayer], selected: &[Pick]) -> Built {
+    super::build_with(s, overlay, &colours(), fields, selected)
+}
+
+fn mesh_slice(m: &emcraft_model::Model, axis: usize, at: f64) -> Scene {
+    super::mesh_slice(m, axis, at, colours().wire)
+}
+
+fn section_outline(m: &emcraft_model::Model, axis: usize, at: f64) -> Scene {
+    super::section_outline(m, axis, at, colours().wire)
+}
 
 #[test]
 fn every_overlay_of_every_sample_builds() {
@@ -48,9 +73,9 @@ fn air_and_walls_let_what_is_inside_show() {
     assert!(air == 0 && wall > 0 && metal > 0, "{air} {wall} {metal}");
     // Air is all but invisible; the conductors inside stay solid.
     let m = open.model();
-    assert!(wall_style(m, Overlay::Plain, false, 0, Kind::Air).1 < 40);
-    assert_eq!(wall_style(m, Overlay::Plain, false, 0, Kind::Conductor).1, 255);
-    assert!(wall_style(m, Overlay::Plain, false, 0, Kind::Wall).1 < 255);
+    assert!(wall_style(&colours(), m, Overlay::Plain, false, 0, Kind::Air).1 < 40);
+    assert_eq!(wall_style(&colours(), m, Overlay::Plain, false, 0, Kind::Conductor).1, 255);
+    assert!(wall_style(&colours(), m, Overlay::Plain, false, 0, Kind::Wall).1 < 255);
 }
 
 #[test]
@@ -264,19 +289,11 @@ fn pick_timings() {
             t.elapsed().as_secs_f64() * 1e3 / under.len().max(1) as f64
         };
         let (face_scan, face_indexed) = (face(None), face(Some(&index)));
-        // Packing a scene for the GPU (the CPU's share of a new picture).
-        let draw = |scene: &Scene| {
-            let t = std::time::Instant::now();
-            std::hint::black_box(crate::gpu3d::Packed::new(scene, 0));
-            t.elapsed().as_secs_f64() * 1e3
-        };
         let moving = b.moving();
         println!(
-            "{o:?}: {} triangles ({} lines); index {built:.1} ms (with the coarser copy {filled:.0} ms); pick {scan:.3} ms scanned, {indexed:.4} ms indexed; face {face_scan:.2} ms scanned, {face_indexed:.2} ms indexed; packed for the GPU {:.1} ms full, {:.1} ms from {} triangles",
+            "{o:?}: {} triangles ({} lines); index {built:.1} ms (with the coarser copy {filled:.0} ms); pick {scan:.3} ms scanned, {indexed:.4} ms indexed; face {face_scan:.2} ms scanned, {face_indexed:.2} ms indexed; moving picture from {} triangles",
             b.scene.tris.len(),
             b.scene.lines.len(),
-            draw(&b.scene),
-            draw(moving),
             moving.tris.len()
         );
     }
@@ -315,7 +332,7 @@ fn material_selection_glows_and_visibility_preserves_walls_and_ports() {
     s.execute("view.visibility", &json!({"kind":"material","name":"ptfe-like","visible":false})).unwrap();
     let hidden = build(&s, Overlay::Materials);
     assert!(hidden.scene.tris.len() < before);
-    let material_colour = material_rgb(s.model(), 1);
+    let material_colour = material_rgb(&colours(), s.model(), 1);
     assert!(
         hidden
             .scene
@@ -361,13 +378,13 @@ fn a_board_shows_its_copper_by_role_with_its_heights_stretched() {
         let tag = Pick::Net(nets.iter().position(|n| n == net).unwrap()).tag();
         b.scene.tris.iter().filter(move |t| t.tag == tag)
     };
-    let t = crate::theme::Tokens::get();
+    let c = colours();
     // The route in the warning colour, its reference in the success colour, both there.
-    assert!(tagged("DATA").count() > 0 && tagged("DATA").all(|t2| t2.color == crate::theme::rgb(t.warning)));
-    assert!(tagged("GND").count() > 0 && tagged("GND").all(|t2| t2.color == crate::theme::rgb(t.success)));
+    assert!(tagged("DATA").count() > 0 && tagged("DATA").all(|t2| t2.color == c.route));
+    assert!(tagged("GND").count() > 0 && tagged("GND").all(|t2| t2.color == c.reference));
     assert!(tagged("CLK").all(|t2| t2.color == sc().strip));
     // The route's centre lines over it; the board's 0.18 mm stretched to show (the legend says).
-    assert_eq!(b.scene.lines.iter().filter(|l| l.color == crate::theme::rgb(t.warning)).count(), 2);
+    assert_eq!(b.scene.lines.iter().filter(|l| l.color == c.route).count(), 2);
     let (lo, hi) = b.bounds.unwrap();
     assert!(hi[1] - lo[1] > 0.05 * (hi[0] - lo[0]), "{lo:?} {hi:?}");
     assert!(b.legend.iter().any(|(text, _)| text.starts_with("heights")));
@@ -405,7 +422,7 @@ fn a_symmetry_plane_is_drawn_faintly_before_the_mesh() {
     s.execute("model.symmetry", &json!({"axis": "x", "kind": "magnetic"})).unwrap();
     assert!(s.model().mesh.is_none());
     let built = build(&s, Overlay::Plain);
-    let colour = super::style::symmetry_rgb(emcraft_model::SymmetryKind::Magnetic);
+    let colour = super::style::symmetry_rgb(&colours(), emcraft_model::SymmetryKind::Magnetic);
     let sheet: Vec<_> = built.scene.tris.iter().filter(|t| t.color == colour).collect();
     assert_eq!(sheet.len(), 2);
     assert!(sheet.iter().all(|t| t.alpha < 128 && t.p.iter().all(|p| (p[0] - 0.01143).abs() < 1e-12)));
@@ -419,7 +436,7 @@ fn a_sector_is_drawn_with_its_turns() {
     let mut s = Session::new();
     s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 15})).unwrap();
     s.execute("model.rotation", &json!({"n": 4})).unwrap();
-    let colour = super::style::sc().periodic;
+    let colour = sc().periodic;
     let cuts = build(&s, Overlay::Boundaries).scene.tris.iter().filter(|t| t.color == colour && t.alpha < 128).count();
     assert_eq!(cuts, 4);
     s.execute("mesh.generate", &json!({"size": 5})).unwrap();
@@ -440,8 +457,7 @@ fn an_imported_cavitys_walls_show_before_and_after_meshing() {
     let mut s = Session::new();
     s.execute("geometry.import", &serde_json::json!({"path": path})).unwrap();
     // The walls' triangles as drawn alone, then found in the whole scene.
-    let mut alone = Built::default();
-    super::geometry::part_walls(s.model(), &mut alone);
+    let alone = super::geometry::part_walls(&colours(), s.model());
     assert!(!alone.scene.tris.is_empty());
     let shown = |s: &Session| {
         let scene = build(s, Overlay::Plain).scene;
@@ -461,7 +477,7 @@ fn a_carved_part_is_drawn_open_before_meshing() {
     let horn =
         serde_json::json!({"path": "template:horn.solidcraft", "materials": {"inside": "vacuum"}, "open": true, "thickness": 10, "margin": 18});
     s.execute("geometry.import", &horn).unwrap();
-    let b = super::build_with(&s, Overlay::Plain, &[], &[]);
+    let b = build_with(&s, Overlay::Plain, &[], &[]);
     let walls = super::Pick::Feature(0).tag();
     let across = b.scene.tris.iter().filter(|t| t.tag == walls).filter(|t| {
         let c = [0, 1, 2].map(|k| (t.p[0][k] + t.p[1][k] + t.p[2][k]) / 3.0);

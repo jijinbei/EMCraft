@@ -87,7 +87,7 @@ impl Cut {
 
     /// The render's section, outlined in the theme's scene edge colour.
     fn section(self) -> view3d::Section {
-        view3d::Section { outline: Some(scene3d::wire_rgb()), ..view3d::Section::across(self.axis, self.at, self.keep) }
+        view3d::Section { outline: Some(crate::theme::scene_colours().wire), ..view3d::Section::across(self.axis, self.at, self.keep) }
     }
 
     /// The cut for `ui.inspect`, `at` in display units.
@@ -296,9 +296,9 @@ impl View3d {
                 let eps = size * 1e-9;
                 scene.tris.retain(|t| !t.p.iter().all(|p| (p[now.axis] - now.at).abs() <= eps));
                 let cut = if key.overlay == Overlay::Mesh {
-                    scene3d::mesh_slice(model, now.axis, now.at)
+                    scene3d::mesh_slice(model, now.axis, now.at, crate::theme::scene_colours().wire)
                 } else {
-                    scene3d::section_outline(model, now.axis, now.at)
+                    scene3d::section_outline(model, now.axis, now.at, crate::theme::scene_colours().wire)
                 };
                 let mut gpu_scene = full.scene.clone();
                 gpu_scene.lines.extend(cut.lines.iter().copied());
@@ -716,7 +716,7 @@ fn build(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, overlay: Over
     let gpu = key.field.as_ref().is_some_and(|f| f.gpu);
     let fl: Vec<scene3d::FieldLayer> = layers.iter().map(|(plot, plane, at)| scene3d::FieldLayer { plot, plane: *plane, at: *at, gpu }).collect();
     v.facing = layers.first().map(|(plot, plane, at)| Facing { x: plot.x.span(), y: plot.y.span(), plane: *plane, at: *at });
-    let mut built = scene3d::build_with(&app.session, overlay, &fl, &key.highlighted);
+    let mut built = scene3d::build_with(&app.session, overlay, &crate::theme::scene_colours(), &fl, &key.highlighted);
     if gpu {
         dynamic_field_arrows(app, field, &mut built);
     }

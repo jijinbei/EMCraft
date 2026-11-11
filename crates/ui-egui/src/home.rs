@@ -115,7 +115,7 @@ pub fn template_canvas(name: &str, values: &Value, size: [usize; 2]) -> Result<D
             serde_json::json!({"kind": "geometry", "name": emcraft_engine::visibility::GeometryObject::Symmetry(axis).key(), "visible": false});
         s.execute("view.visibility", &plane).map_err(|e| e.to_string())?;
     }
-    let built = scene3d::build(&s, Overlay::Materials);
+    let built = scene3d::build(&s, Overlay::Materials, &crate::theme::scene_colours());
     let (lo, hi) = built.bounds.ok_or("nothing to draw")?;
     let [w, h] = size;
     let mut cam = Camera::default();

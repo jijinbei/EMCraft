@@ -21,22 +21,7 @@ pub const UNIFORM_BYTES: usize = 64 + 6 * 16;
 /// renderer leaves out primitives beyond `MAX_PRIMITIVES`.
 pub const MAX_BYTES: usize = 256 << 20;
 
-/// A port direction glyph; its cylinder and cone are generated in WGSL.
-#[derive(Clone, Debug)]
-pub(crate) struct Arrow {
-    pub start: [f64; 3],
-    pub end: [f64; 3],
-    pub color: Rgb,
-    pub section_clip: bool,
-    pub motion: Option<Motion>,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct Motion {
-    pub re: [f64; 3],
-    pub im: [f64; 3],
-    pub max_length: f64,
-}
+pub(crate) use crate::scene3d::{Arrow, Motion};
 
 pub(crate) const ARROW_VERTICES: usize = 24 * 15;
 

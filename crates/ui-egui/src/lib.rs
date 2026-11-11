@@ -84,7 +84,7 @@ pub mod raster;
 pub mod record;
 pub mod ribbon;
 pub mod scenario;
-pub mod scene3d;
+pub use emcraft_ui_core::scene3d;
 pub mod section3d;
 pub use emcraft_ui_core::selection;
 pub mod settings;

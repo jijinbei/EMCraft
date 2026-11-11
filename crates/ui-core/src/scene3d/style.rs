@@ -1,0 +1,86 @@
+//! The 3D view's colours ([`Colours`], from the theme) and how opaque each kind of face is in
+//! each overlay.
+
+use emcraft_model::Model;
+use emcraft_render::Rgb;
+
+use super::Overlay;
+use super::surface::Kind;
+use crate::theme::Scene;
+
+/// What the 3D view draws in, from the theme: its 3D colours, the pictures' palette (the
+/// field's arrows), lines that stand out on the view's ground, and a board's route and reference.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Colours {
+    pub scene: Scene,
+    pub palette: emcraft_render::Palette,
+    /// Lines on the view: the theme's edge where it stands out on the view's ground (contrast 3
+    /// on both ends of its gradient), else its text.
+    pub wire: Rgb,
+    pub route: Rgb,
+    pub reference: Rgb,
+}
+
+impl Colours {
+    /// The colours `th` draws the 3D view in.
+    pub fn of(th: &crate::theme::Theme) -> Colours {
+        let t = &th.tokens;
+        let edge = th.scene.edge;
+        let stands_out = [t.viewport_top, t.viewport_bottom].iter().all(|c| edge.contrast_ratio(c.rgb()) >= 3.0);
+        Colours {
+            scene: th.scene,
+            palette: th.palette,
+            wire: if stands_out { edge } else { t.text.rgb() },
+            route: t.warning.rgb(),
+            reference: t.success.rgb(),
+        }
+    }
+}
+
+/// A material's colour: vacuum pale blue, the others from the theme's palette by their index.
+pub fn material_rgb(c: &Colours, model: &Model, index: usize) -> Rgb {
+    let s = &c.scene;
+    match model.materials.get(index) {
+        Some(m) if m.eps_r.get() <= 1.0 + 1e-12 && m.mu_r.get() <= 1.0 + 1e-12 => s.vacuum,
+        _ => s.materials[index.saturating_sub(1) % s.materials.len()],
+    }
+}
+
+/// A symmetry plane's colour: an electric wall blue, a magnetic one green.
+pub(super) fn symmetry_rgb(c: &Colours, kind: emcraft_model::SymmetryKind) -> Rgb {
+    match kind {
+        emcraft_model::SymmetryKind::Electric => c.scene.symmetry_electric,
+        emcraft_model::SymmetryKind::Magnetic => c.scene.symmetry_magnetic,
+    }
+}
+
+/// A boundary face's colour and opacity in an overlay, `port` whether a port lies on it. Air
+/// is all but invisible and walls see-through, so what lies inside shows; conductors inside
+/// are solid metal.
+pub(super) fn wall_style(c: &Colours, m: &Model, overlay: Overlay, port: bool, material: usize, kind: Kind) -> (Rgb, u8) {
+    let s = &c.scene;
+    match (overlay, kind) {
+        (Overlay::Ports, _) if port => (s.port, 255),
+        (Overlay::Plain, _) if port => (s.port_soft, 255),
+        (Overlay::Mesh, _) if port => (s.port_soft, 35),
+        (Overlay::Boundaries, _) if port => (s.port_soft, 200),
+        (Overlay::Materials, _) if port => (material_rgb(c, m, material), 200),
+        (Overlay::Field, Kind::Conductor) => (s.metal_dark, 200),
+        (Overlay::Field, _) => (s.metal, if kind == Kind::Air { 0 } else { 40 }),
+        (_, Kind::Conductor) => (s.metal_dark, 255),
+        (Overlay::Materials, Kind::Air) => (material_rgb(c, m, material), 0),
+        (_, Kind::Air) => (s.metal, if overlay == Overlay::Mesh { 0 } else { 16 }),
+        (Overlay::Plain | Overlay::Board, Kind::Wall) => (s.metal, 110),
+        (Overlay::Mesh, Kind::Wall) => (s.mesh_wall, 25),
+        (Overlay::Materials, Kind::Wall) => (s.metal, 70),
+        (Overlay::Ports, Kind::Wall) => (s.metal, 55),
+        (Overlay::Boundaries, Kind::Wall) => (s.metal_dark, 110),
+    }
+}
+
+/// The opacity of a face that is no wall (a symmetry plane, a periodic boundary) in an
+/// overlay: shaded when boundaries are the subject, else no more than half see-through.
+pub(super) fn plane_alpha(c: &Colours, m: &Model, overlay: Overlay, material: usize) -> u8 {
+    let (_, alpha) = wall_style(c, m, overlay, false, material, Kind::Wall);
+    if overlay == Overlay::Boundaries { 200 } else { alpha.min(120) }
+}

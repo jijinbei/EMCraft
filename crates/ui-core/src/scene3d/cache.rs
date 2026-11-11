@@ -18,9 +18,9 @@ use emcraft_render::view3d::{Scene, SceneIndex, simplify};
 /// milliseconds).
 const BACKGROUND_FROM: usize = 20_000;
 /// From this many triangles a scene gets a coarser copy for moving pictures…
-pub(crate) const COARSE_FROM: usize = 80_000;
+pub const COARSE_FROM: usize = 80_000;
 /// …of about this many triangles.
-pub(crate) const COARSE_TRIANGLES: usize = 40_000;
+pub const COARSE_TRIANGLES: usize = 40_000;
 /// Scenes worked on at once (more wait for a later frame).
 const MAX_JOBS: usize = 2;
 /// Jobs running now, across every scene.

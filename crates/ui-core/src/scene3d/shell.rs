@@ -15,8 +15,9 @@ use emcraft_model::Model;
 use emcraft_model::geom::{Point3, Vec3, triple};
 
 use super::faces::unit_normal;
-use super::style::sc;
 use super::surface::Kind;
+use emcraft_render::view3d::Scene;
+
 use super::{Built, Overlay, Pick};
 
 /// The longest move, in thicknesses.
@@ -245,22 +246,24 @@ pub(super) fn shell(inside: &Inside, thickness: f64) -> Shell {
 
 /// The model's walls drawn `thickness` thick round `inside`, in the overlay's wall style, the
 /// rims more solid so the thickness reads at the ports.
-pub(super) fn draw(m: &Model, overlay: Overlay, inside: &Inside, thickness: f64, out: &mut Built) {
+pub(super) fn draw(colours: &super::style::Colours, m: &Model, overlay: Overlay, inside: &Inside, thickness: f64) -> Built {
     let s = shell(inside, thickness);
-    let (color, alpha) = super::style::wall_style(m, overlay, false, 0, Kind::Wall);
+    let (color, alpha) = super::style::wall_style(colours, m, overlay, false, 0, Kind::Wall);
     let rim_alpha = if overlay == Overlay::Mesh { alpha } else { alpha.max(if overlay == Overlay::Field { 120 } else { 230 }) };
     let pick = if m.waveguide().is_some() { Pick::Guide } else { Pick::Solid };
-    out.scene.tagged(pick.tag(), |scene| {
+    let mut scene = Scene::default();
+    scene.tagged(pick.tag(), |scene| {
         for p in &s.outer {
             scene.tri(p[0], p[1], p[2], color, alpha);
         }
         for p in &s.rim {
-            scene.tri(p[0], p[1], p[2], sc().metal, rim_alpha);
+            scene.tri(p[0], p[1], p[2], colours.scene.metal, rim_alpha);
         }
     });
     for (a, b) in s.edges {
-        out.scene.line(a, b, sc().edge, 200);
+        scene.line(a, b, colours.scene.edge, 200);
     }
+    Built::of(scene)
 }
 
 /// Whether the inside lies again just beyond a wall triangle (turned out of the inside): points

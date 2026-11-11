@@ -52,3 +52,12 @@ impl<'de> Deserialize<'de> for Item {
         })
     }
 }
+
+/// A face port's plane: its axis and where it lies across it, in display units `l`, to a
+/// thousandth (none for an end port).
+pub fn face_place(p: &emcraft_model::Port, l: emcraft_model::units::Length) -> (&'static str, String) {
+    match p.face {
+        Some(f) => (f.axis.id(), format!("{}", (l.from_si(f.at) * 1e3).round() / 1e3 + 0.0)),
+        None => ("", String::new()),
+    }
+}

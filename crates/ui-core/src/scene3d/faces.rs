@@ -35,7 +35,7 @@ pub struct Face {
 }
 
 /// The unit normal of a triangle (its corners' turn); `None` for a degenerate one.
-pub(crate) fn unit_normal([a, b, c]: [Point3; 3]) -> Option<Vec3> {
+pub fn unit_normal([a, b, c]: [Point3; 3]) -> Option<Vec3> {
     (b - a).cross(c - a).normalized()
 }
 

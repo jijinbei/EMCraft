@@ -12,6 +12,7 @@ workspace = true
 emcraft-engine = { workspace = true }
 emcraft-macros = { workspace = true }
 emcraft-i18n = { workspace = true }
+emcraft-mesh = { workspace = true }
 emcraft-model = { workspace = true }
 emcraft-render = { workspace = true }
 serde = { workspace = true }

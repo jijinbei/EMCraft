@@ -55,6 +55,7 @@ pub mod prefs;
 pub mod record;
 pub mod replies;
 pub mod ribbon;
+pub mod scene3d;
 pub mod selection;
 pub mod steps;
 pub mod system;

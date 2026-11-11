@@ -40,7 +40,7 @@ pub(super) fn materials(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) 
     let m = app.session.model();
     for (i, mat) in m.materials.iter().enumerate() {
         ui.horizontal(|ui| {
-            let c = crate::scene3d::material_rgb(m, i);
+            let c = crate::scene3d::material_rgb(&crate::theme::scene_colours(), m, i);
             let (r, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
             ui.painter().rect_filled(r, 2.0, Color32::from_rgb(c.0, c.1, c.2));
             let tex = format!("{}:  {}", mat.name.replace('$', "\\$"), crate::math::material(mat));

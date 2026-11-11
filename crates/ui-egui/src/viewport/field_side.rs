@@ -65,7 +65,7 @@ pub(super) fn bands(app: &EmcraftApp, plane: Plane) -> Vec<(f64, f64, Option<Col
     let m = app.session.model();
     let Some(Aabb { min: lo, max: hi }) = m.bounds() else { return Vec::new() };
     let colour = |i: usize| {
-        let c = crate::scene3d::material_rgb(m, i);
+        let c = crate::scene3d::material_rgb(&crate::theme::scene_colours(), m, i);
         Color32::from_rgb(c.0, c.1, c.2)
     };
     let axis = normal_axis(plane);

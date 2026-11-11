@@ -6,13 +6,14 @@
 use emcraft_engine::Session;
 use emcraft_engine::view::Plane;
 
+use super::style::Colours;
 use super::{Built, FieldLayer};
 
 /// Most cells along the field plane's longer side.
 const FIELD_CELLS: usize = 120;
 
 /// The axis normal to a field plane (0 x, 1 y, 2 z).
-pub(crate) fn normal_axis(plane: Plane) -> usize {
+pub fn normal_axis(plane: Plane) -> usize {
     match plane {
         Plane::E => 0,
         Plane::H => 1,
@@ -39,7 +40,7 @@ pub(super) fn largest_magnitude(values: &[f64]) -> f64 {
 /// A field plane's corners (m): at the picture's low corner, at its far end along the
 /// picture's horizontal axis and along its vertical one; `x` and `y` the picture's spans (display
 /// units), `lo` the model's low corner.
-pub(crate) fn plane_frame(session: &Session, plane: Plane, at: f64, x: (f64, f64), y: (f64, f64), lo: [f64; 3]) -> [[f64; 3]; 3] {
+pub fn plane_frame(session: &Session, plane: Plane, at: f64, x: (f64, f64), y: (f64, f64), lo: [f64; 3]) -> [[f64; 3]; 3] {
     let l = session.display().length;
     let (h0, h1, v0, v1) = (l.to_si(x.0), l.to_si(x.1), l.to_si(y.0), l.to_si(y.1));
     [on_plane(plane, lo, at, h0, v0), on_plane(plane, lo, at, h1, v0), on_plane(plane, lo, at, h0, v1)]
@@ -47,11 +48,19 @@ pub(crate) fn plane_frame(session: &Session, plane: Plane, at: f64, x: (f64, f64
 
 /// The field's colour map on its plane, cell by cell (cells outside the mesh left out); one
 /// quad over the plane when the GPU colours it ([`FieldLayer::gpu`]).
-pub(super) fn field_plane(session: &Session, f: &FieldLayer, shared_peak: f64, legend: bool, out: &mut Built) {
-    let (Some(s), Some((lo, _))) = (f.plot.scalar.as_ref(), out.bounds) else { return };
+pub(super) fn field_plane(
+    colours: &Colours,
+    session: &Session,
+    f: &FieldLayer,
+    shared_peak: f64,
+    legend: bool,
+    bounds: Option<([f64; 3], [f64; 3])>,
+) -> Built {
+    let mut out = Built::default();
+    let (Some(s), Some((lo, _))) = (f.plot.scalar.as_ref(), bounds) else { return out };
     let (nx, ny) = (s.nx, s.ny);
     if nx < 2 || ny < 2 || s.values.len() < nx * ny {
-        return;
+        return out;
     }
     let l = session.display().length;
     let (h0, h1, v0, v1) = (l.to_si(f.plot.x.min), l.to_si(f.plot.x.max), l.to_si(f.plot.y.min), l.to_si(f.plot.y.max));
@@ -64,8 +73,7 @@ pub(super) fn field_plane(session: &Session, f: &FieldLayer, shared_peak: f64, l
         let [c, u, v] = plane_frame(session, f.plane, f.at, f.plot.x.span(), f.plot.y.span(), lo);
         let far = [u[0] + v[0] - c[0], u[1] + v[1] - c[1], u[2] + v[2] - c[2]];
         out.scene.quad([c, u, far, v], scale.colour(0.0), 255);
-        field_arrows(session, f, lo, legend, out);
-        return;
+        return out.merge(field_arrows(colours, session, f, lo, legend));
     }
     let step = nx.max(ny).div_ceil(FIELD_CELLS).max(1);
     let at = |i: usize, j: usize| s.values.get(j * nx + i).copied().unwrap_or(f64::NAN);
@@ -87,12 +95,12 @@ pub(super) fn field_plane(session: &Session, f: &FieldLayer, shared_peak: f64, l
         }
         j = j1;
     }
-    field_arrows(session, f, lo, legend, out);
+    out.merge(field_arrows(colours, session, f, lo, legend))
 }
 
 /// The legend's line for the arrows of E (or H, `magnetic`) scaled to `longest` (V/m, A/m): an
 /// arrow at full length is that much.
-pub(crate) fn arrow_legend(magnetic: bool, longest: f64) -> String {
+pub fn arrow_legend(magnetic: bool, longest: f64) -> String {
     let (field, unit) = if magnetic { ("H", "A/m") } else { ("E", "V/m") };
     crate::lang::trf(
         t!("{field} in the plane · longest {value} {unit}"),
@@ -102,7 +110,8 @@ pub(crate) fn arrow_legend(magnetic: bool, longest: f64) -> String {
 
 /// The plot's arrows (E's, H's), generated and shaded in WGSL, a hair off
 /// the plane on both sides so they show from either.
-fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], legend: bool, out: &mut Built) {
+fn field_arrows(colours: &Colours, session: &Session, f: &FieldLayer, lo: [f64; 3], legend: bool) -> Built {
+    let mut out = Built::default();
     let l = session.display().length;
     let normal = normal_axis(f.plane);
     let (xa, xb) = f.plot.x.span();
@@ -120,9 +129,9 @@ fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], legend: bool, o
             continue;
         }
         let color = match set.pen {
-            emcraft_render::Pen::EArrows => crate::theme::scene().port_input,
-            emcraft_render::Pen::HArrows => crate::theme::scene().port_output,
-            _ => crate::theme::palette().pen(set.pen),
+            emcraft_render::Pen::EArrows => colours.scene.port_input,
+            emcraft_render::Pen::HArrows => colours.scene.port_output,
+            _ => colours.palette.pen(set.pen),
         };
         if legend && !f.gpu {
             out.arrow_legend.push((arrow_legend(set.pen == emcraft_render::Pen::HArrows, scale), color));
@@ -139,7 +148,7 @@ fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], legend: bool, o
                 continue;
             }
             for side in [lift, -lift] {
-                out.arrows.push(crate::gpu3d::Arrow {
+                out.arrows.push(super::Arrow {
                     start: point([p[0] - d[0] / 2.0, p[1] - d[1] / 2.0], side),
                     end: point([p[0] + d[0] / 2.0, p[1] + d[1] / 2.0], side),
                     color,
@@ -149,4 +158,5 @@ fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], legend: bool, o
             }
         }
     }
+    out
 }

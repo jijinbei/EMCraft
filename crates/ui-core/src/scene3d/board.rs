@@ -13,7 +13,7 @@ use emcraft_mesh::planar::{NO_NET, Outline, Request, offset, triangulate};
 use emcraft_model::pcb::Board;
 use emcraft_render::Rgb;
 
-use super::{Built, Label, Pick, style::sc};
+use super::{Built, Label, Pick};
 use crate::lang::{args, trf};
 
 /// A point of the board in the view's axes: the board's plane is the view's x–z (the view's y is
@@ -34,14 +34,14 @@ const VIA_SIDES: usize = 12;
 
 /// How the board is laid in the view: its heights over the lowest layer (m) and how much they
 /// are stretched.
-pub(crate) struct Frame {
+pub struct Frame {
     pub stretch: f64,
     pub heights: Vec<f64>,
 }
 
 /// The board's frame: heights stretched until the board stands at least [`STRETCHED`] of its
 /// width and its layers stand apart.
-pub(crate) fn frame(board: &Board) -> Frame {
+pub fn frame(board: &Board) -> Frame {
     let heights = board.heights();
     let thickness = heights.iter().copied().fold(0.0, f64::max);
     let width = board.bounds().map_or(0.0, |(lo, hi)| (hi[0] - lo[0]).max(hi[1] - lo[1]));
@@ -78,28 +78,28 @@ pub fn nets(board: &Board) -> Vec<String> {
 }
 
 /// The colours of the selected route, its reference and the other copper.
-struct Colours {
+struct NetColours {
     route: Rgb,
     reference: Rgb,
     copper: Rgb,
 }
 
 /// Builds the board's scene: `route` the selected net, `reference` the route's reference net.
-pub(super) fn build(board: &Board, route: &str, reference: &str, out: &mut Built) {
-    let t = crate::theme::Tokens::get();
-    let colours = Colours { route: crate::theme::rgb(t.warning), reference: crate::theme::rgb(t.success), copper: sc().strip };
-    let Some((lo, hi)) = board.bounds() else { return };
+pub(super) fn build(c: &super::style::Colours, board: &Board, route: &str, reference: &str) -> Built {
+    let mut out = Built::default();
+    let nets_in = NetColours { route: c.route, reference: c.reference, copper: c.scene.strip };
+    let Some((lo, hi)) = board.bounds() else { return out };
     let Frame { stretch, heights } = frame(board);
     let thickness = heights.iter().copied().fold(0.0, f64::max);
     let z = |layer: usize| heights.get(layer).copied().unwrap_or(0.0) * stretch;
     let nets = nets(board);
     let colour = |net: &str| {
         if net == route {
-            colours.route
+            nets_in.route
         } else if net == reference {
-            colours.reference
+            nets_in.reference
         } else {
-            colours.copper
+            nets_in.copper
         }
     };
     // The substrates: a slab between each layer and the next one down.
@@ -107,18 +107,18 @@ pub(super) fn build(board: &Board, route: &str, reference: &str, out: &mut Built
     up.sort_by(|&a, &b| heights[a].total_cmp(&heights[b]));
     for w in up.windows(2) {
         let er = board.layers[w[1]].eps_below;
-        let shade = if er > 1.0 { sc().materials[0] } else { sc().vacuum };
+        let shade = if er > 1.0 { c.scene.materials[0] } else { c.scene.vacuum };
         // Kept just inside its layers, so the copper on them is not lost in its faces.
         let inset = 0.02 * (z(w[1]) - z(w[0]));
         out.scene.cuboid(at(lo[0], lo[1], z(w[0]) + inset), at(hi[0], hi[1], z(w[1]) - inset), shade, 38);
     }
-    copper(board, &nets, &z, &colour, out);
+    out = out.merge(copper(board, &nets, &z, &colour));
     // The route's centre lines over its copper: a trace a few pixels wide would be all outline.
     // Lifted a little off the copper, so the depth test keeps them whole.
     let lift = 0.01 * thickness * stretch;
     for g in board.segments.iter().filter(|g| g.net == route) {
         if let Some(l) = board.layers.iter().position(|l| l.name == g.layer) {
-            out.scene.line(at(g.start[0], g.start[1], z(l) + lift), at(g.end[0], g.end[1], z(l) + lift), colours.route, 255);
+            out.scene.line(at(g.start[0], g.start[1], z(l) + lift), at(g.end[0], g.end[1], z(l) + lift), nets_in.route, 255);
         }
     }
     // Vias: posts between their layers.
@@ -146,27 +146,28 @@ pub(super) fn build(board: &Board, route: &str, reference: &str, out: &mut Built
         let (b, t2) = (corners(bottom), corners(top));
         for k in 0..4 {
             for (p, q) in [(b[k], b[(k + 1) % 4]), (t2[k], t2[(k + 1) % 4]), (b[k], t2[k])] {
-                out.scene.line(p, q, super::style::wire_rgb(), 200);
+                out.scene.line(p, q, c.wire, 200);
             }
         }
     }
     // The layers' names at the board's left edge.
     for (i, l) in board.layers.iter().enumerate() {
-        out.labels.push(Label { at: at(lo[0], hi[1], z(i)), text: l.name.clone(), color: super::style::wire_rgb(), facing: None, anchor: None });
+        out.labels.push(Label { at: at(lo[0], hi[1], z(i)), text: l.name.clone(), color: c.wire, facing: None, anchor: None });
     }
     // No route chosen yet: no swatch without a name.
     if !route.is_empty() {
-        out.legend.push((route.to_owned(), colours.route));
+        out.legend.push((route.to_owned(), nets_in.route));
     }
     if !reference.is_empty() {
-        out.legend.push((reference.to_owned(), colours.reference));
+        out.legend.push((reference.to_owned(), nets_in.reference));
     }
     if stretch > 1.0 {
-        out.legend.push((trf(t!("heights × {k}"), args!(k = format!("{stretch:.0}"))), super::style::wire_rgb()));
+        out.legend.push((trf(t!("heights × {k}"), args!(k = format!("{stretch:.0}"))), c.wire));
     }
     let (bottom, top) = board.region.map_or((0.0, thickness * stretch), |r| (-r.below, thickness * stretch + r.above));
     let (rlo, rhi) = board.region.map_or((lo, hi), |r| (r.lo, r.hi));
     out.bounds = Some((at(rlo[0].min(lo[0]), rlo[1].min(lo[1]), bottom), at(rhi[0].max(hi[0]), rhi[1].max(hi[1]), top)));
+    out
 }
 
 /// Each layer's copper at its height, tagged by net: the planar mesher's union, or the traces
@@ -174,8 +175,9 @@ pub(super) fn build(board: &Board, route: &str, reference: &str, out: &mut Built
 /// A board's region made the model, before it is meshed: its substrates and copper where the
 /// mesh will put them (the region's lower-left corner the origin, the board's plane the model's
 /// x–z, the lowest layer `below` over the floor), unstretched.
-pub(super) fn in_model(board: &Board, out: &mut Built) {
-    let Some(region) = board.region else { return };
+pub(super) fn in_model(c: &super::style::Colours, board: &Board) -> Built {
+    let mut out = Built::default();
+    let Some(region) = board.region else { return out };
     let mut b = board.clone();
     let shift = |p: &mut [f64; 2]| {
         p[0] -= region.lo[0];
@@ -199,28 +201,22 @@ pub(super) fn in_model(board: &Board, out: &mut Built) {
     for pair in up.windows(2) {
         if b.layers[pair[1]].eps_below > 1.0 {
             let inset = 0.02 * (z(pair[1]) - z(pair[0]));
-            out.scene.cuboid(at(0.0, 0.0, z(pair[0]) + inset), at(w, d, z(pair[1]) - inset), sc().materials[0], 60);
+            out.scene.cuboid(at(0.0, 0.0, z(pair[0]) + inset), at(w, d, z(pair[1]) - inset), c.scene.materials[0], 60);
         }
     }
     let nets = nets(&b);
-    let strip = sc().strip;
-    copper_in(&b, &nets, &z, &|_| strip, ([0.0, 0.0], [w, d]), out);
+    let strip = c.scene.strip;
+    out = out.merge(copper_in(&b, &nets, &z, &|_| strip, ([0.0, 0.0], [w, d])));
+    out
 }
 
-fn copper(board: &Board, nets: &[String], z: &dyn Fn(usize) -> f64, colour: &dyn Fn(&str) -> Rgb, out: &mut Built) {
-    let Some((lo, hi)) = board.bounds() else { return };
-    copper_in(board, nets, z, colour, (lo, hi), out);
+fn copper(board: &Board, nets: &[String], z: &dyn Fn(usize) -> f64, colour: &dyn Fn(&str) -> Rgb) -> Built {
+    board.bounds().map_or_else(Built::default, |(lo, hi)| copper_in(board, nets, z, colour, (lo, hi)))
 }
 
 /// [`copper`] cut to the box `lo`..`hi` (m, the board's plane).
-fn copper_in(
-    board: &Board,
-    nets: &[String],
-    z: &dyn Fn(usize) -> f64,
-    colour: &dyn Fn(&str) -> Rgb,
-    (lo, hi): ([f64; 2], [f64; 2]),
-    out: &mut Built,
-) {
+fn copper_in(board: &Board, nets: &[String], z: &dyn Fn(usize) -> f64, colour: &dyn Fn(&str) -> Rgb, (lo, hi): ([f64; 2], [f64; 2])) -> Built {
+    let mut out = Built::default();
     let net = |n: &str| nets.binary_search_by(|x| x.as_str().cmp(n)).unwrap_or(0) as u32;
     let layer = |n: &str| board.layers.iter().position(|l| l.name == n);
     let mut outlines = Vec::new();
@@ -272,4 +268,5 @@ fn copper_in(
             }
         }
     }
+    out
 }
