@@ -12,7 +12,7 @@
  {"command": "geometry.inclusion", "params": {"shape": "cylinder", "radius": "=r_wire", "length": "=l_director", "at": ["=30 + s_director", 25, "=25 - l_director/2"]}},
  {"command": "model.open", "params": {"thickness": 12}},
  {"command": "mesh.generate", "params": {"per_wavelength": 4, "frequency": 10}},
- {"command": "model.port.lumped", "params": {"name": "feed", "from": [30, 25, 24.5], "to": [30, 25, 25.5], "impedance": 50, "radius": "=r_wire"}},
+ {"command": "model.port.lumped", "params": {"name": "feed", "from": [30, 25, 24.5], "to": [30, 25, 25.5], "impedance": 50, "radius": "=0.8*r_wire"}},
  {"command": "project.setup", "params": {"kind": "radiation", "frequency": 10}},
  {"command": "solve.radiation", "params": {"frequency": 10}}
 ]

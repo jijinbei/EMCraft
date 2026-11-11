@@ -1800,7 +1800,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("impedance", K::Number, "the source's internal impedance in ohms (default 50)"),
             opt("voltage", K::Number, "the source's voltage in volts, peak (default 1)"),
             opt("phase", K::Number, "the source's phase in degrees (default 0)"),
-            opt("radius", K::Number, "spread the current round a band of this radius about the gap's line (for a gap cut in a wire, a fifth of its radius: the band inside its ends, each line run on to the metal); default 0, the line itself").of(L),
+            opt("radius", K::Number, "spread the current round a band of this radius about the gap's line (for a gap cut in a wire, 0.8 of its radius: just inside the surface its current flows on, so the lines meet the wire's faceted ends, each run on to the metal; a band of radius ρ in a wire of radius a adds μ₀g ln(a/ρ)/2π of inductance across a gap g); default 0, the line itself").of(L),
         ],
         effect: Effect::Record,
         invalidates: Some(Change::Open),
