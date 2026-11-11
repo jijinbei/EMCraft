@@ -350,13 +350,15 @@ Two-ports in a chain, port 2 of each to port 1 of the next, by their chain (ABCD
 
 ## `system.stage.add` — Add stage
 
-Adds a stage to the system's chain, from the source on (Analysis `system`, docs/system.md): `amplifier` (an ideal one, matched and unilateral on the chain's impedance: `gain` and `noise_figure` in dB from a matched source, its noise an uncorrelated wave kT₀(F − 1) at its input; `oip3` and `p1db`, its output intercept and compression points in dBm, for the cascade's linearity), `attenuator` (`loss` dB, matched, its noise at the chain's temperature), `data` (a two-port's S: the sweep or a measurement, results.import's Touchstone file; its noise data if it has some, else a passive network's), `line` (Ω, length, εr, conductor `attenuation` in dB per length growing as √(f/`at`), dielectric `tan_delta`), `series` or `shunt` (R, L, C in Ω, nH and pF). Its name is unique in the chain; at most 32 stages. Undo goes back.
+Adds a stage to the system's chain, from the source on (Analysis `system`, docs/system.md): `amplifier` (an ideal one, matched and unilateral on the chain's impedance: `gain` and `noise_figure` in dB from a matched source, its noise an uncorrelated wave kT₀(F − 1) at its input; `oip3` and `p1db`, its output intercept and compression points in dBm, for the cascade's linearity), `attenuator` (`loss` dB, matched, its noise at the chain's temperature), `data` (a two-port's S: the sweep or a measurement, results.import's Touchstone file; its noise data if it has some, else a passive network's), `line` (Ω, length, εr, conductor `attenuation` in dB per length growing as √(f/`at`), dielectric `tan_delta`), `series` or `shunt` (R, L, C in Ω, nH and pF). Its name is unique in the chain; at most 32 stages. It is linked in at `position` along the chain (the links before and after it made again), or with `linked` false left on the canvas at `at` to link by hand (system.link). Undo goes back.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `type` | string |  | yes | the stage's kind |
 | `name` | string |  | no | the stage's name, unique in the chain (default its kind and a number) |
-| `position` | integer |  | no | its place from the source, from 1 (default the end) |
+| `position` | integer |  | no | its place along the chain from the source, from 1 (default the end) |
+| `at` | array |  | no | where its node sits on the canvas [x, y] (default laid out by its place) |
+| `linked` | boolean |  | no | linked into the chain at `position` (default true); false leaves it on the canvas to link by hand |
 | `gain` | number |  | no | an amplifier's gain in dB |
 | `noise_figure` | number |  | no | an amplifier's noise figure in dB from a matched source (default 0) |
 | `oip3` | number |  | no | an amplifier's output third-order intercept point in dBm |
@@ -377,13 +379,14 @@ Adds a stage to the system's chain, from the source on (Analysis `system`, docs/
 
 ## `system.stage.edit` — Edit stage
 
-Changes a stage of the system's chain: the settings given replace its own (the rest kept), `rename` names it anew, `type` makes it another kind (its settings then given). Checked as a new stage would be. Undo goes back.
+Changes a stage of the system's chain: the settings given replace its own (the rest kept), `rename` names it anew, `type` makes it another kind (its settings then given), `at` moves its node on the canvas. Checked as a new stage would be. Undo goes back.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `stage` | string |  | yes | the stage: its name, or its place from 1 |
 | `rename` | string |  | no | a new name for it |
 | `type` | string |  | no | another kind for it (its settings then all given) |
+| `at` | array |  | no | where its node sits on the canvas [x, y] |
 | `gain` | number |  | no | an amplifier's gain in dB |
 | `noise_figure` | number |  | no | an amplifier's noise figure in dB from a matched source (default 0) |
 | `oip3` | number |  | no | an amplifier's output third-order intercept point in dBm |
@@ -419,6 +422,24 @@ Moves a stage of the system's chain to another place. Undo goes back.
 | `stage` | string |  | yes | the stage: its name, or its place from 1 |
 | `position` | integer |  | yes | its new place from the source, from 1 |
 
+## `system.link` — Link stages
+
+Links a node's output to another's input in the system's chain: `source`, a stage or `receiver` (`from` the source or a stage, `to` a stage or the receiver). The chain is the path the links make from the source, a series chain: a node feeds one and is fed by one, so the links `from` fed and `to` was fed by before go. Stages off the path stay on the canvas, not read. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `from` | string |  | yes | the node whose output: `source` or a stage's name |
+| `to` | string |  | yes | the node whose input: a stage's name or `receiver` |
+
+## `system.unlink` — Unlink stages
+
+Takes the link from `from`'s output to `to`'s input away: the chain read stops there (stages after it are off the chain until linked again). Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `from` | string |  | yes | the node whose output: `source` or a stage's name |
+| `to` | string |  | yes | the node whose input: a stage's name or `receiver` |
+
 ## `system.source` — System source
 
 The system's source: `antenna`, a one-port measurement whose impedance drives the chain (an antenna's S11 from solve.radiation_sweep, a .s1p; "" for none: the chain's impedance), its noise `temperature` (K, default 290) and the signal `power` it gives (dBm; for the budget's signal and SNR). The settings left out are kept. Undo goes back.
@@ -442,7 +463,7 @@ What the system's chain ends in: its reference `impedance` (Ω, default 50: the 
 
 ## `solve.system` — Solve system
 
-Reads the system's chain over a band (or the confirmed settings'): its S by the stages' chain (ABCD) matrices (Pozar, Microwave Engineering, §4.4), its noise by Hillbrand and Russer's chain correlation matrices (IEEE Trans. CAS-23(4), 1976), from the source's impedance; and its budget stage by stage — each stage's available gain and the chain's from the source (Pozar §12.1), the noise figure and temperature so far, the signal, noise (k(T_A + T_e)B G) and SNR at each stage's output, and the cascade's third-order intercept and 1 dB compression points, input-referred as 1/IIP3 = Σ G_before/IIP3_k (Pozar §10.3) and output-referred. The reply gives the budget at `frequency` (default the band's centre) and the band's least and greatest noise figure; the result is kept for the System view (and the project file). A data stage outside its band, or the antenna outside its, leaves those frequencies' readings out and says why.
+Reads the system's chain — the path its links make from the source — over a band (or the confirmed settings', or else the band its S-parameter stages and antenna all hold): its S by the stages' chain (ABCD) matrices (Pozar, Microwave Engineering, §4.4), its noise by Hillbrand and Russer's chain correlation matrices (IEEE Trans. CAS-23(4), 1976), from the source's impedance; and its budget stage by stage — each stage's available gain and the chain's from the source (Pozar §12.1), the noise figure and temperature so far, the signal, noise (k(T_A + T_e)B G) and SNR at each stage's output, and the cascade's third-order intercept and 1 dB compression points, input-referred as 1/IIP3 = Σ G_before/IIP3_k (Pozar §10.3) and output-referred. The reply gives the budget at `frequency` (default the band's centre) and the band's least and greatest noise figure; the result is kept for the System view (and the project file). A data stage outside its band, or the antenna outside its, leaves those frequencies' readings out and says why.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|

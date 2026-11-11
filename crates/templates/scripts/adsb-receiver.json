@@ -8,7 +8,7 @@
  {"command": "results.import", "params": {"path": "template:adsb-bandpass.s2p", "name": "filter"}},
  {"command": "system.stage.add", "params": {"type": "amplifier", "name": "LNA", "gain": "=lna_gain", "noise_figure": "=lna_nf", "oip3": 30, "p1db": 18}},
  {"command": "system.stage.add", "params": {"type": "data", "name": "band-pass filter", "data": "filter"}},
- {"command": "system.stage.add", "params": {"type": "amplifier", "name": "receiver", "gain": "=rx_gain", "noise_figure": "=rx_nf", "oip3": 20}},
+ {"command": "system.stage.add", "params": {"type": "amplifier", "name": "RX", "gain": "=rx_gain", "noise_figure": "=rx_nf", "oip3": 20}},
  {"command": "system.source", "params": {"antenna": "antenna", "power": -90}},
  {"command": "system.receiver", "params": {"bandwidth": "=bw", "snr": 10}},
  {"command": "project.analysis", "params": {"kind": "system"}},

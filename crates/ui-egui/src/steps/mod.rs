@@ -569,28 +569,19 @@ pub fn estimate(app: &EmcraftApp) -> Result<&Value, &str> {
 }
 
 /// Opens a step: its panel and the view it calls for.
-/// The steps a system's bar shows: its chain (in the geometry's place), its settings, Run and
-/// Results.
-const SYSTEM_STEPS: [Step; 4] = [Step::Geometry, Step::Setup, Step::Run, Step::Results];
-
 /// Whether the job is a system's (its chain, no model to solve a field in).
 pub(crate) fn is_system(app: &EmcraftApp) -> bool {
     app.session.model().analysis() == Solver::System
 }
 
-/// Whether the bar shows `step`: every step but the kind, a system's only its own four.
+/// Whether the bar shows `step`: every step but the kind; a system's none (its canvas holds
+/// its chain, its band and its budget, read again at every change).
 pub(crate) fn on_bar(app: &EmcraftApp, step: Step) -> bool {
-    step != Step::Intent && (!is_system(app) || SYSTEM_STEPS.contains(&step))
+    step != Step::Intent && !is_system(app)
 }
 
-/// A step's number and name as the bar and its panel show them: a system's counted along its
-/// own four, its chain where the geometry stands.
-pub(crate) fn numbered(app: &EmcraftApp, step: Step) -> (usize, &'static str) {
-    if is_system(app) {
-        let n = SYSTEM_STEPS.iter().position(|s| *s == step).map_or_else(|| step.index(), |k| k + 1);
-        let name = if step == Step::Geometry { crate::lang::tr(t!("Chain")) } else { crate::lang::shown(step) };
-        return (n, name);
-    }
+/// A step's number and name as the bar and its panel show them.
+pub(crate) fn numbered(_app: &EmcraftApp, step: Step) -> (usize, &'static str) {
     (step.index(), crate::lang::shown(step))
 }
 
@@ -607,13 +598,10 @@ pub fn open_step(app: &mut EmcraftApp, step: Option<Step>) {
 
     app.place = app.place.with_step(step);
     let Some(step) = step else { return };
-    // A system's steps all keep its own view (its chain, budget and charts) and ribbon.
+    // A system has no steps: its canvas holds its chain, band and budget.
     if is_system(app) {
         app.tab = RibbonTab::System;
-        app.place = app.place.show(View::System);
-        if app.ui_state.dialog().is_some_and(|d| Step::of_command(d.command.id) != Some(step)) {
-            app.ui_state.take_dialog();
-        }
+        app.place = View::System.place();
         return;
     }
     // The ribbon shows the step's tab.

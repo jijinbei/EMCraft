@@ -1,14 +1,12 @@
-//! What the window shows of a system's chain wherever it shows it — the System view's block
-//! diagram, the Chain step's panel, the browser and the ribbon: the kinds of stage and the
-//! settings a new one starts from, a stage's kind and numbers in a line, and what editing one
-//! asks for (its dialog on its current values, docked in the Chain step).
+//! What the window shows of a system's chain wherever it shows it — the System view's canvas,
+//! the browser and the ribbon: the kinds of stage and the settings a new one starts from, a
+//! stage's kind and numbers in a line, the item a stage's row edits and deletes, and the chain's
+//! reading at a stage's output.
 
 use emcraft_model::system::{DataSource, Part, Stage};
 use serde_json::{Value, json};
 
-use crate::Action;
 use crate::lang::Text;
-use crate::steps::Step;
 
 /// The kinds of stage, each with its name and what it is.
 pub const KINDS: [(&str, Text, Text); 6] = [
@@ -61,16 +59,6 @@ pub fn summary(stage: &Stage) -> String {
             parts.join(" ")
         }
     }
-}
-
-/// Adding a stage of `kind`: its dialog on its starting settings, in the Chain step.
-pub fn add(kind: &str) -> Vec<Action> {
-    vec![Action::OpenStep(Some(Step::Geometry)), Action::dialog_with("system.stage.add", starting(kind))]
-}
-
-/// Editing a stage: its dialog on its current values, in the Chain step.
-pub fn edit(name: &str) -> Vec<Action> {
-    vec![Action::OpenStep(Some(Step::Geometry)), Action::EditItem(item(name))]
 }
 
 /// The stage `name` as an item of the model, which its row edits and deletes.

@@ -164,6 +164,7 @@ emcraft_macros::named_enum! {
         ChartStudy = "chart:study",
         ChartAnalyses = "chart:analyses",
         ChartSystem = "chart:system",
+        SystemCanvas = "system:canvas",
         PictureField = "picture:field",
         FieldPlotZoom = "field:plot:zoom",
         FieldPlotWidth = "field:plot:width",
@@ -384,6 +385,18 @@ pub enum Handle<'a> {
     SystemPanel(&'a str),
     /// The System view's buttons while the chain is empty, a kind each: `system:start:amplifier`.
     SystemStart(&'a str),
+    /// A node on the system's canvas (its header, dragged to move it), by name (`source`,
+    /// `receiver` or a stage's): `system:node:LNA`.
+    SystemNode(&'a str),
+    /// A node's output and input ports: `system:out:LNA`, `system:in:receiver`.
+    SystemOut(&'a str),
+    SystemIn(&'a str),
+    /// A node's field, edited in place: `system:field:LNA:gain`.
+    SystemField(&'a str, &'static str),
+    /// The mark that takes the link into a node's input away: `system:unlink:receiver`.
+    SystemUnlink(&'a str),
+    /// The band's fields over the canvas: `system:band:start`.
+    SystemBand(&'static str),
     /// Which of a cell's Bloch waves the pulse goes through (from 1): `pulse:wave:2`.
     PulseWave(usize),
     /// What the S-parameter chart shows: `sparameters:show:phase`.
@@ -496,6 +509,12 @@ impl fmt::Display for Handle<'_> {
             Handle::SystemChart(c) => write!(f, "system:chart:{c}"),
             Handle::SystemPanel(n) => write!(f, "system:panel:{n}"),
             Handle::SystemStart(k) => write!(f, "system:start:{k}"),
+            Handle::SystemNode(n) => write!(f, "system:node:{n}"),
+            Handle::SystemOut(n) => write!(f, "system:out:{n}"),
+            Handle::SystemIn(n) => write!(f, "system:in:{n}"),
+            Handle::SystemField(n, k) => write!(f, "system:field:{n}:{k}"),
+            Handle::SystemUnlink(n) => write!(f, "system:unlink:{n}"),
+            Handle::SystemBand(k) => write!(f, "system:band:{k}"),
             Handle::SParameters(what) => write!(f, "sparameters:show:{what}"),
             Handle::StyleAxis(axis, part) => write!(f, "chart:style:{axis}:{part}"),
             Handle::Legend(at) => write!(f, "chart:legend:{at}"),

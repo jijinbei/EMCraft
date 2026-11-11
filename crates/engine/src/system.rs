@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use emcraft_model::system::{DataSource, MAX_STAGES, Part, Receiver, Source, Stage};
+use emcraft_model::system::{DataSource, MAX_STAGES, Part, RECEIVER, Receiver, SOURCE, Source, Stage};
 use emcraft_model::{Arrangement, LumpedElement, Point3};
 use emcraft_solver::{Complex64 as C, SMatrix};
 use serde_json::{Value, json};
@@ -537,8 +537,9 @@ fn stage_index(s: &Session, p: &Params) -> Result<usize> {
     let n = s.model.system.stages.len();
     match key {
         Value::Number(_) => {
+            // Its place along the chain from the source.
             let k = p.integer("stage", 1..=n.max(1)).required()?;
-            if k > n { Err(p.error("stage", "no such stage")) } else { Ok(k - 1) }
+            s.model.system.order().0.get(k - 1).copied().ok_or_else(|| p.error("stage", "no stage there along the chain"))
         }
         _ => {
             let name = p.string("stage").required()?;
@@ -547,20 +548,71 @@ fn stage_index(s: &Session, p: &Params) -> Result<usize> {
     }
 }
 
-/// The reply of a chain edit: its stages in order.
+/// The reply of a chain edit: its stages along the chain from the source, those off it, its
+/// links and whether it reaches the receiver.
 fn chain_reply(s: &Session) -> Value {
-    let stages: Vec<Value> = s
-        .model
-        .system
-        .stages
-        .iter()
-        .map(|st| {
-            let mut v = stage_params(s, &st.part);
-            v["name"] = json!(st.name);
-            v
-        })
-        .collect();
-    json!({"stages": stages})
+    let c = &s.model.system;
+    let (order, complete) = c.order();
+    let shown = |i: &usize| {
+        let st = &c.stages[*i];
+        let mut v = stage_params(s, &st.part);
+        v["name"] = json!(st.name);
+        if let Some(at) = st.at {
+            v["at"] = json!(at);
+        }
+        v
+    };
+    let off: Vec<usize> = (0..c.stages.len()).filter(|i| !order.contains(i)).collect();
+    let name = |n: &str| match n {
+        SOURCE => "source".to_owned(),
+        RECEIVER => "receiver".to_owned(),
+        n => n.to_owned(),
+    };
+    json!({
+        "stages": order.iter().map(shown).collect::<Vec<_>>(),
+        "off_chain": off.iter().map(shown).collect::<Vec<_>>(),
+        "links": c.links.iter().map(|l| json!([name(&l.from), name(&l.to)])).collect::<Vec<_>>(),
+        "complete": complete,
+    })
+}
+
+/// The node a link's end names: `source`, `receiver` (unless a stage is called that) or a stage.
+fn node(s: &Session, p: &Params, key: &str) -> Result<String> {
+    let n = p.string(key).required()?;
+    let stage = s.model.system.stages.iter().any(|st| st.name == n);
+    Ok(match n {
+        "source" if !stage => SOURCE.to_owned(),
+        "receiver" if !stage => RECEIVER.to_owned(),
+        n if stage || n == SOURCE || n == RECEIVER => n.to_owned(),
+        n => return Err(p.error(key, format!("no node `{}`: `source`, `receiver` or a stage's name", crate::text::clip(n, 40)))),
+    })
+}
+
+/// A canvas position `[x, y]` given as `key`.
+fn canvas(p: &Params, key: &str) -> Result<Option<[f64; 2]>> {
+    if !p.has(key) {
+        return Ok(None);
+    }
+    let list = p.list(key, 2).required()?;
+    let xy: Vec<f64> = list.iter().map(|v| p.number_of(key, v)).collect::<Result<_>>()?;
+    match xy[..] {
+        [x, y] => Ok(Some([x, y])),
+        _ => Err(p.error(key, "a canvas position [x, y]")),
+    }
+}
+
+/// `system.link`: `from`'s output to `to`'s input (what either was linked to before let go).
+pub fn link(s: &mut Session, p: &Params) -> Result<Value> {
+    let (from, to) = (node(s, p, "from")?, node(s, p, "to")?);
+    s.model.link(&from, &to)?;
+    Ok(chain_reply(s))
+}
+
+/// `system.unlink`: the link from `from` to `to` taken away.
+pub fn unlink(s: &mut Session, p: &Params) -> Result<Value> {
+    let (from, to) = (node(s, p, "from")?, node(s, p, "to")?);
+    s.model.unlink(&from, &to)?;
+    Ok(chain_reply(s))
 }
 
 /// `system.stage.add`: a stage of `type` with its settings, named `name` (default the kind and
@@ -572,7 +624,12 @@ pub fn stage_add(s: &mut Session, p: &Params) -> Result<Value> {
         None => s.model.system.fresh_name(part.kind()),
     };
     let at = p.integer("position", 1..=MAX_STAGES + 1).optional()?.map_or(usize::MAX, |k| k - 1);
-    s.model.add_stage(at, Stage { name, part })?;
+    let stage = Stage { name, part, at: canvas(p, "at")? };
+    if p.flag("linked").or(true)? {
+        s.model.add_stage(at, stage)?;
+    } else {
+        s.model.place_stage(stage)?;
+    }
     Ok(chain_reply(s))
 }
 
@@ -587,7 +644,7 @@ pub fn stage_edit(s: &mut Session, p: &Params) -> Result<Value> {
         merged = json!({});
     }
     for (k, v) in given {
-        if k != "stage" && k != "rename" {
+        if !["stage", "rename", "at"].contains(&k.as_str()) {
             merged[k] = v;
         }
     }
@@ -595,7 +652,8 @@ pub fn stage_edit(s: &mut Session, p: &Params) -> Result<Value> {
     let q = Params::new(&merged, s.display).with_variables(&vars);
     let part = part(s, &q)?;
     let name = p.string("rename").optional()?.map_or(old.name, |n| crate::text::clip(n, 64));
-    s.model.set_stage(i, Stage { name, part })?;
+    let at = canvas(p, "at")?.or(old.at);
+    s.model.set_stage(i, Stage { name, part, at })?;
     Ok(chain_reply(s))
 }
 
@@ -653,31 +711,63 @@ pub fn receiver(s: &mut Session, p: &Params) -> Result<Value> {
 /// The chain's blocks, ready to evaluate.
 pub(crate) fn blocks(s: &Session) -> Result<Vec<Block>> {
     let z0 = s.model.system.receiver.impedance;
-    s.model
-        .system
-        .stages
-        .iter()
+    on_chain(s)
+        .into_iter()
         .map(|st| Block::of(s, &st.part, z0).map_err(|e| EngineError::failed(format!("stage `{}`: {e}", crate::text::clip(&st.name, 40)))))
         .collect()
+}
+
+/// The stages the chain reads, from the source on.
+fn on_chain(s: &Session) -> Vec<&Stage> {
+    s.model.system.order().0.into_iter().map(|i| &s.model.system.stages[i]).collect()
+}
+
+/// The band a chain is read over when none is given or confirmed: the frequencies its data
+/// stages and its antenna all hold (Hz).
+fn held_band(s: &Session) -> Option<(f64, f64)> {
+    let mut band: Option<(f64, f64)> = None;
+    let mut within = |fs: &[f64]| {
+        if let (Some(a), Some(b)) = (fs.first(), fs.last()) {
+            band = Some(band.map_or((*a, *b), |(lo, hi)| (lo.max(*a), hi.min(*b))));
+        }
+    };
+    for st in on_chain(s) {
+        if let Part::Data { data, .. } = &st.part {
+            let name = match data {
+                DataSource::Sweep => None,
+                DataSource::Measurement { name } => Some(name.as_str()),
+            };
+            if let Ok(src) = crate::network::named_source(s, name) {
+                within(src.data.frequencies());
+            }
+        }
+    }
+    if let Some(a) = s.model.system.source.antenna.as_ref().and_then(|n| s.views.measured.iter().find(|m| &m.name == n)) {
+        within(a.data.frequencies());
+    }
+    band.filter(|(lo, hi)| lo > &0.0 && hi >= lo)
 }
 
 /// `solve.system`: the chain at `points` frequencies from `start` to `stop` (or the confirmed
 /// settings'), its budget shown at `frequency` (default the band's centre).
 pub fn solve(s: &mut Session, p: &Params) -> Result<Value> {
-    if s.model.system.stages.is_empty() {
-        return Err(EngineError::failed("the chain has no stages: add one with system.stage.add"));
+    if on_chain(s).is_empty() {
+        return Err(EngineError::failed("the chain has no stages linked from the source: add one with system.stage.add (or link one)"));
     }
     let setup = match s.model.job.setup() {
         Some(emcraft_model::Setup::System { band, points, frequency }) => Some((*band, points.get(), *frequency)),
         _ => None,
     };
+    // The band given, else the confirmed one, else the one the stages' and antenna's data hold.
+    let held = held_band(s);
+    let band = setup.map(|x| (x.0.start.get(), x.0.stop.get())).or(held);
     let start = match p.frequency("start").optional()? {
         Some(f) => f,
-        None => setup.map(|x| x.0.start.get()).ok_or_else(|| p.error("start", "give the band (or confirm it with project.setup)"))?,
+        None => band.map(|b| b.0).ok_or_else(|| p.error("start", "give the band (or confirm it with project.setup)"))?,
     };
     let stop = match p.frequency("stop").optional()? {
         Some(f) => f,
-        None => setup.map(|x| x.0.stop.get()).ok_or_else(|| p.error("stop", "give the band (or confirm it with project.setup)"))?,
+        None => band.map(|b| b.1).ok_or_else(|| p.error("stop", "give the band (or confirm it with project.setup)"))?,
     };
     if !(start > 0.0 && stop >= start) {
         return Err(p.error("stop", "at or above `start`, both positive"));
@@ -693,15 +783,20 @@ pub fn solve(s: &mut Session, p: &Params) -> Result<Value> {
         Some(name) => Some(crate::network::named_impedance(s, name)?),
         None => None,
     };
-    let parts: Vec<&Part> = s.model.system.stages.iter().map(|st| &st.part).collect();
+    let chain = on_chain(s);
+    let parts: Vec<&Part> = chain.iter().map(|st| &st.part).collect();
     let (source, receiver) = (s.model.system.source.clone(), s.model.system.receiver.clone());
     let mut points = Vec::with_capacity(freqs.len());
     for (i, f) in freqs.iter().enumerate() {
         crate::progress::report(i, freqs.len(), "solve.system")?;
         points.push(point(&blocks, &parts, *f, antenna.as_ref(), &source, &receiver)?);
     }
-    let result = SystemResult { stages: s.model.system.stages.iter().map(|st| (st.name.clone(), st.part.kind().to_owned())).collect(), points, at };
-    let reply = reply(s, &result);
+    let result = SystemResult { stages: chain.iter().map(|st| (st.name.clone(), st.part.kind().to_owned())).collect(), points, at };
+    let mut reply = reply(s, &result);
+    let (_, complete) = s.model.system.order();
+    if !complete {
+        reply["note"] = json!("the chain does not reach the receiver: read up to its last stage");
+    }
     s.results.system = Some(Arc::new(result));
     Ok(reply)
 }

@@ -86,7 +86,7 @@ fn a_chains_budget_follows_friis_and_the_cascades_intercept_point() {
 #[test]
 fn stages_are_edited_moved_and_deleted_by_name_or_place_and_undone() {
     let mut s = receiver();
-    let names = |s: &Session| s.model.system.stages.iter().map(|x| x.name.clone()).collect::<Vec<_>>();
+    let names = |s: &Session| s.model.system.order().0.into_iter().map(|i| s.model.system.stages[i].name.clone()).collect::<Vec<_>>();
     s.execute("system.stage.move", &json!({"stage": "pad", "position": 1})).unwrap();
     assert_eq!(names(&s), ["pad", "LNA", "IF"]);
     s.execute("system.stage.edit", &json!({"stage": 2, "rename": "LNA2", "noise_figure": 0.5})).unwrap();
@@ -97,7 +97,7 @@ fn stages_are_edited_moved_and_deleted_by_name_or_place_and_undone() {
     assert_eq!(r["stages"][1]["noise_figure"], 0.5);
     // Another kind: its settings given anew.
     s.execute("system.stage.edit", &json!({"stage": "pad", "type": "line", "length": 100, "attenuation": 0.01})).unwrap();
-    assert_eq!(s.model.system.stages[0].part.kind(), "line");
+    assert_eq!(s.model.system.stages[s.model.system.index("pad").unwrap()].part.kind(), "line");
     s.execute("system.stage.delete", &json!({"stage": "IF"})).unwrap();
     assert_eq!(names(&s), ["pad", "LNA2"]);
     s.execute("edit.undo", &json!({})).unwrap();
@@ -138,7 +138,9 @@ fn a_chain_reads_its_band_from_the_setup_its_antennas_impedance_and_its_data_sta
     s.execute("results.import", &json!({"path": ant, "name": "ant"})).unwrap();
     s.execute("system.stage.add", &json!({"type": "amplifier", "gain": 20, "noise_figure": 1})).unwrap();
     s.execute("system.source", &json!({"antenna": "ant"})).unwrap();
-    assert!(s.execute("solve.system", &json!({})).is_err(), "no band");
+    // No band given or confirmed: the one the antenna's data hold.
+    let r = s.execute("solve.system", &json!({"points": 3})).unwrap();
+    assert_eq!((r["frequencies"].as_u64(), r["budget"]["frequency"].as_f64()), (Some(3), Some(1.1)), "{r}");
     s.execute("project.setup", &json!({"kind": "system", "start": 1, "stop": 1.4, "points": 5, "frequency": 1.1})).unwrap();
     let r = s.execute("solve.run", &json!({})).unwrap();
     assert_eq!(r["run"]["command"], "solve.system");
@@ -205,4 +207,41 @@ fn the_adsb_receiver_opens_with_its_budget_from_the_antennas_and_filters_solved_
     s.execute("project.variable", &json!({"name": "lna_nf", "value": 2.0})).unwrap();
     let worse = s.execute("solve.run", &json!({})).unwrap();
     assert!(worse["budget"]["stages"][2]["nf_db"].as_f64().unwrap() > nf + 1.0, "{worse}");
+}
+
+#[test]
+fn stages_are_linked_on_a_canvas_and_the_chain_read_is_the_path_from_the_source() {
+    let mut s = receiver();
+    // A spare stage left off the chain at a place on the canvas: kept, not read.
+    let r = s.execute("system.stage.add", &json!({"type": "attenuator", "name": "spare", "loss": 10, "linked": false, "at": [300, 120]})).unwrap();
+    assert_eq!(r["off_chain"][0]["name"], "spare");
+    assert_eq!(r["off_chain"][0]["at"], json!([300.0, 120.0]));
+    let before = s.execute("solve.system", &json!({"start": 1, "stop": 1.2, "points": 3})).unwrap();
+    // Linked between the pad and the IF stage: 10 dB more loss before the second stage.
+    s.execute("system.link", &json!({"from": "pad", "to": "spare"})).unwrap();
+    let r = s.execute("system.link", &json!({"from": "spare", "to": "IF"})).unwrap();
+    let names: Vec<&str> = r["stages"].as_array().unwrap().iter().map(|x| x["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["LNA", "pad", "spare", "IF"]);
+    assert_eq!(r["complete"], true);
+    let after = s.execute("solve.system", &json!({"start": 1, "stop": 1.2, "points": 3})).unwrap();
+    let gain = |r: &Value| r["budget"]["stages"].as_array().unwrap().last().unwrap()["gain_db"].as_f64().unwrap();
+    approx::assert_abs_diff_eq!(gain(&after), gain(&before) - 10.0, epsilon = 1e-9);
+    // Unlinked from the receiver: read up to its last stage, said so.
+    s.execute("system.unlink", &json!({"from": "IF", "to": "receiver"})).unwrap();
+    let r = s.execute("solve.system", &json!({"start": 1, "stop": 1.2, "points": 3})).unwrap();
+    assert!(r["note"].as_str().is_some_and(|n| n.contains("receiver")), "{r}");
+    // Moved on the canvas: its place kept, the chain the same.
+    s.execute("system.stage.edit", &json!({"stage": "LNA", "at": [10, 20]})).unwrap();
+    assert_eq!(s.model.system.stages[0].at, Some([10.0, 20.0]));
+    for bad in [
+        json!({"from": "receiver", "to": "LNA"}),
+        json!({"from": "LNA", "to": "source"}),
+        json!({"from": "LNA", "to": "LNA"}),
+        json!({"from": "nope", "to": "LNA"}),
+        json!({"from": "LNA"}),
+    ] {
+        assert!(s.execute("system.link", &bad).is_err(), "{bad}");
+    }
+    assert!(s.execute("system.stage.edit", &json!({"stage": "LNA", "at": [1e12, 0]})).is_err());
+    assert!(s.execute("system.stage.add", &json!({"type": "attenuator", "loss": 1, "name": "@x"})).is_err());
 }

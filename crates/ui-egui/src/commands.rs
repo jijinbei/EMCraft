@@ -61,6 +61,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("system.stage.edit", None, Some(Glyph::Edit), false),
     ui("system.stage.delete", None, Some(Glyph::Delete), false),
     ui("system.stage.move", None, Some(Glyph::Edit), false),
+    ui("system.link", None, Some(Glyph::Port), false),
+    ui("system.unlink", None, Some(Glyph::Delete), false),
     ui("system.source", Some(t!("Source").en()), Some(Glyph::Radiation), false),
     ui("system.receiver", Some(t!("Receiver").en()), Some(Glyph::Table), false),
     ui("solve.system", None, Some(Glyph::Table), false),

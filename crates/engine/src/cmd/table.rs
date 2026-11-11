@@ -86,28 +86,31 @@ const STAGE_SETTINGS: [ParamSpec; 17] = [
 const STAGE_TYPE: &[&str] = &crate::system::KINDS;
 
 /// system.stage.add's parameters: the kind, the name and place, then [`STAGE_SETTINGS`].
-const STAGE_ADD: [ParamSpec; 20] = {
-    let mut out = [STAGE_SETTINGS[0]; 20];
+const STAGE_ADD: [ParamSpec; 22] = {
+    let mut out = [STAGE_SETTINGS[0]; 22];
     out[0] = req("type", K::String, "the stage's kind").one_of(STAGE_TYPE);
     out[1] = opt("name", K::String, "the stage's name, unique in the chain (default its kind and a number)");
-    out[2] = opt("position", K::Integer, "its place from the source, from 1 (default the end)");
+    out[2] = opt("position", K::Integer, "its place along the chain from the source, from 1 (default the end)");
+    out[3] = opt("at", K::Array, "where its node sits on the canvas [x, y] (default laid out by its place)");
+    out[4] = opt("linked", K::Boolean, "linked into the chain at `position` (default true); false leaves it on the canvas to link by hand");
     let mut i = 0;
     while i < 17 {
-        out[i + 3] = STAGE_SETTINGS[i];
+        out[i + 5] = STAGE_SETTINGS[i];
         i += 1;
     }
     out
 };
 
 /// system.stage.edit's parameters: the stage, a new name or kind, then [`STAGE_SETTINGS`].
-const STAGE_EDIT: [ParamSpec; 20] = {
-    let mut out = [STAGE_SETTINGS[0]; 20];
+const STAGE_EDIT: [ParamSpec; 21] = {
+    let mut out = [STAGE_SETTINGS[0]; 21];
     out[0] = req("stage", K::String, "the stage: its name, or its place from 1");
     out[1] = opt("rename", K::String, "a new name for it");
     out[2] = opt("type", K::String, "another kind for it (its settings then all given)").one_of(STAGE_TYPE);
+    out[3] = opt("at", K::Array, "where its node sits on the canvas [x, y]");
     let mut i = 0;
     while i < 17 {
-        out[i + 3] = STAGE_SETTINGS[i];
+        out[i + 4] = STAGE_SETTINGS[i];
         i += 1;
     }
     out
@@ -596,7 +599,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "system.stage.add",
         label: "Add stage",
-        doc: "Adds a stage to the system's chain, from the source on (Analysis `system`, docs/system.md): `amplifier` (an ideal one, matched and unilateral on the chain's impedance: `gain` and `noise_figure` in dB from a matched source, its noise an uncorrelated wave kT₀(F − 1) at its input; `oip3` and `p1db`, its output intercept and compression points in dBm, for the cascade's linearity), `attenuator` (`loss` dB, matched, its noise at the chain's temperature), `data` (a two-port's S: the sweep or a measurement, results.import's Touchstone file; its noise data if it has some, else a passive network's), `line` (Ω, length, εr, conductor `attenuation` in dB per length growing as √(f/`at`), dielectric `tan_delta`), `series` or `shunt` (R, L, C in Ω, nH and pF). Its name is unique in the chain; at most 32 stages. Undo goes back.",
+        doc: "Adds a stage to the system's chain, from the source on (Analysis `system`, docs/system.md): `amplifier` (an ideal one, matched and unilateral on the chain's impedance: `gain` and `noise_figure` in dB from a matched source, its noise an uncorrelated wave kT₀(F − 1) at its input; `oip3` and `p1db`, its output intercept and compression points in dBm, for the cascade's linearity), `attenuator` (`loss` dB, matched, its noise at the chain's temperature), `data` (a two-port's S: the sweep or a measurement, results.import's Touchstone file; its noise data if it has some, else a passive network's), `line` (Ω, length, εr, conductor `attenuation` in dB per length growing as √(f/`at`), dielectric `tan_delta`), `series` or `shunt` (R, L, C in Ω, nH and pF). Its name is unique in the chain; at most 32 stages. It is linked in at `position` along the chain (the links before and after it made again), or with `linked` false left on the canvas at `at` to link by hand (system.link). Undo goes back.",
         params: &STAGE_ADD,
         effect: Effect::Record,
         invalidates: Some(Change::System),
@@ -605,7 +608,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "system.stage.edit",
         label: "Edit stage",
-        doc: "Changes a stage of the system's chain: the settings given replace its own (the rest kept), `rename` names it anew, `type` makes it another kind (its settings then given). Checked as a new stage would be. Undo goes back.",
+        doc: "Changes a stage of the system's chain: the settings given replace its own (the rest kept), `rename` names it anew, `type` makes it another kind (its settings then given), `at` moves its node on the canvas. Checked as a new stage would be. Undo goes back.",
         params: &STAGE_EDIT,
         effect: Effect::Record,
         invalidates: Some(Change::System),
@@ -628,6 +631,24 @@ pub static COMMANDS: &[CommandSpec] = &[
         effect: Effect::Record,
         invalidates: Some(Change::System),
         run: crate::system::stage_move,
+    },
+    CommandSpec {
+        id: "system.link",
+        label: "Link stages",
+        doc: "Links a node's output to another's input in the system's chain: `source`, a stage or `receiver` (`from` the source or a stage, `to` a stage or the receiver). The chain is the path the links make from the source, a series chain: a node feeds one and is fed by one, so the links `from` fed and `to` was fed by before go. Stages off the path stay on the canvas, not read. Undo goes back.",
+        params: &[req("from", K::String, "the node whose output: `source` or a stage's name"), req("to", K::String, "the node whose input: a stage's name or `receiver`")],
+        effect: Effect::Record,
+        invalidates: Some(Change::System),
+        run: crate::system::link,
+    },
+    CommandSpec {
+        id: "system.unlink",
+        label: "Unlink stages",
+        doc: "Takes the link from `from`'s output to `to`'s input away: the chain read stops there (stages after it are off the chain until linked again). Undo goes back.",
+        params: &[req("from", K::String, "the node whose output: `source` or a stage's name"), req("to", K::String, "the node whose input: a stage's name or `receiver`")],
+        effect: Effect::Record,
+        invalidates: Some(Change::System),
+        run: crate::system::unlink,
     },
     CommandSpec {
         id: "system.source",
@@ -659,7 +680,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "solve.system",
         label: "Solve system",
-        doc: "Reads the system's chain over a band (or the confirmed settings'): its S by the stages' chain (ABCD) matrices (Pozar, Microwave Engineering, §4.4), its noise by Hillbrand and Russer's chain correlation matrices (IEEE Trans. CAS-23(4), 1976), from the source's impedance; and its budget stage by stage — each stage's available gain and the chain's from the source (Pozar §12.1), the noise figure and temperature so far, the signal, noise (k(T_A + T_e)B G) and SNR at each stage's output, and the cascade's third-order intercept and 1 dB compression points, input-referred as 1/IIP3 = Σ G_before/IIP3_k (Pozar §10.3) and output-referred. The reply gives the budget at `frequency` (default the band's centre) and the band's least and greatest noise figure; the result is kept for the System view (and the project file). A data stage outside its band, or the antenna outside its, leaves those frequencies' readings out and says why.",
+        doc: "Reads the system's chain — the path its links make from the source — over a band (or the confirmed settings', or else the band its S-parameter stages and antenna all hold): its S by the stages' chain (ABCD) matrices (Pozar, Microwave Engineering, §4.4), its noise by Hillbrand and Russer's chain correlation matrices (IEEE Trans. CAS-23(4), 1976), from the source's impedance; and its budget stage by stage — each stage's available gain and the chain's from the source (Pozar §12.1), the noise figure and temperature so far, the signal, noise (k(T_A + T_e)B G) and SNR at each stage's output, and the cascade's third-order intercept and 1 dB compression points, input-referred as 1/IIP3 = Σ G_before/IIP3_k (Pozar §10.3) and output-referred. The reply gives the budget at `frequency` (default the band's centre) and the band's least and greatest noise figure; the result is kept for the System view (and the project file). A data stage outside its band, or the antenna outside its, leaves those frequencies' readings out and says why.",
         params: &[
             opt("start", K::Number, "the band's start (default the confirmed settings')").of(F),
             opt("stop", K::Number, "the band's stop (default the confirmed settings')").of(F),

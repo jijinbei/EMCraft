@@ -112,6 +112,8 @@ pub enum Action {
     PreviewPortModes,
     /// The Results step's passivity and reciprocity check.
     CheckResults,
+    /// A system's chain read again after a change (`solve.system`, a moment): once per revision.
+    AutoSolve,
     /// The Results step's Touchstone export, from its fields.
     ExportTouchstone,
     /// The device (and its precision) the solvers run on.
@@ -365,6 +367,18 @@ impl EmcraftApp {
             Action::StartRun => return crate::steps::start_run(self),
             Action::PreviewPortModes => return self.preview_port_modes(),
             Action::CheckResults => return self.check_results(),
+            // Read quietly: what keeps it from reading (no band yet) shows on the canvas.
+            Action::AutoSolve => {
+                self.auto_solved = Some(self.revision);
+                let params = json!({});
+                match self.session.execute("solve.system", &params) {
+                    Ok(reply) => {
+                        self.auto_error = None;
+                        self.after("solve.system", &params, &reply);
+                    }
+                    Err(e) => self.auto_error = Some(e.to_string()),
+                }
+            }
             Action::ExportTouchstone => crate::steps::export_touchstone(self),
             Action::SetDevice { device, precision } => self.set_device(device, precision),
             Action::StandardView(v) => self.view3d.standard(v),

@@ -8,12 +8,21 @@ amplifiers from their data sheets.
 
 ## In the window
 
-A system's job has its own four steps — **Chain** (in the geometry's place), Setup, Run,
-Results — and keeps the System view whichever is open: the chain as a block diagram (a click
-edits a stage in the Chain step, its menu moves or deletes it; an empty chain offers a button
-for each kind), the budget's chart and table. The ribbon's SYSTEM tab adds stages and sets the
-source and receiver; the browser lists the source, the stages, the receiver, the measurements
-the S-parameter stages read and the budget. No bodies, materials, region or mesh are shown.
+A system's job has no steps: the System view is a node editor. Over it the band (start, stop,
+points, the budget's frequency), typed in place; on its canvas the source, the stages and the
+receiver as nodes, each with its settings typed in place (a data stage's S and the source's
+antenna chosen from the measurements) and, once read, the chain's gain and noise figure at its
+output. A link is dragged from a node's output port to another's input port and taken away by
+the mark on it; a node is dragged by its header; a right-click on the canvas adds a stage there,
+off the chain until linked. Under the canvas the chart and the budget table, read again at every
+change (`solve.system` takes a moment; it is not kept in the analysis history). The ribbon's
+SYSTEM tab adds a stage of each kind at the chain's end; the browser lists the source, the
+stages, the receiver, the measurements and the budget.
+
+The chain read is the path the links make from the source (`system.link`, `system.unlink`): a
+series chain, each node feeding one and fed by one; stages off it stay on the canvas, not read,
+and a path that stops short of the receiver is read up to its last stage (said so). Without a
+band given or confirmed, the band the S-parameter stages and the antenna all hold is read.
 
 ## The chain
 

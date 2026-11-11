@@ -124,6 +124,10 @@ pub struct EmcraftApp {
     pub session: Session,
     /// Bumped whenever the session changes, so cached pictures and tables are redrawn.
     pub revision: u64,
+    /// The revision a system's chain was last read again at by itself ([`Action::AutoSolve`]).
+    pub auto_solved: Option<u64>,
+    /// Why that read failed, shown on the system's canvas.
+    pub auto_error: Option<String>,
     /// The Japanese font: the embedded one, and an installed one the window finds.
     pub fonts: fonts::Fonts,
     /// The language the window is drawn in: the preferred one once a font shows it, else
@@ -243,6 +247,8 @@ impl EmcraftApp {
         let mut app = EmcraftApp {
             session: Session::new(),
             revision: 0,
+            auto_solved: None,
+            auto_error: None,
             fonts: Default::default(),
             job: None,
             tab: ribbon::RibbonTab::Model,

@@ -36,23 +36,48 @@ pub const MAX_LINE_ATTENUATION: f64 = 1e6;
 /// The standard temperature T₀ (K).
 pub const T0: f64 = 290.0;
 
-/// The chain: its stages from the source on, the source and the receiver's needs.
+/// The source's node in links (no stage takes a name beginning with `@`).
+pub const SOURCE: &str = "@source";
+
+/// The receiver's node in links.
+pub const RECEIVER: &str = "@receiver";
+
+/// The chain: its stages (nodes on a canvas), the links between their ports, the source and
+/// the receiver's needs. The chain read is the path the links make from the source: each node
+/// feeds at most one and is fed by at most one (a series chain); stages off it are kept, not
+/// read. Without links (a chain written before them) the stages are read in their order.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Chain {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stages: Vec<Stage>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<Link>,
     #[serde(default)]
     pub source: Source,
     #[serde(default)]
     pub receiver: Receiver,
 }
 
-/// A stage: its name (unique in the chain) and what it is.
+/// A stage: its name (unique in the chain), what it is and where it sits on the canvas (none:
+/// laid out by its place in the chain).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Stage {
     pub name: String,
     pub part: Part,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<[f64; 2]>,
 }
+
+/// A link from a node's output to another's input, by name ([`SOURCE`], [`RECEIVER`] or a
+/// stage's).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Link {
+    pub from: String,
+    pub to: String,
+}
+
+/// The farthest a node sits from the canvas' origin.
+pub const MAX_CANVAS: f64 = 1e6;
 
 /// What a stage is.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -255,6 +280,53 @@ impl Chain {
         self.stages.iter().position(|s| s.name == name).ok_or_else(|| ModelError::Unknown { kind: "stage", name: name.to_owned() })
     }
 
+    /// The stages the chain reads, in order from the source (indices into `stages`), and
+    /// whether the path reaches the receiver: the links followed from [`SOURCE`] (each node's
+    /// one output); without links, every stage in order.
+    ///
+    /// ```
+    /// use emcraft_model::system::{Chain, Link, Part, Stage, RECEIVER, SOURCE};
+    /// let pad = |n: &str| Stage { name: n.into(), part: Part::Attenuator { loss: 1.0 }, at: None };
+    /// let mut c = Chain { stages: vec![pad("a"), pad("b"), pad("c")], ..Chain::default() };
+    /// assert_eq!(c.order(), (vec![0, 1, 2], true));
+    /// let link = |f: &str, t: &str| Link { from: f.into(), to: t.into() };
+    /// c.links = vec![link(SOURCE, "c"), link("c", "a"), link("a", RECEIVER)];
+    /// assert_eq!(c.order(), (vec![2, 0], true), "b is off the chain");
+    /// ```
+    pub fn order(&self) -> (Vec<usize>, bool) {
+        if self.links.is_empty() {
+            return ((0..self.stages.len()).collect(), true);
+        }
+        let mut out = Vec::new();
+        let mut at = SOURCE;
+        // Each stage once at most: a loop ends the path.
+        for _ in 0..=self.stages.len() {
+            let Some(next) = self.links.iter().find(|l| l.from == at).map(|l| l.to.as_str()) else { return (out, false) };
+            if next == RECEIVER {
+                return (out, true);
+            }
+            match self.index(next) {
+                Ok(i) if !out.contains(&i) => out.push(i),
+                _ => return (out, false),
+            }
+            at = &self.stages[out[out.len() - 1]].name;
+        }
+        (out, false)
+    }
+
+    /// The links of the series chain through `order` (indices into `stages`): the source, each
+    /// stage, the receiver.
+    fn series(&self, order: &[usize]) -> Vec<Link> {
+        let names: Vec<&str> =
+            std::iter::once(SOURCE).chain(order.iter().map(|&i| self.stages[i].name.as_str())).chain(std::iter::once(RECEIVER)).collect();
+        names.windows(2).map(|w| Link { from: w[0].to_owned(), to: w[1].to_owned() }).collect()
+    }
+
+    /// Whether `name` is a node of the chain: the source, the receiver or a stage.
+    fn has_node(&self, name: &str) -> bool {
+        name == SOURCE || name == RECEIVER || self.stages.iter().any(|s| s.name == name)
+    }
+
     /// The name the next stage of `kind` takes when none is given: `kind` and the first number
     /// no stage has.
     ///
@@ -262,7 +334,7 @@ impl Chain {
     /// use emcraft_model::system::{Chain, Part, Stage};
     /// let mut c = Chain::default();
     /// assert_eq!(c.fresh_name("amplifier"), "amplifier 1");
-    /// c.stages.push(Stage { name: "amplifier 1".into(), part: Part::Attenuator { loss: 1.0 } });
+    /// c.stages.push(Stage { name: "amplifier 1".into(), part: Part::Attenuator { loss: 1.0 }, at: None });
     /// assert_eq!(c.fresh_name("amplifier"), "amplifier 2");
     /// ```
     pub fn fresh_name(&self, kind: &str) -> String {
@@ -270,31 +342,140 @@ impl Chain {
     }
 }
 
+/// A stage's own checks: a name of its own kind (not empty, not the source's or receiver's: no
+/// leading `@`), its part's settings, its place on the canvas.
+fn check_stage(stage: &Stage) -> Result<()> {
+    named("stage name", &stage.name)?;
+    if stage.name.starts_with('@') {
+        return Err(invalid("stage name", "must not begin with `@` (the source's and receiver's)"));
+    }
+    if let Some(at) = stage.at
+        && !at.iter().all(|x| x.is_finite() && x.abs() <= MAX_CANVAS)
+    {
+        return Err(invalid("stage's place", format!("finite, within {MAX_CANVAS} of the origin")));
+    }
+    stage.part.check()
+}
+
 impl Model {
-    /// Puts `stage` at `at` (the end when past it), after checking it: a name of its own, its
+    /// Puts `stage` at place `at` along the chain (the end when past it), after checking it: a name of its own, its
     /// part's settings, room in the chain.
     ///
     /// ```
     /// use emcraft_model::Model;
     /// use emcraft_model::system::{Part, Stage};
     /// let mut m = Model::default();
-    /// let lna = Stage { name: "LNA".into(), part: Part::Amplifier { gain: 20.0, noise_figure: 0.6, oip3: None, p1db: None } };
+    /// let lna = Stage { name: "LNA".into(), part: Part::Amplifier { gain: 20.0, noise_figure: 0.6, oip3: None, p1db: None }, at: None };
     /// m.add_stage(9, lna.clone()).unwrap();
     /// assert!(m.add_stage(0, lna).is_err(), "a name of its own");
-    /// m.add_stage(0, Stage { name: "pad".into(), part: Part::Attenuator { loss: 3.0 } }).unwrap();
-    /// assert_eq!(m.system.stages[0].name, "pad");
+    /// m.add_stage(0, Stage { name: "pad".into(), part: Part::Attenuator { loss: 3.0 }, at: None }).unwrap();
+    /// assert_eq!(m.system.order().0, [1, 0], "the pad first along the chain");
     /// ```
     pub fn add_stage(&mut self, at: usize, stage: Stage) -> Result<()> {
-        named("stage name", &stage.name)?;
+        check_stage(&stage)?;
         if self.system.stages.iter().any(|s| s.name == stage.name) {
             return Err(ModelError::Duplicate { kind: "stage", name: stage.name });
         }
         if self.system.stages.len() >= MAX_STAGES {
             return Err(invalid("chain", format!("at most {MAX_STAGES} stages")));
         }
-        stage.part.check()?;
-        let at = at.min(self.system.stages.len());
-        self.system.stages.insert(at, stage);
+        self.materialize();
+        // Linked in before it joins the stages: an empty chain has no links to read it by.
+        self.insert(&stage.name, at);
+        self.system.stages.push(stage);
+        Ok(())
+    }
+
+    /// Puts a stage on the canvas without linking it (the links made by hand).
+    pub fn place_stage(&mut self, stage: Stage) -> Result<()> {
+        check_stage(&stage)?;
+        if self.system.stages.iter().any(|s| s.name == stage.name) {
+            return Err(ModelError::Duplicate { kind: "stage", name: stage.name });
+        }
+        if self.system.stages.len() >= MAX_STAGES {
+            return Err(invalid("chain", format!("at most {MAX_STAGES} stages")));
+        }
+        // A chain read in order (no links yet) keeps that order before one is left off it.
+        self.materialize();
+        self.system.stages.push(stage);
+        Ok(())
+    }
+
+    /// A chain read in its stages' order (no links: written before them) given the links of
+    /// that order, so a change to one link keeps the rest.
+    fn materialize(&mut self) {
+        if self.system.links.is_empty() && !self.system.stages.is_empty() {
+            let order: Vec<usize> = (0..self.system.stages.len()).collect();
+            self.system.links = self.system.series(&order);
+        }
+    }
+
+    /// The stage `name` taken off the chain, what fed it now feeding what it fed.
+    fn detach(&mut self, name: &str) {
+        let fed = self.system.links.iter().find(|l| l.to == name).map(|l| l.from.clone());
+        let feeds = self.system.links.iter().find(|l| l.from == name).map(|l| l.to.clone());
+        self.system.links.retain(|l| l.from != name && l.to != name);
+        if let (Some(a), Some(b)) = (fed, feeds) {
+            self.system.links.push(Link { from: a, to: b });
+        }
+    }
+
+    /// The stage `name` (off the chain) put at place `at` along the chain from the source (its
+    /// end when past it): between the node there and the one before it.
+    fn insert(&mut self, name: &str, at: usize) {
+        let (order, complete) = self.system.order();
+        let names: Vec<String> = order.iter().map(|&i| self.system.stages[i].name.clone()).collect();
+        let k = at.min(names.len());
+        let before = if k == 0 { SOURCE.to_owned() } else { names[k - 1].clone() };
+        let after = match names.get(k) {
+            Some(n) => Some(n.clone()),
+            None if complete || self.system.links.is_empty() => Some(RECEIVER.to_owned()),
+            None => None,
+        };
+        self.system.links.retain(|l| l.from != before);
+        self.system.links.push(Link { from: before, to: name.to_owned() });
+        if let Some(after) = after {
+            self.system.links.push(Link { from: name.to_owned(), to: after });
+        }
+    }
+
+    /// Links `from`'s output to `to`'s input: each output feeds one input and each input is fed
+    /// by one output, so the links `from` fed and `to` was fed by go.
+    ///
+    /// ```
+    /// use emcraft_model::Model;
+    /// use emcraft_model::system::{Part, Stage, RECEIVER, SOURCE};
+    /// let mut m = Model::default();
+    /// for n in ["a", "b"] {
+    ///     m.add_stage(9, Stage { name: n.into(), part: Part::Attenuator { loss: 1.0 }, at: None }).unwrap();
+    /// }
+    /// m.link(SOURCE, "b").unwrap();
+    /// m.link("b", "a").unwrap();
+    /// m.link("a", RECEIVER).unwrap();
+    /// assert_eq!(m.system.order(), (vec![1, 0], true));
+    /// assert!(m.link("a", "a").is_err() && m.link(RECEIVER, "a").is_err() && m.link("a", "nope").is_err());
+    /// ```
+    pub fn link(&mut self, from: &str, to: &str) -> Result<()> {
+        if !(self.system.has_node(from) && self.system.has_node(to)) {
+            return Err(invalid("link", "between the chain's nodes: the source, its stages, the receiver"));
+        }
+        if from == to || from == RECEIVER || to == SOURCE {
+            return Err(invalid("link", "from a node's output to another node's input (the receiver has no output, the source no input)"));
+        }
+        self.materialize();
+        self.system.links.retain(|l| l.from != from && l.to != to);
+        self.system.links.push(Link { from: from.to_owned(), to: to.to_owned() });
+        Ok(())
+    }
+
+    /// Takes the link from `from` to `to` away.
+    pub fn unlink(&mut self, from: &str, to: &str) -> Result<()> {
+        self.materialize();
+        let before = self.system.links.len();
+        self.system.links.retain(|l| !(l.from == from && l.to == to));
+        if self.system.links.len() == before {
+            return Err(invalid("link", "no such link"));
+        }
         Ok(())
     }
 
@@ -303,28 +484,54 @@ impl Model {
         if i >= self.system.stages.len() {
             return Err(invalid("stage", "no such stage"));
         }
-        named("stage name", &stage.name)?;
+        check_stage(&stage)?;
         if self.system.stages.iter().enumerate().any(|(k, s)| k != i && s.name == stage.name) {
             return Err(ModelError::Duplicate { kind: "stage", name: stage.name });
         }
-        stage.part.check()?;
-        self.system.stages[i] = stage;
+        self.materialize();
+        let old = std::mem::replace(&mut self.system.stages[i], stage);
+        let new = self.system.stages[i].name.clone();
+        for l in &mut self.system.links {
+            for end in [&mut l.from, &mut l.to] {
+                if *end == old.name {
+                    end.clone_from(&new);
+                }
+            }
+        }
         Ok(())
     }
 
-    /// Removes the stage at `i`.
+    /// Removes the stage at `i`: the chain closes over it (what fed it now feeds what it fed).
     pub fn remove_stage(&mut self, i: usize) -> Result<Stage> {
         if i >= self.system.stages.len() {
             return Err(invalid("stage", "no such stage"));
         }
+        self.materialize();
+        let name = self.system.stages[i].name.clone();
+        self.detach(&name);
         Ok(self.system.stages.remove(i))
     }
 
-    /// Moves the stage at `from` to `to` (the end when past it).
+    /// Moves the stage at `from` to place `to` along the chain (the end when past it), its
+    /// canvas position kept.
     pub fn move_stage(&mut self, from: usize, to: usize) -> Result<()> {
-        let stage = self.remove_stage(from)?;
-        let to = to.min(self.system.stages.len());
-        self.system.stages.insert(to, stage);
+        if from >= self.system.stages.len() {
+            return Err(invalid("stage", "no such stage"));
+        }
+        self.materialize();
+        let name = self.system.stages[from].name.clone();
+        self.detach(&name);
+        self.insert(&name, to);
+        Ok(())
+    }
+
+    /// Puts the stage at `i` at `at` on the canvas.
+    pub fn place(&mut self, i: usize, at: [f64; 2]) -> Result<()> {
+        if !at.iter().all(|x| x.is_finite() && x.abs() <= MAX_CANVAS) {
+            return Err(invalid("stage's place", format!("finite, within {MAX_CANVAS} of the origin")));
+        }
+        let s = self.system.stages.get_mut(i).ok_or_else(|| invalid("stage", "no such stage"))?;
+        s.at = Some(at);
         Ok(())
     }
 
@@ -348,22 +555,42 @@ mod tests {
     use super::*;
 
     fn amp(name: &str) -> Stage {
-        Stage { name: name.into(), part: Part::Amplifier { gain: 20.0, noise_figure: 1.0, oip3: None, p1db: None } }
+        Stage { name: name.into(), part: Part::Amplifier { gain: 20.0, noise_figure: 1.0, oip3: None, p1db: None }, at: None }
+    }
+
+    /// The names along the chain, from the source.
+    fn chain(m: &Model) -> Vec<&str> {
+        m.system.order().0.into_iter().map(|i| m.system.stages[i].name.as_str()).collect()
     }
 
     #[test]
-    fn stages_are_added_moved_and_removed_and_hostile_ones_refused() {
+    fn stages_are_added_moved_and_removed_along_the_chain_and_hostile_ones_refused() {
         let mut m = Model::default();
         for n in ["a", "b", "c"] {
             m.add_stage(usize::MAX, amp(n)).unwrap();
         }
         m.move_stage(0, 9).unwrap();
-        let names: Vec<&str> = m.system.stages.iter().map(|s| s.name.as_str()).collect();
-        assert_eq!(names, ["b", "c", "a"]);
-        assert!(m.set_stage(0, amp("c")).is_err(), "a name another stage has");
-        m.set_stage(0, amp("b2")).unwrap();
-        assert_eq!(m.remove_stage(2).unwrap().name, "a");
+        assert_eq!(chain(&m), ["b", "c", "a"]);
+        assert!(m.set_stage(1, amp("c")).is_err(), "a name another stage has");
+        // A new name follows into the links.
+        m.set_stage(1, amp("b2")).unwrap();
+        assert_eq!(chain(&m), ["b2", "c", "a"]);
+        // Removed: the chain closes over it.
+        assert_eq!(m.remove_stage(2).unwrap().name, "c");
+        assert_eq!(chain(&m), ["b2", "a"]);
         assert!(m.remove_stage(5).is_err() && m.move_stage(5, 0).is_err());
+        // A stage placed off the chain is kept, not read, until linked.
+        m.place_stage(Stage { at: Some([10.0, 20.0]), ..amp("spare") }).unwrap();
+        assert_eq!(chain(&m), ["b2", "a"]);
+        m.link("b2", "spare").unwrap();
+        m.link("spare", "a").unwrap();
+        assert_eq!(chain(&m), ["b2", "spare", "a"]);
+        // Unlinked from the receiver: the path stops short of it.
+        m.unlink("a", RECEIVER).unwrap();
+        assert_eq!(m.system.order(), (vec![1, 2, 0], false));
+        assert!(m.unlink("a", RECEIVER).is_err(), "no such link");
+        assert!(m.place(0, [f64::NAN, 0.0]).is_err() && m.place(9, [0.0, 0.0]).is_err());
+        m.place(0, [5.0, 6.0]).unwrap();
         let bad = [
             Part::Amplifier { gain: f64::NAN, noise_figure: 1.0, oip3: None, p1db: None },
             Part::Amplifier { gain: 10.0, noise_figure: -1.0, oip3: None, p1db: None },
@@ -375,12 +602,15 @@ mod tests {
             Part::Line { impedance: 50.0, length: 0.1, eps_r: 1.0, attenuation: 0.0, reference: Some(-1.0), tan_delta: 0.0 },
         ];
         for part in bad {
-            assert!(m.add_stage(0, Stage { name: "x".into(), part: part.clone() }).is_err(), "{part:?}");
+            assert!(m.add_stage(0, Stage { name: "x".into(), part: part.clone(), at: None }).is_err(), "{part:?}");
         }
-        assert!(m.add_stage(0, Stage { name: "".into(), part: Part::Attenuator { loss: 1.0 } }).is_err());
+        for name in ["", "@source", "@x"] {
+            assert!(m.add_stage(0, Stage { name: name.into(), part: Part::Attenuator { loss: 1.0 }, at: None }).is_err(), "{name}");
+        }
+        assert!(m.add_stage(0, Stage { at: Some([1e9, 0.0]), ..amp("far") }).is_err());
         while m.system.stages.len() < MAX_STAGES {
             let n = m.system.fresh_name("pad");
-            m.add_stage(0, Stage { name: n, part: Part::Attenuator { loss: 1.0 } }).unwrap();
+            m.add_stage(0, Stage { name: n, part: Part::Attenuator { loss: 1.0 }, at: None }).unwrap();
         }
         assert!(m.add_stage(0, amp("one too many")).is_err());
     }

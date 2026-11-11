@@ -402,6 +402,7 @@ impl Action {
             | Action::StartRun
             | Action::PreviewPortModes
             | Action::CheckResults
+            | Action::AutoSolve
             | Action::ExportTouchstone
             | Action::SetDevice { .. }
             | Action::Measure(_)

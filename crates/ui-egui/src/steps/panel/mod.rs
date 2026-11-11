@@ -9,7 +9,6 @@ mod model;
 mod results;
 mod run;
 mod setup;
-mod system;
 
 pub use results::export_touchstone;
 
@@ -65,7 +64,6 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
                         match step {
                             // The step bar's switch.
                             Step::Intent => {}
-                            Step::Geometry if is_system(app) => system::chain(app, ui, has_dialog, out),
                             Step::Geometry => {
                                 model::geometry(app, ui, has_dialog, out);
                                 model::materials(app, ui, out);

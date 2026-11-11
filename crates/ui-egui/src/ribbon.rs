@@ -441,10 +441,7 @@ impl Item {
         match self {
             Item::Command(id) => app.ui_state.dialog().is_some_and(|d| d.command.id == id),
             Item::Tool(tool) => app.ui_state.tool() == Some(tool),
-            Item::Stage(kind) => app
-                .ui_state
-                .dialog()
-                .is_some_and(|d| d.command.id == "system.stage.add" && d.fields.iter().any(|f| f.name == "type" && f.text == kind)),
+            Item::Stage(_) => false,
         }
     }
 
@@ -464,7 +461,9 @@ impl Item {
         match self {
             Item::Command(id) => Action::dialog(id),
             Item::Tool(tool) => Action::Tool((!active).then_some(tool)),
-            Item::Stage(kind) => Action::dialog_with("system.stage.add", crate::system_ui::starting(kind)),
+            // Added at once at the chain's end: its settings are edited on its node.
+            // Added at once at the chain's end: its settings are edited on its node.
+            Item::Stage(kind) => Action::run("system.stage.add", crate::system_ui::starting(kind)),
         }
     }
 }

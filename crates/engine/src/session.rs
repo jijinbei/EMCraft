@@ -667,8 +667,11 @@ impl Session {
                 self.results.solved_since(&before.results);
                 let params = if params.is_null() { json!({}) } else { params.clone() };
                 let run = self.next_run.take().unwrap_or_else(|| Run { command: spec.id.to_owned(), params, units: self.display });
-                let provenance = crate::archive::Provenance::of(self, spec.id, ran.seconds, ran.reply);
-                self.archive_current = Some(crate::archive::keep(self, &run.command, &run.params, provenance));
+                // A system's chain is read in a moment, again at every change: no history of it.
+                if spec.id != "solve.system" {
+                    let provenance = crate::archive::Provenance::of(self, spec.id, ran.seconds, ran.reply);
+                    self.archive_current = Some(crate::archive::keep(self, &run.command, &run.params, provenance));
+                }
                 crate::runs::record(&mut self.runs, run);
             }
             Effect::View | Effect::None => {}
