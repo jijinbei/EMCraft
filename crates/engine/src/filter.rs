@@ -118,7 +118,7 @@ fn keep_response(s: &mut Session, m: &Coupling, band: Band, name: String, what: 
         values.extend([s11, s21, s21, s22]);
     }
     let data = SData::square(freqs, 2, values).map_err(EngineError::failed)?;
-    keep(s, Measured { name, file: what.to_string(), references: vec![50.0, 50.0], data: Arc::new(data) })
+    keep(s, Measured { name, file: what.to_string(), references: vec![50.0, 50.0], data: Arc::new(data), noise: Vec::new() })
 }
 
 /// The matrix seen from the load: rows and columns reversed.

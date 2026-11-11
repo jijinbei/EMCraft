@@ -222,3 +222,59 @@ fn power_handling_and_temperature_refuse_hostile_parameters() {
     let b = s.execute("results.breakdown", &json!({})).unwrap();
     assert!(b["points"].as_array().unwrap().iter().all(|p| p["max_power"].as_f64().is_some_and(|w| w > 0.0)), "{b}");
 }
+
+/// A 20 dB amplifier at 1–1.2 GHz, matched, with noise data: F_min 0.6 dB from a 50 Ω source
+/// (Γ_opt = 0), R_n = 0.2 × 50 Ω.
+const LNA: &str = "# GHz S MA R 50\n1 0 0 10 0 0.01 0 0 0\n1.2 0 0 10 0 0.01 0 0 0\n1 0.6 0 0 0.2\n1.2 0.6 0 0 0.2\n";
+
+/// A matched 3 dB pad, no noise data.
+const PAD: &str = "# GHz S MA R 50\n1 0 0 0.7071067811865476 0 0.7071067811865476 0 0 0\n1.2 0 0 0.7071067811865476 0 0.7071067811865476 0 0 0\n";
+
+#[test]
+fn an_amplifiers_noise_data_gives_its_figure_and_a_receiver_chain_follows_friis() {
+    let mut s = Session::new();
+    for (name, text) in [("lna", LNA), ("pad", PAD)] {
+        let path = scratch(&format!("{name}.s2p"));
+        std::fs::write(&path, text).unwrap();
+        let r = s.execute("results.import", &json!({"path": path})).unwrap();
+        assert_eq!(r["noise_frequencies"], if name == "lna" { 2 } else { 0 });
+    }
+    // The amplifier alone: from its best source, F = F_min.
+    let n = s.execute("results.noise", &json!({"data": "lna"})).unwrap();
+    assert_eq!(n["from"], "noise data");
+    for p in n["points"].as_array().unwrap() {
+        approx::assert_abs_diff_eq!(p["nf_db"].as_f64().unwrap(), 0.6, epsilon = 1e-12);
+        approx::assert_abs_diff_eq!(p["gain_db"].as_f64().unwrap(), 20.0, epsilon = 1e-12);
+    }
+    // The pad (passive, at T₀) then the amplifier: F = L·F₂ (Friis; Pozar §10.3): 3.01 + 0.6 dB.
+    let blocks = json!([{"type": "data", "data": "pad"}, {"type": "data", "data": "lna"}]);
+    let r = s.execute("circuit.cascade", &json!({"blocks": blocks, "name": "rx"})).unwrap();
+    let expect = 10.0 * (2.0 * 10f64.powf(0.06)).log10();
+    approx::assert_abs_diff_eq!(r["noise"]["nf_db_least"].as_f64().unwrap(), expect, epsilon = 1e-9);
+    approx::assert_abs_diff_eq!(r["noise"]["nf_db_most"].as_f64().unwrap(), expect, epsilon = 1e-9);
+    let n = s.execute("results.noise", &json!({"data": "rx"})).unwrap();
+    approx::assert_abs_diff_eq!(n["points"][0]["nf_db"].as_f64().unwrap(), expect, epsilon = 1e-9);
+    // The amplifier first: F = F₁ + (L − 1)/G₁, nearly F₁.
+    let r = s.execute("circuit.cascade", &json!({"blocks": [{"type": "data", "data": "lna"}, {"type": "data", "data": "pad"}]})).unwrap();
+    let f1 = 10f64.powf(0.06);
+    approx::assert_abs_diff_eq!(r["noise"]["nf_db_least"].as_f64().unwrap(), 10.0 * (f1 + 1.0 / 100.0).log10(), epsilon = 1e-9);
+    // A 5 Ω resistor in series before it: its own thermal noise, F = 1 + 5/50 more at the input.
+    let r = s.execute("circuit.cascade", &json!({"blocks": [{"type": "series", "resistance": 5}, {"type": "data", "data": "lna"}]})).unwrap();
+    assert!(r["noise"]["nf_db_least"].as_f64().unwrap() > 0.6 + 0.3, "{r}");
+    // No noise: an amplifier flipped (its data is its port 1's), or a gain without noise data.
+    let r = s.execute("circuit.cascade", &json!({"blocks": [{"type": "data", "data": "lna", "flip": true}]})).unwrap();
+    assert!(r["noise"].is_null() && r["noise_why"].as_str().unwrap().contains("flipped"), "{r}");
+    let gain = scratch("gain.s2p");
+    std::fs::write(&gain, "# GHz S MA R 50\n1 0 0 10 0 0.01 0 0 0\n1.2 0 0 10 0 0.01 0 0 0\n").unwrap();
+    s.execute("results.import", &json!({"path": gain})).unwrap();
+    let r = s.execute("circuit.cascade", &json!({"blocks": [{"type": "data", "data": "gain"}]})).unwrap();
+    assert!(r["noise_why"].as_str().unwrap().contains("gains"), "{r}");
+    assert!(s.execute("circuit.cascade", &json!({"blocks": blocks, "temperature": 0})).is_err());
+    // Saved and opened: the noise data stays with the measurement.
+    let path = scratch("rx.emcraft");
+    s.execute("file.save", &json!({"path": path})).unwrap();
+    let mut t = Session::new();
+    t.execute("file.open", &json!({"path": path})).unwrap();
+    let n = t.execute("results.noise", &json!({"data": "lna"})).unwrap();
+    assert_eq!(n["from"], "noise data");
+}

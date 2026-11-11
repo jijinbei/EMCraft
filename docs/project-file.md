@@ -49,8 +49,9 @@ history/<id>/s.c64           a kept solve's S-parameters (complex: real then ima
   `view.probe.*` and `view.driven` (never by the history): each chart's style by its id, and
   the probes; and the measurements `results.import` read from Touchstone files (`measured`:
   each one's `name`, `file`, per-port `references` in Ω, `frequencies` in Hz, `ports` and `s`,
-  S flat — frequency by frequency, row by row, real and imaginary parts in turn —, at most 8,
-  named once). Only what differs from automatic is written; on reading they are checked (known
+  S flat — frequency by frequency, row by row, real and imaginary parts in turn —, and a
+  two-port's `noise` when it has one, each frequency's [f in Hz, C₁₁ in Ω, Re C₁₂, Im C₁₂, C₂₂ in
+  S], its chain noise correlations over 4kT₀Δf; at most 8, named once). Only what differs from automatic is written; on reading they are checked (known
   charts, texts and lists within their caps, finite numbers, valid colours, probes named once,
   measurements of consistent sizes).
 - `analysis_history` is the analysis history (`results.history`): the solves kept, the oldest

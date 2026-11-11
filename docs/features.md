@@ -273,7 +273,7 @@ Writes the sweep's S-parameters as a Touchstone (version 1) file, frequencies in
 
 ## `results.import` — Import measured S
 
-Reads a Touchstone file (version 1 or 2: .s1p, .s2p, …; S, Y or Z in RI, MA or dB, any frequency unit) and keeps its S-parameters with the project as a measurement, drawn over the S-parameter chart (and on the Smith chart) and compared with the sweep. Its name is the file's stem unless `name` is given; one of the same name is replaced. Y and Z are turned into S on the file's reference impedances; a two-port's noise data is left out. At most 8 measurements, 64 MB a file.
+Reads a Touchstone file (version 1 or 2: .s1p, .s2p, …; S, Y or Z in RI, MA or dB, any frequency unit) and keeps its S-parameters with the project as a measurement, drawn over the S-parameter chart (and on the Smith chart) and compared with the sweep. Its name is the file's stem unless `name` is given; one of the same name is replaced. Y and Z are turned into S on the file's reference impedances. A two-port's noise data (F_min, Γ_opt, R_n; version 1 after its S, version 2 under [Noise Data]) is kept with it: results.noise reads the device's noise figure from it and circuit.cascade chains it. At most 8 measurements, 64 MB a file.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -331,7 +331,7 @@ Lumped branches fitted to the sweep's (or a measurement's) network (Pozar, Micro
 
 ## `circuit.cascade` — Cascade
 
-Two-ports in a chain, port 2 of each to port 1 of the next, by their chain (ABCD) matrices (Pozar, Microwave Engineering, §4.4): `{"type": "data", "data": "sweep"}` (the sweep or a measurement, `flip` swapping its ports), `{"type": "series" | "shunt", "resistance", "inductance", "capacitance", "arrangement"}` (Ω, nH, pF, `series` or `parallel`, as model.element.create's), `{"type": "line", "impedance", "length", "eps_r"}` (Ω, the display length, lossless). Its S on `impedance` at each frequency of its first S block (the others interpolated linearly; an error outside their bands), or from `start` to `stop` in `points` without one, kept as a measurement named `name` and drawn over the chart.
+Two-ports in a chain, port 2 of each to port 1 of the next, by their chain (ABCD) matrices (Pozar, Microwave Engineering, §4.4): `{"type": "data", "data": "sweep"}` (the sweep or a measurement, `flip` swapping its ports), `{"type": "series" | "shunt", "resistance", "inductance", "capacitance", "arrangement"}` (Ω, nH, pF, `series` or `parallel`, as model.element.create's), `{"type": "line", "impedance", "length", "eps_r"}` (Ω, the display length, lossless). Its noise is chained too, by Hillbrand and Russer's chain correlation matrices (IEEE Trans. CAS-23(4), 1976): a measurement's noise data (an amplifier's), a passive S block's by Twiss's equilibrium kT(I − SSᴴ) (the sweep's, or a measurement without noise data; one that gains has no noise then, and says why), a lumped element's resistance's thermal noise, all at `temperature`, a line none; the reply's `noise` gives the chain's least and greatest noise figure from a source of `impedance` (results.noise on the kept result gives it at every frequency). Its S on `impedance` at each frequency of its first S block (the others interpolated linearly; an error outside their bands), or from `start` to `stop` in `points` without one, kept as a measurement named `name` and drawn over the chart.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -341,6 +341,7 @@ Two-ports in a chain, port 2 of each to port 1 of the next, by their chain (ABCD
 | `stop` | number | frequency | no | the last frequency, without an S block |
 | `points` | integer |  | no | frequencies without an S block (default 201) |
 | `name` | string |  | no | the name the result is kept under (default `cascade`) |
+| `temperature` | number |  | no | the physical temperature in K of the passive blocks' noise (default 290) |
 
 ## `filter.synthesize` — Synthesize filter
 
@@ -390,7 +391,7 @@ A sample's complex εr and μr from the S-parameters of the line it fills, by th
 
 ## `results.noise` — Noise figure
 
-The noise figure of a passive two-port at one physical temperature, from its S alone: in thermal equilibrium its noise temperature is Te = T(1 − G)/G, G the available gain (Pozar §10.1; Hillbrand & Russer, IEEE Trans. CAS-23, 1976), the other ports terminated in matched loads at T. Per frequency: the gain and noise figure from a matched source (G = |S21|²/(1 − |S22|²); a matched attenuator of loss L at T₀ = 290 K has F = L), the noise temperature, and the least noise figure, the conjugately matched source's (from the maximum available gain; none where the network is not unconditionally stable). A point with no transmission, or a gain, says why.
+The noise figure of a two-port. A measurement with noise data (results.import of an amplifier's file, or a circuit.cascade's chain): from them, at port 1's reference impedance — the gain from a matched source, the noise figure, the noise temperature T₀(F − 1) and the least noise figure F_min (`from` noise data in the reply; `temperature` is then not used). Otherwise that of a passive two-port at one physical temperature, from its S alone: in thermal equilibrium its noise temperature is Te = T(1 − G)/G, G the available gain (Pozar §10.1; Hillbrand & Russer, IEEE Trans. CAS-23, 1976), the other ports terminated in matched loads at T. Per frequency: the gain and noise figure from a matched source (G = |S21|²/(1 − |S22|²); a matched attenuator of loss L at T₀ = 290 K has F = L), the noise temperature, and the least noise figure, the conjugately matched source's (from the maximum available gain; none where the network is not unconditionally stable). A point with no transmission, or a gain, says why.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|

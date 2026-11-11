@@ -439,7 +439,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "results.import",
         label: "Import measured S",
-        doc: "Reads a Touchstone file (version 1 or 2: .s1p, .s2p, …; S, Y or Z in RI, MA or dB, any frequency unit) and keeps its S-parameters with the project as a measurement, drawn over the S-parameter chart (and on the Smith chart) and compared with the sweep. Its name is the file's stem unless `name` is given; one of the same name is replaced. Y and Z are turned into S on the file's reference impedances; a two-port's noise data is left out. At most 8 measurements, 64 MB a file.",
+        doc: "Reads a Touchstone file (version 1 or 2: .s1p, .s2p, …; S, Y or Z in RI, MA or dB, any frequency unit) and keeps its S-parameters with the project as a measurement, drawn over the S-parameter chart (and on the Smith chart) and compared with the sweep. Its name is the file's stem unless `name` is given; one of the same name is replaced. Y and Z are turned into S on the file's reference impedances. A two-port's noise data (F_min, Γ_opt, R_n; version 1 after its S, version 2 under [Noise Data]) is kept with it: results.noise reads the device's noise figure from it and circuit.cascade chains it. At most 8 measurements, 64 MB a file.",
         params: &[req("path", K::String, "the Touchstone file"), opt("name", K::String, "the measurement's name (default the file's stem)")],
         effect: Effect::View,
         invalidates: None,
@@ -508,7 +508,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "circuit.cascade",
         label: "Cascade",
-        doc: "Two-ports in a chain, port 2 of each to port 1 of the next, by their chain (ABCD) matrices (Pozar, Microwave Engineering, §4.4): `{\"type\": \"data\", \"data\": \"sweep\"}` (the sweep or a measurement, `flip` swapping its ports), `{\"type\": \"series\" | \"shunt\", \"resistance\", \"inductance\", \"capacitance\", \"arrangement\"}` (Ω, nH, pF, `series` or `parallel`, as model.element.create's), `{\"type\": \"line\", \"impedance\", \"length\", \"eps_r\"}` (Ω, the display length, lossless). Its S on `impedance` at each frequency of its first S block (the others interpolated linearly; an error outside their bands), or from `start` to `stop` in `points` without one, kept as a measurement named `name` and drawn over the chart.",
+        doc: "Two-ports in a chain, port 2 of each to port 1 of the next, by their chain (ABCD) matrices (Pozar, Microwave Engineering, §4.4): `{\"type\": \"data\", \"data\": \"sweep\"}` (the sweep or a measurement, `flip` swapping its ports), `{\"type\": \"series\" | \"shunt\", \"resistance\", \"inductance\", \"capacitance\", \"arrangement\"}` (Ω, nH, pF, `series` or `parallel`, as model.element.create's), `{\"type\": \"line\", \"impedance\", \"length\", \"eps_r\"}` (Ω, the display length, lossless). Its noise is chained too, by Hillbrand and Russer's chain correlation matrices (IEEE Trans. CAS-23(4), 1976): a measurement's noise data (an amplifier's), a passive S block's by Twiss's equilibrium kT(I − SSᴴ) (the sweep's, or a measurement without noise data; one that gains has no noise then, and says why), a lumped element's resistance's thermal noise, all at `temperature`, a line none; the reply's `noise` gives the chain's least and greatest noise figure from a source of `impedance` (results.noise on the kept result gives it at every frequency). Its S on `impedance` at each frequency of its first S block (the others interpolated linearly; an error outside their bands), or from `start` to `stop` in `points` without one, kept as a measurement named `name` and drawn over the chart.",
         params: &[
             req("blocks", K::Array, "the two-ports from port 1 on, at most 32"),
             opt("impedance", K::Number, "the reference impedance in Ω of the result's ports, and of S blocks' ports that have none (default 50)"),
@@ -516,6 +516,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("stop", K::Number, "the last frequency, without an S block").of(F),
             opt("points", K::Integer, "frequencies without an S block (default 201)"),
             opt("name", K::String, "the name the result is kept under (default `cascade`)"),
+            opt("temperature", K::Number, "the physical temperature in K of the passive blocks' noise (default 290)"),
         ],
         effect: Effect::View,
         invalidates: None,
@@ -579,7 +580,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "results.noise",
         label: "Noise figure",
-        doc: "The noise figure of a passive two-port at one physical temperature, from its S alone: in thermal equilibrium its noise temperature is Te = T(1 − G)/G, G the available gain (Pozar §10.1; Hillbrand & Russer, IEEE Trans. CAS-23, 1976), the other ports terminated in matched loads at T. Per frequency: the gain and noise figure from a matched source (G = |S21|²/(1 − |S22|²); a matched attenuator of loss L at T₀ = 290 K has F = L), the noise temperature, and the least noise figure, the conjugately matched source's (from the maximum available gain; none where the network is not unconditionally stable). A point with no transmission, or a gain, says why.",
+        doc: "The noise figure of a two-port. A measurement with noise data (results.import of an amplifier's file, or a circuit.cascade's chain): from them, at port 1's reference impedance — the gain from a matched source, the noise figure, the noise temperature T₀(F − 1) and the least noise figure F_min (`from` noise data in the reply; `temperature` is then not used). Otherwise that of a passive two-port at one physical temperature, from its S alone: in thermal equilibrium its noise temperature is Te = T(1 − G)/G, G the available gain (Pozar §10.1; Hillbrand & Russer, IEEE Trans. CAS-23, 1976), the other ports terminated in matched loads at T. Per frequency: the gain and noise figure from a matched source (G = |S21|²/(1 − |S22|²); a matched attenuator of loss L at T₀ = 290 K has F = L), the noise temperature, and the least noise figure, the conjugately matched source's (from the maximum available gain; none where the network is not unconditionally stable). A point with no transmission, or a gain, says why.",
         params: &[
             opt("temperature", K::Number, "the network's physical temperature in K (default 290)"),
             opt("data", K::String, "`sweep` (default) or a measurement's name"),

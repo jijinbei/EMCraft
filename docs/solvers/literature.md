@@ -366,7 +366,12 @@ overlap tests).
   Circuits Syst. CAS-23(4):235–238, 1976, and R. Q. Twiss, *Nyquist's and Thevenin's theorems
   generalized for nonreciprocal linear networks*, J. Appl. Phys. 26:599–602, 1955 — a passive
   network's noise correlation kT(I − SSᴴ), which lets a two-port cut from it be read alone
-  (`emcraft-engine::noise`, `results.noise`; oracle `noise-lossy-line`).
+  (`emcraft-engine::noise`, `results.noise`; oracle `noise-lossy-line`). Hillbrand and Russer's
+  chain correlation matrix — from noise parameters (their eq. 10), back to them (eq. 11), and
+  chained C₁ + A₁C₂A₁ᴴ — and S. W. Wedge, D. B. Rutledge, *Wave techniques for noise modeling
+  and measurement*, IEEE Trans. MTT 40(11):2004–2012, 1992 (noise waves b = Sa + c) give
+  `circuit.cascade`'s noise figure of a chain with an amplifier's noise data
+  (`emcraft-engine::noise::ChainNoise`).
 - D. M. Pozar, *The active element pattern*, IEEE Trans. Antennas Propag. 42(8):1176–1178, 1994;
   R. C. Hansen, *Phased Array Antennas*, 2nd ed., Wiley 2009, §7.2 — the active reflection of a
   scanned array's element, Γ_m = Σ_n S_mn a_n / a_m with the steering phases a_n = e^{−jk₀ û·r_n}

@@ -10,7 +10,8 @@ use emcraft_model::{LumpedElement, Point3};
 use emcraft_solver::{Complex64 as C, SMatrix};
 use serde_json::{Value, json};
 
-use crate::network::{Measured, interpolate, keep, kept_name, source};
+use crate::network::{Measured, NoisePoint, interpolate, keep, kept_name, noise_at, source};
+use crate::noise::{ChainNoise, MAX_TEMPERATURE, T0, TwoPort};
 use crate::sdata::SData;
 use crate::{EngineError, Params, Result, Session};
 
@@ -28,8 +29,9 @@ const ZERO: C = C::new(0.0, 0.0);
 
 /// A two-port of a cascade.
 enum Block {
-    /// S over frequency on its ports' reference impedances; `flip` swaps its ports.
-    Data { data: SData, z0: [f64; 2], flip: bool, name: String },
+    /// S over frequency on its ports' reference impedances; `flip` swaps its ports; its noise
+    /// where known (else a passive network's at the cascade's temperature).
+    Data { data: SData, z0: [f64; 2], flip: bool, name: String, noise: Vec<NoisePoint> },
     /// A lumped element in series along the line, or shunt across it.
     Element { element: LumpedElement, shunt: bool },
     /// A uniform line: its impedance (Ω), length (m) and relative permittivity.
@@ -43,6 +45,39 @@ fn element(p: &Params) -> Result<LumpedElement> {
     let e = crate::elements::lumped(p, "block".into(), Point3::ORIGIN, Point3::new(0.0, 0.0, 1e-3), None)?;
     e.check().map_err(|err| p.error("resistance", err.to_string()))?;
     Ok(e)
+}
+
+/// A block's S at `f` (Hz) as the chain sees it (its ports swapped when flipped) and its ports'
+/// references, or why it has none.
+fn two_port(data: &SData, z0: [f64; 2], flip: bool, name: &str, f: f64) -> Result<(TwoPort, [f64; 2])> {
+    let at = |p: usize, q: usize| interpolate(data, p, q, f);
+    let [Some(s11), Some(s12), Some(s21), Some(s22)] = [at(0, 0), at(0, 1), at(1, 0), at(1, 1)] else {
+        return Err(EngineError::failed(format!("`{}` has no S at {:.6} GHz: outside its band", crate::text::clip(name, 40), f / 1e9)));
+    };
+    Ok(if flip { (TwoPort { s11: s22, s12: s21, s21: s12, s22: s11 }, [z0[1], z0[0]]) } else { (TwoPort { s11, s12, s21, s22 }, z0) })
+}
+
+/// A block's noise at `f` (Hz), its chain matrix `a`, every part at `temperature` (K): a lumped
+/// element's resistance's thermal noise, none for a lossless line, an S block's noise data, or
+/// without it a passive network's (Twiss); why there is none otherwise.
+fn block_noise(block: &Block, a: [C; 4], f: f64, temperature: f64) -> std::result::Result<ChainNoise, String> {
+    match block {
+        Block::Element { element, shunt: true } => Ok(ChainNoise::shunt(element.admittance(f), temperature)),
+        Block::Element { element, shunt: false } => Ok(ChainNoise::series(ONE / element.admittance(f), temperature)),
+        Block::Line { .. } => Ok(ChainNoise::NONE),
+        Block::Data { data, z0, flip, name, noise } => {
+            let name = crate::text::clip(name, 40);
+            if !noise.is_empty() {
+                if *flip {
+                    return Err(format!("`{name}` is flipped: its noise data is its port 1's"));
+                }
+                return noise_at(noise, f).ok_or_else(|| format!("`{name}` has no noise data at {:.6} GHz", f / 1e9));
+            }
+            let (s, z) = two_port(data, *z0, *flip, &name, f).map_err(|e| e.to_string())?;
+            ChainNoise::passive(&s, z, a, temperature)
+                .ok_or_else(|| format!("`{name}` gains and has no noise data (results.import a file with them)"))
+        }
+    }
 }
 
 /// The chain matrix [A, B, C, D] of a block at `f` (Hz).
@@ -63,14 +98,9 @@ fn chain(block: &Block, f: f64) -> Result<[C; 4]> {
             let (c, s) = (theta.cos(), theta.sin());
             Ok([C::new(c, 0.0), C::new(0.0, z0 * s), C::new(0.0, s / z0), C::new(c, 0.0)])
         }
-        Block::Data { data, z0, flip, name } => {
-            let at = |p: usize, q: usize| interpolate(data, p, q, f);
-            let s = [at(0, 0), at(0, 1), at(1, 0), at(1, 1)];
-            let [Some(s11), Some(s12), Some(s21), Some(s22)] = s else {
-                return Err(EngineError::failed(format!("`{}` has no S at {:.6} GHz: outside its band", crate::text::clip(name, 40), f / 1e9)));
-            };
-            let m = if *flip { [s22, s21, s12, s11] } else { [s11, s12, s21, s22] };
-            let z = if *flip { [z0[1], z0[0]] } else { *z0 };
+        Block::Data { data, z0, flip, name, .. } => {
+            let (t, z) = two_port(data, *z0, *flip, name, f)?;
+            let m = [t.s11, t.s12, t.s21, t.s22];
             SMatrix::from_fn(2, |i, j| m[2 * i + j])
                 .chain(z)
                 .ok_or_else(|| EngineError::failed(format!("`{}` passes nothing (S21 = 0) at {:.6} GHz", crate::text::clip(name, 40), f / 1e9)))
@@ -104,7 +134,7 @@ fn blocks(s: &Session, p: &Params, z_default: f64) -> Result<(Vec<Block>, Option
                 let z = |k: usize| src.references[k].unwrap_or(z_default);
                 freqs.get_or_insert_with(|| src.data.frequencies().to_vec());
                 let name = b.string("data").optional()?.unwrap_or("sweep").to_string();
-                Block::Data { z0: [z(0), z(1)], flip: b.flag("flip").or(false)?, data: src.data, name }
+                Block::Data { z0: [z(0), z(1)], flip: b.flag("flip").or(false)?, data: src.data, name, noise: src.noise }
             }
             other => return Err(b.error("type", format!("`{}` is not a block: `data`, `series`, `shunt` or `line`", crate::text::clip(other, 20)))),
         };
@@ -145,19 +175,51 @@ pub fn cascade(s: &mut Session, p: &Params) -> Result<Value> {
             crate::numbers::evenly_spaced(a, b, n)
         }
     };
+    let temperature = p.positive("temperature").or(T0)?;
+    if temperature > MAX_TEMPERATURE {
+        return Err(p.error("temperature", format!("at most {MAX_TEMPERATURE} K")));
+    }
     let mut values = Vec::with_capacity(4 * freqs.len());
+    let mut noise: Vec<NoisePoint> = Vec::new();
+    let mut why: Option<String> = None;
     for f in &freqs {
         let mut m = [ONE, ZERO, ZERO, ONE];
+        // The chain's noise so far, or why it has none here.
+        let mut n: std::result::Result<ChainNoise, String> = Ok(ChainNoise::NONE);
         for b in &list {
-            m = times(m, chain(b, *f)?);
+            let a = chain(b, *f)?;
+            n = n.and_then(|n| Ok(n.then(m, block_noise(b, a, *f, temperature)?)));
+            m = times(m, a);
         }
         let [s11, s12, s21, s22] = s_of_chain(m, z0).ok_or_else(|| EngineError::failed("the chain has no S on this impedance"))?;
         values.extend([s11, s12, s21, s22]);
+        match n {
+            Ok(n) => noise.push(NoisePoint { frequency: *f, noise: n }),
+            Err(e) => {
+                why.get_or_insert(e);
+            }
+        }
     }
     let data = SData::square(freqs, 2, values).map_err(EngineError::failed)?;
     let name = kept_name(p, "cascade")?;
-    let reply = json!({"name": name, "blocks": list.len(), "frequencies": data.frequencies().len(), "impedance": z0});
-    keep(s, Measured { name, file: "(circuit.cascade)".into(), references: vec![z0, z0], data: Arc::new(data) })?;
+    let figures: Vec<(f64, f64)> = noise.iter().map(|x| (x.frequency, 10.0 * x.noise.figure(C::new(z0, 0.0)).log10())).collect();
+    let least = figures.iter().copied().min_by(|a, b| a.1.total_cmp(&b.1));
+    let most = figures.iter().copied().max_by(|a, b| a.1.total_cmp(&b.1));
+    let reply = json!({
+        "name": name,
+        "blocks": list.len(),
+        "frequencies": data.frequencies().len(),
+        "impedance": z0,
+        "noise": least.zip(most).map(|(l, m)| json!({
+            "temperature": temperature,
+            "frequencies": noise.len(),
+            "nf_db_least": l.1,
+            "at": s.show_frequency(l.0),
+            "nf_db_most": m.1,
+        })),
+        "noise_why": why,
+    });
+    keep(s, Measured { name, file: "(circuit.cascade)".into(), references: vec![z0, z0], data: Arc::new(data), noise })?;
     Ok(reply)
 }
 
@@ -340,7 +402,7 @@ pub fn equivalent(s: &mut Session, p: &Params) -> Result<Value> {
     let data = SData::square(d.frequencies().to_vec(), ports, model).map_err(EngineError::failed)?;
     let name = kept_name(p, "equivalent")?;
     let refs = if ports == 1 { vec![z0[p.integer("port", 1..=n).or(1)? - 1]] } else { vec![z0[0], z0[1]] };
-    keep(s, Measured { name: name.clone(), file: "(results.equivalent)".into(), references: refs, data: Arc::new(data) })?;
+    keep(s, Measured { name: name.clone(), file: "(results.equivalent)".into(), references: refs, data: Arc::new(data), noise: Vec::new() })?;
     Ok(json!({
         "topology": topology.id(),
         "references": z0,

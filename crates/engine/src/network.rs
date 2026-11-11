@@ -9,7 +9,11 @@
 //! `# <unit> <parameter> <format> R <ohms>`, comments after `!`, the values of a frequency
 //! over as many lines as they take, a two-port's in the order S11 S21 S12 S22 (version 1, or
 //! `[Two-Port Data Order] 21_12`), another's row by row; version 2's keywords for the number
-//! of ports, the per-port references and the network data's extent.
+//! of ports, the per-port references and the network data's extent. A two-port's noise
+//! parameters follow its data (version 1: from a frequency no higher than the last;
+//! version 2: `[Noise Data]`), five numbers a frequency: the frequency, F_min in dB, Γ_opt as
+//! magnitude and angle on the option line's R whatever the format, and R_n — normalised to R in
+//! version 1, in ohms in version 2 (Touchstone 2.0, "Noise Parameters").
 
 use std::io::Read as _;
 use std::sync::Arc;
@@ -18,6 +22,7 @@ use emcraft_solver::{Complex64 as C, MixedWave, SMatrix};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::noise::{ChainNoise, NoiseParameters};
 use crate::sdata::{MAX_ENTRIES, MAX_FREQUENCIES, MAX_VALUES, SData};
 use crate::{EngineError, Params, Result, Session};
 
@@ -31,7 +36,8 @@ pub const MAX_FILE: u64 = 64 * 1024 * 1024;
 const MAX_NAME: usize = 64;
 
 /// S-parameters read from a file (a measurement, another tool's): its name, the file it came
-/// from, each port's reference impedance (Ω) and S over frequency (every port excited).
+/// from, each port's reference impedance (Ω), S over frequency (every port excited) and a
+/// two-port's noise, port 1 its input, at the frequencies it is known (none: not known).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(into = "Stored", try_from = "Stored")]
 pub struct Measured {
@@ -39,6 +45,45 @@ pub struct Measured {
     pub file: String,
     pub references: Vec<f64>,
     pub data: Arc<SData>,
+    pub noise: Vec<NoisePoint>,
+}
+
+/// A two-port's noise at one frequency (Hz).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NoisePoint {
+    pub frequency: f64,
+    pub noise: ChainNoise,
+}
+
+/// The noise of `points` at `f` (Hz), linear in frequency between its two nearest; none outside
+/// them.
+pub fn noise_at(points: &[NoisePoint], f: f64) -> Option<ChainNoise> {
+    let k = points.partition_point(|p| p.frequency < f);
+    let hi = points.get(k)?;
+    if hi.frequency == f || k == 0 {
+        return (hi.frequency == f).then_some(hi.noise);
+    }
+    let lo = points.get(k - 1)?;
+    let t = (f - lo.frequency) / (hi.frequency - lo.frequency);
+    let mix = |a: f64, b: f64| a + (b - a) * t;
+    let (a, b) = (lo.noise, hi.noise);
+    Some(ChainNoise { vv: mix(a.vv, b.vv), vi: a.vi + (b.vi - a.vi) * t, ii: mix(a.ii, b.ii) })
+}
+
+/// Whether `points` are a noise record: rising frequencies, each finite, a non-negative noise
+/// voltage and current; at most [`MAX_FREQUENCIES`].
+fn check_noise(points: &[NoisePoint]) -> std::result::Result<(), String> {
+    if points.len() > MAX_FREQUENCIES {
+        return Err(format!("more than {MAX_FREQUENCIES} noise frequencies"));
+    }
+    let fine = |p: &NoisePoint| {
+        let n = p.noise;
+        p.frequency.is_finite() && p.frequency > 0.0 && n.vv.is_finite() && n.vv >= 0.0 && n.ii.is_finite() && n.ii >= 0.0 && n.vi.is_finite()
+    };
+    if !points.iter().all(fine) || !points.windows(2).all(|w| w[0].frequency < w[1].frequency) {
+        return Err("noise data: rising frequencies, finite values, R_n ≥ 0".into());
+    }
+    Ok(())
 }
 
 /// A measurement as a project file holds it: S flat, real and imaginary parts in turn.
@@ -51,6 +96,9 @@ struct Stored {
     frequencies: Vec<f64>,
     ports: usize,
     s: Vec<f64>,
+    /// Each noise frequency's [f, C₁₁, Re C₁₂, Im C₁₂, C₂₂] (Hz, chain correlations).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    noise: Vec<[f64; 5]>,
 }
 
 impl From<Measured> for Stored {
@@ -59,6 +107,7 @@ impl From<Measured> for Stored {
             ports: m.data.outputs(),
             frequencies: m.data.frequencies().to_vec(),
             s: m.data.values().iter().flat_map(|c| [c.re, c.im]).collect(),
+            noise: m.noise.iter().map(|p| [p.frequency, p.noise.vv, p.noise.vi.re, p.noise.vi.im, p.noise.ii]).collect(),
             name: m.name,
             file: m.file,
             references: m.references,
@@ -80,7 +129,13 @@ impl TryFrom<Stored> for Measured {
         }
         let values = s.s.as_chunks::<2>().0.iter().map(|p| C::new(p[0], p[1])).collect();
         let data = SData::square(s.frequencies, s.ports, values).map_err(|e| format!("measurement `{}`: {e}", crate::text::clip(&s.name, 40)))?;
-        Ok(Measured { name: s.name, file: crate::text::clip(&s.file, 4096), references: s.references, data: Arc::new(data) })
+        let noise: Vec<NoisePoint> =
+            s.noise.iter().map(|x| NoisePoint { frequency: x[0], noise: ChainNoise { vv: x[1], vi: C::new(x[2], x[3]), ii: x[4] } }).collect();
+        check_noise(&noise).map_err(|e| format!("measurement `{}`: {e}", crate::text::clip(&s.name, 40)))?;
+        if !noise.is_empty() && s.ports != 2 {
+            return Err(format!("measurement `{}`: noise data is a two-port's", crate::text::clip(&s.name, 40)));
+        }
+        Ok(Measured { name: s.name, file: crate::text::clip(&s.file, 4096), references: s.references, data: Arc::new(data), noise })
     }
 }
 
@@ -92,13 +147,14 @@ fn check_name(name: &str) -> std::result::Result<(), String> {
     Ok(())
 }
 
-/// What a Touchstone file holds once read: S on each port's reference (Ω) and the parameter
-/// it was written as (`S`, `Y` or `Z`).
+/// What a Touchstone file holds once read: S on each port's reference (Ω), the parameter it
+/// was written as (`S`, `Y` or `Z`) and a two-port's noise (none when it gives none).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Touchstone {
     pub data: SData,
     pub references: Vec<f64>,
     pub parameter: char,
+    pub noise: Vec<NoisePoint>,
 }
 
 /// How a file writes each complex value.
@@ -157,7 +213,7 @@ pub fn parse_touchstone(text: &str, ports: Option<usize>) -> std::result::Result
             break;
         }
     }
-    let Reader { header, numbers, .. } = reader;
+    let Reader { header, numbers, noise: noise_numbers, .. } = reader;
     let n = header.ports.ok_or("the number of ports is not known: name the file .s<n>p")?;
     if !(header.reference.is_finite() && header.reference > 0.0) {
         return Err("the reference impedance R must be positive".into());
@@ -166,12 +222,17 @@ pub fn parse_touchstone(text: &str, ports: Option<usize>) -> std::result::Result
     if references.len() != n || !references.iter().all(|r| r.is_finite() && *r > 0.0) {
         return Err(format!("one positive reference impedance for each of the {n} ports"));
     }
-    let (frequencies, s) = records(&header, n, &references, &numbers)?;
+    let (frequencies, s, used) = records(&header, n, &references, &numbers)?;
     if frequencies.is_empty() {
         return Err("no frequencies".into());
     }
+    let rest = if header.version2 { &noise_numbers[..] } else { numbers.get(used..).unwrap_or(&[]) };
+    if !rest.is_empty() && n != 2 {
+        return Err("noise data is a two-port's".into());
+    }
+    let noise = noise_points(&header, rest)?;
     let data = SData::square(frequencies, n, s)?;
-    Ok(Touchstone { data, references, parameter: header.parameter })
+    Ok(Touchstone { data, references, parameter: header.parameter, noise })
 }
 
 /// What a Touchstone file's option line and keywords say.
@@ -207,13 +268,25 @@ struct Reader {
     in_references: bool,
     in_information: bool,
     in_data: bool,
+    in_noise: bool,
     numbers: Vec<(f64, usize)>,
+    /// Version 2's `[Noise Data]` numbers.
+    noise: Vec<(f64, usize)>,
 }
 
 impl Reader {
     fn new(ports: Option<usize>) -> Reader {
         let header = Header { unit: 1e9, parameter: 'S', pair: Pair::Ma, reference: 50.0, references: None, ports, version2: false, order21: true };
-        Reader { header, option_seen: false, in_references: false, in_information: false, in_data: false, numbers: Vec::new() }
+        Reader {
+            header,
+            option_seen: false,
+            in_references: false,
+            in_information: false,
+            in_data: false,
+            in_noise: false,
+            numbers: Vec::new(),
+            noise: Vec::new(),
+        }
     }
 
     /// One line's text (its comment cut, not empty).
@@ -271,7 +344,8 @@ impl Reader {
             }
             "mixed-mode order" => return Err(format!("line {line_no}: not supported yet: mixed-mode files")),
             "network data" => self.in_data = true,
-            "noise data" | "end" => return Ok(Flow::Stop),
+            "noise data" => (self.in_data, self.in_noise) = (false, true),
+            "end" => return Ok(Flow::Stop),
             _ => {}
         }
         Ok(Flow::Continue)
@@ -310,30 +384,33 @@ impl Reader {
             self.header.references.get_or_insert_with(Vec::new).extend(values);
             return Ok(());
         }
-        if self.header.version2 && !self.in_data {
+        if self.header.version2 && !self.in_data && !self.in_noise {
             return Err(format!("line {line_no}: numbers before [Network Data]"));
         }
-        if self.numbers.len() + values.len() > 2 * MAX_VALUES + MAX_FREQUENCIES {
+        let to = if self.in_noise { &mut self.noise } else { &mut self.numbers };
+        if to.len() + values.len() > 2 * MAX_VALUES + 5 * MAX_FREQUENCIES {
             return Err(format!("more than {MAX_VALUES} values"));
         }
-        self.numbers.extend(values.into_iter().map(|v| (v, line_no)));
+        to.extend(values.into_iter().map(|v| (v, line_no)));
         Ok(())
     }
 }
 
 /// The frequencies (Hz) and S (row-major per frequency) of a file's numbers: 1 + 2n² of them
 /// a frequency, a two-port's reordered from S11 S21 S12 S22 (version 1), Y and Z turned into
-/// S on `references`; a version 1 two-port's noise data (from a lower frequency again) left
-/// out.
-fn records(h: &Header, n: usize, references: &[f64], numbers: &[(f64, usize)]) -> std::result::Result<(Vec<f64>, Vec<C>), String> {
+/// S on `references`, and how many numbers they took: a version 1 two-port's noise data (from a
+/// frequency no higher than the last) follows them.
+fn records(h: &Header, n: usize, references: &[f64], numbers: &[(f64, usize)]) -> std::result::Result<(Vec<f64>, Vec<C>, usize), String> {
     let per = 1 + 2 * n * n;
     let mut frequencies = Vec::new();
     let mut s: Vec<C> = Vec::new();
+    let mut used = 0;
     for record in numbers.chunks(per) {
         let (f, line_no) = record[0];
         if !h.version2 && n == 2 && frequencies.last().is_some_and(|last| f * h.unit <= *last) {
             break;
         }
+        used += record.len();
         if record.len() < per {
             return Err(format!("line {line_no}: the frequency's values stop short ({per} numbers each)"));
         }
@@ -349,7 +426,33 @@ fn records(h: &Header, n: usize, references: &[f64], numbers: &[(f64, usize)]) -
             to_s(h, n, references, m).ok_or_else(|| format!("line {line_no}: {} has no S here", h.parameter))?
         });
     }
-    Ok((frequencies, s))
+    Ok((frequencies, s, used))
+}
+
+/// A two-port's noise from its noise data's numbers, five a frequency: F_min (dB), Γ_opt's
+/// magnitude and angle (°) on the option line's R, and R_n (normalised to R in version 1, in
+/// ohms in version 2).
+fn noise_points(h: &Header, numbers: &[(f64, usize)]) -> std::result::Result<Vec<NoisePoint>, String> {
+    let r = h.reference;
+    let points = numbers
+        .chunks(5)
+        .map(|x| {
+            let line_no = x[0].1;
+            let [(f, _), (nf, _), (mag, _), (angle, _), (rn, _)] = x else {
+                return Err(format!("line {line_no}: noise data has five numbers a frequency"));
+            };
+            let gamma = C::from_polar(*mag, angle.to_radians());
+            let y_opt = (C::new(1.0, 0.0) - gamma) / ((C::new(1.0, 0.0) + gamma) * r);
+            let rn = if h.version2 { *rn } else { rn * r };
+            if !(nf.is_finite() && *nf >= 0.0 && *mag >= 0.0 && *mag < 1.0 && y_opt.is_finite() && rn.is_finite() && rn >= 0.0) {
+                return Err(format!("line {line_no}: noise data needs F_min ≥ 0 dB, |Γ_opt| < 1 and R_n ≥ 0"));
+            }
+            let parameters = NoiseParameters { f_min: 10f64.powf(nf / 10.0), y_opt, rn };
+            Ok(NoisePoint { frequency: f * h.unit, noise: ChainNoise::of(parameters) })
+        })
+        .collect::<std::result::Result<Vec<_>, String>>()?;
+    check_noise(&points)?;
+    Ok(points)
 }
 
 /// S from a frequency's Y or Z (row-major): version 1's normalised to the references,
@@ -383,7 +486,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     let stem = std::path::Path::new(path).file_stem().and_then(|x| x.to_str()).unwrap_or("measured").to_string();
     let name = p.string("name").optional()?.map_or(stem, str::to_string);
     check_name(&name).map_err(|e| p.error("name", e))?;
-    let m = Measured { name: name.clone(), file: path.to_string(), references: t.references.clone(), data: Arc::new(t.data) };
+    let m = Measured { name: name.clone(), file: path.to_string(), references: t.references.clone(), data: Arc::new(t.data), noise: t.noise.clone() };
     keep(s, m.clone())?;
     let mut reply = summary(s, &m);
     if let Some(sweep) = s.results.sweep.as_ref()
@@ -430,6 +533,7 @@ fn summary(s: &Session, m: &Measured) -> Value {
         "frequencies": f.len(),
         "start": f.first().map(|x| s.show_frequency(*x)),
         "stop": f.last().map(|x| s.show_frequency(*x)),
+        "noise_frequencies": m.noise.len(),
     })
 }
 
@@ -537,6 +641,8 @@ pub(crate) struct Source {
     pub data: SData,
     pub names: Vec<String>,
     pub references: Vec<Option<f64>>,
+    /// A two-port's noise, port 1 its input (a measurement's; none for the sweep).
+    pub noise: Vec<NoisePoint>,
 }
 
 /// The S `data` names: `sweep` (the default) or a measurement.
@@ -549,6 +655,7 @@ pub(crate) fn source(s: &Session, p: &Params) -> Result<Source> {
                 data: sweep.sdata().map_err(EngineError::failed)?,
                 names: entries.iter().map(|e| e.name.clone()).collect(),
                 references: entries.iter().map(|e| e.reference).collect(),
+                noise: Vec::new(),
             })
         }
         Some(_) => {
@@ -557,6 +664,7 @@ pub(crate) fn source(s: &Session, p: &Params) -> Result<Source> {
                 data: (*m.data).clone(),
                 names: (1..=m.data.outputs()).map(|k| k.to_string()).collect(),
                 references: m.references.iter().map(|r| Some(*r)).collect(),
+                noise: m.noise.clone(),
             })
         }
     }
@@ -802,6 +910,32 @@ mod tests {
     fn a_two_ports_noise_data_ends_its_s() {
         let text = "# GHz S MA R 50\n1 0.1 0 0.9 -90 0.9 -90 0.1 0\n2 0.1 0 0.9 -180 0.9 -180 0.1 0\n1 1.2 0.3 45 0.5\n2 1.4 0.3 60 0.6\n";
         assert_eq!(parse_touchstone(text, Some(2)).unwrap().data.frequencies().len(), 2);
+    }
+
+    #[test]
+    fn noise_data_reads_the_same_from_either_version() {
+        // The Touchstone 2.0 specification's examples 10 and 11: R_n normalised (0.38 × 50 Ω) in
+        // version 1, in ohms (19 Ω) in version 2; Γ_opt on the option line's 50 Ω either way.
+        let v1 = "# \n2 .95 -26 3.57 157 .04 76 .66 -14\n22 .60 -144 1.30 40 .14 40 .56 -85\n4 .7 .64 69 .38\n18 2.7 .46 -33 .40\n";
+        let v2 = "[Version] 2.0\n#\n[Number of Ports] 2\n[Reference] 50 25.0\n[Network Data]\n2 .95 -26 3.57 157 .04 76 .66 -14\n22 .60 -144 1.30 40 .14 40 .56 -85\n[Noise Data]\n4 .7 .64 69 19\n18 2.7 .46 -33 20\n[End]\n";
+        let (a, b) = (parse_touchstone(v1, Some(2)).unwrap(), parse_touchstone(v2, None).unwrap());
+        assert_eq!(a.data.frequencies().len(), 2);
+        assert_eq!(a.noise.len(), 2);
+        for (x, y) in a.noise.iter().zip(&b.noise) {
+            assert_eq!(x.frequency, y.frequency);
+            let (p, q) = (x.noise.parameters().unwrap(), y.noise.parameters().unwrap());
+            assert!((p.f_min - q.f_min).abs() < 1e-12 && (p.y_opt - q.y_opt).norm() < 1e-12 && (p.rn - q.rn).abs() < 1e-9, "{p:?} {q:?}");
+        }
+        let p = a.noise[0].noise.parameters().unwrap();
+        assert!((10.0 * p.f_min.log10() - 0.7).abs() < 1e-12 && (p.rn - 19.0).abs() < 1e-9);
+        let gamma = C::from_polar(0.64, 69f64.to_radians());
+        assert!((p.y_opt - (C::new(1.0, 0.0) - gamma) / ((C::new(1.0, 0.0) + gamma) * 50.0)).norm() < 1e-15);
+        // Half a record, |Γ_opt| ≥ 1, noise on a one-port: refused.
+        assert!(parse_touchstone("# GHz S MA R 50\n2 .9 0 1 0 0 0 .9 0\n1 .5 .3\n", Some(2)).is_err());
+        assert!(parse_touchstone("# GHz S MA R 50\n2 .9 0 1 0 0 0 .9 0\n1 .5 1 0 .2\n", Some(2)).is_err());
+        assert!(
+            parse_touchstone("[Version] 2.0\n# GHz S MA\n[Number of Ports] 1\n[Network Data]\n1 .5 0\n[Noise Data]\n1 .5 .1 0 10\n", None).is_err()
+        );
     }
 
     #[test]
