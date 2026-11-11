@@ -5,6 +5,7 @@
 //! - [`lang`]: the languages, the texts looked up by their English (`t!`), the commands' and
 //!   samples' translations;
 //! - [`chart_words`]: the engine's charts' words in the window's language;
+//! - [`commands`]: each command's button label, glyph and whether it runs long;
 //! - [`param_labels`]: the names dialogs show for command parameters;
 //! - the window's names for what it shows: [`glyph`]s, [`page`]s and settings sections, the
 //!   [`ribbon`]'s tabs and panels, the 3D view's [`tools`], the [`view`]s and where each shows,
@@ -33,6 +34,7 @@ macro_rules! t {
 pub mod action;
 pub mod browser;
 pub mod chart_words;
+pub mod commands;
 pub mod files;
 pub mod geom;
 pub mod glyph;

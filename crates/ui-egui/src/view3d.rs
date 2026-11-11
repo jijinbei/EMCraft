@@ -409,7 +409,7 @@ impl View3d {
             "ms": self.last_ms, "size": self.last_size,
             "selected": selected.last().map(|p| format!("{p:?}")),
             "selection": selected.iter().map(|p| format!("{p:?}")).collect::<Vec<_>>(),
-            "box": self.boxsel.map(|b| serde_json::json!({"crossing": b.crossing, "rect": [b.rect.min.x, b.rect.min.y, b.rect.max.x, b.rect.max.y]})),
+            "box": self.boxsel.map(|b| serde_json::json!({"crossing": b.crossing, "rect": [b.rect.left(), b.rect.top(), b.rect.right(), b.rect.bottom()]})),
             "hover": self.hover.map(|p| format!("{p:?}")),
             "gpu": self.drawn_on_gpu,
             "animating": self.animating(),

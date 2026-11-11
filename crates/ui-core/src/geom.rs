@@ -42,6 +42,11 @@ impl Point {
         (self.x - other.x).hypot(self.y - other.y)
     }
 
+    /// Whether both coordinates are finite.
+    pub fn is_finite(self) -> bool {
+        self.x.is_finite() && self.y.is_finite()
+    }
+
     /// The point a share `t` of the way to `other`.
     pub fn lerp(self, other: Point, t: f32) -> Point {
         Point::new(self.x + (other.x - self.x) * t, self.y + (other.y - self.y) * t)
@@ -93,6 +98,39 @@ impl AddAssign for Vector {
 impl Rect {
     pub const fn from_min_size(min: Point, size: Vector) -> Rect {
         Rect { min, size }
+    }
+
+    /// The rectangle with corners `a` and `b`, either way round.
+    pub fn from_two_pos(a: Point, b: Point) -> Rect {
+        let min = Point::new(a.x.min(b.x), a.y.min(b.y));
+        Rect { min, size: Vector::new((a.x - b.x).abs(), (a.y - b.y).abs()) }
+    }
+
+    /// Whether `p` lies inside or on it.
+    pub fn contains(&self, p: Point) -> bool {
+        (self.left()..=self.right()).contains(&p.x) && (self.top()..=self.bottom()).contains(&p.y)
+    }
+
+    pub fn center(&self) -> Point {
+        Point::new(self.min.x + self.size.x / 2.0, self.min.y + self.size.y / 2.0)
+    }
+
+    pub fn left_bottom(&self) -> Point {
+        Point::new(self.left(), self.bottom())
+    }
+
+    /// Whether its corner and size are finite.
+    pub fn is_finite(&self) -> bool {
+        self.min.is_finite() && self.size.x.is_finite() && self.size.y.is_finite()
+    }
+
+    /// It moved by `v`.
+    pub fn translate(&self, v: Vector) -> Rect {
+        Rect { min: self.min + v, size: self.size }
+    }
+
+    pub fn height(&self) -> f32 {
+        self.size.y
     }
 
     pub fn left(&self) -> f32 {

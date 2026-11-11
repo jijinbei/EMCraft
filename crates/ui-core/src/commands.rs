@@ -3,7 +3,7 @@
 //! the worker thread. One row per command of `emcraft_engine::COMMANDS`, in its order (checked
 //! by a test).
 
-use crate::glyphs::Glyph;
+use crate::glyph::Glyph;
 
 /// The UI's facts about one command.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -194,7 +194,7 @@ pub fn is_long(id: &str) -> bool {
 /// A ribbon button's label in the current language: the command's own, shortened where the
 /// ribbon has little room.
 pub fn button_label(id: &str) -> &str {
-    find(id).and_then(|c| c.label).map_or_else(|| crate::label(id), crate::lang::lookup)
+    find(id).and_then(|c| c.label).map_or_else(|| crate::lang::command_label(id), crate::lang::lookup)
 }
 
 /// The glyph of command `id`.

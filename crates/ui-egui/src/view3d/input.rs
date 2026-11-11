@@ -248,7 +248,11 @@ impl Nav<'_> {
         let mut select = None;
         match (v.left, resp.dragged()) {
             (Some(LeftDrag::Box { .. }), true) => {
-                v.boxsel = self.press.zip(self.latest).map(|(a, b)| BoxSel::from_drag(a, b)).filter(|b| b.rect.is_finite());
+                v.boxsel = self
+                    .press
+                    .zip(self.latest)
+                    .map(|(a, b)| BoxSel::from_drag(crate::geom::point(a), crate::geom::point(b)))
+                    .filter(|b| b.rect.is_finite());
             }
             (Some(LeftDrag::Box { add }), false) => {
                 if let Some(b) = v.boxsel.take() {
@@ -372,7 +376,7 @@ impl Nav<'_> {
 
 /// The parts the box `b` (screen points over the view in `rect`) takes.
 pub(super) fn boxed(v: &View3d, rect: Rect, b: BoxSel) -> Vec<scene3d::Pick> {
-    let local = BoxSel { rect: b.rect.translate(-rect.min.to_vec2()), crossing: b.crossing };
+    let local = BoxSel { rect: b.rect.translate(crate::geom::vector(-rect.min.to_vec2())), crossing: b.crossing };
     v.shown().map(|s| selection::boxed(&s.scene, &v.camera, f64::from(rect.width()), f64::from(rect.height()), local)).unwrap_or_default()
 }
 
@@ -381,14 +385,15 @@ pub(super) fn boxed(v: &View3d, rect: Rect, b: BoxSel) -> Vec<scene3d::Pick> {
 pub(super) fn paint_box(p: &egui::Painter, b: BoxSel) {
     let t = &Tokens::get();
     let ink = if b.crossing { t.success } else { t.accent };
-    p.rect_filled(b.rect, 0.0, ink.gamma_multiply(0.12));
+    let r = crate::geom::rect(b.rect);
+    p.rect_filled(r, 0.0, ink.gamma_multiply(0.12));
     if b.crossing {
-        let c = [b.rect.left_top(), b.rect.right_top(), b.rect.right_bottom(), b.rect.left_bottom()];
+        let c = [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom()];
         for i in 0..4 {
             p.extend(egui::Shape::dashed_line(&[c[i], c[(i + 1) % 4]], Stroke::new(1.2, ink), 6.0, 4.0));
         }
     } else {
-        p.rect_stroke(b.rect, 0.0, Stroke::new(1.2, ink), egui::StrokeKind::Inside);
+        p.rect_stroke(r, 0.0, Stroke::new(1.2, ink), egui::StrokeKind::Inside);
     }
 }
 

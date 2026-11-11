@@ -1,27 +1,8 @@
-//! The shared canvas' geometry on egui's screen, and what an egui drag reports to its gestures.
+//! What an egui drag reports to the shared canvas' gestures, and where the canvas is kept between
+//! frames (its geometry converted by [`crate::geom`]).
 
-use emcraft_ui_core::geom;
+pub(super) use crate::geom::{point, pos, rect, vector};
 use emcraft_ui_core::system::gesture::{Canvas, Input};
-
-/// A shared point as egui's.
-pub(super) fn pos(p: geom::Point) -> egui::Pos2 {
-    egui::pos2(p.x, p.y)
-}
-
-/// A shared rectangle as egui's.
-pub(super) fn rect(r: geom::Rect) -> egui::Rect {
-    egui::Rect::from_min_size(pos(r.min), egui::vec2(r.size.x, r.size.y))
-}
-
-/// An egui point as the shared one.
-pub(super) fn point(p: egui::Pos2) -> geom::Point {
-    geom::Point::new(p.x, p.y)
-}
-
-/// An egui offset as the shared one.
-pub(super) fn vector(v: egui::Vec2) -> geom::Vector {
-    geom::Vector::new(v.x, v.y)
-}
 
 /// What a dragged response reports this frame: `start` when its drag begins, the move, where
 /// it is let go.
