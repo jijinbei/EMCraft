@@ -104,7 +104,7 @@ pub mod view3d;
 pub mod view_cube;
 pub mod viewport;
 pub mod window_system;
-pub mod worker;
+pub use emcraft_ui_core::job;
 
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -136,7 +136,7 @@ pub struct EmcraftApp {
     /// The language the window is drawn in: the preferred one once a font shows it, else
     /// English ([`fonts::State::Missing`]).
     pub language: &'static str,
-    pub job: Option<worker::Job>,
+    pub job: Option<job::Job>,
     pub tab: ribbon::RibbonTab,
     /// Dialogs open docked at the right instead of floating.
     pub dock_dialogs: bool,

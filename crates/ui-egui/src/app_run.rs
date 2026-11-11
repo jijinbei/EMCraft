@@ -2,7 +2,6 @@
 //! and cancelling, quitting.
 
 use super::*;
-use std::fmt::Write as _;
 
 impl EmcraftApp {
     pub fn busy(&self) -> bool {
@@ -27,7 +26,7 @@ impl EmcraftApp {
             // How long it should take, from the model (cheap), for the time left while it runs.
             let asked = if matches!(id, "solve.rerun" | "solve.run") { json!({}) } else { json!({"command": id, "params": params}) };
             let estimate = self.session.execute("project.estimate", &asked).ok().and_then(|e| e.get("seconds").and_then(Value::as_f64));
-            let mut job = worker::Job::start(&self.session, id, params, self.ctx.clone());
+            let mut job = job::Job::start(&self.session, id, params, self.wake());
             job.view = Some(self.place.view());
             job.estimate = estimate;
             self.job = Some(job);
@@ -42,6 +41,11 @@ impl EmcraftApp {
         r
     }
 
+    /// What wakes the window when a job ends: a repaint asked for.
+    fn wake(&self) -> Option<job::Wake> {
+        self.ctx.clone().map(|ctx| Box::new(move || ctx.request_repaint()) as job::Wake)
+    }
+
     /// A command's failure: kept for the panel that asked for it, and in the messages.
     pub(crate) fn failed(&mut self, id: &str, e: &impl std::fmt::Display) {
         self.failure = Some(Failure { command: id.to_owned(), error: e.to_string() });
@@ -52,8 +56,7 @@ impl EmcraftApp {
     pub fn run_script(&mut self, script: Value) -> Result<Value, UiError> {
         self.idle()?;
         let n = script.as_array().map(Vec::len).ok_or_else(|| UiError::Input("a script is a JSON array of {command, params}".into()))?;
-        self.job =
-            Some(worker::Job::spawn(&self.session, "engine.script", json!({}), self.ctx.clone(), move |s| s.run_script(&script).map(Value::Array)));
+        self.job = Some(job::Job::spawn(&self.session, "engine.script", json!({}), self.wake(), move |s| s.run_script(&script).map(Value::Array)));
         self.info_with(t!("Running a script of {n} commands…"), args!(n = n));
         Ok(json!({"started": "engine.script"}))
     }
@@ -82,63 +85,38 @@ impl EmcraftApp {
     pub fn poll_job(&mut self) {
         let Some(job) = &self.job else { return };
         let done = match job.poll() {
-            worker::Poll::Running => return,
-            worker::Poll::Finished(d) => Some(d),
-            worker::Poll::Lost => None,
+            job::Poll::Running => return,
+            job::Poll::Finished(d) => Some(*d),
+            job::Poll::Lost => None,
         };
         let Some(job) = self.job.take() else { return };
-        let secs = job.elapsed();
-        let reply = match done {
-            Some(d) => {
-                if d.reply.is_ok() {
-                    self.session = d.session;
-                }
-                d.reply
-            }
-            None => Err(EngineError::failed("the worker stopped without an answer")),
-        };
-        // A view chosen while the job ran stays: the job's end does not take it away.
-        let chosen = job.view.filter(|v| *v != self.place.view()).map(|_| self.place.view());
-        match &reply {
-            Ok(v) => {
-                self.after(&job.command, &job.params, v);
-                if let Some(v) = chosen {
-                    self.place = self.place.show(v);
-                }
-                if job.land && chosen.is_none() {
-                    files::land(self, true);
-                }
+        for step in job::finished(job, done, self.place.view(), self.ui_state.dialog().is_some()) {
+            self.follow(step);
+        }
+    }
+
+    /// Does one of the steps a finished job leaves ([`job::finished`]).
+    fn follow(&mut self, step: job::Then) {
+        match step {
+            job::Then::Session(s) => self.session = *s,
+            job::Then::After { command, params, reply } => self.after(&command, &params, &reply),
+            job::Then::Keep(v) => self.place = self.place.show(v),
+            job::Then::Land => files::land(self, true),
+            job::Then::Note(note) => {
                 if let Some(m) = self.messages.last_mut() {
-                    match job.place() {
-                        Some(w) => {
-                            let _ = write!(m.text, " ({secs:.1} s · {})", messages::place_text(&w));
-                        }
-                        None => {
-                            let _ = write!(m.text, " ({secs:.1} s)");
-                        }
-                    }
+                    m.text.push_str(&note);
                 }
             }
-            Err(e) => {
-                self.failed(&job.command, e);
-                // The dialog that started it opens again, the error under its field.
-                if let Some(mut d) = job.dialog.filter(|d| d.command.id == job.command && self.ui_state.dialog().is_none()) {
-                    d.refused(&e.to_string());
-                    self.ui_state.open_dialog(d);
+            job::Then::Failed { command, error } => self.failed(&command, &error),
+            job::Then::Reopen(d) => self.ui_state.open_dialog(*d),
+            job::Then::Answer(waiting, answer) => {
+                for w in waiting {
+                    let _ = w.send(answer.clone());
                 }
             }
-        }
-        let answer = match reply {
-            Ok(v) => json!({"ok": true, "result": v}),
-            Err(e) => json!({"ok": false, "error": e.to_string()}),
-        };
-        let ok = answer["ok"] == json!(true);
-        for w in job.waiting {
-            let _ = w.send(answer.clone());
-        }
-        // What was queued behind it, once it ended well.
-        if ok && !job.then.is_empty() {
-            let _ = self.run_all(job.then);
+            job::Then::Run(list) => {
+                let _ = self.run_all(list);
+            }
         }
     }
 

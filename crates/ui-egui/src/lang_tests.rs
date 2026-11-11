@@ -379,7 +379,7 @@ fn tour() -> Record {
             // Keep the worker alive until the UI has inspected it, independently of
             // solver speed and the time spent drawing on a software graphics adapter.
             let (release, held) = std::sync::mpsc::channel();
-            h.app.job = Some(crate::worker::Job::spawn(
+            h.app.job = Some(crate::job::Job::spawn(
                 &h.app.session,
                 "solve.frequency",
                 json!({"start": 7, "stop": 9, "points": 101, "order": 2}),

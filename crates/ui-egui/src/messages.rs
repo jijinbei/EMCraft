@@ -170,24 +170,10 @@ fn progress(app: &EmcraftApp, ui: &mut egui::Ui, t: &theme::Tokens, out: &mut Ac
     });
 }
 
-/// Where a solve runs, in brief: `CPU`, or `GPU cuda` (and the fronts it has taken).
-pub(crate) fn place_text(w: &crate::worker::Where) -> String {
-    use emcraft_engine::Device;
-    let device = w.device.id();
-    match (w.device, w.stepped) {
-        (Device::Cpu, _) => tr(t!("CPU")).to_owned(),
-        // The GPU's kernels run on the CPU's SIMD there: no GPU at all.
-        (Device::CubeclCpu, _) => trf(t!("CPU kernels ({device})"), args!(device = device)),
-        (Device::Cuda, true) => trf(t!("GPU {device}"), args!(device = device)),
-        (Device::Cuda, false) if w.fronts > 0 => trf(t!("GPU {device}: {n} fronts"), args!(device = device, n = w.fronts)),
-        (Device::Cuda, false) => trf(t!("CPU (no front large enough for {device})"), args!(device = device)),
-    }
-}
-
 /// The solve's device as a chip: the accent's while a GPU works, dim on the CPU.
-fn device_chip(ui: &mut egui::Ui, w: &crate::worker::Where, t: &theme::Tokens) {
+fn device_chip(ui: &mut egui::Ui, w: &crate::job::Where, t: &theme::Tokens) {
     let on = w.gpu() && (w.stepped || w.fronts > 0);
-    let text = place_text(w);
+    let text = w.text();
     let (fill, ink) = if on { (t.accent, t.on_accent) } else { (t.panel_header, t.text_dim) };
     let hint = match (w.gpu(), w.stepped) {
         (false, _) => t!("The CPU's threads (Setup › Compute picks a GPU)"),
@@ -203,7 +189,7 @@ fn device_chip(ui: &mut egui::Ui, w: &crate::worker::Where, t: &theme::Tokens) {
 
 /// A running job in brief: what runs, how far it is (its count, from the job's progress) and
 /// for how long — `Frequency sweep · 3/11 · 4 s`.
-pub(crate) fn job_text(job: &crate::worker::Job) -> String {
+pub(crate) fn job_text(job: &crate::job::Job) -> String {
     let snap = job.snapshot();
     let command = if job.command == "engine.script" { tr(t!("Script")) } else { label(&job.command) };
     let secs = format!("{:.0}", job.elapsed());

@@ -77,9 +77,7 @@ pub fn is_run(id: &str) -> bool {
 }
 
 /// Whether command `id` is a solve ([`emcraft_engine::CommandSpec::solves`]).
-pub fn is_solve(id: &str) -> bool {
-    emcraft_engine::find_command(id).is_some_and(emcraft_engine::CommandSpec::solves)
-}
+pub use emcraft_ui_core::job::is_solve;
 
 /// Whether a run is going on.
 pub fn running(app: &EmcraftApp) -> bool {

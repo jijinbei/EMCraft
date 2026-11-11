@@ -3,6 +3,10 @@
 //! session comes back to replace the window's. Cancelling asks the command to stop at its next
 //! step (between frequencies, between script steps) and drops the job at once: the window's
 //! session never changed, and whatever the thread still computes is thrown away.
+//!
+//! The thread wakes the window when it ends ([`Wake`], each toolkit its own way); what the
+//! window then does is decided here ([`finished`]: the steps a finished job leaves, in order) and
+//! done by the window.
 
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
@@ -10,7 +14,19 @@ use std::time::Instant;
 
 use emcraft_engine::progress::{Progress, Snapshot};
 use emcraft_engine::{EngineError, Session};
-use serde_json::Value;
+use serde_json::{Value, json};
+
+use crate::dialogs::Dialog;
+use crate::lang::{args, tr, trf};
+use crate::view::View;
+
+/// What wakes the window when a job ends (egui: a repaint asked for; iced: a message sent).
+pub type Wake = Box<dyn Fn() + Send>;
+
+/// Whether command `id` solves (its job says where it runs).
+pub fn is_solve(id: &str) -> bool {
+    emcraft_engine::find_command(id).is_some_and(emcraft_engine::CommandSpec::solves)
+}
 
 /// What a finished job hands back: the session after the command, and its reply.
 pub struct Done {
@@ -28,13 +44,13 @@ pub struct Job {
     /// Control-channel requests waiting for this job's reply.
     pub waiting: Vec<Sender<Value>>,
     /// The view the window showed when the job started: one chosen since is kept when it ends.
-    pub view: Option<crate::View>,
+    pub view: Option<View>,
     /// How long it was expected to take (s, `project.estimate`), when that could be said.
     pub estimate: Option<f64>,
     /// Where a solve runs; `None` for a job that is not a solve.
     device: Option<Device>,
     /// The dialog that started it: it opens again, with the error, if the job fails.
-    pub dialog: Option<crate::dialogs::Dialog>,
+    pub dialog: Option<Dialog>,
     /// The commands to run after it, once it ends well (`run_all`).
     pub then: Vec<(String, Value)>,
     /// A project it opens lands on its step once it is in (`files::land`).
@@ -66,6 +82,20 @@ pub struct Where {
 }
 
 impl Where {
+    /// Where it runs, as the messages say it.
+    pub fn text(&self) -> String {
+        use emcraft_engine::Device;
+        let device = self.device.id();
+        match (self.device, self.stepped) {
+            (Device::Cpu, _) => tr(t!("CPU")).to_owned(),
+            // The GPU's kernels run on the CPU's SIMD there: no GPU at all.
+            (Device::CubeclCpu, _) => trf(t!("CPU kernels ({device})"), args!(device = device)),
+            (Device::Cuda, true) => trf(t!("GPU {device}"), args!(device = device)),
+            (Device::Cuda, false) if self.fronts > 0 => trf(t!("GPU {device}: {n} fronts"), args!(device = device, n = self.fronts)),
+            (Device::Cuda, false) => trf(t!("CPU (no front large enough for {device})"), args!(device = device)),
+        }
+    }
+
     /// Whether a device does (part of) the work: a GPU, or the GPU's kernels on the CPU's SIMD
     /// (`cubecl-cpu`, not a GPU).
     pub fn gpu(&self) -> bool {
@@ -84,9 +114,9 @@ pub enum Poll {
 
 impl Job {
     /// Starts `command` on a copy of `session`.
-    pub fn start(session: &Session, command: &str, params: Value, ctx: Option<egui::Context>) -> Job {
+    pub fn start(session: &Session, command: &str, params: Value, wake: Option<Wake>) -> Job {
         let (id, p) = (command.to_owned(), params.clone());
-        Job::spawn(session, command, params, ctx, move |s| s.execute(&id, &p))
+        Job::spawn(session, command, params, wake, move |s| s.execute(&id, &p))
     }
 
     /// Starts `work` on a copy of `session`; `command` names it.
@@ -94,7 +124,7 @@ impl Job {
         session: &Session,
         command: &str,
         params: Value,
-        ctx: Option<egui::Context>,
+        wake: Option<Wake>,
         work: impl FnOnce(&mut Session) -> Result<Value, EngineError> + Send + 'static,
     ) -> Job {
         let (tx, rx) = channel();
@@ -104,12 +134,12 @@ impl Job {
         std::thread::spawn(move || {
             let reply = emcraft_engine::progress::scope(pr, || work(&mut s));
             let _ = tx.send(Done { session: s, reply });
-            if let Some(ctx) = ctx {
-                ctx.request_repaint();
+            if let Some(wake) = wake {
+                wake();
             }
         });
         // A solve's device: the time domain names its own, else the session's.
-        let device = crate::steps::is_solve(command).then(|| {
+        let device = is_solve(command).then(|| {
             let compute = session.compute();
             let named =
                 params.get("device").and_then(Value::as_str).filter(|_| command == "solve.time_domain").and_then(emcraft_engine::Device::parse);
@@ -168,6 +198,72 @@ impl Job {
     }
 }
 
+/// What a finished job leaves the window to do, in order ([`finished`]).
+pub enum Then {
+    /// The session the command left (it ended well).
+    Session(Box<Session>),
+    /// What follows the command's success: the view it calls for, its message.
+    After { command: String, params: Value, reply: Value },
+    /// The view chosen while it ran, kept.
+    Keep(View),
+    /// A project it opened lands on its step.
+    Land,
+    /// How long it took and where it ran, after its message.
+    Note(String),
+    /// Its failure.
+    Failed { command: String, error: String },
+    /// The dialog that started it, open again with the error under its field.
+    Reopen(Box<Dialog>),
+    /// The control requests waiting on it, answered.
+    Answer(Vec<Sender<Value>>, Value),
+    /// The commands queued after it, now it ended well.
+    Run(Vec<(String, Value)>),
+}
+
+/// The steps `job`, finished with `done` (`None`: its thread ended without a reply), leaves the
+/// window showing `now` (`dialog_open`: whether a dialog is open there) to do, in order: its
+/// session taken and what follows its success — a view chosen while it ran kept, a project it
+/// opened landed, its time noted — or its failure and its dialog again; the control requests
+/// waiting on it answered; the commands queued after it run.
+pub fn finished(job: Job, done: Option<Done>, now: View, dialog_open: bool) -> Vec<Then> {
+    let secs = job.elapsed();
+    let place = job.place();
+    let Job { command, params, waiting, view, dialog, then, land, .. } = job;
+    let reply = done.map_or_else(|| Err(EngineError::failed("the worker stopped without an answer")), |d| d.reply.map(|r| (r, d.session)));
+    let answer = match &reply {
+        Ok((v, _)) => json!({"ok": true, "result": v}),
+        Err(e) => json!({"ok": false, "error": e.to_string()}),
+    };
+    // A view chosen while the job ran stays: the job's end does not take it away.
+    let chosen = view.filter(|v| *v != now).map(|_| now);
+    let steps: Vec<Then> = match reply {
+        Ok((reply, session)) => {
+            let took = place.map_or_else(|| format!(" ({secs:.1} s)"), |w| format!(" ({secs:.1} s · {})", w.text()));
+            [
+                Some(Then::Session(Box::new(session))),
+                Some(Then::After { command, params, reply }),
+                chosen.map(Then::Keep),
+                (land && chosen.is_none()).then_some(Then::Land),
+                Some(Then::Note(took)),
+            ]
+            .into_iter()
+            .flatten()
+            .chain((!then.is_empty()).then_some(Then::Run(then)))
+            .collect()
+        }
+        Err(e) => {
+            let reopen = dialog.filter(|d| d.command.id == command && !dialog_open).map(|mut d| {
+                d.refused(&e.to_string());
+                Then::Reopen(Box::new(d))
+            });
+            std::iter::once(Then::Failed { command, error: e.to_string() }).chain(reopen).collect()
+        }
+    };
+    // The waiting requests are answered before what was queued runs.
+    let (before, after): (Vec<Then>, Vec<Then>) = steps.into_iter().partition(|t| !matches!(t, Then::Run(_)));
+    before.into_iter().chain(std::iter::once(Then::Answer(waiting, answer))).chain(after).collect()
+}
+
 /// The share done at which the rate so far has replaced the estimate entirely.
 const TRUST_RATE: f64 = 0.25;
 /// Below this many seconds left, the time left is not said (a count of whole steps cannot say
@@ -183,7 +279,7 @@ const LEAST_LEFT: f64 = 1.0;
 ///   while the job still runs) or under a second: never a countdown at 0 while work remains.
 ///
 /// ```
-/// use emcraft_ui_egui::worker::remaining;
+/// use emcraft_ui_core::job::remaining;
 /// // Half done in 10 s: 10 s more.
 /// assert_eq!(remaining(Some(0.5), 10.0, Some(100.0)), Some(10.0));
 /// // Past its estimate with no count to go by: only the elapsed time is said.
@@ -213,7 +309,61 @@ pub fn remaining(fraction: Option<f64>, elapsed: f64, estimate: Option<f64>) -> 
 
 #[cfg(test)]
 mod tests {
-    use super::remaining;
+
+    /// The job's reply, once its thread sends it (a few seconds at most).
+    fn done(job: &Job) -> Option<Done> {
+        (0..500).find_map(|_| match job.poll() {
+            Poll::Finished(d) => Some(*d),
+            Poll::Lost => None,
+            Poll::Running => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                None
+            }
+        })
+    }
+
+    fn kind(t: &Then) -> &'static str {
+        match t {
+            Then::Session(_) => "session",
+            Then::After { .. } => "after",
+            Then::Keep(_) => "keep",
+            Then::Land => "land",
+            Then::Note(_) => "note",
+            Then::Failed { .. } => "failed",
+            Then::Reopen(_) => "reopen",
+            Then::Answer(..) => "answer",
+            Then::Run(_) => "run",
+        }
+    }
+
+    /// A job that ends well: its session and what follows, the view chosen while it ran kept,
+    /// its time noted, the waiting requests answered, then what was queued after it. One that
+    /// fails: its failure, its dialog again with the error, the requests answered; nothing
+    /// queued runs.
+    #[test]
+    fn a_finished_job_leaves_its_steps_in_order() {
+        let s = Session::new();
+        let mut job = Job::start(&s, "units.set", serde_json::json!({"length": "m"}), None);
+        let (tx, rx) = channel();
+        (job.view, job.then, job.waiting) = (Some(View::Model), vec![("mesh.generate".into(), serde_json::json!({}))], vec![tx]);
+        let d = done(&job);
+        let steps = finished(job, d, View::Field, false);
+        assert_eq!(steps.iter().map(kind).collect::<Vec<_>>(), ["session", "after", "keep", "note", "answer", "run"]);
+        assert!(matches!(steps[2], Then::Keep(View::Field)));
+        assert_eq!(rx.try_recv().ok(), None, "answered when the window does the step");
+        let mut job = Job::start(&s, "units.set", serde_json::json!({"length": "furlong"}), None);
+        let spec = emcraft_engine::find_command("units.set").unwrap_or_else(|| panic!("units.set"));
+        job.dialog = Some(Dialog::new(spec, &s, &serde_json::json!({}), false));
+        job.then = vec![("mesh.generate".into(), serde_json::json!({}))];
+        let d = done(&job);
+        let steps = finished(job, d, View::Model, false);
+        assert_eq!(steps.iter().map(kind).collect::<Vec<_>>(), ["failed", "reopen", "answer"]);
+        // A thread that ended without a reply is a failure too.
+        let job = Job::start(&s, "units.set", serde_json::json!({}), None);
+        assert_eq!(finished(job, None, View::Model, true).iter().map(kind).collect::<Vec<_>>(), ["failed", "answer"]);
+    }
+
+    use super::*;
 
     #[test]
     fn time_left_follows_the_progress_then_the_estimate() {

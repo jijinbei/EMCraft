@@ -141,7 +141,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
 }
 
 /// A running job's progress: its command, steps, stage, residual, times, text and device.
-fn job_progress(j: &crate::worker::Job) -> Value {
+fn job_progress(j: &crate::job::Job) -> Value {
     let s = j.snapshot();
     json!({
         "command": j.command,

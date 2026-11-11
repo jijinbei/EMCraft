@@ -44,6 +44,7 @@ pub mod files;
 pub mod geom;
 pub mod glyph;
 pub mod handle;
+pub mod job;
 pub mod lang;
 pub mod layer;
 pub mod navigation;
