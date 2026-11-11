@@ -40,6 +40,11 @@ kT_sysB + SNR follow. Where a data stage or the antenna has no data (outside its
 frequency's readings are left out and the reason given. The budget is saved with the project
 (docs/project-file.md).
 
+The template `adsb-receiver` is such a chain: the `adsb-patch` antenna's terminals, an LNA, the
+`adsb-bandpass` filter and a receiver, the antenna's and the filter's S compiled in as
+`template:` Touchstone files solved by EMCraft from those templates; it opens with its budget
+read (a system's solve takes a moment, so a sample runs it when it opens).
+
 Checked against closed forms in `crates/engine/src/tests/system.rs`: Friis through an LNA, a
 pad and a second stage; gains adding in dB; kT₀B; the cascade's IIP3 and P1dB; a 100 Ω antenna's
 mismatch, F_min + (F_min − 1)|Γs|²/(1 − |Γs|²).

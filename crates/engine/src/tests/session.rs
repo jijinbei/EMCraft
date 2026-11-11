@@ -165,7 +165,16 @@ fn every_sample_opens() {
         s.execute("file.sample", &json!({"name": smp.name})).unwrap_or_else(|e| panic!("{}: {e}", smp.name));
         let meshed = smp.script.contains("\"mesh.generate\"") || smp.script.contains("\"mesh.adapt\"");
         assert!(!meshed || s.model.mesh.is_some() || s.model.pcb().is_some(), "{}", smp.name);
-        assert!(s.model.domain.solid.is_some() || s.model.waveguide().is_some() || s.model.pcb().is_some(), "{}: no geometry", smp.name);
+        // A system's chain has no geometry: its stages instead.
+        let system = smp.kinds.contains(&emcraft_model::Analysis::System);
+        assert!(
+            s.model.domain.solid.is_some()
+                || s.model.waveguide().is_some()
+                || s.model.pcb().is_some()
+                || (system && !s.model.system.stages.is_empty()),
+            "{}: no geometry",
+            smp.name
+        );
     }
 }
 

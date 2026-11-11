@@ -187,3 +187,22 @@ fn a_system_saved_opens_with_its_chain_and_budget_and_a_hostile_one_is_left_out(
     bad.at = -1.0;
     assert!(bad.check().is_err());
 }
+
+#[test]
+fn the_adsb_receiver_opens_with_its_budget_from_the_antennas_and_filters_solved_s() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "adsb-receiver"})).unwrap();
+    assert_eq!(s.model.analysis(), emcraft_model::Analysis::System);
+    let r = s.results.system.clone().expect("read when it opens");
+    let p = r.nearest(1.09e9).unwrap();
+    let nf = p.rows.last().and_then(|x| x.nf_db).unwrap();
+    // Friis with the filter's 2.7 dB at 1.09 GHz from 50 Ω: 0.6 dB + (1.86 − 1)/100 + (3.98 − 1)/(100/1.86) ≈ 0.84 dB;
+    // the antenna's terminals, matched to −19.7 dB there, add next to nothing.
+    assert!((nf - 0.84).abs() < 0.02, "{nf}");
+    let sens = p.sensitivity_dbm.unwrap();
+    assert!((sens + 100.1).abs() < 0.1, "{sens}");
+    // A variable changed rebuilds the chain and reads it again: a worse LNA.
+    s.execute("project.variable", &json!({"name": "lna_nf", "value": 2.0})).unwrap();
+    let worse = s.execute("solve.run", &json!({})).unwrap();
+    assert!(worse["budget"]["stages"][2]["nf_db"].as_f64().unwrap() > nf + 1.0, "{worse}");
+}

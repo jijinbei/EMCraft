@@ -120,7 +120,6 @@ templates! {
     pcb_stub_filter: "pcb-stub-filter",
     pcb_lowpass: "pcb-lowpass",
     adsb_bandpass: "adsb-bandpass",
-    adsb_receiver: "adsb-receiver",
     pcb_quarter_wave: "pcb-quarter-wave",
     pcb_branch_line: "pcb-branch-line",
     pcb_coupled_line: "pcb-coupled-line",

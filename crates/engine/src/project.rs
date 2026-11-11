@@ -327,7 +327,8 @@ pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
         crate::progress::report(i, script.len(), &step.command)?;
         let spec =
             crate::find_command(&step.command).ok_or_else(|| EngineError::failed(format!("sample {name}: unknown command `{}`", step.command)))?;
-        if spec.effect == Effect::Solve && !solve {
+        // A system's chain is read in a moment: its budget is there when the sample opens.
+        if spec.effect == Effect::Solve && !solve && step.command != "solve.system" {
             let run = Run { command: step.command.clone(), params: step.params.clone(), units: fresh.display };
             crate::runs::record(&mut fresh.runs, run);
             unsolved = true;

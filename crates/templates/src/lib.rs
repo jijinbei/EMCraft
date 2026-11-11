@@ -64,11 +64,13 @@ pub enum Group {
     Scattering,
     /// Board checks: routes, returns and coupling.
     Boards,
+    /// Chains of stages from an antenna to a receiver: their budget.
+    Systems,
 }
 
 impl Group {
     /// Every group, in the start page's order.
-    pub const ALL: [Group; 11] = [
+    pub const ALL: [Group; 12] = [
         Group::Filters,
         Group::Lines,
         Group::Junctions,
@@ -80,6 +82,7 @@ impl Group {
         Group::Antennas,
         Group::Scattering,
         Group::Boards,
+        Group::Systems,
     ];
 
     /// Its name in `file.templates`' replies.
@@ -100,6 +103,7 @@ impl Group {
             Group::Antennas => "antennas",
             Group::Scattering => "scattering",
             Group::Boards => "boards",
+            Group::Systems => "systems",
         }
     }
 }
@@ -150,14 +154,6 @@ pub const TEMPLATES: &[Template] = &[
         name: "adsb-bandpass",
         label: "ADS-B band-pass filter at 1090 MHz on 1.6 mm of FR-4: three gap-coupled half-wave microstrip resonators (third-order Chebyshev, 0.5 dB ripple) with chip capacitors across the gaps: about 2.7 dB through its band from 1.02 to 1.16 GHz (the FR-4's loss), 17 dB down at 0.98 GHz",
         script: include_str!("../scripts/adsb-bandpass.json"),
-        marks: "{}",
-        kinds: &[Analysis::Frequency, Analysis::Pcb],
-        group: Group::Filters,
-    },
-    Template {
-        name: "adsb-receiver",
-        label: "ADS-B receiver chain at 1090 MHz: the adsb-patch antenna, an LNA (20 dB, 0.6 dB), the adsb-bandpass filter and a receiver (20 dB, 6 dB) chained by circuit.cascade from the antenna's and filter's S as EMCraft solved them: from the antenna's terminals 0.84 dB noise figure and 37.4 dB gain at 1.09 GHz, −100 dBm sensitivity in 2 MHz at 10 dB SNR; its board is the filter's, to solve and chain as `sweep`",
-        script: include_str!("../scripts/adsb-receiver.json"),
         marks: "{}",
         kinds: &[Analysis::Frequency, Analysis::Pcb],
         group: Group::Filters,
@@ -747,6 +743,15 @@ pub const TEMPLATES: &[Template] = &[
         marks: "{}",
         kinds: &[Analysis::Pcb],
         group: Group::Boards,
+    },
+    // Systems.
+    Template {
+        name: "adsb-receiver",
+        label: "ADS-B receiver chain at 1090 MHz: the adsb-patch antenna's terminals, an LNA (20 dB, 0.6 dB, OIP3 30 dBm), the adsb-bandpass filter and a receiver (20 dB, 6 dB), the antenna's and filter's S as EMCraft solved them: from the antenna 0.84 dB noise figure and 37.4 dB gain at 1.09 GHz, −100 dBm sensitivity in 2 MHz at 10 dB SNR, the budget stage by stage",
+        script: include_str!("../scripts/adsb-receiver.json"),
+        marks: "{}",
+        kinds: &[Analysis::System],
+        group: Group::Systems,
     },
 ];
 

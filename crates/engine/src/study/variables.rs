@@ -65,6 +65,9 @@ pub(super) fn history_with(s: &Session, set: &[(String, Value)]) -> Result<Vec<S
 /// A session of the model rebuilt by `history`.
 pub(super) fn rebuild(s: &Session, history: &[Step]) -> Result<Session> {
     let mut fresh = s.fresh();
+    // How results are looked at belongs to the project, not to the model: the measurements
+    // (a system's data stages read them), the charts' styles and the probes stay.
+    fresh.views = s.views.clone();
     fresh.run_steps(history)?;
     Ok(fresh)
 }
