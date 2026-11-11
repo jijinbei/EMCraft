@@ -50,7 +50,7 @@ mod app_dialogs;
 mod app_run;
 pub mod autosave;
 pub mod browser;
-mod chart_words;
+pub(crate) use emcraft_ui_core::chart_words;
 pub mod commands;
 pub mod control;
 pub mod crash;
@@ -66,14 +66,16 @@ pub mod handle;
 pub mod home;
 mod import_ui;
 pub mod kinds;
-pub mod lang;
+pub use emcraft_ui_core::lang;
+#[cfg(test)]
+mod lang_tests;
 pub mod layers;
 pub mod math;
 mod messages;
 pub mod navigation;
 pub mod pack;
 pub mod page;
-mod param_labels;
+pub(crate) use emcraft_ui_core::param_labels;
 pub mod pending;
 pub mod picture;
 pub mod prefs;
@@ -108,7 +110,7 @@ use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 
 use emcraft_engine::{EngineError, Session};
-use lang::args;
+pub(crate) use emcraft_ui_core::args;
 use serde_json::{Value, json};
 
 pub use action::{Action, Actions};

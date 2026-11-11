@@ -2360,6 +2360,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "emcraft-ui-core"
+version = "0.1.0"
+dependencies = [
+ "emcraft-engine",
+ "emcraft-i18n",
+ "emcraft-macros",
+ "emcraft-model",
+ "emcraft-render",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "emcraft-ui-egui"
 version = "0.1.0"
 dependencies = [
@@ -2373,6 +2386,7 @@ dependencies = [
  "emcraft-mesh",
  "emcraft-model",
  "emcraft-render",
+ "emcraft-ui-core",
  "fontdb",
  "naga",
  "rstest",

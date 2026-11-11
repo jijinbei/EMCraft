@@ -10,6 +10,7 @@ workspace = true
 
 [dependencies]
 emcraft-engine = { workspace = true }
+emcraft-ui-core = { workspace = true }
 emcraft-macros = { workspace = true }
 emcraft-i18n = { workspace = true }
 emcraft-mesh = { workspace = true }

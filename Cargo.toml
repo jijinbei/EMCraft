@@ -23,6 +23,7 @@ emcraft-gpu = { path = "crates/gpu" }
 emcraft-io = { path = "crates/io" }
 emcraft-templates = { path = "crates/templates" }
 emcraft-engine = { path = "crates/engine" }
+emcraft-ui-core = { path = "crates/ui-core" }
 emcraft-ui-egui = { path = "crates/ui-egui" }
 
 # foundation

@@ -4,10 +4,14 @@
 use egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2, pos2, vec2};
 use serde_json::json;
 
-use super::layout::Layout;
+use super::bridge::pos;
 use crate::handle::Handle;
 use crate::theme::Tokens;
 use crate::{Action, Actions, Hint, UiExt};
+use emcraft_ui_core::system::layout::Layout;
+
+/// The grid's spacing (points).
+const GRID: f32 = 24.0;
 
 /// A cubic link from `a` (an output) to `b` (an input), bowed out horizontally.
 fn curve(a: Pos2, b: Pos2, stroke: Stroke) -> egui::Shape {
@@ -20,15 +24,12 @@ pub(super) fn ground(p: &egui::Painter, area: Rect, pan: Vec2) {
     let t = &Tokens::get();
     p.rect_filled(area, 8.0, t.panel);
     p.rect_stroke(area, 8.0, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
-    let step = 24.0;
-    let mut y = area.top() + pan.y.rem_euclid(step);
-    while y < area.bottom() {
-        let mut x = area.left() + pan.x.rem_euclid(step);
-        while x < area.right() {
+    // Every GRID points from the first line inside the area, moved with the pan.
+    let lines = |from: f32, shift: f32, to: f32| (0..).map(move |k| from + shift.rem_euclid(GRID) + k as f32 * GRID).take_while(move |x| *x < to);
+    for y in lines(area.top(), pan.y, area.bottom()) {
+        for x in lines(area.left(), pan.x, area.right()) {
             p.circle_filled(pos2(x, y), 0.8, t.border);
-            x += step;
         }
-        y += step;
     }
 }
 
@@ -39,7 +40,7 @@ pub(super) fn links(p: &egui::Painter, layout: &Layout, dragging: Option<(Pos2, 
     for &(a, b) in &layout.links {
         let (from, to) = (&layout.nodes[a], &layout.nodes[b]);
         let ink = if from.on_chain && to.on_chain { t.accent } else { t.text_dim };
-        p.add(curve(from.output(), to.input(), Stroke::new(2.0, ink)));
+        p.add(curve(pos(from.output()), pos(to.input()), Stroke::new(2.0, ink)));
     }
     if let Some((a, b)) = dragging {
         p.add(curve(a, b, Stroke::new(2.0, t.accent)));
@@ -51,7 +52,7 @@ pub(super) fn unlink_marks(ui: &mut egui::Ui, layout: &Layout, out: &mut Actions
     let t = &Tokens::get();
     for &(a, b) in &layout.links {
         let (from, to) = (&layout.nodes[a], &layout.nodes[b]);
-        let mid = from.output().lerp(to.input(), 0.5);
+        let mid = pos(from.output().lerp(to.input(), 0.5));
         let resp = ui.hit(Rect::from_center_size(mid, vec2(16.0, 16.0)), Handle::SystemUnlink(&to.name), Sense::click());
         let lit = resp.hovered();
         let p = ui.painter();

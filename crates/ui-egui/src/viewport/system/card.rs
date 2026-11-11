@@ -6,13 +6,14 @@ use egui::{Align2, FontId, Rect, Sense, Stroke, pos2, vec2};
 use emcraft_model::system::{DataSource, Part, Stage};
 use serde_json::{Value, json};
 
+use super::bridge::{drag_inputs, pos, rect};
 use super::fields::{self, Number};
-use super::gesture::Input;
-use super::layout::{Kind, NodeBox};
 use crate::handle::Handle;
 use crate::lang::{tr, trf};
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, Hint, UiExt, scenario, system_ui};
+use emcraft_ui_core::system::gesture::Input;
+use emcraft_ui_core::system::layout::{Kind, NodeBox};
 
 /// A port's radius, and the room around it the pointer may press.
 const PORT_R: f32 = 6.0;
@@ -94,16 +95,11 @@ fn rows(app: &EmcraftApp, node: &NodeBox) -> Vec<Row> {
 
 /// The command a row's new value runs: the source's, the receiver's or the stage's settings.
 fn command(node: &NodeBox, key: &str, value: Value) -> Action {
-    let mut p = json!({ key: value });
-    let id = match node.kind {
-        Kind::Source => "system.source",
-        Kind::Receiver => "system.receiver",
-        Kind::Stage(_) => {
-            p["stage"] = json!(node.name);
-            "system.stage.edit"
-        }
-    };
-    Action::run(id, p)
+    match node.kind {
+        Kind::Source => Action::run("system.source", json!({ key: value })),
+        Kind::Receiver => Action::run("system.receiver", json!({ key: value })),
+        Kind::Stage(_) => Action::run("system.stage.edit", json!({"stage": node.name, key: value})),
+    }
 }
 
 /// What the chain reads at `node`'s output: a stage's gain and noise figure, the receiver's
@@ -139,18 +135,17 @@ fn title(app: &EmcraftApp, node: &NodeBox) -> String {
 /// Draws `node`'s card and edits its rows in place; what the pointer did on its header and ports.
 pub(super) fn card(app: &EmcraftApp, ui: &mut egui::Ui, node: &NodeBox, out: &mut Actions) -> Vec<Input> {
     let t = &Tokens::get();
-    let r = node.rect;
+    let r = rect(node.rect);
     let p = ui.painter().clone();
     p.rect(r, 8.0, if node.on_chain { t.dialog_body } else { t.panel_header }, Stroke::new(1.2, t.border), egui::StrokeKind::Inside);
-    let head = node.header();
+    let head = rect(node.header());
     p.rect_filled(head, egui::CornerRadius { nw: 8, ne: 8, sw: 0, se: 0 }, if node.on_chain { t.accent_soft } else { t.border });
     p.text(head.left_center() + vec2(10.0, 0.0), Align2::LEFT_CENTER, title(app, node), FontId::proportional(t.font_small), t.text);
-    let mut inputs = header(ui, node, out);
-    inputs.extend(ports(ui, node));
+    let inputs: Vec<Input> = header(ui, node, out).into_iter().chain(ports(ui, node)).collect();
     let font = FontId::proportional(t.font_small);
     let rows = rows(app, node);
     for (k, row) in rows.iter().enumerate() {
-        let line = node.row(k);
+        let line = rect(node.row(k));
         p.text(line.left_center(), Align2::LEFT_CENTER, &row.label, font.clone(), t.text_dim);
         let value_at = Rect::from_min_max(pos2(line.left() + 56.0, line.top()), line.max);
         match &row.value {
@@ -168,7 +163,7 @@ pub(super) fn card(app: &EmcraftApp, ui: &mut egui::Ui, node: &NodeBox, out: &mu
         }
     }
     if let Some(text) = reading(app, node) {
-        p.text(node.row(rows.len()).left_center(), Align2::LEFT_CENTER, text, font.clone(), t.accent);
+        p.text(rect(node.row(rows.len())).left_center(), Align2::LEFT_CENTER, text, font.clone(), t.accent);
     }
     if !node.on_chain {
         p.text(
@@ -185,20 +180,11 @@ pub(super) fn card(app: &EmcraftApp, ui: &mut egui::Ui, node: &NodeBox, out: &mu
 /// The header: a stage's dragged to move it, its menu deleting it.
 fn header(ui: &mut egui::Ui, node: &NodeBox, out: &mut Actions) -> Vec<Input> {
     let Kind::Stage(_) = node.kind else {
-        ui.hit(node.header(), Handle::SystemNode(&node.name), Sense::hover());
+        ui.hit(rect(node.header()), Handle::SystemNode(&node.name), Sense::hover());
         return Vec::new();
     };
-    let resp = ui.hit(node.header(), Handle::SystemNode(&node.name), Sense::click_and_drag());
-    let mut inputs = Vec::new();
-    if resp.drag_started() {
-        inputs.push(Input::Grab(node.name.clone()));
-    }
-    if resp.dragged() {
-        inputs.push(Input::Drag(resp.drag_delta()));
-    }
-    if resp.drag_stopped() {
-        inputs.extend(resp.interact_pointer_pos().map(Input::Release));
-    }
+    let resp = ui.hit(rect(node.header()), Handle::SystemNode(&node.name), Sense::click_and_drag());
+    let inputs = drag_inputs(&resp, Input::Grab(node.name.clone()));
     let resp = resp.on_hover_cursor(egui::CursorIcon::Grab).hint(t!("Drag to move it; right-click for more"));
     resp.context_menu(|ui| {
         if ui.button(tr(t!("All settings…"))).clicked() {
@@ -217,21 +203,16 @@ fn header(ui: &mut egui::Ui, node: &NodeBox, out: &mut Actions) -> Vec<Input> {
 fn ports(ui: &mut egui::Ui, node: &NodeBox) -> Vec<Input> {
     let t = &Tokens::get();
     let square = |c: egui::Pos2, side: f32| Rect::from_center_size(c, vec2(side, side));
-    let mut inputs = Vec::new();
     if node.kind != Kind::Source {
-        ui.painter().circle(node.input(), PORT_R, t.panel, Stroke::new(1.5, t.accent));
-        scenario::publish_target(Handle::SystemIn(&node.name), square(node.input(), 2.0 * PORT_R));
+        ui.painter().circle(pos(node.input()), PORT_R, t.panel, Stroke::new(1.5, t.accent));
+        scenario::publish_target(Handle::SystemIn(&node.name), square(pos(node.input()), 2.0 * PORT_R));
     }
-    if node.kind != Kind::Receiver {
-        ui.painter().circle_filled(node.output(), PORT_R, t.accent);
-        let port = ui.hit(square(node.output(), 2.0 * PORT_REACH), Handle::SystemOut(&node.name), Sense::drag());
-        if port.drag_started() {
-            inputs.push(Input::StartLink(node.name.clone()));
-        }
-        if port.drag_stopped() {
-            inputs.extend(port.interact_pointer_pos().map(Input::Release));
-        }
-        port.on_hover_cursor(egui::CursorIcon::Crosshair).hint(t!("Drag to another node's input to link them"));
+    if node.kind == Kind::Receiver {
+        return Vec::new();
     }
+    ui.painter().circle_filled(pos(node.output()), PORT_R, t.accent);
+    let port = ui.hit(square(pos(node.output()), 2.0 * PORT_REACH), Handle::SystemOut(&node.name), Sense::drag());
+    let inputs = drag_inputs(&port, Input::StartLink(node.name.clone()));
+    port.on_hover_cursor(egui::CursorIcon::Crosshair).hint(t!("Drag to another node's input to link them"));
     inputs
 }

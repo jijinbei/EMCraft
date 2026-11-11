@@ -1,0 +1,18 @@
+[package]
+name = "emcraft-ui-core"
+description = "What EMCraft's windows share, whatever draws them: the translations and the texts they look up, the charts' words, the templates' parameter labels, a system's stages as the window shows them; no GUI toolkit (egui, iced) below it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+emcraft-engine = { workspace = true }
+emcraft-macros = { workspace = true }
+emcraft-i18n = { workspace = true }
+emcraft-model = { workspace = true }
+emcraft-render = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

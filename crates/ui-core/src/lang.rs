@@ -1,7 +1,7 @@
 //! The window's languages (docs/languages.md): English, the source text and the default, and
 //! the translations compiled in (`locales/<id>.json`, data in the spirit of the
 //! built-in themes). Text is looked up by its English, as gettext does, where it leaves for the
-//! screen: the window's text helpers ([`crate::UiExt::text`], `act`'s hint, the `ui_kit`
+//! screen: the window's text helpers (the window's `UiExt::text`, `act`'s hint, the `ui_kit`
 //! controls) take a [`Shown`] — a `&str` is English to look up, a `String` (or [`Raw`]) is data
 //! shown as it is. [`tr`] gives the current language's text for an English one, the English
 //! itself when there is none; [`trf`] fills named placeholders (`{n}`) after the lookup, so a
@@ -18,8 +18,8 @@
 //! theme does, so tests drawing apps on threads of their own keep their own.
 //!
 //! ```
-//! use emcraft_ui_egui::lang::{self, tr, trf};
-//! use emcraft_ui_egui::t;
+//! use emcraft_ui_core::lang::{self, tr, trf};
+//! use emcraft_ui_core::t;
 //!
 //! assert_eq!(lang::current(), "en");
 //! assert_eq!(tr(t!("Settings")), "Settings");
@@ -221,7 +221,7 @@ pub fn tr(english: Text) -> &'static str {
 
 /// [`tr`] of a text known only at run time — a `named_enum!`'s label, a table's entry — whose
 /// translations a test checks instead of the compiler.
-pub(crate) fn lookup(english: &str) -> &str {
+pub fn lookup(english: &str) -> &str {
     let lang = translation();
     let found = lang.and_then(|l| l.strings.get(english));
     RECORD.with_borrow_mut(|r| {
@@ -294,12 +294,13 @@ impl Shown for Raw<'_> {
 
 /// The values of a text's placeholders, by name, for [`trf`], [`both`] and
 /// `EmcraftApp::info_with`: `args!(n = count, path = p)`.
+#[macro_export]
 macro_rules! args {
     ($($name:ident = $value:expr),* $(,)?) => {
         &[$((stringify!($name), &$value as &dyn ::std::fmt::Display)),*]
     };
 }
-pub(crate) use args;
+pub use crate::args;
 
 /// [`tr`] with its placeholders filled: each `{name}` by the value given for `name`.
 pub fn trf(english: Text, args: &[(&str, &dyn Display)]) -> String {
@@ -311,8 +312,8 @@ pub fn trf(english: Text, args: &[(&str, &dyn Display)]) -> String {
 /// ask for a translation of each.
 ///
 /// ```
-/// use emcraft_ui_egui::lang::plural;
-/// use emcraft_ui_egui::t;
+/// use emcraft_ui_core::lang::plural;
+/// use emcraft_ui_core::t;
 ///
 /// assert_eq!(plural(1, t!("{n} source"), t!("{n} sources"), &[("n", &1)]), "1 source");
 /// assert_eq!(plural(3, t!("{n} source"), t!("{n} sources"), &[("n", &3)]), "3 sources");
@@ -443,4 +444,14 @@ pub fn clip_id(text: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use super::*;
+
+    #[test]
+    fn placeholders_are_filled_once_and_braces_kept() {
+        assert_eq!(fill("{a} and {b}", &[("a", &1), ("b", &"{a}")]), "1 and {a}");
+        assert_eq!(fill("{x} {unknown} {", &[("x", &2.5)]), "2.5 {unknown} {");
+        assert_eq!(placeholders("Run, accepting {n} warning(s) {not a name}"), ["n"]);
+        assert!(is_text("{command} done.") && !is_text("{command}…") && !is_text("× 3"));
+    }
+}

@@ -57,6 +57,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("gpu", Class::Layer(2)),
     // L6: commands.
     ("engine", Class::Layer(6)),
+    // L6, after the engine: what every window shares, no GUI toolkit (egui, iced) below it.
+    ("ui-core", Class::Layer(6)),
     // L7: the desktop UI.
     ("ui-egui", Class::Layer(7)),
     ("testkit", Class::Testkit),
@@ -67,7 +69,8 @@ pub const TABLE: &[(&str, Class)] = &[
 ];
 
 /// Explicit orderings *within* a layer (earlier may be used by later).
-pub const INTRA_LAYER_ORDER: &[&[&str]] = &[&["macros", "model"], &["fem", "theory"], &["fem", "mesh"], &["fdtd", "gpu"], &["solver", "gpu"]];
+pub const INTRA_LAYER_ORDER: &[&[&str]] =
+    &[&["engine", "ui-core"], &["macros", "model"], &["fem", "theory"], &["fem", "mesh"], &["fdtd", "gpu"], &["solver", "gpu"]];
 
 fn intra_layer_allowed(from: &str, to: &str) -> bool {
     let (from, to) = (short_name(from), short_name(to));

@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use serde_json::{Value, json};
 
-use super::*;
+use crate::lang::*;
 use crate::scenario::Harness;
 
 fn japanese() -> &'static Language {
@@ -107,14 +107,6 @@ fn the_japanese_keeps_its_style() {
     }
     problems.sort();
     assert!(problems.is_empty(), "{} Japanese texts out of style:\n{}", problems.len(), problems.join("\n"));
-}
-
-#[test]
-fn placeholders_are_filled_once_and_braces_kept() {
-    assert_eq!(fill("{a} and {b}", &[("a", &1), ("b", &"{a}")]), "1 and {a}");
-    assert_eq!(fill("{x} {unknown} {", &[("x", &2.5)]), "2.5 {unknown} {");
-    assert_eq!(placeholders("Run, accepting {n} warning(s) {not a name}"), ["n"]);
-    assert!(is_text("{command} done.") && !is_text("{command}…") && !is_text("× 3"));
 }
 
 #[test]
@@ -822,7 +814,8 @@ fn in_source() -> BTreeSet<String> {
     }
     let mut out = BTreeSet::new();
     let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    walk(&crates.join("ui-egui/src"), &mut out);
-    walk(&crates.join("engine/src"), &mut out);
+    for dir in ["ui-egui/src", "ui-core/src", "engine/src"] {
+        walk(&crates.join(dir), &mut out);
+    }
     out
 }
