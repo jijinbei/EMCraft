@@ -4,6 +4,7 @@
 //! port-mode and eigenmode tables, the far-field pattern and the comparison with theory. Charts
 //! and fields are `emcraft-render`'s CPU pictures, shown as textures.
 
+use crate::view::ViewExt;
 use egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, pos2, vec2};
 use emcraft_engine::view::{self, Plane};
 use serde_json::{Value, json};

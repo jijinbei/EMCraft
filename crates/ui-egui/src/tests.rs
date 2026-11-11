@@ -1,5 +1,6 @@
 //! The app's own tests: the headless scenarios in `tests/scenarios/` and a few direct checks.
 
+use crate::view::ViewExt;
 use serde_json::{Value, json};
 
 use crate::scenario::Harness;

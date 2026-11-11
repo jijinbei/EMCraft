@@ -1,6 +1,7 @@
 //! The translations stay whole: every command and sample translated, the placeholders kept,
 //! and a tour of the window in Japanese that finds no English left and no translation unused.
 
+use crate::view::ViewExt;
 use std::collections::BTreeSet;
 
 use serde_json::{Value, json};

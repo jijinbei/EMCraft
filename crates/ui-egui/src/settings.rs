@@ -15,20 +15,7 @@ use crate::lang::{Raw, Shown, Text, args, shown, tr, trf};
 use crate::theme::{Theme, Tokens};
 use crate::{Action, Actions, EmcraftApp, Hint, Style, UiExt, scenario};
 
-emcraft_macros::named_enum! {
-    /// A section of the settings page.
-    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-    pub enum Section {
-        #[default]
-        Appearance = "appearance" => "Appearance",
-        Language = "language" => "Language",
-        Units = "units" => "Units",
-        View3d = "3d" => "3D view",
-        Dialogs = "dialogs" => "Dialogs",
-        Files = "files" => "Files",
-    }
-}
-emcraft_macros::named_serde!(Section);
+pub use emcraft_ui_core::page::Section;
 
 /// A theme card's size, in points.
 const CARD: [f32; 2] = [168.0, 132.0];

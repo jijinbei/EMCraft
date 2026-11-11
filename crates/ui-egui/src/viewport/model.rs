@@ -1,6 +1,7 @@
 //! The model in 3D (its section view: `crate::section3d`).
 
 use super::*;
+use crate::view::ViewExt;
 
 /// The model in 3D, in the active step's overlay.
 pub(super) fn model3d(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {

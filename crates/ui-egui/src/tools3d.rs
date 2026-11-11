@@ -22,7 +22,6 @@ use emcraft_model::geom::{Point3, Vec3};
 use emcraft_render::view3d::{self, Camera};
 use serde_json::{Value, json};
 
-use crate::glyphs::Glyph;
 use crate::handle::{Fixed, Handle};
 use crate::lang::{Raw, args, tr, trf};
 use crate::scene3d::faces::Face;
@@ -31,43 +30,7 @@ use crate::theme::Tokens;
 use crate::view3d::View3d;
 use crate::{Action, Actions, EmcraftApp, Hint, UiExt, scenario};
 
-emcraft_macros::named_enum! {
-    /// A tool of the 3D view.
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    pub enum Tool {
-        /// A waveguide port on the face clicked.
-        Port = "port" => "Face port",
-        /// A lumped port across two points clicked.
-        Lumped = "lumped" => "Gap port",
-        /// The distance between two things clicked.
-        Measure = "measure" => "Measure",
-    }
-}
-emcraft_macros::named_serde!(Tool);
-
-impl Tool {
-    pub fn glyph(self) -> Glyph {
-        match self {
-            Tool::Port => Glyph::PickFace,
-            Tool::Lumped => Glyph::PickGap,
-            Tool::Measure => Glyph::Ruler,
-        }
-    }
-
-    /// What it does, on hover.
-    pub fn hint(self) -> crate::lang::Text {
-        match self {
-            Tool::Port => t!("Click a flat face: a port there"),
-            Tool::Lumped => t!("Click two points: a lumped port between them"),
-            Tool::Measure => t!("Click two points, edges or faces: the distance (Esc clears)"),
-        }
-    }
-
-    /// Whether it makes ports (the Excitation step's tools).
-    pub fn ports(self) -> bool {
-        matches!(self, Tool::Port | Tool::Lumped)
-    }
-}
+pub use emcraft_ui_core::tools::Tool;
 
 emcraft_macros::named_enum! {
     /// What a pick snapped to.

@@ -1,6 +1,7 @@
 //! What follows a command's success: the cached pictures let go, the view the command calls
 //! for, the view state it resets, its message, and the workflow's next step.
 
+use crate::view::ViewExt;
 use emcraft_engine::view::{Component, Plane};
 use serde_json::Value;
 
