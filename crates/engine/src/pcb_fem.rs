@@ -132,7 +132,7 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
         Some(f) => f * size,
         None => edge_size(&board, &region, size),
     };
-    let copper = Copper::of(&board, &region, &s.model.lumped)?;
+    let copper = Copper::of(&board, &region, &square_ends(&s.model))?;
     let w = [region.hi[0] - region.lo[0], region.hi[1] - region.lo[1]];
     // An open boundary's layer: its inner box a line of the mesh in the plane (and a level
     // across the air, below), so no prism straddles where the layer begins.
@@ -227,7 +227,7 @@ struct Copper {
 }
 
 impl Copper {
-    fn of(board: &Board, region: &Region, lumped: &[LumpedPort]) -> Result<Copper> {
+    fn of(board: &Board, region: &Region, square: &[[f64; 2]]) -> Result<Copper> {
         // Nets in the order of their names.
         let mut nets: Vec<String> = board
             .segments
@@ -242,10 +242,11 @@ impl Copper {
         let net = |n: &str| nets.binary_search_by(|x| x.as_str().cmp(n)).map(|i| i as u32).map_err(|_| failed("a net without a name"));
         let layer = |n: &str| layer_index(board, n);
         let at = |q: [f64; 2]| [q[0] - region.lo[0], q[1] - region.lo[1]];
-        // A trace fed by a sheet port at an end stops there: no round end beyond the feed.
+        // A trace fed by a sheet port, or ending at a sheet element's gap, stops square there: a
+        // round end would reach on beyond the feed, or across a gap narrower than the trace.
         let fed = |q: [f64; 2]| {
             let q = at(q);
-            lumped.iter().any(|l| l.across.is_some() && (l.to.x - q[0]).hypot(l.to.z - q[1]) <= SAME_POINT)
+            square.iter().any(|e| (e[0] - q[0]).hypot(e[1] - q[1]) <= SAME_POINT)
         };
         let mut fine = Vec::with_capacity(board.segments.len() + 2 * board.vias.len());
         for g in &board.segments {
@@ -271,6 +272,14 @@ impl Copper {
         let layers = board.layers.iter().map(|l| l.name.clone()).chain(std::iter::once("vias".to_owned())).collect();
         Ok(Copper { layers, nets, fine, coarse, barrels, first_barrel })
     }
+}
+
+/// Where traces stop square, on the region's plane (x, z): a sheet port's fed end, and both
+/// ends of a sheet element's gap.
+fn square_ends(m: &emcraft_model::Model) -> Vec<[f64; 2]> {
+    let ports = m.lumped.iter().filter(|l| l.across.is_some()).map(|l| [l.to.x, l.to.z]);
+    let elements = m.elements.iter().filter(|e| e.across.is_some()).flat_map(|e| [[e.from.x, e.from.z], [e.to.x, e.to.z]]);
+    ports.chain(elements).collect()
 }
 
 /// The index of the board's layer `name`.

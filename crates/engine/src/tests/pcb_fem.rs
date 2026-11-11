@@ -110,6 +110,38 @@ fn a_bent_route_passes_its_power_round_the_corner() {
 }
 
 #[test]
+fn a_sheet_element_across_a_gap_narrower_than_its_traces_is_what_joins_them() {
+    // Two 0.6 mm traces 0.2 mm apart: round ends (0.3 mm radius) would close the gap, so the
+    // traces stop square at the element's ends. 0.01 pF at 1 GHz is 15.9 kΩ in series between
+    // 50 Ω (|S21| = 2·50/|100 + Z| ≈ 6.3e-3); the gap's own fringing capacitance, a few tens of
+    // fF, passes some more (4.9e-2 on this mesh), but nothing like the copper the round ends
+    // made of it (|S21| ≈ 1). 0.01 nH (0.063 Ω) passes nearly all.
+    let board = json!({
+        "name": "gap",
+        "layers": [{"name": "F.Cu", "z": 0, "eps_below": 9.8}, {"name": "B.Cu", "z": 0.635, "eps_below": 1}],
+        "segments": [
+            {"id": "a", "net": "S", "layer": "F.Cu", "start": [0, 0], "end": [4, 0], "width": 0.6},
+            {"id": "b", "net": "S", "layer": "F.Cu", "start": [4.2, 0], "end": [8.2, 0], "width": 0.6},
+        ],
+    });
+    let through = |element: Value| {
+        let mut s = Session::new();
+        s.execute("pcb.load", &json!({"data": board})).unwrap();
+        s.execute("pcb.region", &json!({"net": "S", "margin": 2, "above": 3, "below": 0})).unwrap();
+        s.execute("pcb.port", &json!({"name": "1", "segment": "a", "end": "start"})).unwrap();
+        s.execute("pcb.port", &json!({"name": "2", "segment": "b", "end": "end"})).unwrap();
+        let mut e = json!({"name": "X", "layer": "F.Cu", "from": [4, 0], "to": [4.2, 0], "width": 0.6});
+        e.as_object_mut().unwrap().extend(element.as_object().unwrap().clone());
+        s.execute("pcb.element", &e).unwrap();
+        mag(&lumped_s(&mut s, 1.5), "s21")
+    };
+    let blocked = through(json!({"capacitance": 0.01}));
+    assert!(blocked < 0.1, "{blocked}");
+    let joined = through(json!({"inductance": 0.01}));
+    assert!(joined > 0.9, "{joined}");
+}
+
+#[test]
 fn coupled_lines_couple_less_than_they_carry_and_keep_the_power() {
     // Two parallel 0.6 mm traces 0.3 mm apart, ports at all four ends: 1 → 2 through, 3 the
     // near end of the other trace, 4 its far end.
