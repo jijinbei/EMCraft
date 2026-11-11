@@ -266,7 +266,7 @@ fn summary(app: &EmcraftApp) -> Value {
         "font": app.fonts.in_use(app.language),
         "languages": crate::lang::ids(),
         "home": app.ui_state.page.start(),
-        "template": app.ui_state.template().map(super::template_dialog::TemplateDialog::inspect),
+        "template": app.ui_state.template().map(|card| app.template_preview.inspect(card)),
         "settings": app.ui_state.page.settings_shown().map(super::settings::Section::id),
         "project": {"name": app.session.name(), "path": app.session.path(), "dirty": app.session.is_dirty(), "title": crate::files::title(app)},
         "files": files_state(app),

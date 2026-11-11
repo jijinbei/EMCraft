@@ -140,7 +140,7 @@ fn card(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32, busy: b
                 d.widgets = crate::import_ui::body(app, d, ui, &mut asked);
             } else {
                 let help = ui_kit::button(ui, t!("Help"), false, Fixed::DialogHelp);
-                let mut toggles = vec![(help.id, false)];
+                let mut toggles = vec![(help.id.value(), false)];
                 if help.clicked() {
                     d.help = !d.help;
                 }
@@ -153,7 +153,7 @@ fn card(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32, busy: b
                     let basic = |name: &str| matches!(name, "size" | "per_wavelength" | "frequency");
                     d.widgets = fields(ui, d, session, &basic, &|name| Raw(crate::lang::lookup(crate::param_labels::param_label(id, name))));
                     let options = ui_kit::button(ui, t!("Advanced settings"), false, Fixed::DialogOptions);
-                    toggles.push((options.id, false));
+                    toggles.push((options.id.value(), false));
                     if options.clicked() {
                         d.options = !d.options;
                     }
@@ -187,7 +187,7 @@ fn card(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32, busy: b
     asked.ask(Asked::Ok, ok.clicked());
     let cancel = ui_kit::button(&mut footer, t!("Cancel"), false, Fixed::DialogCancel);
     asked.ask(Asked::Cancel, cancel.clicked());
-    d.widgets.extend([(ok.id, false), (cancel.id, false)]);
+    d.widgets.extend([(ok.id.value(), false), (cancel.id.value(), false)]);
     if busy {
         footer.text(Style::SmallDim, t!("busy…"));
     }
@@ -239,15 +239,15 @@ pub(crate) fn fields<L: crate::lang::Shown>(
     session: &emcraft_engine::Session,
     shown: &dyn Fn(&str) -> bool,
     label: &dyn Fn(&'static str) -> L,
-) -> Vec<(egui::Id, bool)> {
+) -> Vec<(u64, bool)> {
     let t = &Tokens::get();
     let id = d.command.id;
     // The controls drawn, each with whether it takes text; the first text field takes the
     // keyboard when the dialog opens.
-    let mut drawn: Vec<(egui::Id, bool)> = Vec::new();
+    let mut drawn: Vec<(u64, bool)> = Vec::new();
     let mut focus = std::mem::take(&mut d.focus_first);
-    let mut text_field = |r: &egui::Response, drawn: &mut Vec<(egui::Id, bool)>| {
-        drawn.push((r.id, true));
+    let mut text_field = |r: &egui::Response, drawn: &mut Vec<(u64, bool)>| {
+        drawn.push((r.id.value(), true));
         if std::mem::take(&mut focus) {
             r.request_focus();
         }
@@ -266,7 +266,7 @@ pub(crate) fn fields<L: crate::lang::Shown>(
             Kind::Bool => {
                 ui_kit::row(ui, label(name), f.required, |ui| {
                     let r = crate::math::tip(ui.named(egui::Checkbox::new(&mut f.on, ""), handle), hint);
-                    drawn.push((r.id, false));
+                    drawn.push((r.id.value(), false));
                 });
             }
             Kind::Vector(parts) => {
@@ -306,7 +306,7 @@ pub(crate) fn fields<L: crate::lang::Shown>(
                 ui_kit::row(ui, label(name), f.required, |ui| {
                     let r = crate::math::tip(choice(ui, (name, 0, 0), &mut f.text, &list, ui.available_width() - 8.0, !f.required), hint);
                     scenario::publish_target(handle, r.rect);
-                    drawn.push((r.id, false));
+                    drawn.push((r.id.value(), false));
                 });
             }
             Kind::Json | Kind::Numbers | Kind::Number | Kind::Integer | Kind::Text => {
@@ -353,7 +353,7 @@ fn table_words(name: &str) -> (&str, &str) {
 
 /// A table field: a row of cells per entry (sections, layers), each removable, and a button
 /// that adds one. The cells drawn, each with whether it takes text.
-fn table(ui: &mut egui::Ui, f: &mut Field, cols: &'static [Column], doc: &str, session: &emcraft_engine::Session) -> Vec<(egui::Id, bool)> {
+fn table(ui: &mut egui::Ui, f: &mut Field, cols: &'static [Column], doc: &str, session: &emcraft_engine::Session) -> Vec<(u64, bool)> {
     let t = &Tokens::get();
     let mut drawn = Vec::new();
     let name = f.name;
@@ -379,7 +379,7 @@ fn table(ui: &mut egui::Ui, f: &mut Field, cols: &'static [Column], doc: &str, s
                     Cell::Number => ui.add(egui::TextEdit::singleline(cell).desired_width(44.0).char_limit(64)),
                 };
                 scenario::publish_target(Handle::DialogCell(name, i, c.name), resp.rect);
-                drawn.push((resp.id, c.cell == Cell::Number));
+                drawn.push((resp.id.value(), c.cell == Cell::Number));
             }
             let x = ui.named(egui::Button::new("×").small(), Handle::DialogRemove(name, i)).hint(t!("remove this row"));
             if x.clicked() {

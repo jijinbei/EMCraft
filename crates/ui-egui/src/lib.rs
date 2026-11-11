@@ -56,7 +56,7 @@ pub mod control;
 pub mod crash;
 mod crash_ui;
 pub mod dialog_ui;
-pub mod dialogs;
+pub use emcraft_ui_core::dialogs;
 pub mod files;
 mod fonts;
 mod geom;
@@ -98,7 +98,7 @@ pub mod theme;
 pub mod tools3d;
 pub mod ui_ext;
 pub mod ui_kit;
-pub mod ui_state;
+pub use emcraft_ui_core::ui_state;
 pub mod view;
 pub mod view3d;
 pub mod view_cube;
@@ -185,10 +185,12 @@ pub struct EmcraftApp {
     /// The command that failed and why, until a command succeeds: the panel that asked for it
     /// shows it there (the message log keeps every one).
     pub failure: Option<Failure>,
-    /// The dialog whose OK started the running job, to open again if the job fails.
-    /// The widget that had the keyboard at the end of the last frame: who a key pressed since
-    /// was meant for (egui lets go of the keyboard on Escape before a frame is drawn).
-    pub(crate) focus_last: Option<egui::Id>,
+    /// The widget that had the keyboard at the end of the last frame (its id's value): who a
+    /// key pressed since was meant for (egui lets go of the keyboard on Escape before a frame is
+    /// drawn).
+    pub(crate) focus_last: Option<u64>,
+    /// What the open template's card shows of its model.
+    pub(crate) template_preview: template_dialog::Preview,
 }
 
 /// The control channel's state beside the app.
@@ -283,6 +285,7 @@ impl EmcraftApp {
             crashes: crash::Crashes::default(),
             failure: None,
             focus_last: None,
+            template_preview: template_dialog::Preview::default(),
             language: lang::ENGLISH,
         };
         app.info_with(t!("Open a sample or a project (File) or build a model from the ribbon."), &[]);
@@ -484,12 +487,15 @@ impl EmcraftApp {
             self.workspace(ui, &ctx, &mut out);
         }
         // What is open over the window, over everything drawn before.
+        let mut preview = std::mem::take(&mut self.template_preview);
         self.lend_overlay(|app, over| match over {
             ui_state::Overlay::Ask(ask) => files::show(app, ask, &ctx, &mut out),
-            ui_state::Overlay::Template(card) => template_dialog::show(card, &ctx, &mut out),
+            ui_state::Overlay::Template(card) => template_dialog::show(card, &mut preview, &ctx, &mut out),
             ui_state::Overlay::Reports(reports) => crash_ui::show(app, reports, &ctx, &mut out),
             ui_state::Overlay::Search => {}
         });
+        // The preview is the open card's: let go with it.
+        self.template_preview = if self.ui_state.template().is_some() { preview } else { template_dialog::Preview::default() };
         files::drop_hint(&ctx);
         shortcuts(self, &ctx, &mut out);
         self.apply_all(out);
@@ -497,7 +503,7 @@ impl EmcraftApp {
         self.play_next();
         self.collect_screenshots(&ctx);
         self.keep_prefs();
-        self.focus_last = ctx.memory(egui::Memory::focused);
+        self.focus_last = ctx.memory(egui::Memory::focused).map(|id| id.value());
     }
 
     /// Brings the caches the drawing reads up to date: they come from engine queries, which
@@ -511,6 +517,25 @@ impl EmcraftApp {
         if self.place.view() == View::Eigenmodes {
             viewport::prepare_eigenmodes(self);
         }
+    }
+
+    /// Draws what is open over the window: `draw` edits its drafts (a path typed, a card's
+    /// fields) with the rest of the app to read; what is open stays as it was (closing it is an
+    /// action).
+    pub(crate) fn lend_overlay<R>(&mut self, draw: impl FnOnce(&Self, &mut ui_state::Overlay) -> R) -> Option<R> {
+        let mut o = self.ui_state.lend_overlay()?;
+        let r = draw(self, &mut o);
+        self.ui_state.restore_overlay(o);
+        Some(r)
+    }
+
+    /// Draws the open dialog (or where it would be): `draw` edits its fields with the rest of
+    /// the app to read.
+    pub(crate) fn lend_dialog<R>(&mut self, draw: impl FnOnce(&Self, Option<&mut dialogs::Dialog>) -> R) -> R {
+        let mut d = self.ui_state.lend_dialog();
+        let r = draw(self, d.as_mut());
+        self.ui_state.restore_dialog(d);
+        r
     }
 
     /// Lends `self` to `draw` with a piece of its widget state (`piece`) taken out of it, and

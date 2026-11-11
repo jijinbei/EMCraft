@@ -184,10 +184,7 @@ pub(super) fn kv(ui: &mut egui::Ui, k: crate::lang::Text, v: String) {
     });
 }
 
-pub(crate) fn fmt(v: f64) -> String {
-    let s = format!("{v:.6}");
-    s.trim_end_matches('0').trim_end_matches('.').to_owned()
-}
+pub(crate) use emcraft_ui_core::dialogs::short_number as fmt;
 
 #[cfg(test)]
 mod tests {

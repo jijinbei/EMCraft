@@ -214,9 +214,10 @@ pub struct Dialog {
     pub docked: bool,
     /// The first field takes the keyboard when the dialog is first drawn.
     pub focus_first: bool,
-    /// The controls the dialog drew last, each with whether it takes text: Enter and Escape are
-    /// the dialog's only while one of them (or nothing) has the keyboard.
-    pub widgets: Vec<(egui::Id, bool)>,
+    /// The controls the dialog drew last (by the window's own ids for them), each with whether
+    /// it takes text: Enter and Escape are the dialog's only while one of them (or nothing) has
+    /// the keyboard.
+    pub widgets: Vec<(u64, bool)>,
     /// The parameters it opened on, when they are the model's own and running them again
     /// would change nothing: OK with these closes it without running the command.
     pub unchanged: Option<Value>,
@@ -237,8 +238,19 @@ fn number_text(v: f64) -> String {
     s.strip_suffix(".0").map(str::to_owned).unwrap_or(s)
 }
 
+/// A number as a field shows it typed: six decimals at most, without trailing zeros.
+///
+/// ```
+/// use emcraft_ui_core::dialogs::short_number;
+/// assert_eq!((short_number(2.5), short_number(1.0 / 3.0), short_number(12.0)), ("2.5".into(), "0.333333".into(), "12".into()));
+/// ```
+pub fn short_number(v: f64) -> String {
+    let s = format!("{v:.6}");
+    s.trim_end_matches('0').trim_end_matches('.').to_owned()
+}
+
 /// A JSON value as a field's text.
-pub(crate) fn value_text(v: &Value) -> String {
+pub fn value_text(v: &Value) -> String {
     match v {
         Value::Null => String::new(),
         Value::String(s) => s.clone(),

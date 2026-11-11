@@ -81,7 +81,7 @@ pub(crate) fn prepare(app: &mut EmcraftApp) {
 }
 
 /// The card's body; the controls drawn, each with whether it takes text.
-pub(crate) fn body(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, asked: &mut Asked) -> Vec<(egui::Id, bool)> {
+pub(crate) fn body(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, asked: &mut Asked) -> Vec<(u64, bool)> {
     let t = &Tokens::get();
     let session = &app.session;
     let probe = app.replies.import.as_ref().filter(|p| p.key == key(d));
@@ -180,7 +180,7 @@ fn detected(
     d: &mut Dialog,
     r: &emcraft_engine::ImportInspection,
     session: &emcraft_engine::Session,
-    drawn: &mut Vec<(egui::Id, bool)>,
+    drawn: &mut Vec<(u64, bool)>,
 ) {
     let t = &Tokens::get();
     let l = session.display().length.symbol();
@@ -212,7 +212,7 @@ fn detected(
 
 /// A design's parameters, each a field holding its value as saved until changed; a change is
 /// written into the dialog's `parameters` (name → number, or an expression the design reads).
-fn parameters(ui: &mut egui::Ui, d: &mut Dialog, params: &[emcraft_engine::DesignParameter], drawn: &mut Vec<(egui::Id, bool)>) {
+fn parameters(ui: &mut egui::Ui, d: &mut Dialog, params: &[emcraft_engine::DesignParameter], drawn: &mut Vec<(u64, bool)>) {
     let t = &Tokens::get();
     let Some(field) = d.field_mut("parameters") else { return };
     let mut set: Map<String, Value> = serde_json::from_str(field.text.trim()).ok().and_then(|v: Value| v.as_object().cloned()).unwrap_or_default();
@@ -226,7 +226,7 @@ fn parameters(ui: &mut egui::Ui, d: &mut Dialog, params: &[emcraft_engine::Desig
         ui_kit::row(ui, Raw(name), false, |ui| {
             let w = ui.available_width() - if unit.is_empty() { 8.0 } else { 40.0 };
             let r = ui.named(egui::TextEdit::singleline(&mut value).desired_width(w).char_limit(256), Handle::DialogParam(name));
-            drawn.push((r.id, true));
+            drawn.push((r.id.value(), true));
             if r.changed() {
                 changed = true;
                 let v = value.trim();

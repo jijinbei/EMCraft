@@ -3,7 +3,7 @@
 //! builds the project from it (`file.sample` with the values changed).
 
 use egui::{Sense, vec2};
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 
 use crate::files::{FileAction, Then};
 use crate::handle::{Fixed, Handle};
@@ -11,6 +11,7 @@ use crate::lang::{Raw, sample_label};
 use crate::pending::Pending;
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, Picture, Style, UiExt, scenario, ui_kit};
+pub use emcraft_ui_core::template_card::{Field, TemplateCard};
 
 /// The preview's size, in points, and in pixels (drawn at twice it).
 const PREVIEW: [f32; 2] = [520.0, 340.0];
@@ -19,123 +20,58 @@ const PREVIEW_PIXELS: [usize; 2] = [(PREVIEW[0] * 2.0) as usize, (PREVIEW[1] * 2
 const FIELDS_WIDTH: f32 = 320.0;
 const LABEL_WIDTH: f32 = 160.0;
 
-/// A parameter's field: its name, its text, its unit and the template's own value.
-pub struct Field {
-    pub name: String,
-    /// What it is, in words (English: [`crate::lang::parameter_label`] shows it).
-    pub label: Option<String>,
-    pub text: String,
-    pub unit: &'static str,
-    pub default: f64,
-}
-
-impl Field {
-    /// Its text as a value: `None` unless a finite number.
-    fn value(&self) -> Option<f64> {
-        self.text.trim().parse::<f64>().ok().filter(|v| v.is_finite())
-    }
-}
-
-/// The open template.
-pub struct TemplateDialog {
-    pub name: String,
-    pub fields: Vec<Field>,
-    /// The preview, and what it was drawn from (the fields' texts and the theme).
-    preview: Option<Picture>,
-    drawn: Option<(Vec<String>, crate::theme::ThemeKey)>,
-    /// The camera the preview was drawn from, and where the parameters show on it.
+/// What the card shows of the model: the preview and what it was drawn from (the template, the
+/// fields' texts and the theme), the camera it was drawn from and where the parameters show
+/// on it, and the one being drawn off the frame ([`crate::home::draw_template`]).
+#[derive(Default)]
+pub struct Preview {
+    picture: Option<Picture>,
+    drawn: Option<(String, Vec<String>, crate::theme::ThemeKey)>,
     camera: Option<emcraft_render::view3d::Camera>,
     marks: Vec<emcraft_engine::TemplateMark>,
-    /// The parameter pointed at (its field focused or under the pointer): its mark is drawn.
-    pub active: Option<String>,
-    /// Why the model cannot be built from the fields as they stand.
-    pub error: Option<String>,
-    /// The preview being drawn off the frame ([`crate::home::draw_template`]).
     drawing: Option<Pending<Result<crate::home::Drawing, String>>>,
 }
 
-impl TemplateDialog {
-    /// Template `name` with its own values (`None`: no such template).
-    pub fn new(app: &EmcraftApp, name: &str) -> Option<TemplateDialog> {
-        let d = app.session.display();
-        let fields = emcraft_engine::template_parameters(name)?
-            .into_iter()
-            .map(|p| Field {
-                unit: match p.quantity.as_deref() {
-                    Some("length") => d.length.symbol(),
-                    Some("frequency") => d.frequency.symbol(),
-                    _ => "",
-                },
-                text: crate::steps::fmt(p.value),
-                default: p.value,
-                label: p.label,
-                name: p.name,
-            })
-            .collect();
-        Some(TemplateDialog {
-            name: name.to_owned(),
-            fields,
-            preview: None,
-            drawn: None,
-            camera: None,
-            marks: Vec::new(),
-            active: None,
-            error: None,
-            drawing: None,
-        })
-    }
-
-    /// The values changed from the template's, by name; an error naming a field that is not a
-    /// number.
-    pub fn values(&self) -> Result<Value, String> {
-        let mut map = Map::new();
-        for f in &self.fields {
-            let v = f.value().ok_or_else(|| format!("{}: not a number", f.name))?;
-            if v != f.default {
-                map.insert(f.name.clone(), json!(v));
-            }
+impl Preview {
+    /// Draws the preview again, off the frame, when `card`'s fields or the theme changed since
+    /// it was drawn; takes it once drawn. `card` learns why the model cannot be built.
+    fn refresh(&mut self, card: &mut TemplateCard, ctx: &egui::Context) {
+        if self.drawn.as_ref().is_some_and(|(name, ..)| *name != card.name) {
+            *self = Preview::default();
         }
-        Ok(Value::Object(map))
-    }
-
-    /// Draws the preview again, off the frame, when the fields or the theme changed since it
-    /// was drawn; takes it once drawn.
-    fn refresh(&mut self, ctx: &egui::Context) {
-        let key = (self.fields.iter().map(|f| f.text.clone()).collect::<Vec<_>>(), crate::theme::key());
+        let key = (card.name.clone(), card.texts(), crate::theme::key());
         if self.drawn.as_ref() != Some(&key) {
             self.drawn = Some(key);
-            match self.values() {
-                // A drawing begun before is let go: only the latest fields' picture is shown.
-                Ok(v) => self.drawing = Some(crate::home::draw_template(ctx, &self.name, v, PREVIEW_PIXELS)),
-                Err(e) => {
-                    self.drawing = None;
-                    self.error = Some(e);
-                }
-            }
+            // A drawing begun before is let go: only the latest fields' picture is shown.
+            self.drawing =
+                card.values().map(|v| crate::home::draw_template(ctx, &card.name, v, PREVIEW_PIXELS)).map_err(|e| card.error = Some(e)).ok();
         }
         let Some(done) = self.drawing.as_ref().and_then(Pending::take) else { return };
         self.drawing = None;
         match done {
             Ok(d) => {
-                self.preview = Some(Picture::new(&d.canvas));
+                self.picture = Some(Picture::new(&d.canvas));
                 self.camera = Some(d.camera);
-                self.marks = self.values().ok().and_then(|v| emcraft_engine::template_marks(&self.name, &v).ok()).unwrap_or_default();
-                self.error = None;
+                self.marks = card.values().ok().and_then(|v| emcraft_engine::template_marks(&card.name, &v).ok()).unwrap_or_default();
+                card.error = None;
             }
             // The last good picture stays, with why this one cannot be built.
-            Err(e) => self.error = Some(e),
+            Err(e) => card.error = Some(e),
         }
     }
 
-    pub fn inspect(&self) -> Value {
-        let fields: Map<String, Value> = self.fields.iter().map(|f| (f.name.clone(), json!(f.text))).collect();
-        json!({"name": self.name, "fields": fields, "error": self.error, "preview": self.preview.is_some(), "active": self.active, "marks": self.marks.len()})
+    /// `card` as the control channel reports it, with what the preview shows.
+    pub fn inspect(&self, card: &TemplateCard) -> Value {
+        let mut v = card.inspect();
+        v["preview"] = json!(self.picture.is_some());
+        v["marks"] = json!(self.marks.len());
+        v
     }
 }
 
 /// The template's card: its parameters, its preview and Open, Cancel and Reset.
-pub fn show(dlg: &mut TemplateDialog, ctx: &egui::Context, out: &mut Actions) {
-    dlg.refresh(ctx);
+pub fn show(dlg: &mut TemplateCard, preview: &mut Preview, ctx: &egui::Context, out: &mut Actions) {
+    preview.refresh(dlg, ctx);
     let t = &Tokens::get();
     let modal = egui::Modal::new(egui::Id::new("emcraft_template")).frame(t.card(t.dialog_body).inner_margin(16)).show(ctx, |ui| {
         // What it is in brief, its name (the sample `file.sample` opens) in a chip.
@@ -149,7 +85,7 @@ pub fn show(dlg: &mut TemplateDialog, ctx: &egui::Context, out: &mut Actions) {
         ui.add_space(8.0);
         ui.horizontal_top(|ui| {
             fields(ui, dlg);
-            preview(ui, dlg);
+            picture(ui, dlg, preview);
         });
         if let Some(e) = &dlg.error {
             ui_kit::small(ui, Raw(e), t.form_error);
@@ -162,9 +98,7 @@ pub fn show(dlg: &mut TemplateDialog, ctx: &egui::Context, out: &mut Actions) {
             ui.act(ready, ui_kit::styled(t!("Open"), true), Fixed::TemplateOpen.into(), Action::OpenTemplate(name, values), out);
             ui.act(true, ui_kit::styled(t!("Cancel"), false), Fixed::TemplateCancel.into(), Action::Template(None), out);
             if ui.named(egui::Button::new(crate::lang::tr(t!("Reset"))).frame(false), Fixed::TemplateReset.into()).clicked() {
-                for f in &mut dlg.fields {
-                    f.text = crate::steps::fmt(f.default);
-                }
+                *dlg = dlg.clone().reset();
             }
         });
     });
@@ -175,7 +109,7 @@ pub fn show(dlg: &mut TemplateDialog, ctx: &egui::Context, out: &mut Actions) {
 
 /// The parameters' fields; the one under the pointer, else the one being typed in, is the
 /// dialog's active one.
-fn fields(ui: &mut egui::Ui, dlg: &mut TemplateDialog) {
+fn fields(ui: &mut egui::Ui, dlg: &mut TemplateCard) {
     let t = &Tokens::get();
     ui.vertical(|ui| {
         ui.set_width(FIELDS_WIDTH);
@@ -230,10 +164,10 @@ fn fields(ui: &mut egui::Ui, dlg: &mut TemplateDialog) {
 
 /// The model as the fields make it (dimmed when they do not make one), with the active
 /// parameter's dimension on it.
-fn preview(ui: &mut egui::Ui, dlg: &mut TemplateDialog) {
+fn picture(ui: &mut egui::Ui, dlg: &TemplateCard, preview: &mut Preview) {
     let (r, _) = ui.allocate_exact_size(vec2(PREVIEW[0], PREVIEW[1]), Sense::hover());
     scenario::publish_target(Fixed::TemplatePreview, r);
-    if let Some(p) = dlg.preview.as_mut() {
+    if let Some(p) = preview.picture.as_mut() {
         let id = p.texture(ui.ctx());
         let mut image = egui::Image::new((id, vec2(PREVIEW[0], PREVIEW[1])));
         if dlg.error.is_some() {
@@ -241,8 +175,8 @@ fn preview(ui: &mut egui::Ui, dlg: &mut TemplateDialog) {
         }
         image.paint_at(ui, r);
     }
-    if let (Some(cam), Some(name), None) = (&dlg.camera, &dlg.active, &dlg.error)
-        && let Some(m) = dlg.marks.iter().find(|m| &m.name == name)
+    if let (Some(cam), Some(name), None) = (&preview.camera, &dlg.active, &dlg.error)
+        && let Some(m) = preview.marks.iter().find(|m| &m.name == name)
     {
         let field = dlg.fields.iter().find(|f| &f.name == name);
         let (value, unit) = field.map_or(("", ""), |f| (f.text.as_str(), f.unit));

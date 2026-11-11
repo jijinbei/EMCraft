@@ -72,3 +72,21 @@ impl FileAction {
         }
     }
 }
+
+/// The path field shown when there is no file dialog.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Prompt {
+    pub purpose: Purpose,
+    pub text: String,
+}
+
+/// The one question over the window, which takes the keyboard while it is asked.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Ask {
+    /// A file's path, typed (there is no file dialog).
+    Path(Prompt),
+    /// "Save the changes first?" before going on with `Then`.
+    Save(Then),
+    /// Where the history goes (File › Export history), as typed.
+    Export(String),
+}

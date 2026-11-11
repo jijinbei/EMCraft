@@ -187,7 +187,7 @@ impl EmcraftApp {
 
     /// Shows the template's card (none for no name or an unknown one).
     fn show_template(&mut self, name: Option<String>) {
-        if let Some(card) = name.and_then(|n| crate::template_dialog::TemplateDialog::new(self, &n)) {
+        if let Some(card) = name.and_then(|n| crate::template_dialog::TemplateCard::new(&self.session, &n)) {
             self.ui_state.open_template(card);
         }
     }

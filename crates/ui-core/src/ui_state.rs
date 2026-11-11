@@ -7,25 +7,25 @@
 //!
 //! Escape closes the top layer ([`UiState::escape_target`]); a layer's way out is written once
 //! ([`UiState::close`]). While a job runs, what waits for it is one rule
-//! ([`Action::waits_for_job`]). No egui here (a test keeps it so): the transitions are plain data,
-//! checked by table in the tests below.
+//! ([`Action::waits_for_job`]). The transitions are plain data, checked by table in the tests
+//! below; each window draws from them its own way.
 
+use crate::action::Action;
 use crate::dialogs::Dialog;
 use crate::files::{Answer, Ask, FileAction};
 use crate::page::Pages;
 use crate::selection::{Selection, Then};
-use crate::template_dialog::TemplateDialog;
-use crate::tools3d::Tool;
-use crate::{Action, EmcraftApp};
+use crate::template_card::TemplateCard;
+use crate::tools::Tool;
 
-pub use emcraft_ui_core::layer::Layer;
+pub use crate::layer::Layer;
 
 /// What is open over the window: one at a time.
 pub enum Overlay {
     /// A question or a prompt (over everything: a card or the search open closes).
     Ask(Ask),
     /// A template's card, its fields being set.
-    Template(Box<TemplateDialog>),
+    Template(Box<TemplateCard>),
     /// The command search's list (its query is the ribbon's field).
     Search,
     /// The crash reports' card, the reports as they were read.
@@ -97,7 +97,7 @@ impl UiState {
     }
 
     /// The template's card open.
-    pub fn template(&self) -> Option<&TemplateDialog> {
+    pub fn template(&self) -> Option<&TemplateCard> {
         match &self.overlay {
             Some(Overlay::Template(t)) => Some(t),
             _ => None,
@@ -180,7 +180,7 @@ impl UiState {
     /// one, unless a field it does not own has it.
     ///
     /// ```
-    /// use emcraft_ui_egui::ui_state::{Keyboard, Layer, UiState};
+    /// use emcraft_ui_core::ui_state::{Keyboard, Layer, UiState};
     ///
     /// let s = UiState::default();
     /// assert_eq!(s.escape_target(&[Layer::Tool], Keyboard::Free), Some(Layer::Tool));
@@ -216,7 +216,7 @@ impl UiState {
     }
 
     /// Opens a template's card, unless a question is open (it stays; the card is refused).
-    pub fn open_template(&mut self, card: TemplateDialog) -> bool {
+    pub fn open_template(&mut self, card: TemplateCard) -> bool {
         if self.ask().is_some() {
             return false;
         }
@@ -346,32 +346,33 @@ impl UiState {
         }
     }
 
+    /// What is open over the window, lent out to be drawn with the rest of the window to read
+    /// (its drafts edited meanwhile), and put back with [`UiState::restore_overlay`].
+    pub fn lend_overlay(&mut self) -> Option<Overlay> {
+        self.overlay.take()
+    }
+
+    /// The overlay lent out, back.
+    pub fn restore_overlay(&mut self, overlay: Overlay) {
+        self.overlay = Some(overlay);
+    }
+
+    /// The open dialog, lent out to be drawn as [`UiState::lend_overlay`] lends the overlay, and
+    /// put back with [`UiState::restore_dialog`].
+    pub fn lend_dialog(&mut self) -> Option<Dialog> {
+        self.dialog.take()
+    }
+
+    /// The dialog lent out, back.
+    pub fn restore_dialog(&mut self, dialog: Option<Dialog>) {
+        self.dialog = dialog;
+    }
+
     /// Closes the overlay when it is `layer`'s.
     fn close_overlay(&mut self, layer: Layer) {
         if self.overlay.as_ref().is_some_and(|o| o.layer() == layer) {
             self.overlay = None;
         }
-    }
-}
-
-impl EmcraftApp {
-    /// Draws what is open over the window: `draw` edits its drafts (a path typed, a card's
-    /// fields) with the rest of the app to read; what is open stays as it was (closing it is an
-    /// action).
-    pub(crate) fn lend_overlay<R>(&mut self, draw: impl FnOnce(&Self, &mut Overlay) -> R) -> Option<R> {
-        let mut o = self.ui_state.overlay.take()?;
-        let r = draw(self, &mut o);
-        self.ui_state.overlay = Some(o);
-        Some(r)
-    }
-
-    /// Draws the open dialog (or where it would be): `draw` edits its fields with the rest of
-    /// the app to read.
-    pub(crate) fn lend_dialog<R>(&mut self, draw: impl FnOnce(&Self, Option<&mut Dialog>) -> R) -> R {
-        let mut d = self.ui_state.dialog.take();
-        let r = draw(self, d.as_mut());
-        self.ui_state.dialog = d;
-        r
     }
 }
 
@@ -383,7 +384,7 @@ mod tests {
 
     fn selected() -> UiState {
         let mut s = UiState::default();
-        s.select(Selection::of(vec![crate::scene3d::Pick::Guide], None));
+        s.select(Selection::of(vec![crate::pick::Pick::Guide], None));
         s
     }
 
@@ -391,7 +392,7 @@ mod tests {
     /// double click on a part picks it alone to edit it; a box adds with Shift.
     #[test]
     fn clicks_and_boxes_change_the_selection_and_ask_the_view() {
-        use crate::scene3d::Pick;
+        use crate::pick::Pick;
         use crate::selection::Click;
         let mut s = selected();
         assert_eq!(s.update(&Action::Click(Click::Single { pick: None, add: false })), Some(vec![]));
@@ -464,7 +465,7 @@ mod tests {
     /// about the job instead of waiting for it, and an answer to that question goes through.
     #[test]
     fn a_running_job_holds_back_what_changes_the_project() {
-        use crate::Actions;
+        use crate::action::Actions;
         use crate::files::Then;
         use serde_json::json;
         let busy = Actions::during(true);
@@ -481,7 +482,7 @@ mod tests {
         }
         for free in [
             Action::CancelJob,
-            Action::Close(crate::ui_state::Layer::Dialog),
+            Action::Close(Layer::Dialog),
             Action::Show(crate::page::Tab::Start),
             Action::Tool(None),
             Action::File(FileAction::Request(Then::Quit)),
@@ -489,16 +490,5 @@ mod tests {
         ] {
             assert!(busy.allows(&free), "{free:?} waits for a job");
         }
-    }
-
-    /// No egui in the window's state: its transitions are plain data.
-    #[test]
-    fn the_windows_state_does_not_draw() {
-        let src = include_str!("ui_state.rs");
-        let word = ["eg", "ui"].concat();
-        let path = format!("{word}::");
-        // The crate's own name (`emcraft_ui_egui::`) is not the drawing library.
-        let drawing = src.match_indices(&path).any(|(i, _)| !src[..i].ends_with('_'));
-        assert!(!drawing, "ui_state.rs reaches for the drawing");
     }
 }

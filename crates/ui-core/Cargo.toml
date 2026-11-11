@@ -16,3 +16,6 @@ emcraft-model = { workspace = true }
 emcraft-render = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }

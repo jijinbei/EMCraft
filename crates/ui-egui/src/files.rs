@@ -4,7 +4,7 @@
 //! a path field in the window. The work itself is the engine's `file.new`, `file.open` and
 //! `file.save`.
 
-pub use emcraft_ui_core::files::{Answer, FileAction, Purpose, Then};
+pub use emcraft_ui_core::files::{Answer, Ask, FileAction, Prompt, Purpose, Then};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
@@ -35,24 +35,6 @@ pub const PART_EXTENSIONS: &[&str] = &["solidcraft", "sc", "3mf", "stl", "kicad_
 pub fn is_part(path: &str) -> bool {
     let ext = std::path::Path::new(path).extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
     ext.is_some_and(|e| PART_EXTENSIONS.contains(&e.as_str()))
-}
-
-/// The path field shown when there is no file dialog.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Prompt {
-    pub purpose: Purpose,
-    pub text: String,
-}
-
-/// The one question over the window, which takes the keyboard while it is asked.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Ask {
-    /// A file's path, typed (there is no file dialog).
-    Path(Prompt),
-    /// "Save the changes first?" before going on with `Then`.
-    Save(Then),
-    /// Where the history goes (File › Export history), as typed.
-    Export(String),
 }
 
 pub struct Files {
