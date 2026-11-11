@@ -153,10 +153,13 @@ mod tests {
         let bad = scratch("bad");
         std::fs::write(bad.join("broken.ttf"), b"not a font").unwrap();
         assert_eq!(Library::in_folders(std::slice::from_ref(&bad), None).find(&needed), Err(5));
-        let chosen = Library::in_folders(&[bad], Some(&good.join("jp.otf")));
+        let chosen = Library::in_folders(std::slice::from_ref(&bad), Some(&good.join("jp.otf")));
         assert!(chosen.chosen_loaded());
         assert!(chosen.find(&needed).is_ok());
         assert!(!Library::in_folders(&[], Some(Path::new("/no/such/font.otf"))).chosen_loaded());
+        for dir in [good, bad] {
+            let _ = std::fs::remove_dir_all(dir);
+        }
     }
 
     /// The system's own search, with what it found (`cargo test -- --ignored --nocapture`).

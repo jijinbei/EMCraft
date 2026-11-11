@@ -5,13 +5,37 @@ use serde_json::json;
 
 use crate::Session;
 
-/// A path in the tests' scratch directory (under `EMCRAFT_SCRATCH` when set, else the system's
-/// temporary directory).
+/// A test's scratch directory, removed with what it holds when the test's thread ends.
+struct ScratchDir(std::path::PathBuf);
+
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// The scratch directories made by this process so far.
+static SCRATCH_DIRS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+thread_local! {
+    /// The calling thread's scratch directory: libtest runs each test on a thread of its own
+    /// (and a failing test's thread unwinds), so each test has its own and leaves none behind
+    /// — a directory per process was never removed, and the gate's process per test left
+    /// thousands.
+    static SCRATCH: ScratchDir = {
+        let base = std::env::var_os("EMCRAFT_SCRATCH").map_or_else(std::env::temp_dir, std::path::PathBuf::from);
+        let n = SCRATCH_DIRS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        ScratchDir(base.join(format!("emcraft-engine-{}-{n}", std::process::id())))
+    };
+}
+
+/// A path in the calling test's scratch directory (under `EMCRAFT_SCRATCH` when set, else the
+/// system's temporary directory), removed when the test ends.
 pub(crate) fn scratch(name: &str) -> String {
-    let base = std::env::var_os("EMCRAFT_SCRATCH").map_or_else(std::env::temp_dir, std::path::PathBuf::from);
-    let dir = base.join(format!("emcraft-engine-{}", std::process::id()));
-    let _ = std::fs::create_dir_all(&dir);
-    dir.join(name).to_string_lossy().into_owned()
+    SCRATCH.with(|d| {
+        let _ = std::fs::create_dir_all(&d.0);
+        d.0.join(name).to_string_lossy().into_owned()
+    })
 }
 
 /// A project file's `project.json`.

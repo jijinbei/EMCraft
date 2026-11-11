@@ -184,12 +184,7 @@ mod tests {
     use serde_json::json;
 
     use crate::Session;
-
-    fn scratch(name: &str) -> String {
-        let dir = std::env::temp_dir().join(format!("emcraft-engine-periodic-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
-        dir.join(name).to_string_lossy().into_owned()
-    }
+    use crate::tests::scratch;
 
     /// A 10 × 10 mm cell: 6 mm of air, a 5 mm slab of εr = 4, 6 mm of air.
     fn slab_cell(s: &mut Session) {

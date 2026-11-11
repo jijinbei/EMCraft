@@ -220,11 +220,32 @@ mod tests {
     use proptest::prelude::*;
     use proptest::test_runner::{Config, RngSeed};
 
+    /// A test's scratch directory, removed with what it holds when the test's thread ends.
+    struct ScratchDir(std::path::PathBuf);
+
+    impl Drop for ScratchDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    static SCRATCH_DIRS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    thread_local! {
+        /// The calling test's directory (libtest runs each test on a thread of its own).
+        static SCRATCH: ScratchDir = {
+            let base = std::env::var_os("EMCRAFT_SCRATCH").map_or_else(std::env::temp_dir, std::path::PathBuf::from);
+            let n = SCRATCH_DIRS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            ScratchDir(base.join(format!("emcraft-package-{}-{n}", std::process::id())))
+        };
+    }
+
+    /// A package's path in the calling test's scratch directory, removed when the test ends.
     fn scratch(name: &str) -> std::path::PathBuf {
-        let base = std::env::var_os("EMCRAFT_SCRATCH").map_or_else(std::env::temp_dir, std::path::PathBuf::from);
-        let dir = base.join(format!("emcraft-package-{name}-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
-        dir.join("p.zip")
+        SCRATCH.with(|d| {
+            let _ = std::fs::create_dir_all(&d.0);
+            d.0.join(format!("{name}.zip"))
+        })
     }
 
     fn write(path: &Path, values: &[f64]) {
