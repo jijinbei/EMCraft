@@ -2368,6 +2368,7 @@ dependencies = [
  "emcraft-macros",
  "emcraft-model",
  "emcraft-render",
+ "rstest",
  "serde",
  "serde_json",
 ]
