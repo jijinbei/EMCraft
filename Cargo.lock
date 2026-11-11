@@ -2479,6 +2479,7 @@ dependencies = [
  "emcraft-engine",
  "emcraft-i18n",
  "emcraft-macros",
+ "emcraft-mesh",
  "emcraft-model",
  "emcraft-render",
  "rstest",
