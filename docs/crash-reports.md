@@ -1,8 +1,8 @@
 # Crash reports
 
 EMCraft keeps crash reports on the computer it runs on and sends nothing anywhere, as
-SolidCraft does. The code is `crates/ui-egui/src/crash.rs`; what a report replays is
-`crates/ui-egui/src/record.rs`.
+SolidCraft does. The code is `crates/ui-core/src/crash.rs` (the window's side in
+`crates/ui-egui/src/crash.rs`); what a report replays is `crates/ui-core/src/record.rs`.
 
 ## The journal
 

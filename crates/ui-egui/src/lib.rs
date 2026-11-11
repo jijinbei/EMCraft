@@ -79,7 +79,7 @@ pub mod page;
 pub(crate) use emcraft_ui_core::param_labels;
 pub mod pending;
 pub mod picture;
-pub mod prefs;
+pub use emcraft_ui_core::prefs;
 pub mod raster;
 pub mod record;
 pub mod ribbon;

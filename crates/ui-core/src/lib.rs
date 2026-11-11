@@ -13,8 +13,10 @@
 //! - what a frame asks of the window ([`action`]: each `Action` a click, a key or a request
 //!   makes, performed by each window its own way) and what those carry: a [`pick`] in the 3D
 //!   view, a [`selection`] click, the window's [`layer`]s, the [`files`] actions, a browser item
-//!   ([`browser`]), the board's [`pen`], the [`navigation`] choices, the 3D view's [`prefs`], a
-//!   port mode's focus ([`steps`]);
+//!   ([`browser`]), the board's [`pen`], how the mouse and keys move the 3D view
+//!   ([`navigation`]), a port mode's focus ([`steps`]);
+//! - what a window keeps: its [`prefs`] between launches, a [`record`]ing of its actions and the
+//!   [`crash`] reports made of them;
 //! - [`geom`]: points, offsets and rectangles on screen, each window converting them to its own;
 //! - [`system`]: a system's stages as the window shows them (their kinds, the settings a new one
 //!   starts from, a stage's numbers in a line, the chain's reading at its output), its canvas'
@@ -35,6 +37,7 @@ pub mod action;
 pub mod browser;
 pub mod chart_words;
 pub mod commands;
+pub mod crash;
 pub mod files;
 pub mod geom;
 pub mod glyph;
@@ -47,6 +50,7 @@ pub mod param_labels;
 pub mod pen;
 pub mod pick;
 pub mod prefs;
+pub mod record;
 pub mod ribbon;
 pub mod selection;
 pub mod steps;

@@ -151,7 +151,7 @@ pub(super) fn navigate(
     let (mods, hover, press, latest, space, any_down) = ui.input(|i| {
         (i.modifiers, i.pointer.hover_pos(), i.pointer.press_origin(), i.pointer.latest_pos(), i.key_down(egui::Key::Space), i.pointer.any_down())
     });
-    let n = Nav { app, nav: app.prefs.nav(), rect, frame, mods, ctrl: mods.ctrl || mods.command, hover, press, latest };
+    let n = Nav { app, nav: app.prefs.nav(), rect, frame, mods: crate::navigation::keys(mods), hover, press, latest };
     let space = space && !ui.ctx().egui_wants_keyboard_input();
     // The left button: chosen once, when the drag begins.
     let grip_started = resp.drag_started_by(egui::PointerButton::Primary);
@@ -195,9 +195,8 @@ struct Nav<'a> {
     nav: &'static crate::navigation::NavPreset,
     rect: Rect,
     frame: ([f64; 3], [f64; 3]),
-    mods: egui::Modifiers,
-    /// Ctrl, or Cmd on a Mac.
-    ctrl: bool,
+    /// The keys held (Ctrl is also Cmd on a Mac).
+    mods: crate::navigation::NavKeys,
     hover: Option<egui::Pos2>,
     press: Option<egui::Pos2>,
     latest: Option<egui::Pos2>,
@@ -224,7 +223,7 @@ impl Nav<'_> {
     fn left_drag(&self, v: &mut View3d, ui: &egui::Ui, resp: &egui::Response, space: bool, grip: Option<egui::Pos2>) -> Option<LeftDrag> {
         let mods = self.mods;
         let at = self.press.or_else(|| resp.interact_pointer_pos());
-        let plain = !mods.shift && !self.ctrl && !mods.alt;
+        let plain = !mods.shift && !mods.ctrl && !mods.alt;
         if space {
             Some(LeftDrag::Nav(NavMode::Pan, false))
         } else if plain && grip.zip(at).is_some_and(|(g, p)| g.distance(p) <= crate::tools3d::GRIP_PX) {
@@ -233,7 +232,7 @@ impl Nav<'_> {
             Some(LeftDrag::Plane)
         } else if let Some(m) = self.nav.mode(crate::navigation::NavButton::Left, mods) {
             Some(LeftDrag::Nav(m, mods.shift))
-        } else if self.ctrl && !mods.shift && !mods.alt {
+        } else if mods.ctrl && !mods.shift && !mods.alt {
             Some(LeftDrag::Nav(NavMode::Orbit, false))
         } else if self.app.ui_state.tool().is_none() {
             Some(LeftDrag::Box { add: mods.shift })
@@ -281,7 +280,7 @@ impl Nav<'_> {
             None
         };
         let (mode, needs_shift) = match (button, v.left) {
-            (Some(b), _) => (self.nav.mode(b, mods), self.nav.mode(b, egui::Modifiers { shift: false, ..mods }) != self.nav.mode(b, mods)),
+            (Some(b), _) => (self.nav.mode(b, mods), self.nav.mode(b, crate::navigation::NavKeys { shift: false, ..mods }) != self.nav.mode(b, mods)),
             (None, Some(LeftDrag::Nav(m, shift))) if resp.dragged_by(egui::PointerButton::Primary) => (Some(m), shift),
             _ => (None, false),
         };
@@ -368,7 +367,7 @@ impl Nav<'_> {
         let click = if resp.double_clicked() {
             selection::Click::Double { pick }
         } else {
-            selection::Click::Single { pick, add: self.mods.shift || self.ctrl }
+            selection::Click::Single { pick, add: self.mods.shift || self.mods.ctrl }
         };
         Some(Action::Click(click))
     }

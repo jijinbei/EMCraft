@@ -144,7 +144,7 @@ on the start page; the 3D view's tools are icons (fit, home, face the field's pl
 and a view cube (or the six signed axes, Settings ▸ 3D view ▸ Navigator).
 
 **Navigating the 3D view** works as in SolidCraft, so the sibling apps feel alike
-(`crates/ui-egui/src/navigation.rs`, `view_cube.rs`; scenario `navigation`):
+(`crates/ui-core/src/navigation.rs`, `crates/ui-egui/src/navigation.rs`, `view_cube.rs`; scenario `navigation`):
 
 | Input | Default mapping (Fusion) |
 |---|---|
