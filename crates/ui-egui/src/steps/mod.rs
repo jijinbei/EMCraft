@@ -309,14 +309,7 @@ impl Estimate {
     }
 }
 
-/// A port mode picked in the Excitation panel: the Port modes view marks its row and scrolls
-/// to it once.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct ModeFocus {
-    pub port: String,
-    pub mode: usize,
-    pub scroll: bool,
-}
+pub use emcraft_ui_core::steps::ModeFocus;
 
 /// Brings the workflow's caches up to date before a frame is drawn: the steps' statuses (from
 /// `project.status`, once per revision), the solve's estimate in the Mesh and Run steps, the

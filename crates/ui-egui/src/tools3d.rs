@@ -30,36 +30,11 @@ use crate::theme::Tokens;
 use crate::view3d::View3d;
 use crate::{Action, Actions, EmcraftApp, Hint, UiExt, scenario};
 
-pub use emcraft_ui_core::tools::Tool;
+pub use emcraft_ui_core::tools::{Snap, SnapKind, Tool};
 
-emcraft_macros::named_enum! {
-    /// What a pick snapped to.
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    pub enum SnapKind {
-        Vertex = "vertex",
-        Midpoint = "midpoint",
-        Centre = "centre",
-        /// A point on a straight edge, with its direction.
-        Edge = "edge",
-        /// A point on a face, with its normal.
-        Face = "face",
-    }
-}
-emcraft_macros::named_serde!(SnapKind);
-
-/// A picked point (m), what it snapped to and the edge's direction or the face's normal.
-#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Snap {
-    pub at: [f64; 3],
-    pub kind: SnapKind,
-    pub dir: Option<[f64; 3]>,
-}
-
-impl Snap {
-    /// For `ui.inspect`, lengths in `l`.
-    fn inspect(&self, l: emcraft_model::units::Length) -> Value {
-        json!({"kind": self.kind.id(), "at": shown(l, self.at)})
-    }
+/// A snap as `ui.inspect` gives it, lengths in `l`.
+fn snap_inspect(s: &Snap, l: emcraft_model::units::Length) -> Value {
+    json!({"kind": s.kind.id(), "at": shown(l, s.at)})
 }
 
 /// What a click of the port tool does on the face under the pointer.
@@ -202,11 +177,11 @@ impl Tools {
         json!({
             "tool": tool.map(Tool::id),
             "pointer": self.hover.as_ref().map(|h| {
-                let mut v = h.snap.inspect(l);
+                let mut v = snap_inspect(&h.snap, l);
                 v["port"] = h.port.map_or(Value::Null, |p| json!(p.id()));
                 v
             }),
-            "picks": self.picks.iter().map(|p| p.inspect(l)).collect::<Vec<_>>(),
+            "picks": self.picks.iter().map(|p| snap_inspect(p, l)).collect::<Vec<_>>(),
             "measure": self.measured.as_ref().map(|m| m.reply.clone()),
             "drag": self.drag.as_ref().map(|d| json!({"port": d.name, "deembed": l.from_si(d.deembed)})),
             "grip": self.body_drag.as_ref().map(|d| d.inspect(l)),

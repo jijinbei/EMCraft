@@ -58,29 +58,7 @@ impl Act {
     }
 }
 
-/// An item of the model a row names, with the commands that edit and delete it.
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
-pub struct Item {
-    /// Its edit command (its dialog opens on `project.values`).
-    pub edit: &'static str,
-    pub delete: &'static str,
-    /// The parameter naming it in both (`name`, `body`, `index`) and its value.
-    pub key: &'static str,
-    pub value: serde_json::Value,
-}
-
-impl Item {
-    pub(crate) fn new(edit: &'static str, delete: &'static str, key: &'static str, value: serde_json::Value) -> Item {
-        Item { edit, delete, key, value }
-    }
-
-    /// The parameters naming it: `{"name": "ptfe"}`.
-    pub fn params(&self) -> serde_json::Value {
-        let mut o = serde_json::Map::new();
-        o.insert(self.key.to_owned(), self.value.clone());
-        serde_json::Value::Object(o)
-    }
-}
+pub use emcraft_ui_core::browser::Item;
 
 /// A row: what it names (its name, then the detail in a dimmer ink), its glyph, depth and
 /// action. Its `id` names it for good (its handle `row:<id>`, its key in the selection): it does

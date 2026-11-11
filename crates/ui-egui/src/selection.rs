@@ -171,14 +171,7 @@ impl Selection {
     }
 }
 
-/// A click in the 3D view while no tool is on.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum Click {
-    /// One click on `pick` (`None`: empty space); `add`: Shift or Ctrl held.
-    Single { pick: Option<Pick>, add: bool },
-    /// A double click.
-    Double { pick: Option<Pick> },
-}
+pub use emcraft_ui_core::selection::Click;
 
 /// What a click asks of the view besides the selection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -193,46 +193,7 @@ impl EmcraftApp {
     }
 }
 
-/// A named enum of another crate (the 3D view's standard sides) by its id.
-pub mod named {
-    use emcraft_macros::Named;
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<T: Named, S: Serializer>(v: &T, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(v.id())
-    }
-
-    pub fn deserialize<'de, T: Named, D: Deserializer<'de>>(d: D) -> Result<T, D::Error> {
-        let s = String::deserialize(d)?;
-        T::parse(&s).ok_or_else(|| serde::de::Error::unknown_variant(&s, T::IDS))
-    }
-}
-
-/// A browser item read back: its commands and parameter the command table's own.
-impl<'de> Deserialize<'de> for crate::browser::Item {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        struct Written {
-            edit: String,
-            delete: String,
-            key: String,
-            value: Value,
-        }
-        let w = Written::deserialize(d)?;
-        let bad = |what: &str, s: &str| serde::de::Error::custom(format!("no {what} `{}`", emcraft_engine::text::clip(s, 64)));
-        let command = |s: &str| match s {
-            "" => Some(""),
-            s => emcraft_engine::find_command(s).map(|c| c.id),
-        };
-        let param = emcraft_engine::COMMANDS.iter().flat_map(|c| c.params.iter()).map(|p| p.name).find(|n| *n == w.key);
-        Ok(crate::browser::Item {
-            edit: command(&w.edit).ok_or_else(|| bad("command", &w.edit))?,
-            delete: command(&w.delete).ok_or_else(|| bad("command", &w.delete))?,
-            key: param.ok_or_else(|| bad("parameter", &w.key))?,
-            value: w.value,
-        })
-    }
-}
+pub use emcraft_ui_core::action::named;
 
 #[cfg(test)]
 mod tests {

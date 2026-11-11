@@ -39,3 +39,26 @@ impl Tool {
         matches!(self, Tool::Port | Tool::Lumped)
     }
 }
+
+emcraft_macros::named_enum! {
+    /// What a pick snapped to.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum SnapKind {
+        Vertex = "vertex",
+        Midpoint = "midpoint",
+        Centre = "centre",
+        /// A point on a straight edge, with its direction.
+        Edge = "edge",
+        /// A point on a face, with its normal.
+        Face = "face",
+    }
+}
+emcraft_macros::named_serde!(SnapKind);
+
+/// A picked point (m), what it snapped to and the edge's direction or the face's normal.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Snap {
+    pub at: [f64; 3],
+    pub kind: SnapKind,
+    pub dir: Option<[f64; 3]>,
+}

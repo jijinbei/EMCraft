@@ -18,33 +18,7 @@ use crate::template_dialog::TemplateDialog;
 use crate::tools3d::Tool;
 use crate::{Action, EmcraftApp};
 
-emcraft_macros::named_enum! {
-    /// A layer of the window, top first.
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    pub enum Layer {
-        /// A question before work is lost, or a prompt for a path or a file's name.
-        Ask = "ask",
-        /// A template's card.
-        Template = "template",
-        /// The crash reports' card.
-        Reports = "reports",
-        /// The command search, open.
-        Search = "search",
-        /// The open dialog (floating, docked or in the step's panel).
-        Dialog = "dialog",
-        /// The settings page, shown.
-        Settings = "settings",
-        /// A route being drawn on the board (the pen).
-        Pen = "pen",
-        /// The 3D view's selection box, being dragged.
-        Box = "box",
-        /// The 3D view's tool, with what it picked.
-        Tool = "tool",
-        /// What is selected (in the 3D view and the browser).
-        Selection = "selection",
-    }
-}
-emcraft_macros::named_serde!(Layer);
+pub use emcraft_ui_core::layer::Layer;
 
 /// What is open over the window: one at a time.
 pub enum Overlay {
@@ -376,86 +350,6 @@ impl UiState {
     fn close_overlay(&mut self, layer: Layer) {
         if self.overlay.as_ref().is_some_and(|o| o.layer() == layer) {
             self.overlay = None;
-        }
-    }
-}
-
-/// While a job runs: what changes the project or runs a command waits for it (one at a
-/// time); what only looks, moves the view, selects, or opens and closes goes on. `apply`
-/// refuses what waits, and `ui.act` draws its button greyed out, both by this one rule.
-impl Action {
-    /// Whether it waits while a job runs: what changes the project or runs a command (one at a
-    /// time), not what only looks, moves the view, selects, or opens and closes. Every kind is
-    /// named, so a new one is decided here when it is added.
-    pub fn waits_for_job(&self) -> bool {
-        match self {
-            Action::RunAll(_)
-            | Action::Run { .. }
-            | Action::DialogOk
-            | Action::Undo
-            | Action::Redo
-            | Action::OpenTemplate(..)
-            | Action::EditItem(_)
-            | Action::DeleteItems(_)
-            | Action::ExportHistory(..)
-            | Action::ConfirmSetup
-            | Action::StartRun
-            | Action::PreviewPortModes
-            | Action::CheckResults
-            | Action::AutoSolve
-            | Action::ExportTouchstone
-            | Action::SetDevice { .. }
-            | Action::Measure(_)
-            | Action::EditSelected => true,
-            Action::File(f) => f.waits_for_job(),
-            Action::OpenDialog { .. }
-            | Action::DialogCancel
-            | Action::SetDock(_)
-            | Action::SetView(_)
-            | Action::ShowView(_)
-            | Action::SetTab(_)
-            | Action::OpenStep(_)
-            | Action::Fix(_)
-            | Action::Select { .. }
-            | Action::Click(_)
-            | Action::SelectBox { .. }
-            | Action::Fit
-            | Action::Fold(_)
-            | Action::Hover(_)
-            | Action::FocusMode(_)
-            | Action::CancelJob
-            | Action::Close(_)
-            | Action::OpenSearch
-            | Action::Show(_)
-            | Action::Template(_)
-            | Action::Purpose(_)
-            | Action::OpenSettings(_)
-            | Action::CloseSettings
-            | Action::Pref(_)
-            | Action::DismissRecovery(_)
-            | Action::AskExport
-            | Action::ProposeSetup(_)
-            | Action::StandardView(_)
-            | Action::SetPlaying(_)
-            | Action::Tool(_)
-            | Action::Pen(_)
-            | Action::Message { .. }
-            | Action::ShowReports
-            | Action::DeleteReport(_)
-            | Action::ReportBug => false,
-        }
-    }
-}
-
-impl FileAction {
-    /// Whether it waits while a job runs ([`Action::waits_for_job`]): what opens,
-    /// begins or saves a project. Closing asks about the job instead, an answer or a path
-    /// chosen goes on (the commands it runs refuse themselves).
-    pub fn waits_for_job(&self) -> bool {
-        match self {
-            FileAction::Request(then) => *then != crate::files::Then::Quit,
-            FileAction::Save | FileAction::SaveAs | FileAction::PickPart | FileAction::Dropped(_) => true,
-            FileAction::Chosen(..) | FileAction::Confirm(_) => false,
         }
     }
 }
