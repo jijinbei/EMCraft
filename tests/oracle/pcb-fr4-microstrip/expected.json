@@ -1,0 +1,46 @@
+{
+ "title": "A 50 Ω microstrip on FR-4 at the ADS-B frequency (εr = 4.4, tan δ = 0.02, h = 1.6 mm, W = 3.06 mm, 1.09 GHz), loaded as a board and meshed by the planar mesher: its port mode's ε_eff, Z0 and dielectric attenuation and the 10 mm line's S21",
+ "kind": "theory",
+ "source": "E. Hammerstad, Ø. Jensen, Accurate models for microstrip computer-aided design, IEEE MTT-S International Microwave Symposium Digest, 1980, pp. 407–409 (the quasi-static ε_eff within 0.2 %), evaluated independently of the code: `cargo run --release -p emcraft-theory --example pcb_line_reference -- 3.06 1.6 4.4 10 50 1.09` (ε_eff 3.331086); its dispersion to 1.09 GHz by M. Kirschning, R. H. Jansen, Accurate model for effective dielectric constant of microstrip with validity up to millimetre-wave frequencies, Electron. Lett. 18(6):272–273, 1982 (f·h = 1.744 GHz·mm, P = 0.01634: ε_eff(f) = 3.348272, +0.52 %), evaluated by hand from the paper's P₁–P₄; the dielectric attenuation of a quasi-TEM line α_d = k0 εr (ε_eff − 1) tan δ / (2 √ε_eff (εr − 1)) (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.8) on ε_eff(f); the phase −360° f √ε_eff(f) L / c",
+ "quantities": [
+  {
+   "id": "eps_eff",
+   "quantity": "the port mode's effective permittivity at 1.09 GHz",
+   "measure": {
+    "step": "modes",
+    "pointer": "/ports/0/modes/0/eps_eff"
+   },
+   "value": 3.348271522183736,
+   "tolerance": {
+    "relative": 0.005
+   },
+   "reason": "−0.01 % measured (size 2.5 mm; −0.09 % at 1 mm): the fits' 0.2 % and 0.6 %, the box (cover 37 h up, walls 12 W away) and the planar mesh at the strip's edges; without the dispersion the quasi-static value is 0.5 % below"
+  },
+  {
+   "id": "att",
+   "quantity": "the port mode's attenuation (dB per mm)",
+   "measure": {
+    "step": "modes",
+    "pointer": "/ports/0/modes/0/attenuation_db"
+   },
+   "value": 0.003295427083372096,
+   "tolerance": {
+    "relative": 0.02
+   },
+   "reason": "−0.4 % measured: the formula's filling factor (ε_eff − 1)/(εr − 1), the fits' accuracy, as in `pcb-lossy-microstrip-fem`"
+  },
+  {
+   "id": "s21_phase",
+   "quantity": "the 10 mm line's S21 phase (°)",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s21/deg"
+   },
+   "value": -23.950723129071125,
+   "tolerance": {
+    "absolute": 0.1
+   },
+   "reason": "ε_eff's 0.5 % is 0.06°; second-order elements on the extruded prisms, ports referred to their own modes"
+  }
+ ]
+}

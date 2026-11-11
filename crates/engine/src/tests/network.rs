@@ -309,3 +309,43 @@ fn a_lossy_lines_attenuation_follows_the_skin_effect_and_its_noise_its_loss() {
         assert!(s.execute("circuit.cascade", &line(bad.clone())).is_err(), "{bad}");
     }
 }
+
+#[test]
+fn an_antennas_impedance_is_the_amplifiers_source_and_the_budget_gives_its_sensitivity() {
+    let mut s = Session::new();
+    // A 100 Ω antenna (Γ = 1/3 on 50 Ω) and the LNA of LNA (Y_opt = 1/50 S, R_n = 10 Ω):
+    // F = F_min + (R_n/G_s)|Y_s − Y_opt|² = F_min + 10 × 0.01²/0.01 = F_min + 0.1.
+    for (name, text) in [("lna", LNA), ("ant", "# GHz S RI R 50\n1 0.3333333333333333 0\n1.2 0.3333333333333333 0\n")] {
+        let path = scratch(&format!("{name}.s{}p", if name == "ant" { 1 } else { 2 }));
+        std::fs::write(&path, text).unwrap();
+        s.execute("results.import", &json!({"path": path})).unwrap();
+    }
+    let f = 10f64.powf(0.06) + 0.1;
+    let n = s.execute("results.noise", &json!({"data": "lna", "source": "ant", "bandwidth": 0.001, "snr": 10})).unwrap();
+    let p = &n["points"][0];
+    approx::assert_abs_diff_eq!(p["nf_db"].as_f64().unwrap(), 10.0 * f.log10(), epsilon = 1e-9);
+    approx::assert_abs_diff_eq!(p["source_impedance"]["re"].as_f64().unwrap(), 100.0, epsilon = 1e-9);
+    // Its available gain from 100 Ω: |S21|²(1 − |Γ_s|²)/(1 − |Γ_out|²), Γ_out = S12 S21 Γ_s = 1/30
+    // (Pozar §12.1).
+    approx::assert_abs_diff_eq!(p["gain_db"].as_f64().unwrap(), 10.0 * (800.0f64 / 9.0 / (1.0 - 1.0 / 900.0)).log10(), epsilon = 1e-9);
+    // 1 MHz from a 290 K antenna: kT₀B F, −113.975 dBm + F; 10 dB more for the SNR.
+    let t_sys = 290.0 * f;
+    let noise = 10.0 * (1.380_649e-23 * t_sys * 1e6).log10() + 30.0;
+    approx::assert_abs_diff_eq!(p["system_temperature"].as_f64().unwrap(), t_sys, epsilon = 1e-9);
+    approx::assert_abs_diff_eq!(p["sensitivity_dbm"].as_f64().unwrap(), noise + 10.0, epsilon = 1e-9);
+    // The same through circuit.cascade's summary.
+    let r =
+        s.execute("circuit.cascade", &json!({"blocks": [{"type": "data", "data": "lna"}], "source": "ant", "bandwidth": 0.001, "snr": 10})).unwrap();
+    approx::assert_abs_diff_eq!(r["noise"]["nf_db_least"].as_f64().unwrap(), 10.0 * f.log10(), epsilon = 1e-9);
+    approx::assert_abs_diff_eq!(r["noise"]["sensitivity_dbm_best"].as_f64().unwrap(), noise + 10.0, epsilon = 1e-9);
+    // A source that is not a one-port, a budget without a bandwidth, hostile numbers: refused.
+    for bad in [
+        json!({"data": "lna", "source": "lna"}),
+        json!({"data": "lna", "snr": 3}),
+        json!({"data": "lna", "bandwidth": -1}),
+        json!({"data": "lna", "bandwidth": 0.001, "antenna_temperature": -5}),
+        json!({"data": "lna", "bandwidth": 0.001, "snr": 1e9}),
+    ] {
+        assert!(s.execute("results.noise", &bad).is_err(), "{bad}");
+    }
+}

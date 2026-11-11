@@ -173,6 +173,72 @@ pub fn solve_radiation(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(reply)
 }
 
+/// The most frequencies a radiation sweep solves (each a factorization).
+const MAX_SWEEP: usize = 64;
+
+/// The frequencies a radiation sweep solves over a band when `points` is not given.
+const SWEEP_POINTS: usize = 11;
+
+/// `solve.radiation_sweep`: the open problem solved at each of `frequencies` (or `points` from
+/// `start` to `stop`), the system set up once and factored at each; per frequency the lumped
+/// ports' impedances and S11, the power radiated and the efficiency. A lone lumped port's S11 is
+/// kept as a one-port measurement named `name` (on the port's impedance: an antenna's terminals,
+/// for circuit.cascade's and results.noise's `source`), and the last frequency's solution as the
+/// radiation result.
+pub fn solve_radiation_sweep(s: &mut Session, p: &Params) -> Result<Value> {
+    let mut freqs = crate::solve::frequencies(s, p)?;
+    // A band without `points`: eleven frequencies over it, not the sweep's default.
+    if !p.has("points")
+        && !p.has("frequencies")
+        && let (Some(a), Some(b)) = (freqs.first(), freqs.last())
+    {
+        freqs = crate::numbers::evenly_spaced(*a, *b, SWEEP_POINTS);
+    }
+    if freqs.len() > MAX_SWEEP {
+        return Err(p.error("points", format!("at most {MAX_SWEEP} frequencies: each is a factorization")));
+    }
+    let name = crate::network::kept_name(p, "antenna")?;
+    let order = p.order()?;
+    let driven = emcraft_solver::Driven::open(&s.model, order)?;
+    let mut points = Vec::with_capacity(freqs.len());
+    let mut s11 = Vec::with_capacity(freqs.len());
+    let mut last = None;
+    for &f in &freqs {
+        let result = driven.solve_open(&s.model, f)?;
+        let huygens = driven.huygens(&s.model, &result.field, f)?;
+        let power = huygens.power();
+        let mut v = json!({"frequency": s.show_frequency(f), "radiated_power": power});
+        if !result.ports.is_empty() {
+            lumped_ports(s, &result, f, power, &mut v);
+        }
+        if let [port] = &result.ports[..] {
+            s11.push(port.s11);
+        }
+        points.push(v);
+        last = Some((result, huygens, power));
+    }
+    let kept = match &s.model.lumped[..] {
+        [port] if s11.len() == freqs.len() => {
+            let data = crate::sdata::SData::square(freqs.clone(), 1, s11).map_err(crate::EngineError::failed)?;
+            let m = crate::network::Measured {
+                name: name.clone(),
+                file: "(solve.radiation_sweep)".into(),
+                references: vec![port.impedance.get()],
+                data: Arc::new(data),
+                noise: Vec::new(),
+            };
+            crate::network::keep(s, m)?;
+            Some(name)
+        }
+        _ => None,
+    };
+    let unknowns = driven.dofs.unknowns;
+    if let Some((result, huygens, power)) = last {
+        s.results.radiation = Some(Arc::new(Radiated { driven, result, huygens, power }));
+    }
+    Ok(json!({"unknowns": unknowns, "frequency_unit": s.display.frequency.symbol(), "points": points, "kept": kept}))
+}
+
 /// The scattering cross-section σ = P_sca / (|E₀|²/2η) of the `power` a 1 V/m plane wave's
 /// scattered field carries at `f` (Hz), in display units of area; with the Mie series' for a lone
 /// sphere.

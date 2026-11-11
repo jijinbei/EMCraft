@@ -156,6 +156,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("source.edit", None, Some(Glyph::Dipole), false),
     ui("source.delete", None, Some(Glyph::Clear), false),
     ui("solve.radiation", Some(t!("Radiation").en()), Some(Glyph::Radiation), true),
+    ui("solve.radiation_sweep", None, Some(Glyph::Radiation), true),
     ui("results.far_field", None, Some(Glyph::Pattern), true),
     ui("view.pattern", Some(t!("Pattern PNG").en()), Some(Glyph::Pattern), false),
     ui("file.sample", Some(t!("Sample").en()), Some(Glyph::Sample), true),

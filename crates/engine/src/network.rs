@@ -670,6 +670,36 @@ pub(crate) fn source(s: &Session, p: &Params) -> Result<Source> {
     }
 }
 
+/// A source's impedance over frequency: a one-port measurement's (an antenna's terminals from
+/// solve.radiation_sweep, a .s1p), Z = R(1 + Γ)/(1 − Γ) on its reference R.
+pub(crate) struct SourceImpedance {
+    pub name: String,
+    data: Arc<SData>,
+    reference: f64,
+}
+
+impl SourceImpedance {
+    /// Its impedance at `f` (Hz), Γ linear between its two nearest frequencies; none outside its
+    /// band or where Γ = 1.
+    pub fn at(&self, f: f64) -> Option<C> {
+        let g = interpolate(&self.data, 0, 0, f)?;
+        let z = (C::new(1.0, 0.0) + g) / (C::new(1.0, 0.0) - g) * self.reference;
+        (z.is_finite() && z.re > 0.0).then_some(z)
+    }
+}
+
+/// The measurement `source` names, a one-port, when given.
+pub(crate) fn source_impedance(s: &Session, p: &Params) -> Result<Option<SourceImpedance>> {
+    if !p.has("source") {
+        return Ok(None);
+    }
+    let m = measurement(s, p, "source")?;
+    if m.data.outputs() != 1 {
+        return Err(p.error("source", format!("a one-port (an antenna's S11); `{}` has {} ports", crate::text::clip(&m.name, 40), m.data.outputs())));
+    }
+    Ok(Some(SourceImpedance { name: m.name.clone(), data: m.data.clone(), reference: m.references[0] }))
+}
+
 /// The ports a two-port reading takes (0-based) from `input` and `output` (1-based, default 1
 /// and 2) of `n` ports: different, and both excited in `data` so S₁₁, S₂₁, S₁₂ and S₂₂ are held.
 pub(crate) fn port_pair(p: &Params, data: &SData) -> Result<(usize, usize)> {

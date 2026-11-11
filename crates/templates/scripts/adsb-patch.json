@@ -1,0 +1,18 @@
+[
+ {"command": "project.variable", "params": {"name": "er", "label": "relative permittivity", "value": 4.4}},
+ {"command": "project.variable", "params": {"name": "tan_d", "label": "loss tangent", "value": 0.02}},
+ {"command": "project.variable", "params": {"name": "h", "label": "substrate thickness", "value": 1.6, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "w", "label": "patch width", "value": 83.7, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "l", "label": "patch length", "value": 62.9, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "w_feed", "label": "feed line width", "value": 3.06, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "inset", "label": "feed inset depth", "value": 26.9, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "notch", "label": "inset notch gap", "value": 1.0, "quantity": "length"}},
+ {"command": "pcb.load", "params": {"data": {"name": "ADS-B patch antenna", "layers": [{"name": "F.Cu", "z": 0, "eps_below": "=er", "loss_below": "=tan_d"}, {"name": "B.Cu", "z": "=h", "eps_below": 1}], "segments": [{"id": "feed", "net": "S", "layer": "F.Cu", "start": ["=-l/2 - 25", 0], "end": ["=-l/2 + inset", 0], "width": "=w_feed"}], "copper": [{"net": "S", "layer": "F.Cu", "polygon": [["=-l/2", "=-w/2"], ["=l/2", "=-w/2"], ["=l/2", "=w/2"], ["=-l/2", "=w/2"], ["=-l/2", "=(w_feed/2 + notch)"], ["=-l/2 + inset", "=(w_feed/2 + notch)"], ["=-l/2 + inset", "=-(w_feed/2 + notch)"], ["=-l/2", "=-(w_feed/2 + notch)"]]}, {"net": "GND", "layer": "B.Cu", "polygon": [["=-l/2 - 26", "=-w/2 - 20"], ["=l/2 + 20", "=-w/2 - 20"], ["=l/2 + 20", "=w/2 + 20"], ["=-l/2 - 26", "=w/2 + 20"]]}]}}},
+ {"command": "pcb.region", "params": {"lo": ["=-l/2 - 136", "=-w/2 - 130"], "hi": ["=l/2 + 130", "=w/2 + 130"], "above": 110, "below": 110}},
+ {"command": "pcb.port", "params": {"name": "1", "segment": "feed", "end": "start"}},
+ {"command": "model.open", "params": {"thickness": 55}},
+ {"command": "mesh.generate", "params": {"size": 12, "strip_edge": 1}},
+ {"command": "project.analysis", "params": {"kind": "radiation"}},
+ {"command": "project.setup", "params": {"kind": "radiation", "frequency": 1.09}},
+ {"command": "solve.radiation", "params": {"frequency": 1.09}}
+]

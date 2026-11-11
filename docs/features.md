@@ -331,7 +331,7 @@ Lumped branches fitted to the sweep's (or a measurement's) network (Pozar, Micro
 
 ## `circuit.cascade` — Cascade
 
-Two-ports in a chain, port 2 of each to port 1 of the next, by their chain (ABCD) matrices (Pozar, Microwave Engineering, §4.4): `{"type": "data", "data": "sweep"}` (the sweep or a measurement, `flip` swapping its ports), `{"type": "series" | "shunt", "resistance", "inductance", "capacitance", "arrangement"}` (Ω, nH, pF, `series` or `parallel`, as model.element.create's), `{"type": "line", "impedance", "length", "eps_r", "attenuation", "at", "tan_delta"}` (Ω, the display length; lossless unless `attenuation` — a conductor's, dB per display length, growing as √(f/`at`) from frequency `at` when given — or `tan_delta`, a dielectric's, π f √εr tan δ / c with εr the line's effective one). Its noise is chained too, by Hillbrand and Russer's chain correlation matrices (IEEE Trans. CAS-23(4), 1976): a measurement's noise data (an amplifier's), a passive S block's by Twiss's equilibrium kT(I − SSᴴ) (the sweep's, or a measurement without noise data; one that gains has no noise then, and says why), a lumped element's resistance's thermal noise, a lossy line's from its loss, all at `temperature`, a lossless line none; the reply's `noise` gives the chain's least and greatest noise figure from a source of `impedance` (results.noise on the kept result gives it at every frequency). Its S on `impedance` at each frequency of its first S block (the others interpolated linearly; an error outside their bands), or from `start` to `stop` in `points` without one, kept as a measurement named `name` and drawn over the chart.
+Two-ports in a chain, port 2 of each to port 1 of the next, by their chain (ABCD) matrices (Pozar, Microwave Engineering, §4.4): `{"type": "data", "data": "sweep"}` (the sweep or a measurement, `flip` swapping its ports), `{"type": "series" | "shunt", "resistance", "inductance", "capacitance", "arrangement"}` (Ω, nH, pF, `series` or `parallel`, as model.element.create's), `{"type": "line", "impedance", "length", "eps_r", "attenuation", "at", "tan_delta"}` (Ω, the display length; lossless unless `attenuation` — a conductor's, dB per display length, growing as √(f/`at`) from frequency `at` when given — or `tan_delta`, a dielectric's, π f √εr tan δ / c with εr the line's effective one). Its noise is chained too, by Hillbrand and Russer's chain correlation matrices (IEEE Trans. CAS-23(4), 1976): a measurement's noise data (an amplifier's), a passive S block's by Twiss's equilibrium kT(I − SSᴴ) (the sweep's, or a measurement without noise data; one that gains has no noise then, and says why), a lumped element's resistance's thermal noise, a lossy line's from its loss, all at `temperature`, a lossless line none; the reply's `noise` gives the chain's least and greatest noise figure from a source of `impedance` (results.noise on the kept result gives it at every frequency): from `source`, a one-port measurement's impedance (an antenna's terminals from solve.radiation_sweep, a .s1p), when given; with `bandwidth`, the receiver's sensitivity too (results.noise's budget). Its S on `impedance` at each frequency of its first S block (the others interpolated linearly; an error outside their bands), or from `start` to `stop` in `points` without one, kept as a measurement named `name` and drawn over the chart.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -342,6 +342,10 @@ Two-ports in a chain, port 2 of each to port 1 of the next, by their chain (ABCD
 | `points` | integer |  | no | frequencies without an S block (default 201) |
 | `name` | string |  | no | the name the result is kept under (default `cascade`) |
 | `temperature` | number |  | no | the physical temperature in K of the passive blocks' noise (default 290) |
+| `source` | string |  | no | a one-port measurement whose impedance is the source's (an antenna's S11 from solve.radiation_sweep, a .s1p); default the input's reference impedance |
+| `bandwidth` | number | frequency | no | the receiver's noise bandwidth: gives the system noise temperature, noise power and sensitivity |
+| `antenna_temperature` | number |  | no | the antenna's noise temperature in K, with `bandwidth` (default 290) |
+| `snr` | number |  | no | the signal-to-noise ratio in dB the receiver needs, with `bandwidth` (default 0) |
 
 ## `filter.synthesize` — Synthesize filter
 
@@ -391,7 +395,7 @@ A sample's complex εr and μr from the S-parameters of the line it fills, by th
 
 ## `results.noise` — Noise figure
 
-The noise figure of a two-port. A measurement with noise data (results.import of an amplifier's file, or a circuit.cascade's chain): from them, at port 1's reference impedance — the gain from a matched source, the noise figure, the noise temperature T₀(F − 1) and the least noise figure F_min (`from` noise data in the reply; `temperature` is then not used). Otherwise that of a passive two-port at one physical temperature, from its S alone: in thermal equilibrium its noise temperature is Te = T(1 − G)/G, G the available gain (Pozar §10.1; Hillbrand & Russer, IEEE Trans. CAS-23, 1976), the other ports terminated in matched loads at T. Per frequency: the gain and noise figure from a matched source (G = |S21|²/(1 − |S22|²); a matched attenuator of loss L at T₀ = 290 K has F = L), the noise temperature, and the least noise figure, the conjugately matched source's (from the maximum available gain; none where the network is not unconditionally stable). A point with no transmission, or a gain, says why.
+The noise figure of a two-port. A measurement with noise data (results.import of an amplifier's file, or a circuit.cascade's chain): from them, at port 1's reference impedance — the gain from a matched source, the noise figure, the noise temperature T₀(F − 1) and the least noise figure F_min (`from` noise data in the reply; `temperature` is then not used). From `source`, a one-port measurement (an antenna's terminals from solve.radiation_sweep, a .s1p), its impedance is the source's instead: the available gain from it (Pozar §12.1) and the noise figure it sees, the amplifier's mismatch to its best source counted. With `bandwidth` the receiver's budget: the system noise temperature T_sys = T_A + T₀(F − 1) at the antenna's terminals (`antenna_temperature` T_A, default 290 K), its noise power k T_sys B in dBm and the sensitivity, the least available signal giving `snr` (dB, default 0). Otherwise that of a passive two-port at one physical temperature, from its S alone: in thermal equilibrium its noise temperature is Te = T(1 − G)/G, G the available gain (Pozar §10.1; Hillbrand & Russer, IEEE Trans. CAS-23, 1976), the other ports terminated in matched loads at T. Per frequency: the gain and noise figure from a matched source (G = |S21|²/(1 − |S22|²); a matched attenuator of loss L at T₀ = 290 K has F = L), the noise temperature, and the least noise figure, the conjugately matched source's (from the maximum available gain; none where the network is not unconditionally stable). A point with no transmission, or a gain, says why.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -399,6 +403,10 @@ The noise figure of a two-port. A measurement with noise data (results.import of
 | `data` | string |  | no | `sweep` (default) or a measurement's name |
 | `input` | integer |  | no | the input port (default 1) |
 | `output` | integer |  | no | the output port (default 2) |
+| `source` | string |  | no | a one-port measurement whose impedance is the source's (an antenna's S11 from solve.radiation_sweep, a .s1p); default the input's reference impedance |
+| `bandwidth` | number | frequency | no | the receiver's noise bandwidth: gives the system noise temperature, noise power and sensitivity |
+| `antenna_temperature` | number |  | no | the antenna's noise temperature in K, with `bandwidth` (default 290) |
+| `snr` | number |  | no | the signal-to-noise ratio in dB the receiver needs, with `bandwidth` (default 0) |
 
 ## `results.active` — Active reflection
 
@@ -1489,6 +1497,19 @@ Solves the open problem at one frequency: the field the sources radiate (or the 
 |---|---|---|---|---|
 | `frequency` | number | frequency | yes | the frequency |
 | `order` | integer |  | no | element order: 1 or 2 (default) |
+
+## `solve.radiation_sweep` — Radiation sweep
+
+Solves the open problem at each frequency of `frequencies` (or `points` from `start` to `stop`; at most 64, each a factorization), the system set up once: per frequency the lumped ports' impedances and S11, the power radiated and the radiation efficiency, as solve.radiation gives them. With one lumped port its S11 over the sweep is kept as a one-port measurement named `name` on the port's impedance — the antenna's terminals, a `source` for circuit.cascade and results.noise — and drawn over the S-parameter chart; the last frequency's solution stays as the radiation result (results.far_field, view.pattern).
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `frequencies` | array | frequency | no | the frequencies |
+| `start` | number | frequency | no | the first frequency (default the job's band) |
+| `stop` | number | frequency | no | the last frequency (default the job's band) |
+| `points` | integer |  | no | frequencies from start to stop (default 11, at most 64) |
+| `order` | integer |  | no | element order: 1 or 2 (default) |
+| `name` | string |  | no | the name the antenna's S11 is kept under (default `antenna`) |
 
 ## `results.far_field` — Far field
 

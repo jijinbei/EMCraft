@@ -206,6 +206,86 @@ fn db(x: f64) -> f64 {
     10.0 * x.log10()
 }
 
+/// Boltzmann's constant (J/K, exact since the 2019 SI).
+const BOLTZMANN: f64 = 1.380_649e-23;
+
+/// The widest receiver bandwidth a budget takes (Hz).
+const MAX_BANDWIDTH: f64 = 1e12;
+
+/// What a receiver needs of its input, from a noise figure: the antenna's noise temperature T_A
+/// (K), the bandwidth B (Hz) and the signal-to-noise ratio the receiver needs (dB).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Budget {
+    pub antenna_temperature: f64,
+    pub bandwidth: f64,
+    pub snr_db: f64,
+}
+
+/// A budget's reading at one frequency: the system noise temperature T_sys = T_A + T₀(F − 1)
+/// at the antenna's terminals, its noise power k T_sys B (dBm) and the least signal (dBm, the
+/// power the antenna has available) that gives the SNR asked for (Pozar §10.1, §14.2).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Reading {
+    pub system_temperature: f64,
+    pub noise_dbm: f64,
+    pub sensitivity_dbm: f64,
+}
+
+impl Budget {
+    /// `antenna_temperature`, `bandwidth` and `snr`, when `bandwidth` is given (T_A 290 K and
+    /// SNR 0 dB by default).
+    pub(crate) fn read(p: &Params) -> Result<Option<Budget>> {
+        let Some(bandwidth) = p.frequency("bandwidth").optional()? else {
+            for k in ["antenna_temperature", "snr"] {
+                if p.has(k) {
+                    return Err(p.error(k, "with `bandwidth`: the receiver's bandwidth"));
+                }
+            }
+            return Ok(None);
+        };
+        if !(bandwidth > 0.0 && bandwidth <= MAX_BANDWIDTH) {
+            return Err(p.error("bandwidth", "a positive bandwidth, at most 1 THz"));
+        }
+        let antenna_temperature = p.number("antenna_temperature").or(T0)?;
+        if !(antenna_temperature.is_finite() && (0.0..=MAX_TEMPERATURE).contains(&antenna_temperature)) {
+            return Err(p.error("antenna_temperature", format!("from 0 to {MAX_TEMPERATURE} K")));
+        }
+        let snr_db = p.number("snr").or(0.0)?;
+        if !(snr_db.is_finite() && snr_db.abs() <= 100.0) {
+            return Err(p.error("snr", "from −100 to 100 dB"));
+        }
+        Ok(Some(Budget { antenna_temperature, bandwidth, snr_db }))
+    }
+
+    /// The reading for the noise factor `figure` (a ratio).
+    ///
+    /// ```
+    /// use emcraft_engine::noise::{Budget, T0};
+    /// // kT₀B over 1 MHz is −113.98 dBm; a 3 dB receiver from a 290 K antenna doubles it.
+    /// let b = Budget { antenna_temperature: T0, bandwidth: 1e6, snr_db: 10.0 };
+    /// let r = b.reading(2.0);
+    /// assert!((r.system_temperature - 2.0 * T0).abs() < 1e-9);
+    /// assert!((r.noise_dbm - (-113.975 + 3.0103)).abs() < 1e-3 && (r.sensitivity_dbm - r.noise_dbm - 10.0).abs() < 1e-12);
+    /// ```
+    pub fn reading(&self, figure: f64) -> Reading {
+        let system_temperature = self.antenna_temperature + T0 * (figure - 1.0);
+        let noise_dbm = 10.0 * (BOLTZMANN * system_temperature * self.bandwidth).log10() + 30.0;
+        Reading { system_temperature, noise_dbm, sensitivity_dbm: noise_dbm + self.snr_db }
+    }
+}
+
+impl TwoPort {
+    /// The available gain from a source of reflection `gs` (on port 1's reference):
+    /// G_A = |S₂₁|²(1 − |Γ_s|²) / (|1 − S₁₁Γ_s|²(1 − |Γ_out|²)), Γ_out = S₂₂ + S₁₂S₂₁Γ_s/(1 − S₁₁Γ_s)
+    /// (Pozar §12.1); `None` where it is not a positive number.
+    pub fn available_gain(&self, gs: C) -> Option<f64> {
+        let d = ONE - self.s11 * gs;
+        let out = self.s22 + self.s12 * self.s21 * gs / d;
+        let g = self.s21.norm_sqr() * (1.0 - gs.norm_sqr()) / (d.norm_sqr() * (1.0 - out.norm_sqr()));
+        (g.is_finite() && g > 0.0).then_some(g)
+    }
+}
+
 /// `results.noise`.
 pub fn noise(s: &mut Session, p: &Params) -> Result<Value> {
     let src = source(s, p)?;
@@ -215,49 +295,70 @@ pub fn noise(s: &mut Session, p: &Params) -> Result<Value> {
     if temperature > MAX_TEMPERATURE {
         return Err(p.error("temperature", format!("at most {MAX_TEMPERATURE} K")));
     }
-    // A measured two-port's own noise, read from port 1 to port 2 on port 1's reference.
-    let measured = (!src.noise.is_empty() && (a, b) == (0, 1)).then(|| (&src.noise, C::new(src.references[0].unwrap_or(50.0), 0.0)));
+    let budget = Budget::read(p)?;
+    let antenna = crate::network::source_impedance(s, p)?;
+    let z_in = src.references[a].unwrap_or(50.0);
+    // A measured two-port's own noise, read from port 1 to port 2.
+    let measured = (!src.noise.is_empty() && (a, b) == (0, 1)).then_some(&src.noise);
     let points: Vec<Value> = (0..d.frequencies().len())
         .map(|k| {
             let hz = d.frequencies()[k];
             let f = s.show_frequency(hz);
             let get = |p: usize, q: usize| d.get(k, p, q).unwrap_or_default();
             let net = TwoPort { s11: get(a, a), s12: get(a, b), s21: get(b, a), s22: get(b, b) };
-            if let Some((points, zs)) = measured {
-                let gain = net.s21.norm_sqr() / (1.0 - net.s22.norm_sqr());
-                return match crate::network::noise_at(points, hz) {
-                    Some(n) if gain.is_finite() && gain > 0.0 => {
-                        let figure = n.figure(zs);
-                        json!({
-                            "frequency": f,
-                            "gain_db": db(gain),
-                            "nf_db": db(figure),
-                            "noise_temperature": T0 * (figure - 1.0),
-                            "nf_min_db": n.parameters().map(|q| db(q.f_min)),
-                        })
-                    }
-                    Some(_) => json!({"frequency": f, "why": "no available gain from a matched source"}),
-                    None => json!({"frequency": f, "why": "outside the noise data's frequencies"}),
-                };
+            let zs = match &antenna {
+                Some(source) => match source.at(hz) {
+                    Some(z) => z,
+                    None => return json!({"frequency": f, "why": format!("`{}` has no impedance here: outside its band", source.name)}),
+                },
+                None => C::new(z_in, 0.0),
+            };
+            let gs = (zs - z_in) / (zs + z_in);
+            let Some(gain) = net.available_gain(gs) else {
+                return json!({"frequency": f, "why": "no available gain from the source"});
+            };
+            // The noise factor and the least one.
+            let (figure, least) = match measured {
+                Some(points) => match crate::network::noise_at(points, hz) {
+                    Some(n) => (n.figure(zs), n.parameters().map(|q| q.f_min)),
+                    None => return json!({"frequency": f, "why": "outside the noise data's frequencies"}),
+                },
+                None if gain <= 1.0 + 1e-9 && gain > MIN_GAIN => {
+                    let figure_of = |g: f64| 1.0 + temperature / T0 * (1.0 / g - 1.0);
+                    (figure_of(gain), net.max_gain().map(figure_of))
+                }
+                None => return json!({"frequency": f, "why": "no transmission, or a gain: not a passive two-port"}),
+            };
+            let mut v = json!({
+                "frequency": f,
+                "gain_db": db(gain),
+                "nf_db": db(figure),
+                "noise_temperature": T0 * (figure - 1.0),
+                "nf_min_db": least.map(db),
+            });
+            if antenna.is_some() {
+                v["source_impedance"] = crate::reply::parts(zs);
             }
-            match net.noise(temperature) {
-                Some(n) => json!({
-                    "frequency": f,
-                    "gain_db": db(n.gain),
-                    "nf_db": db(n.figure),
-                    "noise_temperature": n.temperature,
-                    "nf_min_db": n.min_figure.map(db),
-                }),
-                None => json!({"frequency": f, "why": "no transmission, or a gain: not a passive two-port"}),
+            if let Some(b) = budget {
+                let r = b.reading(figure);
+                v["system_temperature"] = json!(r.system_temperature);
+                v["noise_dbm"] = json!(r.noise_dbm);
+                v["sensitivity_dbm"] = json!(r.sensitivity_dbm);
             }
+            v
         })
         .collect();
     if points.is_empty() {
         return Err(EngineError::failed("the data has no frequencies"));
     }
-    Ok(
-        json!({"temperature": temperature, "ports": [a + 1, b + 1], "from": if measured.is_some() { "noise data" } else { "passive" }, "points": points}),
-    )
+    Ok(json!({
+        "temperature": temperature,
+        "ports": [a + 1, b + 1],
+        "from": if measured.is_some() { "noise data" } else { "passive" },
+        "source": antenna.map(|x| x.name),
+        "budget": budget.map(|b| json!({"antenna_temperature": b.antenna_temperature, "bandwidth": s.show_frequency(b.bandwidth), "snr_db": b.snr_db})),
+        "points": points,
+    }))
 }
 
 #[cfg(test)]

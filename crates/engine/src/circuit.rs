@@ -11,7 +11,7 @@ use emcraft_solver::{Complex64 as C, SMatrix};
 use serde_json::{Value, json};
 
 use crate::network::{Measured, NoisePoint, interpolate, keep, kept_name, noise_at, source};
-use crate::noise::{ChainNoise, MAX_TEMPERATURE, T0, TwoPort};
+use crate::noise::{Budget, ChainNoise, MAX_TEMPERATURE, T0, TwoPort};
 use crate::sdata::SData;
 use crate::{EngineError, Params, Result, Session};
 
@@ -247,7 +247,21 @@ pub fn cascade(s: &mut Session, p: &Params) -> Result<Value> {
     }
     let data = SData::square(freqs, 2, values).map_err(EngineError::failed)?;
     let name = kept_name(p, "cascade")?;
-    let figures: Vec<(f64, f64)> = noise.iter().map(|x| (x.frequency, 10.0 * x.noise.figure(C::new(z0, 0.0)).log10())).collect();
+    // The noise figure from the source (the antenna's impedance, or `impedance`) where both
+    // are known.
+    let antenna = crate::network::source_impedance(s, p)?;
+    let budget = Budget::read(p)?;
+    let figures: Vec<(f64, f64)> = noise
+        .iter()
+        .filter_map(|x| {
+            let zs = match &antenna {
+                Some(a) => a.at(x.frequency)?,
+                None => C::new(z0, 0.0),
+            };
+            Some((x.frequency, x.noise.figure(zs)))
+        })
+        .collect();
+    let db = |f: f64| 10.0 * f.log10();
     let least = figures.iter().copied().min_by(|a, b| a.1.total_cmp(&b.1));
     let most = figures.iter().copied().max_by(|a, b| a.1.total_cmp(&b.1));
     let reply = json!({
@@ -257,10 +271,13 @@ pub fn cascade(s: &mut Session, p: &Params) -> Result<Value> {
         "impedance": z0,
         "noise": least.zip(most).map(|(l, m)| json!({
             "temperature": temperature,
-            "frequencies": noise.len(),
-            "nf_db_least": l.1,
+            "frequencies": figures.len(),
+            "source": antenna.as_ref().map(|a| a.name.clone()),
+            "nf_db_least": db(l.1),
             "at": s.show_frequency(l.0),
-            "nf_db_most": m.1,
+            "nf_db_most": db(m.1),
+            "sensitivity_dbm_best": budget.map(|b| b.reading(l.1).sensitivity_dbm),
+            "sensitivity_dbm_worst": budget.map(|b| b.reading(m.1).sensitivity_dbm),
         })),
         "noise_why": why,
     });

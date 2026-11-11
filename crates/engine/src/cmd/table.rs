@@ -47,6 +47,20 @@ const STOP: ParamSpec = opt("stop", K::Number, "last frequency").of(F);
 const POINTS: ParamSpec = opt("points", K::Integer, "frequencies from start to stop (default 101)");
 
 // The finite elements' order.
+/// A one-port measurement as the source of a noise reading.
+const SOURCE: ParamSpec = opt(
+    "source",
+    K::String,
+    "a one-port measurement whose impedance is the source's (an antenna's S11 from solve.radiation_sweep, a .s1p); default the input's reference impedance",
+);
+/// A receiver's bandwidth, for a sensitivity.
+const BANDWIDTH: ParamSpec =
+    opt("bandwidth", K::Number, "the receiver's noise bandwidth: gives the system noise temperature, noise power and sensitivity").of(F);
+/// An antenna's noise temperature, for a sensitivity.
+const ANTENNA_TEMPERATURE: ParamSpec = opt("antenna_temperature", K::Number, "the antenna's noise temperature in K, with `bandwidth` (default 290)");
+/// The signal-to-noise ratio a receiver needs, for a sensitivity.
+const SNR: ParamSpec = opt("snr", K::Number, "the signal-to-noise ratio in dB the receiver needs, with `bandwidth` (default 0)");
+
 const ORDER: ParamSpec = opt("order", K::Integer, "element order: 1 or 2 (default)");
 const PORT_SOLVER_ORDER: ParamSpec = opt("order", K::Integer, "element order of the cross-section solver, 1 or 2 (default 2)");
 
@@ -508,7 +522,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "circuit.cascade",
         label: "Cascade",
-        doc: "Two-ports in a chain, port 2 of each to port 1 of the next, by their chain (ABCD) matrices (Pozar, Microwave Engineering, §4.4): `{\"type\": \"data\", \"data\": \"sweep\"}` (the sweep or a measurement, `flip` swapping its ports), `{\"type\": \"series\" | \"shunt\", \"resistance\", \"inductance\", \"capacitance\", \"arrangement\"}` (Ω, nH, pF, `series` or `parallel`, as model.element.create's), `{\"type\": \"line\", \"impedance\", \"length\", \"eps_r\", \"attenuation\", \"at\", \"tan_delta\"}` (Ω, the display length; lossless unless `attenuation` — a conductor's, dB per display length, growing as √(f/`at`) from frequency `at` when given — or `tan_delta`, a dielectric's, π f √εr tan δ / c with εr the line's effective one). Its noise is chained too, by Hillbrand and Russer's chain correlation matrices (IEEE Trans. CAS-23(4), 1976): a measurement's noise data (an amplifier's), a passive S block's by Twiss's equilibrium kT(I − SSᴴ) (the sweep's, or a measurement without noise data; one that gains has no noise then, and says why), a lumped element's resistance's thermal noise, a lossy line's from its loss, all at `temperature`, a lossless line none; the reply's `noise` gives the chain's least and greatest noise figure from a source of `impedance` (results.noise on the kept result gives it at every frequency). Its S on `impedance` at each frequency of its first S block (the others interpolated linearly; an error outside their bands), or from `start` to `stop` in `points` without one, kept as a measurement named `name` and drawn over the chart.",
+        doc: "Two-ports in a chain, port 2 of each to port 1 of the next, by their chain (ABCD) matrices (Pozar, Microwave Engineering, §4.4): `{\"type\": \"data\", \"data\": \"sweep\"}` (the sweep or a measurement, `flip` swapping its ports), `{\"type\": \"series\" | \"shunt\", \"resistance\", \"inductance\", \"capacitance\", \"arrangement\"}` (Ω, nH, pF, `series` or `parallel`, as model.element.create's), `{\"type\": \"line\", \"impedance\", \"length\", \"eps_r\", \"attenuation\", \"at\", \"tan_delta\"}` (Ω, the display length; lossless unless `attenuation` — a conductor's, dB per display length, growing as √(f/`at`) from frequency `at` when given — or `tan_delta`, a dielectric's, π f √εr tan δ / c with εr the line's effective one). Its noise is chained too, by Hillbrand and Russer's chain correlation matrices (IEEE Trans. CAS-23(4), 1976): a measurement's noise data (an amplifier's), a passive S block's by Twiss's equilibrium kT(I − SSᴴ) (the sweep's, or a measurement without noise data; one that gains has no noise then, and says why), a lumped element's resistance's thermal noise, a lossy line's from its loss, all at `temperature`, a lossless line none; the reply's `noise` gives the chain's least and greatest noise figure from a source of `impedance` (results.noise on the kept result gives it at every frequency): from `source`, a one-port measurement's impedance (an antenna's terminals from solve.radiation_sweep, a .s1p), when given; with `bandwidth`, the receiver's sensitivity too (results.noise's budget). Its S on `impedance` at each frequency of its first S block (the others interpolated linearly; an error outside their bands), or from `start` to `stop` in `points` without one, kept as a measurement named `name` and drawn over the chart.",
         params: &[
             req("blocks", K::Array, "the two-ports from port 1 on, at most 32"),
             opt("impedance", K::Number, "the reference impedance in Ω of the result's ports, and of S blocks' ports that have none (default 50)"),
@@ -517,6 +531,10 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("points", K::Integer, "frequencies without an S block (default 201)"),
             opt("name", K::String, "the name the result is kept under (default `cascade`)"),
             opt("temperature", K::Number, "the physical temperature in K of the passive blocks' noise (default 290)"),
+            SOURCE,
+            BANDWIDTH,
+            ANTENNA_TEMPERATURE,
+            SNR,
         ],
         effect: Effect::View,
         invalidates: None,
@@ -580,12 +598,16 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "results.noise",
         label: "Noise figure",
-        doc: "The noise figure of a two-port. A measurement with noise data (results.import of an amplifier's file, or a circuit.cascade's chain): from them, at port 1's reference impedance — the gain from a matched source, the noise figure, the noise temperature T₀(F − 1) and the least noise figure F_min (`from` noise data in the reply; `temperature` is then not used). Otherwise that of a passive two-port at one physical temperature, from its S alone: in thermal equilibrium its noise temperature is Te = T(1 − G)/G, G the available gain (Pozar §10.1; Hillbrand & Russer, IEEE Trans. CAS-23, 1976), the other ports terminated in matched loads at T. Per frequency: the gain and noise figure from a matched source (G = |S21|²/(1 − |S22|²); a matched attenuator of loss L at T₀ = 290 K has F = L), the noise temperature, and the least noise figure, the conjugately matched source's (from the maximum available gain; none where the network is not unconditionally stable). A point with no transmission, or a gain, says why.",
+        doc: "The noise figure of a two-port. A measurement with noise data (results.import of an amplifier's file, or a circuit.cascade's chain): from them, at port 1's reference impedance — the gain from a matched source, the noise figure, the noise temperature T₀(F − 1) and the least noise figure F_min (`from` noise data in the reply; `temperature` is then not used). From `source`, a one-port measurement (an antenna's terminals from solve.radiation_sweep, a .s1p), its impedance is the source's instead: the available gain from it (Pozar §12.1) and the noise figure it sees, the amplifier's mismatch to its best source counted. With `bandwidth` the receiver's budget: the system noise temperature T_sys = T_A + T₀(F − 1) at the antenna's terminals (`antenna_temperature` T_A, default 290 K), its noise power k T_sys B in dBm and the sensitivity, the least available signal giving `snr` (dB, default 0). Otherwise that of a passive two-port at one physical temperature, from its S alone: in thermal equilibrium its noise temperature is Te = T(1 − G)/G, G the available gain (Pozar §10.1; Hillbrand & Russer, IEEE Trans. CAS-23, 1976), the other ports terminated in matched loads at T. Per frequency: the gain and noise figure from a matched source (G = |S21|²/(1 − |S22|²); a matched attenuator of loss L at T₀ = 290 K has F = L), the noise temperature, and the least noise figure, the conjugately matched source's (from the maximum available gain; none where the network is not unconditionally stable). A point with no transmission, or a gain, says why.",
         params: &[
             opt("temperature", K::Number, "the network's physical temperature in K (default 290)"),
             opt("data", K::String, "`sweep` (default) or a measurement's name"),
             opt("input", K::Integer, "the input port (default 1)"),
             opt("output", K::Integer, "the output port (default 2)"),
+            SOURCE,
+            BANDWIDTH,
+            ANTENNA_TEMPERATURE,
+            SNR,
         ],
         effect: Effect::None,
         invalidates: None,
@@ -1904,6 +1926,22 @@ pub static COMMANDS: &[CommandSpec] = &[
         effect: Effect::Solve,
         invalidates: None,
         run: crate::open::solve_radiation,
+    },
+    CommandSpec {
+        id: "solve.radiation_sweep",
+        label: "Radiation sweep",
+        doc: "Solves the open problem at each frequency of `frequencies` (or `points` from `start` to `stop`; at most 64, each a factorization), the system set up once: per frequency the lumped ports' impedances and S11, the power radiated and the radiation efficiency, as solve.radiation gives them. With one lumped port its S11 over the sweep is kept as a one-port measurement named `name` on the port's impedance — the antenna's terminals, a `source` for circuit.cascade and results.noise — and drawn over the S-parameter chart; the last frequency's solution stays as the radiation result (results.far_field, view.pattern).",
+        params: &[
+            opt("frequencies", K::Array, "the frequencies").of(F),
+            opt("start", K::Number, "the first frequency (default the job's band)").of(F),
+            opt("stop", K::Number, "the last frequency (default the job's band)").of(F),
+            opt("points", K::Integer, "frequencies from start to stop (default 11, at most 64)"),
+            ORDER,
+            opt("name", K::String, "the name the antenna's S11 is kept under (default `antenna`)"),
+        ],
+        effect: Effect::Solve,
+        invalidates: None,
+        run: crate::open::solve_radiation_sweep,
     },
     CommandSpec {
         id: "results.far_field",

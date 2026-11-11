@@ -941,6 +941,9 @@
     "seed": "種",
     "spec": "規格",
     "temperature": "温度",
+    "antenna_temperature": "アンテナ雑音温度",
+    "snr": "SNR",
+    "source": "信号源",
     "stop": "終了",
     "Confirm conditions": "条件を確定",
     "Conditions confirmed": "条件は確定済み",
@@ -1334,7 +1337,7 @@
     },
     "circuit.cascade": {
       "label": "縦続接続",
-      "doc": "2 ポートを鎖状につなぐ（各ブロックのポート 2 を次のポート 1 に）。縦続行列（ABCD）の積で求める（Pozar, Microwave Engineering, §4.4）。ブロックは `{\"type\": \"data\", \"data\": \"sweep\"}`（掃引または測定値。`flip` でポートを入れ替え）、`{\"type\": \"series\" | \"shunt\", \"resistance\", \"inductance\", \"capacitance\", \"arrangement\"}`（Ω・nH・pF、`series` または `parallel`。model.element.create と同じ）、`{\"type\": \"line\", \"impedance\", \"length\", \"eps_r\", \"attenuation\", \"at\", \"tan_delta\"}`（Ω・表示単位の長さ。`attenuation` か `tan_delta` が無ければ無損失。`attenuation` は導体の減衰で表示単位の長さあたりの dB、`at` があればその周波数から √(f/`at`) で増える。`tan_delta` は誘電体の損失で π f √εr tan δ / c、εr は線路の実効比誘電率）。雑音も Hillbrand と Russer の縦続相関行列（IEEE Trans. CAS-23(4), 1976）でつなぐ。測定値の雑音データ（増幅器のもの）、受動の S ブロックは Twiss の熱平衡 kT(I − SSᴴ)（掃引、または雑音データの無い測定値。利得のあるものは雑音を求められず理由を返す）、集中定数素子は抵抗の熱雑音、損失のある線路はその損失から求め、どれも `temperature` における値。無損失の線路は雑音なし。応答の `noise` は `impedance` の信号源から見た縦続全体の雑音指数の最小と最大（残した結果に results.noise を使うと全周波数で得られる）。結果の S は `impedance` を基準に、最初の S ブロックの各周波数で（他は線形補間、帯域外はエラー）、S ブロックが無ければ `start` から `stop` まで `points` 点で求め、測定値 `name` として残してチャートに重ねる。",
+      "doc": "2 ポートを鎖状につなぐ（各ブロックのポート 2 を次のポート 1 に）。縦続行列（ABCD）の積で求める（Pozar, Microwave Engineering, §4.4）。ブロックは `{\"type\": \"data\", \"data\": \"sweep\"}`（掃引または測定値。`flip` でポートを入れ替え）、`{\"type\": \"series\" | \"shunt\", \"resistance\", \"inductance\", \"capacitance\", \"arrangement\"}`（Ω・nH・pF、`series` または `parallel`。model.element.create と同じ）、`{\"type\": \"line\", \"impedance\", \"length\", \"eps_r\", \"attenuation\", \"at\", \"tan_delta\"}`（Ω・表示単位の長さ。`attenuation` か `tan_delta` が無ければ無損失。`attenuation` は導体の減衰で表示単位の長さあたりの dB、`at` があればその周波数から √(f/`at`) で増える。`tan_delta` は誘電体の損失で π f √εr tan δ / c、εr は線路の実効比誘電率）。雑音も Hillbrand と Russer の縦続相関行列（IEEE Trans. CAS-23(4), 1976）でつなぐ。測定値の雑音データ（増幅器のもの）、受動の S ブロックは Twiss の熱平衡 kT(I − SSᴴ)（掃引、または雑音データの無い測定値。利得のあるものは雑音を求められず理由を返す）、集中定数素子は抵抗の熱雑音、損失のある線路はその損失から求め、どれも `temperature` における値。無損失の線路は雑音なし。応答の `noise` は `impedance` の信号源から見た縦続全体の雑音指数の最小と最大（残した結果に results.noise を使うと全周波数で得られる）。`source` があれば 1 ポートの測定値のインピーダンス（solve.radiation_sweep のアンテナ端子、.s1p）を信号源とし、`bandwidth` があれば受信機の感度も返す（results.noise の予算と同じ）。結果の S は `impedance` を基準に、最初の S ブロックの各周波数で（他は線形補間、帯域外はエラー）、S ブロックが無ければ `start` から `stop` まで `points` 点で求め、測定値 `name` として残してチャートに重ねる。",
       "params": {
         "blocks": "ポート 1 側からの 2 ポートの並び（32 個まで）",
         "impedance": "結果のポートと、基準インピーダンスの無い S ブロックのポートの基準インピーダンス（Ω、既定 50）",
@@ -1342,7 +1345,11 @@
         "stop": "最後の周波数（S ブロックが無いとき）",
         "points": "周波数の数（S ブロックが無いとき、既定 201）",
         "name": "結果を残す名前（既定 `cascade`）",
-        "temperature": "受動ブロックの雑音の物理温度（K、既定 290）"
+        "temperature": "受動ブロックの雑音の物理温度（K、既定 290）",
+        "source": "信号源のインピーダンスにする 1 ポートの測定値（solve.radiation_sweep のアンテナの S11、.s1p）。既定は入力の基準インピーダンス",
+        "bandwidth": "受信機の雑音帯域幅。システム雑音温度・雑音電力・感度を求める",
+        "antenna_temperature": "アンテナの雑音温度（K、`bandwidth` と一緒に、既定 290）",
+        "snr": "受信機に要る信号対雑音比（dB、`bandwidth` と一緒に、既定 0）"
       }
     },
     "filter.synthesize": {
@@ -1390,12 +1397,16 @@
     },
     "results.noise": {
       "label": "雑音指数",
-      "doc": "2 ポートの雑音指数。雑音データのある測定値（増幅器のファイルを results.import したもの、または circuit.cascade の結果）では、それからポート 1 の基準インピーダンスで求める。整合した信号源からの利得、雑音指数、雑音温度 T₀(F − 1)、最小雑音指数 F_min を返す（応答の `from` は noise data、`temperature` は使わない）。それ以外は、一様な物理温度にある受動 2 ポートの雑音指数を S だけから求める。熱平衡では雑音温度が Te = T(1 − G)/G（G は有能利得）になる（Pozar §10.1; Hillbrand & Russer, IEEE Trans. CAS-23, 1976）。他のポートは温度 T の整合負荷で終端したとする。周波数ごとに、整合した信号源からの利得と雑音指数（G = |S21|²/(1 − |S22|²)。損失 L の整合した減衰器は T₀ = 290 K で F = L）、雑音温度、そして最小雑音指数（共役整合した信号源のもの。最大有能利得から求め、無条件安定でなければ無し）を返す。伝送が無い点や利得のある点は理由を返す。",
+      "doc": "2 ポートの雑音指数。雑音データのある測定値（増幅器のファイルを results.import したもの、または circuit.cascade の結果）では、それからポート 1 の基準インピーダンスで求める。整合した信号源からの利得、雑音指数、雑音温度 T₀(F − 1)、最小雑音指数 F_min を返す（応答の `from` は noise data、`temperature` は使わない）。`source` に 1 ポートの測定値（solve.radiation_sweep のアンテナ端子、.s1p）を与えると、そのインピーダンスを信号源とし、その信号源からの有能利得（Pozar §12.1）と雑音指数を返す（増幅器の最適信号源とのずれも含む）。`bandwidth` があれば受信機の予算として、アンテナ端子でのシステム雑音温度 T_sys = T_A + T₀(F − 1)（`antenna_temperature` が T_A、既定 290 K）、雑音電力 k T_sys B（dBm）、`snr`（dB、既定 0）を得る最小の有能信号電力である感度を返す。それ以外は、一様な物理温度にある受動 2 ポートの雑音指数を S だけから求める。熱平衡では雑音温度が Te = T(1 − G)/G（G は有能利得）になる（Pozar §10.1; Hillbrand & Russer, IEEE Trans. CAS-23, 1976）。他のポートは温度 T の整合負荷で終端したとする。周波数ごとに、整合した信号源からの利得と雑音指数（G = |S21|²/(1 − |S22|²)。損失 L の整合した減衰器は T₀ = 290 K で F = L）、雑音温度、そして最小雑音指数（共役整合した信号源のもの。最大有能利得から求め、無条件安定でなければ無し）を返す。伝送が無い点や利得のある点は理由を返す。",
       "params": {
         "temperature": "回路網の物理温度（K、既定 290）",
         "data": "`sweep`（既定）または測定値の名前",
         "input": "入力ポート（既定 1）",
-        "output": "出力ポート（既定 2）"
+        "output": "出力ポート（既定 2）",
+        "source": "信号源のインピーダンスにする 1 ポートの測定値（solve.radiation_sweep のアンテナの S11、.s1p）。既定は入力の基準インピーダンス",
+        "bandwidth": "受信機の雑音帯域幅。システム雑音温度・雑音電力・感度を求める",
+        "antenna_temperature": "アンテナの雑音温度（K、`bandwidth` と一緒に、既定 290）",
+        "snr": "受信機に要る信号対雑音比（dB、`bandwidth` と一緒に、既定 0）"
       }
     },
     "results.active": {
@@ -2098,6 +2109,7 @@
         "order": "要素次数：1 または 2（既定）"
       }
     },
+    "solve.radiation_sweep": {"label": "放射の周波数掃引", "doc": "開放問題を `frequencies` の各周波数（または `start` から `stop` まで `points` 点。64 点まで、各点で分解する）で解く。系の準備は 1 回。周波数ごとに、ランプドポートのインピーダンスと S11、放射電力と放射効率を solve.radiation と同じ形で返す。ランプドポートが 1 つなら、掃引した S11 をそのポートのインピーダンスを基準とする 1 ポートの測定値 `name` として残し（アンテナ端子。circuit.cascade と results.noise の `source` に使える）、Sパラメータのチャートに重ねる。最後の周波数の解は放射の結果として残る（results.far_field、view.pattern）。", "params": {"frequencies": "周波数", "start": "最初の周波数（既定は解析の帯域）", "stop": "最後の周波数（既定は解析の帯域）", "points": "start から stop までの周波数の数（既定 11、64 まで）", "order": "要素次数：1 または 2（既定）", "name": "アンテナの S11 を残す名前（既定 `antenna`）"}},
     "results.far_field": {
       "label": "遠方界",
       "doc": "直近の放射解析の遠方界（r e^{jkr} E_θ, E_φ）を極角 `theta`、方位角 `phi`（度）で求める。Huygens 箱の等価電流からの近傍界–遠方界変換による。平面波ではレーダー断面積を示す。波源では指向性に加え、集中定数ポートまたは導波管ポートで給電していれば利得（指向性 × 放射電力／給電が渡す電力）と実効利得（電源の有能電力に対する比：不整合も含む）を示し、偏波として楕円の軸比（`axial_ratio_db`、直線偏波なら null）と回転の向き（`right`、`left`、`linear`。IEEE：波の進む向きに見る）、右旋・左旋円偏波と Ludwig 第 3 定義の主偏波・交差偏波それぞれの指向性（dBi）も示す。適用できる場合は閉形式解とともに示す。",
@@ -2729,6 +2741,7 @@
     "yagi": "10 GHz の 3 素子八木・宇田アンテナ：長い反射器と短い導波器の間で、集中定数ポートで給電するワイヤダイポール、導波器の方向に約 7.5 dBi",
     "monopole": "10 GHz で 40 mm 角の地板に立てた 1/4 波長モノポール、根元の集中定数ポートで給電：入力インピーダンス、S11、放射パターン",
     "patch-antenna": "10 GHz のインセット給電マイクロストリップパッチアンテナ、0.787 mm の εr = 2.2 基板と有限の地板、開放領域の中の基板：S11 は約 −17 dB、正面方向に約 7 dBi",
+    "adsb-patch": "1090 MHz の ADS-B 受信用パッチアンテナ。1.6 mm の FR-4（εr = 4.4、tan δ = 0.02）、50 Ω 線路によるインセット給電、有限の地板、開放領域の中の基板：S11 は約 −20 dB、正面方向の指向性 6.4 dBi、利得 1.2 dBi（FR-4 の損失で効率 0.3）",
     "td-dielectric-slab": "WR-90 を横切る誘電体板（εr = 2.2、厚さ 20 mm）を時間領域で：帯域でのファブリ・ペロー反射、板が管内半波長になる周波数で整合",
     "td-quarter-wave": "誘電体負荷（εr = 2.2）に入る WR-90 を、誘電率 √εr の 1/4 波長区間で整合、時間領域",
     "td-lossy-slab": "WR-90 を横切る損失性の板（εr = 2.2、tan δ = 0.05）を時間領域で：損失は帯域中心で合わせた導電率",

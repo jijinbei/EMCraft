@@ -265,3 +265,28 @@ fn a_patch_radiates_strongest_off_its_board() {
     s.execute("solve.radiation", &json!({"frequency": 10})).unwrap();
     assert_eq!(crate::open::strongest_azimuth(&s), Some(90.0));
 }
+
+#[test]
+fn a_radiation_sweep_keeps_the_antennas_terminals_and_the_last_solution() {
+    // The coarse 1 mm gap of a_lumped_gap_radiates_as_a_hertzian_dipole, on 50 Ω, at two
+    // frequencies: each as solve.radiation gives it, bit for bit, and the gap's S11 kept.
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "box", "size": [40, 40, 40]})).unwrap();
+    s.execute("model.open", &json!({"thickness": 10})).unwrap();
+    s.execute("mesh.generate", &json!({"per_wavelength": 4, "frequency": 10})).unwrap();
+    s.execute("model.port.lumped", &json!({"name": "gap", "from": [20.1, 20.2, 19.4], "to": [20.1, 20.2, 20.4]})).unwrap();
+    let r = s.execute("solve.radiation_sweep", &json!({"frequencies": [9, 10], "name": "gap"})).unwrap();
+    assert_eq!(r["kept"], "gap");
+    let one = s.execute("solve.radiation", &json!({"frequency": 9})).unwrap();
+    assert_eq!(r["points"][0]["ports"][0]["impedance"], one["ports"][0]["impedance"]);
+    // The antenna as the source of a circuit: its impedance read back from the kept S11.
+    let z = &r["points"][1]["ports"][0]["impedance"];
+    let n = s
+        .execute("circuit.cascade", &json!({"blocks": [{"type": "line", "length": 1}], "source": "gap", "start": 9, "stop": 10, "points": 2}))
+        .unwrap();
+    assert_eq!(n["noise"]["source"], "gap");
+    assert!(z["re"].as_f64().unwrap() > 0.0);
+    // Too many frequencies, or a source that is not a one-port: refused.
+    assert!(s.execute("solve.radiation_sweep", &json!({"start": 9, "stop": 10, "points": 65})).is_err());
+    assert!(s.execute("circuit.cascade", &json!({"blocks": [{"type": "line", "length": 1}], "source": "nothing", "start": 9, "stop": 10})).is_err());
+}

@@ -651,6 +651,14 @@ pub const TEMPLATES: &[Template] = &[
         group: Group::Antennas,
     },
     Template {
+        name: "adsb-patch",
+        label: "ADS-B receiving patch at 1090 MHz on 1.6 mm of FR-4 (εr = 4.4, tan δ = 0.02), inset-fed by a 50 Ω line over a finite ground, a board in an open region: S11 about −20 dB, 6.4 dBi directivity broadside, 1.2 dBi gain (the FR-4's loss: efficiency 0.3)",
+        script: include_str!("../scripts/adsb-patch.json"),
+        marks: "{}",
+        kinds: &[Analysis::Radiation, Analysis::Pcb],
+        group: Group::Antennas,
+    },
+    Template {
         name: "td-dipole",
         label: "A centre-fed dipole of square arms in the time domain, its 1 mm gap carried to the arms on the grid: resonance near 10 GHz, S11 against 50 Ω and the radiated power",
         script: include_str!("../scripts/td-dipole.json"),
