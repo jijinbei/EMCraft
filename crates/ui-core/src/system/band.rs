@@ -63,3 +63,23 @@ pub fn setup(band: Band, key: &str, value: Option<f64>) -> Option<Value> {
     let at = b.at.map(|f| ("frequency", json!(f)));
     Some(Value::Object(fields.into_iter().chain(at).map(|(k, v)| (k.to_owned(), v)).collect::<Map<_, _>>()))
 }
+
+/// The band as the bar shows it, in `s`'s display units: the confirmed one, else the one the
+/// chain was last read over.
+pub fn shown(s: &emcraft_engine::Session) -> Band {
+    let fu = s.display().frequency;
+    let confirmed = match s.model().job.setup() {
+        Some(emcraft_model::Setup::System { band, points, frequency }) => {
+            Some((band.start.get(), band.stop.get(), points.get(), frequency.map(emcraft_model::Hertz::get)))
+        }
+        _ => None,
+    };
+    let read =
+        s.results().system.as_deref().and_then(|r| Some((r.points.first()?.frequency, r.points.last()?.frequency, r.points.len(), Some(r.at))));
+    confirmed.or(read).map_or_else(Band::default, |(a, z, n, at)| Band {
+        start: Some(fu.from_si(a)),
+        stop: Some(fu.from_si(z)),
+        points: Some(n as f64),
+        at: at.map(|f| fu.from_si(f)),
+    })
+}

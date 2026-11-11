@@ -3,6 +3,8 @@
 //! stage's kind and numbers in a line, and the chain's reading at a stage's output.
 
 pub mod band;
+pub mod budget;
+pub mod card;
 pub mod gesture;
 pub mod layout;
 

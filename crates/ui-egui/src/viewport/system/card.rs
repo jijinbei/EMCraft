@@ -3,15 +3,15 @@
 //! at its output. What a card holds is data ([`rows`]); drawing it is one loop.
 
 use egui::{Align2, FontId, Rect, Sense, Stroke, pos2, vec2};
-use emcraft_model::system::{DataSource, Part, Stage};
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::bridge::{drag_inputs, pos, rect};
 use super::fields::{self, Number};
 use crate::handle::Handle;
-use crate::lang::{tr, trf};
+use crate::lang::tr;
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, Hint, UiExt, scenario, system_ui};
+use emcraft_ui_core::system::card::{Edit, command, reading, rows, title};
 use emcraft_ui_core::system::gesture::Input;
 use emcraft_ui_core::system::layout::{Kind, NodeBox};
 
@@ -19,117 +19,9 @@ use emcraft_ui_core::system::layout::{Kind, NodeBox};
 const PORT_R: f32 = 6.0;
 const PORT_REACH: f32 = 16.0;
 
-/// What a row edits.
-enum Edit {
-    /// A number in `unit`, which may be left empty when `optional`.
-    Number { value: Option<f64>, unit: String, optional: bool },
-    /// A name among `options` (each its value and its text).
-    Choice { options: Vec<(String, String)>, current: String },
-}
-
-/// A row of a card: its label, the parameter it sets and what it edits.
-struct Row {
-    label: String,
-    key: &'static str,
-    value: Edit,
-}
-
-fn number(label: &str, key: &'static str, value: Option<f64>, unit: &str, optional: bool) -> Row {
-    Row { label: label.to_owned(), key, value: Edit::Number { value, unit: unit.to_owned(), optional } }
-}
-
-/// The measurements of `ports` ports, as choices.
-fn measured(app: &EmcraftApp, ports: usize) -> impl Iterator<Item = (String, String)> + '_ {
-    app.session.views().measured.iter().filter(move |x| x.data.outputs() == ports).map(|x| (x.name.clone(), x.name.clone()))
-}
-
-/// A stage's rows: its own settings (the rest in its dialog, All settings…).
-fn stage_rows(app: &EmcraftApp, stage: &Stage) -> Vec<Row> {
-    let v = emcraft_engine::system::stage_params(&app.session, &stage.part);
-    let n = |label: &str, key: &'static str, unit: &str, optional: bool| number(label, key, v[key].as_f64(), unit, optional);
-    let lu = app.session.display().length.symbol();
-    match &stage.part {
-        Part::Amplifier { .. } => {
-            vec![n("G", "gain", "dB", false), n("NF", "noise_figure", "dB", false), n("OIP3", "oip3", "dBm", true), n("P1dB", "p1db", "dBm", true)]
-        }
-        Part::Attenuator { .. } => vec![n("L", "loss", "dB", false)],
-        Part::Line { .. } => vec![n("Z₀", "impedance", "Ω", false), n("ℓ", "length", lu, false), n("εr", "eps_r", "", false)],
-        Part::Element { .. } => vec![n("R", "resistance", "Ω", false), n("L", "inductance", "nH", false), n("C", "capacitance", "pF", false)],
-        Part::Data { data, .. } => {
-            let current = match data {
-                DataSource::Sweep => "sweep".to_owned(),
-                DataSource::Measurement { name } => name.clone(),
-            };
-            let options = std::iter::once(("sweep".to_owned(), tr(t!("the sweep")).to_owned())).chain(measured(app, 2)).collect();
-            vec![Row { label: "S".into(), key: "data", value: Edit::Choice { options, current } }]
-        }
-    }
-}
-
-/// The rows `node`'s card shows.
-fn rows(app: &EmcraftApp, node: &NodeBox) -> Vec<Row> {
-    let m = app.session.model();
-    let fu = app.session.display().frequency;
-    match node.kind {
-        Kind::Source => {
-            let src = &m.system.source;
-            let options = std::iter::once((String::new(), format!("{} Ω", m.system.receiver.impedance))).chain(measured(app, 1)).collect();
-            let current = src.antenna.clone().unwrap_or_default();
-            vec![
-                Row { label: tr(t!("antenna")).to_owned(), key: "antenna", value: Edit::Choice { options, current } },
-                number("T", "temperature", Some(src.temperature), "K", false),
-                number(tr(t!("signal")), "power", src.power, "dBm", true),
-            ]
-        }
-        Kind::Receiver => {
-            let r = &m.system.receiver;
-            vec![
-                number("B", "bandwidth", r.bandwidth.map(|b| fu.from_si(b)), fu.symbol(), true),
-                number("SNR", "snr", Some(r.snr), "dB", false),
-                number("Z₀", "impedance", Some(r.impedance), "Ω", false),
-            ]
-        }
-        Kind::Stage(i) => stage_rows(app, &m.system.stages[i]),
-    }
-}
-
-/// The command a row's new value runs: the source's, the receiver's or the stage's settings.
-fn command(node: &NodeBox, key: &str, value: Value) -> Action {
-    match node.kind {
-        Kind::Source => Action::run("system.source", json!({ key: value })),
-        Kind::Receiver => Action::run("system.receiver", json!({ key: value })),
-        Kind::Stage(_) => Action::run("system.stage.edit", json!({"stage": node.name, key: value})),
-    }
-}
-
-/// What the chain reads at `node`'s output: a stage's gain and noise figure, the receiver's
-/// sensitivity.
-fn reading(app: &EmcraftApp, node: &NodeBox) -> Option<String> {
-    let f = |x: Option<f64>| x.map_or_else(|| "—".to_owned(), |v| format!("{v:.2}"));
-    match node.kind {
-        Kind::Source => None,
-        Kind::Receiver => {
-            let r = app.session.results().system.as_deref()?;
-            let s = r.nearest(r.at)?.sensitivity_dbm?;
-            Some(trf(t!("sensitivity {s} dBm"), crate::args!(s = format!("{s:.1}"))))
-        }
-        Kind::Stage(_) => {
-            let (g, nf) = system_ui::reading(&app.session, &node.name)?;
-            Some(trf(t!("total {gain} dB · NF {nf} dB"), crate::args!(gain = f(g), nf = f(nf))))
-        }
-    }
-}
-
-/// The card's title: the source, the receiver, or a stage's name and kind.
-fn title(app: &EmcraftApp, node: &NodeBox) -> String {
-    match node.kind {
-        Kind::Source => tr(t!("Source")).to_owned(),
-        Kind::Receiver => tr(t!("Receiver")).to_owned(),
-        Kind::Stage(i) => {
-            let s = &app.session.model().system.stages[i];
-            format!("{}  ·  {}", emcraft_engine::text::clip(&s.name, 18), tr(system_ui::kind_name(&s.part)))
-        }
-    }
+/// A command a card's row runs, as an action.
+fn run(c: emcraft_ui_core::system::gesture::Command) -> Action {
+    Action::run(c.id, c.params)
 }
 
 /// Draws `node`'s card and edits its rows in place; what the pointer did on its header and ports.
@@ -140,10 +32,10 @@ pub(super) fn card(app: &EmcraftApp, ui: &mut egui::Ui, node: &NodeBox, out: &mu
     p.rect(r, 8.0, if node.on_chain { t.dialog_body } else { t.panel_header }, Stroke::new(1.2, t.border), egui::StrokeKind::Inside);
     let head = rect(node.header());
     p.rect_filled(head, egui::CornerRadius { nw: 8, ne: 8, sw: 0, se: 0 }, if node.on_chain { t.accent_soft } else { t.border });
-    p.text(head.left_center() + vec2(10.0, 0.0), Align2::LEFT_CENTER, title(app, node), FontId::proportional(t.font_small), t.text);
+    p.text(head.left_center() + vec2(10.0, 0.0), Align2::LEFT_CENTER, title(&app.session, node), FontId::proportional(t.font_small), t.text);
     let inputs: Vec<Input> = header(ui, node, out).into_iter().chain(ports(ui, node)).collect();
     let font = FontId::proportional(t.font_small);
-    let rows = rows(app, node);
+    let rows = rows(&app.session, node);
     for (k, row) in rows.iter().enumerate() {
         let line = rect(node.row(k));
         p.text(line.left_center(), Align2::LEFT_CENTER, &row.label, font.clone(), t.text_dim);
@@ -153,16 +45,16 @@ pub(super) fn card(app: &EmcraftApp, ui: &mut egui::Ui, node: &NodeBox, out: &mu
                 p.text(line.right_center(), Align2::RIGHT_CENTER, unit, font.clone(), t.text_dim);
                 let rect = value_at.with_max_x(line.right() - 36.0);
                 let field = Number { rect, handle: Handle::SystemField(&node.name, row.key), value: *value, optional: *optional };
-                fields::number(ui, field, |v| Some(command(node, row.key, json!(v))), out);
+                fields::number(ui, field, |v| Some(run(command(node, row.key, json!(v)))), out);
             }
             Edit::Choice { options, current } => {
                 if let Some(v) = fields::choice(ui, value_at, egui::Id::new(("system_choice", &node.name, row.key)), options, current) {
-                    out.push(command(node, row.key, json!(v)));
+                    out.push(run(command(node, row.key, json!(v))));
                 }
             }
         }
     }
-    if let Some(text) = reading(app, node) {
+    if let Some(text) = reading(&app.session, node) {
         p.text(rect(node.row(rows.len())).left_center(), Align2::LEFT_CENTER, text, font.clone(), t.accent);
     }
     if !node.on_chain {

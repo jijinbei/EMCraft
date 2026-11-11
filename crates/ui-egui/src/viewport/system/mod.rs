@@ -13,7 +13,7 @@ mod wires;
 use super::*;
 use crate::system_ui;
 use bridge::{point, pos};
-use emcraft_engine::system::{Row, SystemResult};
+use emcraft_engine::system::SystemResult;
 use emcraft_engine::view::SystemChart;
 use emcraft_ui_core::geom;
 use emcraft_ui_core::system::band;
@@ -94,7 +94,7 @@ fn chart_label(c: SystemChart) -> crate::lang::Text {
 /// until one is.
 fn band(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let fu = app.session.display().frequency;
-    let now = shown_band(app);
+    let now = band::shown(&app.session);
     ui.horizontal(|ui| {
         let fields: [(&'static str, crate::lang::Text, &str); 4] = [
             ("start", t!("start"), fu.symbol()),
@@ -113,30 +113,6 @@ fn band(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             ui.add_space(6.0);
         }
     });
-}
-
-/// The band as the bar shows it, in display units: the confirmed one, else the one the chain
-/// was last read over.
-fn shown_band(app: &EmcraftApp) -> band::Band {
-    let fu = app.session.display().frequency;
-    let confirmed = match app.session.model().job.setup() {
-        Some(emcraft_model::Setup::System { band, points, frequency }) => {
-            Some((band.start.get(), band.stop.get(), points.get(), frequency.map(emcraft_model::Hertz::get)))
-        }
-        _ => None,
-    };
-    let read = app
-        .session
-        .results()
-        .system
-        .as_deref()
-        .and_then(|r| Some((r.points.first()?.frequency, r.points.last()?.frequency, r.points.len(), Some(r.at))));
-    confirmed.or(read).map_or_else(band::Band::default, |(a, z, n, at)| band::Band {
-        start: Some(fu.from_si(a)),
-        stop: Some(fu.from_si(z)),
-        points: Some(n as f64),
-        at: at.map(|f| fu.from_si(f)),
-    })
 }
 
 /// A chain with no stage yet: what a system is, and a large button for each kind of stage.
@@ -204,44 +180,11 @@ fn add_menu(bg: &egui::Response, at: Option<geom::Vector>, out: &mut Actions) {
 
 /// The budget at its frequency, a row a stage, and the receiver's reading under it.
 fn budget(app: &EmcraftApp, r: &SystemResult, ui: &mut egui::Ui) {
-    let Some(p) = r.nearest(r.at) else { return };
-    let num = |x: Option<f64>, digits: usize| x.map_or_else(|| "—".to_owned(), |v| format!("{v:.digits$}"));
-    let headers: Vec<String> = [
-        t!("stage"),
-        t!("gain (dB)"),
-        t!("total gain (dB)"),
-        t!("NF (dB)"),
-        t!("Te (K)"),
-        t!("signal (dBm)"),
-        t!("noise (dBm)"),
-        t!("SNR (dB)"),
-        t!("IIP3 (dBm)"),
-        t!("OIP3 (dBm)"),
-        t!("OP1dB (dBm)"),
-    ]
-    .into_iter()
-    .map(|h| tr(h).to_owned())
-    .collect();
-    let row = |name: &str, x: &Row| {
-        vec![
-            name.to_owned(),
-            num(x.stage_gain_db, 2),
-            num(x.gain_db, 2),
-            num(x.nf_db, 3),
-            num(x.noise_temperature, 1),
-            num(x.signal_dbm, 2),
-            num(x.noise_dbm, 2),
-            num(x.snr_db, 2),
-            num(x.iip3_dbm, 2),
-            num(x.oip3_dbm, 2),
-            num(x.op1db_dbm, 2),
-        ]
-    };
-    let rows: Vec<Vec<String>> = r.stages.iter().zip(&p.rows).map(|((name, _), x)| row(name, x)).collect();
-    egui::Grid::new("system_budget").striped(true).num_columns(headers.len()).show(ui, |ui| {
+    let Some((p, rows)) = system_ui::budget::table(r) else { return };
+    egui::Grid::new("system_budget").striped(true).num_columns(system_ui::budget::HEADERS.len()).show(ui, |ui| {
         super::dim_if_stale(ui);
-        for h in &headers {
-            ui.text(Style::Strong, Raw(h));
+        for h in system_ui::budget::HEADERS {
+            ui.text(Style::Strong, h);
         }
         ui.end_row();
         for cells in &rows {
@@ -252,15 +195,7 @@ fn budget(app: &EmcraftApp, r: &SystemResult, ui: &mut egui::Ui) {
         }
     });
     ui.add_space(4.0);
-    if let (Some(t), Some(s)) = (p.system_temperature, p.sensitivity_dbm) {
-        ui.text(
-            Style::Body,
-            Raw(&trf(t!("System temperature {t} K; sensitivity {s} dBm"), crate::args!(t = format!("{t:.1}"), s = format!("{s:.2}")))),
-        );
-    } else if app.session.model().system.receiver.bandwidth.is_none() {
-        ui.text(Style::Dim, t!("Give the receiver a bandwidth (on its node) for its noise, SNR and sensitivity."));
-    }
-    if let Some(why) = &p.why {
-        ui.text(Style::Dim, Raw(why));
+    for (line, dim) in system_ui::budget::summary(&app.session, p) {
+        ui.text(if dim { Style::Dim } else { Style::Body }, Raw(&line));
     }
 }

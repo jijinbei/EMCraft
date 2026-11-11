@@ -23,7 +23,7 @@ pub(super) fn number(ui: &mut egui::Ui, field: Number, commit: impl FnOnce(Optio
     let Number { rect, handle, value, optional } = field;
     let t = &Tokens::get();
     let id = egui::Id::new(("system_field", handle.to_string()));
-    let shown = value.map_or_else(String::new, |v| format!("{}", (v * 1e6).round() / 1e6));
+    let shown = emcraft_ui_core::system::card::shown(value);
     let mut text = ui.ctx().data_mut(|d| d.get_temp::<String>(id)).unwrap_or_else(|| shown.clone());
     let edit =
         egui::TextEdit::singleline(&mut text).font(FontId::proportional(t.font_small)).horizontal_align(egui::Align::RIGHT).margin(vec2(4.0, 1.0));
@@ -36,12 +36,7 @@ pub(super) fn number(ui: &mut egui::Ui, field: Number, commit: impl FnOnce(Optio
         return;
     }
     ui.ctx().data_mut(|d| d.remove::<String>(id));
-    let typed = text.trim();
-    let parsed = if typed.is_empty() && optional { Some(None) } else { typed.parse::<f64>().ok().filter(|v| v.is_finite()).map(Some) };
-    if typed != shown
-        && let Some(v) = parsed
-        && let Some(a) = commit(v)
-    {
+    if let Some(a) = emcraft_ui_core::system::card::committed(&text, value, optional).and_then(commit) {
         out.push(a);
     }
 }
