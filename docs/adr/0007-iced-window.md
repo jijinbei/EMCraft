@@ -27,6 +27,7 @@ code to be written. iced is that toolkit in pure Rust (MIT).
 - **Features.** wgpu and tiny-skia (the software renderer the headless tests draw with), the
   canvas, images without codecs (pictures arrive as RGBA from `emcraft-render`), X11 and
   Wayland, the thread-pool executor. `iced_test` (the same revision) only as a dev-dependency.
+- **One look.** The theme (`emcraft-ui-core::theme`: the tokens, generic over a toolkit's colour) dresses both windows; `emcraft-ui-iced::look` turns the tokens into iced's styles. The iced window reads the same preferences (language, theme, font).
 - **Tests.** The window is driven by its messages (typing, dragging, buttons) and drawn headless
   by `iced_test`'s simulator, which also clicks by text; `EMCRAFT_ICED_SHOTS=DIR` writes the
   drawn view as a PNG to look at.

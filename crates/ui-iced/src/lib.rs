@@ -9,6 +9,7 @@
 //!
 //! - [`app`]: the window's state and messages;
 //! - [`system`]: a system's node editor — the band, the canvas, the chart and the budget;
+//! - [`look`]: the theme's tokens as iced's styles;
 //! - [`geom`]: the shared points on iced's screen and back.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
@@ -23,12 +24,23 @@ macro_rules! t {
 
 pub mod app;
 pub mod geom;
+pub mod look;
 pub mod system;
 
-/// Runs the window, on sample `sample` when one is named.
+use emcraft_ui_core::{lang, prefs, theme};
+
+/// Runs the window, on sample `sample` when one is named, in the preferences the egui window
+/// keeps: its language, its theme (the user's themes too) and the font the language is shown
+/// with.
 pub fn run(sample: Option<String>) -> iced::Result {
-    iced::application(move || app::App::new(sample.as_deref()), app::App::update, app::App::view)
+    let prefs = prefs::default_path().map(|p| prefs::Prefs::load(&p)).unwrap_or_default();
+    lang::set(prefs.language());
+    let theme = theme::Themes::load(theme::default_dir().as_deref()).get(&prefs.theme);
+    let font = prefs.font_file.as_deref().and_then(|f| std::fs::read(f).ok());
+    iced::application(move || app::App::new(sample.as_deref()).dressed(theme.clone()), app::App::update, app::App::view)
         .title(app::App::title)
+        .theme(app::App::theme)
+        .fonts(font)
         .window_size((1400.0, 900.0))
         .run()
 }

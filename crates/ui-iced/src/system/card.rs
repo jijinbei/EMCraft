@@ -11,52 +11,63 @@ use iced::{Alignment, Element, Fill, Widget, mouse};
 use serde_json::json;
 
 use crate::app::{App, Field, Message};
+use crate::look;
+
+/// A row's label column (points), as the egui card's.
+const LABEL_W: f32 = 56.0;
 
 /// The card of `node`.
 pub(super) fn card<'a>(app: &'a App, node: &NodeBox) -> Element<'a, Message> {
     let rows = shared::rows(&app.session, node).into_iter().map(|r| line(app, node, r));
-    let reading = shared::reading(&app.session, node).map(|r| text(r).size(12).style(text::primary).boxed());
-    let off = (!node.on_chain).then(|| text(tr(t!("off the chain"))).size(11).style(text::secondary).boxed());
+    let t = app.look.tokens;
+    let reading = shared::reading(&app.session, node).map(|r| text(r).size(t.font_small).color(t.accent).boxed());
+    let off = (!node.on_chain).then(|| text(tr(t!("off the chain"))).size(t.font_small - 1.0).color(t.text_dim).boxed());
     let body = Column::with_children(rows.chain(reading).chain(off)).padding([4, 10]);
-    let style = if node.on_chain { container::bordered_box } else { container::dark };
-    container(column![header(app, node), body]).width(node.rect.width()).height(node.rect.height()).style(style).boxed()
+    let card = column![header(app, node), body];
+    container(card).width(node.rect.width()).height(node.rect.height()).style(look::card(t, node.on_chain)).boxed()
 }
 
 /// The header: a stage's pressed to move it, with a mark that deletes it.
 fn header<'a>(app: &App, node: &NodeBox) -> Element<'a, Message> {
-    let title = text(shared::title(&app.session, node)).size(12).width(Fill);
+    let t = app.look.tokens;
+    let title = text(shared::title(&app.session, node)).size(t.font_small).width(Fill);
     let content: Element<Message> = match node.kind {
         Kind::Stage(_) => {
             let delete = Command { id: "system.stage.delete", params: json!({"stage": node.name}) };
             let grab = mouse_area(title).on_press(Message::Grab(node.name.clone())).interaction(mouse::Interaction::Grab);
-            row![grab, button(text("×").size(11)).padding([0, 4]).style(button::text).on_press(Message::Run(delete))]
+            row![grab, button(text("×").size(t.font_small)).padding([0, 4]).style(look::quiet(t)).on_press(Message::Run(delete))]
                 .align_y(Alignment::Center)
                 .boxed()
         }
         Kind::Source | Kind::Receiver => title.boxed(),
     };
-    container(content).padding([4, 10]).height(HEAD_H).width(Fill).style(container::secondary).boxed()
+    container(content).padding([4, 10]).height(HEAD_H).width(Fill).align_y(Alignment::Center).style(look::header(t, node.on_chain)).boxed()
 }
 
 /// A row: its label, its value edited in place (a number committed on Enter, a name chosen) and
 /// its unit.
 fn line<'a>(app: &App, node: &NodeBox, r: Row) -> Element<'a, Message> {
     let field = Field { node: node.name.clone(), key: r.key };
-    let label = text(r.label).size(12).width(44);
+    let t = app.look.tokens;
+    let label = text(r.label).size(t.font_small).color(t.form_dim).width(LABEL_W).wrapping(text::Wrapping::None);
     let edit: Element<Message> = match r.value {
         Edit::Number { value, unit, .. } => {
             let typed = field.clone();
             let input = text_input("", app.draft(&field, value))
-                .size(12)
-                .on_input(move |t| Message::Typed(typed.clone(), t))
+                .size(t.font_small)
+                .padding([2, 6])
+                .style(look::field(t))
+                .on_input(move |s| Message::Typed(typed.clone(), s))
                 .on_submit(Message::Commit(field));
-            row![input, text(unit).size(12).width(34)].spacing(4).align_y(Alignment::Center).boxed()
+            row![input, text(unit).size(t.font_small).color(t.text_dim).width(34)].spacing(4).align_y(Alignment::Center).boxed()
         }
         Edit::Choice { options, current } => {
             let now = options.iter().find(|(v, _)| *v == current).cloned();
             pick_list(now, options, |(_, shown): &(String, String)| shown.clone())
                 .on_select(move |(v, _)| Message::Chose(field.clone(), v))
-                .text_size(12)
+                .text_size(t.font_small)
+                .padding([2, 6])
+                .style(look::choice(t))
                 .width(Fill)
                 .boxed()
         }

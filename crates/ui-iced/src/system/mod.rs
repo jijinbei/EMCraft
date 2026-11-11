@@ -15,14 +15,17 @@ use iced::widget::{Column, button, column, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Widget};
 
 use crate::app::{App, BAND, Field, Message};
+use crate::look;
 
 /// The window's System view.
 pub fn view(app: &App) -> Element<'_, Message> {
     let chain = &app.session.model().system;
-    let notes = [app.error.as_deref(), app.unread.as_deref()].into_iter().flatten().map(|e| text(e.to_owned()).size(13).style(text::danger).boxed());
+    let t = app.look.tokens;
+    let notes =
+        [app.error.as_deref(), app.unread.as_deref()].into_iter().flatten().map(|e| text(e.to_owned()).size(t.font_body).color(t.error).boxed());
     let head = [band_bar(app)].into_iter().chain(notes);
     let body: Vec<Element<Message>> =
-        if chain.stages.is_empty() { vec![start()] } else { vec![adders(), board::board(app), budget::chart(app), budget::sheet(app)] };
+        if chain.stages.is_empty() { vec![start(app)] } else { vec![adders(app), board::board(app), budget::chart(app), budget::sheet(app)] };
     scrollable(Column::with_children(head.chain(body)).spacing(10).padding(16)).boxed()
 }
 
@@ -41,10 +44,12 @@ fn band_bar(app: &App) -> Element<'_, Message> {
         let field = Field { node: BAND.to_owned(), key };
         let shown = app.draft(&field, band::field(now, key));
         let typed = field.clone();
+        let t = app.look.tokens;
+        let input = text_input("", shown).size(t.font_body).padding([3, 6]).width(80).style(look::field(t));
         row![
-            text(tr(label)).size(13),
-            text_input("", shown).size(13).width(80).on_input(move |t| Message::Typed(typed.clone(), t)).on_submit(Message::Commit(field)),
-            text(unit).size(13),
+            text(tr(label)).size(t.font_body).color(t.form_dim),
+            input.on_input(move |s| Message::Typed(typed.clone(), s)).on_submit(Message::Commit(field)),
+            text(unit).size(t.font_body).color(t.text_dim),
         ]
         .spacing(4)
         .align_y(Alignment::Center)
@@ -54,12 +59,16 @@ fn band_bar(app: &App) -> Element<'_, Message> {
 }
 
 /// A chain with no stage yet: what a system is, and a button for each kind of stage.
-fn start<'a>() -> Element<'a, Message> {
-    let kinds =
-        shared::KINDS.iter().map(|(kind, label, _)| button(text(format!("+ {}", tr(*label))).size(16)).padding([10, 18]).on_press(add(kind)).boxed());
+fn start(app: &App) -> Element<'_, Message> {
+    let t = app.look.tokens;
+    let kinds = shared::KINDS.iter().map(|(kind, label, _)| {
+        button(text(format!("+ {}", tr(*label))).size(t.font_heading)).padding([10, 18]).style(look::button(t, false)).on_press(add(kind)).boxed()
+    });
     column![
-        text(tr(t!("A chain from the antenna to the receiver"))).size(20),
-        text(tr(t!("Add its stages in order: an LNA, a filter's S-parameters (a Touchstone file or a sweep), lines, more amplifiers."))).size(13),
+        text(tr(t!("A chain from the antenna to the receiver"))).size(t.font_heading + 4.0),
+        text(tr(t!("Add its stages in order: an LNA, a filter's S-parameters (a Touchstone file or a sweep), lines, more amplifiers.")))
+            .size(t.font_body)
+            .color(t.text_dim),
         row(kinds).spacing(8),
     ]
     .spacing(10)
@@ -68,10 +77,11 @@ fn start<'a>() -> Element<'a, Message> {
 }
 
 /// A button for each kind of stage, adding it at the end of the chain.
-fn adders<'a>() -> Element<'a, Message> {
-    let kinds = shared::KINDS
-        .iter()
-        .map(|(kind, label, _)| button(text(format!("+ {}", tr(*label))).size(13)).style(button::secondary).on_press(add(kind)).boxed());
+fn adders(app: &App) -> Element<'_, Message> {
+    let t = app.look.tokens;
+    let kinds = shared::KINDS.iter().map(|(kind, label, _)| {
+        button(text(format!("+ {}", tr(*label))).size(t.font_button)).style(look::button(t, false)).on_press(add(kind)).boxed()
+    });
     row(kinds).spacing(6).boxed()
 }
 

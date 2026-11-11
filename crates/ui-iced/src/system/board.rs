@@ -8,12 +8,13 @@ use emcraft_ui_core::system::layout::{Kind, Layout};
 use iced::mouse::{self, Cursor};
 use iced::widget::canvas::{self, Frame, Geometry, Path, Stroke};
 use iced::widget::{Stack, button, container, mouse_area, pin, text};
-use iced::{Color, Element, Event, Fill, Rectangle, Renderer, Theme, Widget};
+use iced::{Element, Event, Fill, Rectangle, Renderer, Theme, Widget};
 use serde_json::json;
 
 use super::card;
 use crate::app::{App, Message, Pointer};
 use crate::geom::{point, shared};
+use crate::look::{self, Tokens};
 
 /// The grid's spacing, a port's radius and the room around an output the pointer may press
 /// (points).
@@ -29,6 +30,7 @@ const CANVAS_MAX: f32 = 520.0;
 /// the pointer.
 struct Ground {
     layout: Layout,
+    tokens: Tokens,
     pan: Vector,
     dragging: Option<(Point, Point)>,
 }
@@ -59,12 +61,12 @@ impl canvas::Program<Message> for Ground {
         Some(canvas::Action::publish(Message::Pointer(pointer)))
     }
 
-    fn draw(&self, _: &(), renderer: &Renderer, theme: &Theme, bounds: Rectangle, _: Cursor) -> Vec<Geometry> {
-        let palette = theme.palette();
+    fn draw(&self, _: &(), renderer: &Renderer, _: &Theme, bounds: Rectangle, _: Cursor) -> Vec<Geometry> {
+        let t = &self.tokens;
         let mut frame = Frame::new(renderer, bounds.size());
         // Every GRID points from the first line inside the canvas, moved with the pan.
         let lines = |shift: f32, to: f32| (0..).map(move |k| shift.rem_euclid(GRID) + k as f32 * GRID).take_while(move |x| *x < to);
-        let dot = Color { a: 0.5, ..palette.background.strong.color };
+        let dot = t.border;
         for y in lines(self.pan.y, bounds.height) {
             for x in lines(self.pan.x, bounds.width) {
                 frame.fill(&Path::circle(iced::Point::new(x, y), 0.8), dot);
@@ -72,16 +74,16 @@ impl canvas::Program<Message> for Ground {
         }
         for &(a, b) in &self.layout.links {
             let (Some(from), Some(to)) = (self.layout.nodes.get(a), self.layout.nodes.get(b)) else { continue };
-            let ink = if from.on_chain && to.on_chain { palette.primary.base.color } else { palette.background.strong.color };
+            let ink = if from.on_chain && to.on_chain { t.accent } else { t.text_dim };
             frame.stroke(&curve(from.output(), to.input()), Stroke::default().with_width(2.0).with_color(ink));
         }
         if let Some((a, b)) = self.dragging {
-            frame.stroke(&curve(a, b), Stroke::default().with_width(2.0).with_color(palette.primary.strong.color));
+            frame.stroke(&curve(a, b), Stroke::default().with_width(2.0).with_color(t.accent));
         }
-        let accent = palette.primary.base.color;
+        let accent = t.accent;
         for n in &self.layout.nodes {
             if n.kind != Kind::Source {
-                frame.fill(&Path::circle(point(n.input()), PORT_R), palette.background.base.color);
+                frame.fill(&Path::circle(point(n.input()), PORT_R), t.panel);
                 frame.stroke(&Path::circle(point(n.input()), PORT_R), Stroke::default().with_width(1.5).with_color(accent));
             }
             if n.kind != Kind::Receiver {
@@ -99,13 +101,14 @@ impl canvas::Program<Message> for Ground {
 /// The canvas with its cards, marks and grips over it.
 pub(super) fn board(app: &App) -> Element<'_, Message> {
     let layout = app.layout();
+    let t = app.look.tokens;
     let height = (layout.depth() + 56.0).clamp(CANVAS_MIN, CANVAS_MAX);
     let dragging = app.canvas.linking().and_then(|from| Some((layout.node(from)?.output(), app.pointer?)));
     let marks = layout.links.iter().filter_map(|&(a, b)| {
         let (from, to) = (layout.nodes.get(a)?, layout.nodes.get(b)?);
         let mid = from.output().lerp(to.input(), 0.5);
         let unlink = Command { id: "system.unlink", params: json!({"from": from.name, "to": to.name}) };
-        let mark = button(text("×").size(11)).padding([0, 4]).style(button::secondary).on_press(Message::Run(unlink));
+        let mark = button(text("×").size(t.font_small)).padding([0, 4]).style(look::button(t, false)).on_press(Message::Run(unlink));
         Some(pin(mark).x(mid.x - 8.0).y(mid.y - 9.0).boxed())
     });
     let cards = layout.nodes.iter().map(|n| pin(card::card(app, n)).x(n.rect.left()).y(n.rect.top()).boxed());
@@ -116,12 +119,7 @@ pub(super) fn board(app: &App) -> Element<'_, Message> {
         let at = n.output();
         pin(grip).x(at.x - PORT_REACH).y(at.y - PORT_REACH).boxed()
     });
-    let ground = canvas::Canvas::new(Ground { layout: layout.clone(), pan: app.canvas.pan, dragging }).width(Fill).height(Fill);
+    let ground = canvas::Canvas::new(Ground { layout: layout.clone(), tokens: t, pan: app.canvas.pan, dragging }).width(Fill).height(Fill);
     let layers = std::iter::once(ground.boxed()).chain(cards).chain(marks).chain(grips);
-    container(Stack::with_children(layers.collect::<Vec<Element<Message>>>()))
-        .width(Fill)
-        .height(height)
-        .clip(true)
-        .style(container::bordered_box)
-        .boxed()
+    container(Stack::with_children(layers.collect::<Vec<Element<Message>>>())).width(Fill).height(height).clip(true).style(look::ground(t)).boxed()
 }

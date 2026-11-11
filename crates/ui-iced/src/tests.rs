@@ -76,11 +76,16 @@ fn an_empty_chain_offers_its_stages_and_a_click_adds_one() {
     }
     assert_eq!(app.session.model().system.stages.len(), 1);
     if let Ok(dir) = std::env::var("EMCRAFT_ICED_SHOTS") {
-        let sample = App::new(Some("adsb-receiver"));
-        let mut ui = iced_test::Simulator::with_size(iced::Settings::default(), (1400.0, 1300.0), sample.view());
-        let shot = ui.snapshot(&iced::Theme::Light).unwrap_or_else(|e| panic!("{e}"));
-        let path = std::path::Path::new(&dir).join("system");
-        let _ = std::fs::remove_file(path.with_extension("png"));
-        assert!(shot.matches_image(&path).unwrap_or(false));
+        let themes = emcraft_ui_core::theme::Themes::load(None);
+        for (name, theme, language) in [("system", "light", "en"), ("system-dark", "dark", "en"), ("system-ja-sepia", "sepia", "ja")] {
+            emcraft_ui_core::lang::set(language);
+            let sample = App::new(Some("adsb-receiver")).dressed(themes.get(theme));
+            let mut ui = iced_test::Simulator::with_size(iced::Settings::default(), (1400.0, 1300.0), sample.view());
+            let shot = ui.snapshot(&sample.theme()).unwrap_or_else(|e| panic!("{e}"));
+            let path = std::path::Path::new(&dir).join(name);
+            let _ = std::fs::remove_file(std::path::Path::new(&dir).join(format!("{name}-wgpu.png")));
+            assert!(shot.matches_image(&path).unwrap_or(false));
+        }
+        emcraft_ui_core::lang::set("en");
     }
 }

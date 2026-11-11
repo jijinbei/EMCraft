@@ -11,7 +11,13 @@ use emcraft_ui_core::system::band;
 use emcraft_ui_core::system::card::{self, Edit};
 use emcraft_ui_core::system::gesture::{Canvas, Command, Input};
 use emcraft_ui_core::system::layout::Layout;
-use iced::Element;
+use std::rc::Rc;
+
+use emcraft_ui_core::theme::{Theme, Themes};
+use iced::widget::{column, container, row, text};
+use iced::{Element, Fill, Widget};
+
+use crate::look::{self, Look};
 use serde_json::json;
 
 /// The band's fields' node, in a [`Field`].
@@ -65,6 +71,8 @@ pub struct App {
     pub(crate) error: Option<String>,
     /// Why the chain could not be read after the last change.
     pub(crate) unread: Option<String>,
+    /// The theme the window is dressed in.
+    pub(crate) look: Look,
 }
 
 impl App {
@@ -72,10 +80,21 @@ impl App {
     pub fn new(sample: Option<&str>) -> App {
         let mut session = Session::new();
         let error = sample.and_then(|name| session.execute("file.sample", &json!({ "name": name })).err()).map(|e| e.to_string());
-        let mut app =
-            App { session, canvas: Canvas::default(), pointer: None, drafts: BTreeMap::new(), chart: SystemChart::Along, error, unread: None };
+        let look = Look::of(Themes::load(None).get("light"));
+        let canvas = Canvas::default();
+        let mut app = App { session, canvas, pointer: None, drafts: BTreeMap::new(), chart: SystemChart::Along, error, unread: None, look };
         app.read();
         app
+    }
+
+    /// The window dressed in `theme`.
+    pub fn dressed(self, theme: Rc<Theme>) -> App {
+        App { look: Look::of(theme), ..self }
+    }
+
+    /// iced's theme from the window's.
+    pub fn theme(&self) -> iced::Theme {
+        self.look.iced()
     }
 
     pub fn title(&self) -> String {
@@ -98,8 +117,12 @@ impl App {
         }
     }
 
+    /// The window: the application bar over the System view.
     pub fn view(&self) -> Element<'_, Message> {
-        crate::system::view(self)
+        let t = self.look.tokens;
+        let bar = row![text("EMCraft").size(t.font_body), text(self.session.name()).size(t.font_body).color(t.app_bar_text)].spacing(16);
+        let bar = container(bar).padding([6, 14]).width(Fill).style(look::app_bar(t));
+        container(column![bar, crate::system::view(self)]).width(Fill).height(Fill).style(look::window(t)).boxed()
     }
 
     /// The window after `message`, and the command it ends in.
