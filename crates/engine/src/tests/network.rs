@@ -278,3 +278,34 @@ fn an_amplifiers_noise_data_gives_its_figure_and_a_receiver_chain_follows_friis(
     let n = t.execute("results.noise", &json!({"data": "lna"})).unwrap();
     assert_eq!(n["from"], "noise data");
 }
+
+#[test]
+fn a_lossy_lines_attenuation_follows_the_skin_effect_and_its_noise_its_loss() {
+    let mut s = Session::new();
+    // 100 mm at 0.01 dB/mm: 1 dB, matched; at T₀ its noise figure is its loss (Pozar §10.1).
+    let line = |extra: Value| {
+        let mut b = json!({"type": "line", "impedance": 50, "length": 100, "attenuation": 0.01});
+        b.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        json!({"blocks": [b], "start": 1, "stop": 4, "points": 2})
+    };
+    let r = s.execute("circuit.cascade", &line(json!({}))).unwrap();
+    approx::assert_abs_diff_eq!(r["noise"]["nf_db_least"].as_f64().unwrap(), 1.0, epsilon = 1e-9);
+    approx::assert_abs_diff_eq!(r["noise"]["nf_db_most"].as_f64().unwrap(), 1.0, epsilon = 1e-9);
+    // 1 dB at 1 GHz growing as √f: 2 dB at 4 GHz.
+    s.execute("circuit.cascade", &line(json!({"at": 1}))).unwrap();
+    let n = s.execute("results.noise", &json!({"data": "cascade"})).unwrap();
+    approx::assert_abs_diff_eq!(n["points"][0]["gain_db"].as_f64().unwrap(), -1.0, epsilon = 1e-9);
+    approx::assert_abs_diff_eq!(n["points"][1]["gain_db"].as_f64().unwrap(), -2.0, epsilon = 1e-9);
+    // A dielectric's: α = π f √εr tan δ / c, 8.686 α l dB.
+    let r = s
+        .execute(
+            "circuit.cascade",
+            &json!({"blocks": [{"type": "line", "length": 100, "eps_r": 4, "tan_delta": 0.02}], "start": 1, "stop": 2, "points": 2}),
+        )
+        .unwrap();
+    let expect = 20.0 / std::f64::consts::LN_10 * std::f64::consts::PI * 1e9 * 2.0 * 0.02 / 299_792_458.0 * 0.1;
+    approx::assert_abs_diff_eq!(r["noise"]["nf_db_least"].as_f64().unwrap(), expect, epsilon = 1e-9);
+    for bad in [json!({"attenuation": -1}), json!({"attenuation": 1e9}), json!({"tan_delta": 2}), json!({"at": -1})] {
+        assert!(s.execute("circuit.cascade", &line(bad.clone())).is_err(), "{bad}");
+    }
+}

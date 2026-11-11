@@ -34,9 +34,33 @@ enum Block {
     Data { data: SData, z0: [f64; 2], flip: bool, name: String, noise: Vec<NoisePoint> },
     /// A lumped element in series along the line, or shunt across it.
     Element { element: LumpedElement, shunt: bool },
-    /// A uniform line: its impedance (Ω), length (m) and relative permittivity.
-    Line { z0: f64, length: f64, eps_r: f64 },
+    /// A uniform line: its impedance (Ω), length (m), relative permittivity and losses.
+    Line { z0: f64, length: f64, eps_r: f64, loss: LineLoss },
 }
+
+/// A line's losses: a conductor's attenuation (Np/m) at `reference` (Hz), growing as √f from it
+/// (the skin effect; constant without a reference), and its dielectric's loss tangent, whose
+/// attenuation is π f √εr tan δ / c (a uniformly filled line: εr the line's effective one).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct LineLoss {
+    conductor: f64,
+    reference: Option<f64>,
+    tan_delta: f64,
+}
+
+impl LineLoss {
+    /// The attenuation (Np/m) at `f` (Hz) on a line of relative permittivity `eps_r`.
+    fn alpha(&self, f: f64, eps_r: f64) -> f64 {
+        let skin = self.reference.map_or(1.0, |r| (f / r).sqrt());
+        self.conductor * skin + std::f64::consts::PI * f * eps_r.sqrt() * self.tan_delta / C0
+    }
+}
+
+/// The largest attenuation a line takes (dB per length unit).
+const MAX_ATTENUATION: f64 = 1e3;
+
+/// Np per dB.
+const NP_PER_DB: f64 = std::f64::consts::LN_10 / 20.0;
 
 /// A lumped element from a block's `resistance` (Ω), `inductance` (nH), `capacitance` (pF) and
 /// `arrangement`, checked as `model.element.create` checks its own.
@@ -64,7 +88,12 @@ fn block_noise(block: &Block, a: [C; 4], f: f64, temperature: f64) -> std::resul
     match block {
         Block::Element { element, shunt: true } => Ok(ChainNoise::shunt(element.admittance(f), temperature)),
         Block::Element { element, shunt: false } => Ok(ChainNoise::series(ONE / element.admittance(f), temperature)),
-        Block::Line { .. } => Ok(ChainNoise::NONE),
+        Block::Line { loss, .. } if *loss == LineLoss::default() => Ok(ChainNoise::NONE),
+        Block::Line { z0, .. } => {
+            let s = s_of_chain(a, *z0).ok_or("a line with no S")?;
+            let s = TwoPort { s11: s[0], s12: s[1], s21: s[2], s22: s[3] };
+            ChainNoise::passive(&s, [*z0, *z0], a, temperature).ok_or_else(|| "a lossy line whose noise is not fixed by its S".to_string())
+        }
         Block::Data { data, z0, flip, name, noise } => {
             let name = crate::text::clip(name, 40);
             if !noise.is_empty() {
@@ -93,10 +122,12 @@ fn chain(block: &Block, f: f64) -> Result<[C; 4]> {
                 Ok([ONE, ONE / y, ZERO, ONE])
             }
         }
-        Block::Line { z0, length, eps_r } => {
-            let theta = 2.0 * std::f64::consts::PI * f * eps_r.sqrt() / C0 * length;
-            let (c, s) = (theta.cos(), theta.sin());
-            Ok([C::new(c, 0.0), C::new(0.0, z0 * s), C::new(0.0, s / z0), C::new(c, 0.0)])
+        Block::Line { z0, length, eps_r, loss } => {
+            // γl = (α + jβ)l: A = D = cosh γl, B = Z₀ sinh γl, C = sinh γl / Z₀ (Pozar Table 4.1).
+            let beta = 2.0 * std::f64::consts::PI * f * eps_r.sqrt() / C0;
+            let gl = C::new(loss.alpha(f, *eps_r), beta) * length;
+            let (ch, sh) = (gl.cosh(), gl.sinh());
+            Ok([ch, sh * z0, sh / z0, ch])
         }
         Block::Data { data, z0, flip, name, .. } => {
             let (t, z) = two_port(data, *z0, *flip, name, f)?;
@@ -124,7 +155,21 @@ fn blocks(s: &Session, p: &Params, z_default: f64) -> Result<(Vec<Block>, Option
                 let z0 = b.positive("impedance").or(50.0)?;
                 let length = b.positive_length("length").required()?;
                 let eps_r = b.positive("eps_r").or(1.0)?;
-                Block::Line { z0, length, eps_r }
+                let conductor = b.number("attenuation").or(0.0)?;
+                if !(conductor.is_finite() && (0.0..=MAX_ATTENUATION).contains(&conductor)) {
+                    return Err(b.error("attenuation", format!("from 0 to {MAX_ATTENUATION} dB per length unit")));
+                }
+                let tan_delta = b.number("tan_delta").or(0.0)?;
+                if !(tan_delta.is_finite() && (0.0..=1.0).contains(&tan_delta)) {
+                    return Err(b.error("tan_delta", "from 0 to 1"));
+                }
+                let reference = b.frequency("at").optional()?;
+                if reference.is_some_and(|r| !(r > 0.0)) {
+                    return Err(b.error("at", "a positive frequency"));
+                }
+                // dB per display length to Np/m: the display lengths in a metre.
+                let loss = LineLoss { conductor: conductor * NP_PER_DB * s.show_length(1.0), reference, tan_delta };
+                Block::Line { z0, length, eps_r, loss }
             }
             "data" => {
                 let src = source(s, b)?;
@@ -434,7 +479,7 @@ mod tests {
         // λ/4 line: A = D = 0, B = jZ₀, C = j/Z₀; two make S21 = −1 (Pozar, Microwave Engineering,
         // 4th ed., §4.4, Tables 4.1–4.2).
         // λ/4 at 1 GHz in vacuum: A = D = 0, B = j Z₀, C = j/Z₀.
-        let m = chain(&Block::Line { z0: 50.0, length: C0 / 4e9, eps_r: 1.0 }, 1e9).unwrap();
+        let m = chain(&Block::Line { z0: 50.0, length: C0 / 4e9, eps_r: 1.0, loss: LineLoss::default() }, 1e9).unwrap();
         assert!(m[0].norm() < 1e-12 && (m[1] - C::new(0.0, 50.0)).norm() < 1e-9);
         // Two in a row: a half wave, S21 = −1.
         let s = s_of_chain(times(m, m), 50.0).unwrap();
