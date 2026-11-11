@@ -280,6 +280,61 @@ fn an_amplifiers_noise_data_gives_its_figure_and_a_receiver_chain_follows_friis(
 }
 
 #[test]
+fn an_ideal_amplifier_block_gains_its_gain_and_chains_its_figure_by_friis() {
+    let mut s = Session::new();
+    let chain = |s: &mut Session, blocks: Value| s.execute("circuit.cascade", &json!({"blocks": blocks, "start": 1, "stop": 1.2, "points": 2}));
+    // 20 dB and 1 dB alone: matched, unilateral, S21 = 10; F from 50 Ω is its own.
+    let r = chain(&mut s, json!([{"type": "amplifier", "gain": 20, "noise_figure": 1}])).unwrap();
+    approx::assert_abs_diff_eq!(r["noise"]["nf_db_least"].as_f64().unwrap(), 1.0, epsilon = 1e-12);
+    let n = s.execute("results.noise", &json!({"data": "cascade"})).unwrap();
+    approx::assert_abs_diff_eq!(n["points"][0]["gain_db"].as_f64().unwrap(), 20.0, epsilon = 1e-12);
+    // Then 1 dB of matched line at T₀ (F₂ = L) and a second stage of 10 dB, 6 dB:
+    // F = F₁ + (F₂ − 1)/G₁ + (F₃ − 1)/(G₁/L) (Friis; Pozar §10.3).
+    let r = chain(
+        &mut s,
+        json!([
+            {"type": "amplifier", "gain": 20, "noise_figure": 1},
+            {"type": "line", "length": 100, "attenuation": 0.01},
+            {"type": "amplifier", "gain": 10, "noise_figure": 6},
+        ]),
+    )
+    .unwrap();
+    let (f1, l, f3) = (10f64.powf(0.1), 10f64.powf(0.1), 10f64.powf(0.6));
+    let expect = 10.0 * (f1 + (l - 1.0) / 100.0 + (f3 - 1.0) * l / 100.0).log10();
+    approx::assert_abs_diff_eq!(r["noise"]["nf_db_least"].as_f64().unwrap(), expect, epsilon = 1e-9);
+    // From a 100 Ω antenna (|Γs|² = 1/9): F = F_min + (F_min − 1)|Γs|²/(1 − |Γs|²) = F_min + (F_min − 1)/8.
+    let ant = scratch("ant.s1p");
+    std::fs::write(&ant, "# GHz S RI R 50\n1 0.3333333333333333 0\n1.2 0.3333333333333333 0\n").unwrap();
+    s.execute("results.import", &json!({"path": ant})).unwrap();
+    let r = s
+        .execute(
+            "circuit.cascade",
+            &json!({"blocks": [{"type": "amplifier", "gain": 20, "noise_figure": 1}], "start": 1, "stop": 1.2, "points": 2, "source": "ant"}),
+        )
+        .unwrap();
+    approx::assert_abs_diff_eq!(r["noise"]["nf_db_least"].as_f64().unwrap(), 10.0 * (f1 + (f1 - 1.0) / 8.0).log10(), epsilon = 1e-9);
+    for bad in
+        [json!({"gain": 1e9}), json!({"gain": "x"}), json!({}), json!({"gain": 10, "noise_figure": -1}), json!({"gain": 10, "noise_figure": 1e3})]
+    {
+        let mut b = json!({"type": "amplifier"});
+        b.as_object_mut().unwrap().extend(bad.as_object().unwrap().clone());
+        assert!(chain(&mut s, json!([b])).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn a_templates_touchstone_files_are_read_compiled_in() {
+    let mut s = Session::new();
+    let r = s.execute("results.import", &json!({"path": "template:adsb-patch.s1p", "name": "antenna"})).unwrap();
+    assert_eq!((r["ports"].as_u64(), r["frequencies"].as_u64()), (Some(1), Some(11)), "{r}");
+    let r = s.execute("results.import", &json!({"path": "template:adsb-bandpass.s2p"})).unwrap();
+    assert_eq!((r["ports"].as_u64(), r["frequencies"].as_u64()), (Some(2), Some(41)), "{r}");
+    // A template's file there is none of: refused, the files listed.
+    let e = s.execute("results.import", &json!({"path": "template:nothing.s2p"})).unwrap_err().to_string();
+    assert!(e.contains("template:adsb-bandpass.s2p"), "{e}");
+}
+
+#[test]
 fn a_lossy_lines_attenuation_follows_the_skin_effect_and_its_noise_its_loss() {
     let mut s = Session::new();
     // 100 mm at 0.01 dB/mm: 1 dB, matched; at T₀ its noise figure is its loss (Pozar §10.1).

@@ -481,7 +481,10 @@ fn read_file(path: &str) -> Result<String> {
 /// unless `name` is given; one of the same name replaced), drawn over the S-parameter chart.
 pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     let path = p.string("path").required()?;
-    let text = read_file(path)?;
+    let text = match crate::geometry::template_file(p, path)? {
+        Some(bytes) => String::from_utf8(bytes.to_vec()).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?,
+        None => read_file(path)?,
+    };
     let t = parse_touchstone(&text, ports_of_name(path)).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?;
     let stem = std::path::Path::new(path).file_stem().and_then(|x| x.to_str()).unwrap_or("measured").to_string();
     let name = p.string("name").optional()?.map_or(stem, str::to_string);

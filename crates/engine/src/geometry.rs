@@ -230,19 +230,28 @@ pub(crate) fn read_capped(path: &str, max: u64) -> Result<Vec<u8>> {
     std::fs::read(path).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))
 }
 
-/// The bytes of the geometry file `path` names: a template's design (`template:<file>`,
-/// compiled in, [`emcraft_templates::design`]) or a file read from disk.
-fn geometry_file(p: &Params, path: &str) -> Result<std::borrow::Cow<'static, [u8]>> {
+/// The bytes of a template's file `path` names (`template:<file>`, compiled in,
+/// [`emcraft_templates::design`]); `None` for a path of the user's, an error for a template's
+/// file there is none of.
+pub(crate) fn template_file(p: &Params, path: &str) -> Result<Option<&'static [u8]>> {
     if let Some(bytes) = emcraft_templates::design(path) {
-        return Ok(std::borrow::Cow::Borrowed(bytes));
+        return Ok(Some(bytes));
     }
     if path.starts_with(emcraft_templates::DESIGN_SCHEME) {
         let known = emcraft_templates::DESIGNS.iter().map(|d| format!("{}{}", emcraft_templates::DESIGN_SCHEME, d.file));
         return Err(
-            p.error("path", crate::text::unknown(format_args!("names no template's design: `{}`", crate::text::clip(path, 64)), "designs: ", known))
+            p.error("path", crate::text::unknown(format_args!("names no template's file: `{}`", crate::text::clip(path, 64)), "files: ", known))
         );
     }
-    read_capped(path, MAX_IMPORT_BYTES).map(std::borrow::Cow::Owned)
+    Ok(None)
+}
+
+/// The bytes of the geometry file `path` names: a template's design or a file read from disk.
+fn geometry_file(p: &Params, path: &str) -> Result<std::borrow::Cow<'static, [u8]>> {
+    match template_file(p, path)? {
+        Some(bytes) => Ok(std::borrow::Cow::Borrowed(bytes)),
+        None => read_capped(path, MAX_IMPORT_BYTES).map(std::borrow::Cow::Owned),
+    }
 }
 
 pub fn import(s: &mut Session, p: &Params) -> Result<Value> {

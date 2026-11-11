@@ -11,7 +11,7 @@ use emcraft_solver::{Complex64 as C, SMatrix};
 use serde_json::{Value, json};
 
 use crate::network::{Measured, NoisePoint, interpolate, keep, kept_name, noise_at, source};
-use crate::noise::{Budget, ChainNoise, MAX_TEMPERATURE, T0, TwoPort};
+use crate::noise::{Budget, ChainNoise, MAX_TEMPERATURE, NoiseParameters, T0, TwoPort};
 use crate::sdata::SData;
 use crate::{EngineError, Params, Result, Session};
 
@@ -36,6 +36,20 @@ enum Block {
     Element { element: LumpedElement, shunt: bool },
     /// A uniform line: its impedance (Ω), length (m), relative permittivity and losses.
     Line { z0: f64, length: f64, eps_r: f64, loss: LineLoss },
+    /// An ideal amplifier: matched and unilateral on `z0` (Ω), S21 = `gain` (a voltage ratio),
+    /// its noise figure `figure` (a power ratio) from a matched source.
+    Amplifier { gain: f64, figure: f64, z0: f64 },
+}
+
+/// The most gain an amplifier block takes, and the greatest noise figure (dB).
+const MAX_GAIN_DB: f64 = 100.0;
+const MAX_FIGURE_DB: f64 = 60.0;
+
+impl Block {
+    /// An amplifier's S on its ports' `z0`: S21 its gain, nothing reflected or back.
+    fn amplifier_s(gain: f64) -> TwoPort {
+        TwoPort { s11: ZERO, s12: ZERO, s21: C::new(gain, 0.0), s22: ZERO }
+    }
 }
 
 /// A line's losses: a conductor's attenuation (Np/m) at `reference` (Hz), growing as √f from it
@@ -106,6 +120,12 @@ fn block_noise(block: &Block, a: [C; 4], f: f64, temperature: f64) -> std::resul
             ChainNoise::passive(&s, z, a, temperature)
                 .ok_or_else(|| format!("`{name}` gains and has no noise data (results.import a file with them)"))
         }
+        // Its own noise an uncorrelated wave kT₀(F − 1) entering its input: F_min = F at
+        // Γ_opt = 0, and F = F_min + (F_min − 1)|Γs|²/(1 − |Γs|²) from another source, which is
+        // R_n = z₀(F − 1)/4 (Hillbrand and Russer's F(Γs) with Γ_opt = 0).
+        Block::Amplifier { figure, z0, .. } => {
+            Ok(ChainNoise::of(NoiseParameters { f_min: *figure, y_opt: C::new(1.0 / z0, 0.0), rn: z0 * (figure - 1.0) / 4.0 }))
+        }
     }
 }
 
@@ -128,6 +148,11 @@ fn chain(block: &Block, f: f64) -> Result<[C; 4]> {
             let gl = C::new(loss.alpha(f, *eps_r), beta) * length;
             let (ch, sh) = (gl.cosh(), gl.sinh());
             Ok([ch, sh * z0, sh / z0, ch])
+        }
+        Block::Amplifier { gain, z0, .. } => {
+            let t = Block::amplifier_s(*gain);
+            let m = [t.s11, t.s12, t.s21, t.s22];
+            SMatrix::from_fn(2, |i, j| m[2 * i + j]).chain([*z0, *z0]).ok_or_else(|| EngineError::failed("an amplifier of no gain passes nothing"))
         }
         Block::Data { data, z0, flip, name, .. } => {
             let (t, z) = two_port(data, *z0, *flip, name, f)?;
@@ -181,7 +206,22 @@ fn blocks(s: &Session, p: &Params, z_default: f64) -> Result<(Vec<Block>, Option
                 let name = b.string("data").optional()?.unwrap_or("sweep").to_string();
                 Block::Data { z0: [z(0), z(1)], flip: b.flag("flip").or(false)?, data: src.data, name, noise: src.noise }
             }
-            other => return Err(b.error("type", format!("`{}` is not a block: `data`, `series`, `shunt` or `line`", crate::text::clip(other, 20)))),
+            "amplifier" => {
+                let gain = b.number("gain").required()?;
+                if !(gain.is_finite() && gain.abs() <= MAX_GAIN_DB) {
+                    return Err(b.error("gain", format!("from −{MAX_GAIN_DB} to {MAX_GAIN_DB} dB")));
+                }
+                let figure = b.number("noise_figure").or(0.0)?;
+                if !(figure.is_finite() && (0.0..=MAX_FIGURE_DB).contains(&figure)) {
+                    return Err(b.error("noise_figure", format!("from 0 to {MAX_FIGURE_DB} dB")));
+                }
+                Block::Amplifier { gain: 10f64.powf(gain / 20.0), figure: 10f64.powf(figure / 10.0), z0: z_default }
+            }
+            other => {
+                return Err(
+                    b.error("type", format!("`{}` is not a block: `data`, `series`, `shunt`, `line` or `amplifier`", crate::text::clip(other, 20)))
+                );
+            }
         };
         out.push(block);
     }

@@ -154,6 +154,14 @@ pub const TEMPLATES: &[Template] = &[
         kinds: &[Analysis::Frequency, Analysis::Pcb],
         group: Group::Filters,
     },
+    Template {
+        name: "adsb-receiver",
+        label: "ADS-B receiver chain at 1090 MHz: the adsb-patch antenna, an LNA (20 dB, 0.6 dB), the adsb-bandpass filter and a receiver (20 dB, 6 dB) chained by circuit.cascade from the antenna's and filter's S as EMCraft solved them: from the antenna's terminals 0.84 dB noise figure and 37.4 dB gain at 1.09 GHz, −100 dBm sensitivity in 2 MHz at 10 dB SNR; its board is the filter's, to solve and chain as `sweep`",
+        script: include_str!("../scripts/adsb-receiver.json"),
+        marks: "{}",
+        kinds: &[Analysis::Frequency, Analysis::Pcb],
+        group: Group::Filters,
+    },
     // Lines.
     Template {
         name: "straight",
@@ -742,19 +750,21 @@ pub const TEMPLATES: &[Template] = &[
     },
 ];
 
-/// A SolidCraft design a template is built from, compiled in: no file is read when a template
-/// opens it.
+/// A file a template is built from, compiled in: no file is read when a template opens it.
 pub struct Design {
-    /// Its file name, `<name>.solidcraft`.
+    /// Its file name: `<name>.solidcraft`, a SolidCraft design; `<name>.s<n>p`, S-parameters.
     pub file: &'static str,
     pub bytes: &'static [u8],
 }
 
-/// How a script names a template's design: `template:<file>` (`geometry.import`'s `path`).
+/// How a script names a template's file: `template:<file>` (`geometry.import`'s and
+/// `results.import`'s `path`).
 pub const DESIGN_SCHEME: &str = "template:";
 
-/// The designs templates are built from, each written with SolidCraft's document API by the
-/// program kept beside it (`designs/make-<name>.rs.txt`).
+/// The files templates are built from: SolidCraft designs, each written with SolidCraft's
+/// document API by the program kept beside it (`designs/make-<name>.rs.txt`), and Touchstone
+/// files of templates' S as EMCraft solves them (`adsb-receiver`'s antenna and filter; each
+/// file's comment names the template and the solve that wrote it).
 pub const DESIGNS: &[Design] = &[
     Design { file: "taper.solidcraft", bytes: include_bytes!("../designs/taper.solidcraft") },
     Design { file: "horn.solidcraft", bytes: include_bytes!("../designs/horn.solidcraft") },
@@ -763,6 +773,8 @@ pub const DESIGNS: &[Design] = &[
     Design { file: "corrugated-cell.solidcraft", bytes: include_bytes!("../designs/corrugated-cell.solidcraft") },
     Design { file: "helical-cell.solidcraft", bytes: include_bytes!("../designs/helical-cell.solidcraft") },
     Design { file: "heart-wire.solidcraft", bytes: include_bytes!("../designs/heart-wire.solidcraft") },
+    Design { file: "adsb-patch.s1p", bytes: include_bytes!("../designs/adsb-patch.s1p") },
+    Design { file: "adsb-bandpass.s2p", bytes: include_bytes!("../designs/adsb-bandpass.s2p") },
 ];
 
 /// The design a path names, `template:<file>`; `None` for any other path (a file of the

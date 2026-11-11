@@ -1285,7 +1285,7 @@
     },
     "results.import": {
       "label": "測定 S の読み込み",
-      "doc": "Touchstone ファイル（バージョン 1 または 2：.s1p、.s2p、…。S・Y・Z を RI・MA・dB で、周波数の単位は任意）を読み、その Sパラメータを測定値としてプロジェクトに残す。Sパラメータのチャート（とスミスチャート）に重ねて描き、掃引と比べる。名前は `name` がなければファイル名の語幹。同じ名前のものは置き換える。Y と Z はファイルの基準インピーダンスで S に直す。2 ポートの雑音データ（F_min・Γ_opt・R_n。バージョン 1 は S のあと、バージョン 2 は [Noise Data]）も一緒に残し、results.noise がそれからデバイスの雑音指数を求め、circuit.cascade がつなぐ。測定値は 8 個まで、1 ファイル 64 MB まで。",
+      "doc": "Touchstone ファイル（バージョン 1 または 2：.s1p、.s2p、…。S・Y・Z を RI・MA・dB で、周波数の単位は任意）を読み、その Sパラメータを測定値としてプロジェクトに残す。Sパラメータのチャート（とスミスチャート）に重ねて描き、掃引と比べる。名前は `name` がなければファイル名の語幹。同じ名前のものは置き換える。Y と Z はファイルの基準インピーダンスで S に直す。2 ポートの雑音データ（F_min・Γ_opt・R_n。バージョン 1 は S のあと、バージョン 2 は [Noise Data]）も一緒に残し、results.noise がそれからデバイスの雑音指数を求め、circuit.cascade がつなぐ。測定値は 8 個まで、1 ファイル 64 MB まで。`template:<file>` はテンプレート自身のデータを読む（`template:adsb-patch.s1p`、`template:adsb-bandpass.s2p`：EMCraft で解いた adsb-patch アンテナと adsb-bandpass フィルタの S）。",
       "params": {
         "path": "Touchstone ファイル",
         "name": "測定値の名前（既定はファイル名の語幹）"
@@ -1337,7 +1337,7 @@
     },
     "circuit.cascade": {
       "label": "縦続接続",
-      "doc": "2 ポートを鎖状につなぐ（各ブロックのポート 2 を次のポート 1 に）。縦続行列（ABCD）の積で求める（Pozar, Microwave Engineering, §4.4）。ブロックは `{\"type\": \"data\", \"data\": \"sweep\"}`（掃引または測定値。`flip` でポートを入れ替え）、`{\"type\": \"series\" | \"shunt\", \"resistance\", \"inductance\", \"capacitance\", \"arrangement\"}`（Ω・nH・pF、`series` または `parallel`。model.element.create と同じ）、`{\"type\": \"line\", \"impedance\", \"length\", \"eps_r\", \"attenuation\", \"at\", \"tan_delta\"}`（Ω・表示単位の長さ。`attenuation` か `tan_delta` が無ければ無損失。`attenuation` は導体の減衰で表示単位の長さあたりの dB、`at` があればその周波数から √(f/`at`) で増える。`tan_delta` は誘電体の損失で π f √εr tan δ / c、εr は線路の実効比誘電率）。雑音も Hillbrand と Russer の縦続相関行列（IEEE Trans. CAS-23(4), 1976）でつなぐ。測定値の雑音データ（増幅器のもの）、受動の S ブロックは Twiss の熱平衡 kT(I − SSᴴ)（掃引、または雑音データの無い測定値。利得のあるものは雑音を求められず理由を返す）、集中定数素子は抵抗の熱雑音、損失のある線路はその損失から求め、どれも `temperature` における値。無損失の線路は雑音なし。応答の `noise` は `impedance` の信号源から見た縦続全体の雑音指数の最小と最大（残した結果に results.noise を使うと全周波数で得られる）。`source` があれば 1 ポートの測定値のインピーダンス（solve.radiation_sweep のアンテナ端子、.s1p）を信号源とし、`bandwidth` があれば受信機の感度も返す（results.noise の予算と同じ）。結果の S は `impedance` を基準に、最初の S ブロックの各周波数で（他は線形補間、帯域外はエラー）、S ブロックが無ければ `start` から `stop` まで `points` 点で求め、測定値 `name` として残してチャートに重ねる。",
+      "doc": "2 ポートを鎖状につなぐ（各ブロックのポート 2 を次のポート 1 に）。縦続行列（ABCD）の積で求める（Pozar, Microwave Engineering, §4.4）。ブロックは `{\"type\": \"data\", \"data\": \"sweep\"}`（掃引または測定値。`flip` でポートを入れ替え）、`{\"type\": \"series\" | \"shunt\", \"resistance\", \"inductance\", \"capacitance\", \"arrangement\"}`（Ω・nH・pF、`series` または `parallel`。model.element.create と同じ）、`{\"type\": \"line\", \"impedance\", \"length\", \"eps_r\", \"attenuation\", \"at\", \"tan_delta\"}`（Ω・表示単位の長さ。`attenuation` か `tan_delta` が無ければ無損失。`attenuation` は導体の減衰で表示単位の長さあたりの dB、`at` があればその周波数から √(f/`at`) で増える。`tan_delta` は誘電体の損失で π f √εr tan δ / c、εr は線路の実効比誘電率）、`{\"type\": \"amplifier\", \"gain\", \"noise_figure\"}`（dB。`impedance` に整合した一方向性の理想増幅器。雑音指数は整合した信号源から見た値で、入力に無相関の雑音波 kT₀(F − 1) を置いたもの：Γ_opt = 0、R_n = Z₀(F − 1)/4）。雑音も Hillbrand と Russer の縦続相関行列（IEEE Trans. CAS-23(4), 1976）でつなぐ。測定値の雑音データ（増幅器のもの）、受動の S ブロックは Twiss の熱平衡 kT(I − SSᴴ)（掃引、または雑音データの無い測定値。利得のあるものは雑音を求められず理由を返す）、集中定数素子は抵抗の熱雑音、損失のある線路はその損失から求め、どれも `temperature` における値。無損失の線路は雑音なし。応答の `noise` は `impedance` の信号源から見た縦続全体の雑音指数の最小と最大（残した結果に results.noise を使うと全周波数で得られる）。`source` があれば 1 ポートの測定値のインピーダンス（solve.radiation_sweep のアンテナ端子、.s1p）を信号源とし、`bandwidth` があれば受信機の感度も返す（results.noise の予算と同じ）。結果の S は `impedance` を基準に、最初の S ブロックの各周波数で（他は線形補間、帯域外はエラー）、S ブロックが無ければ `start` から `stop` まで `points` 点で求め、測定値 `name` として残してチャートに重ねる。",
       "params": {
         "blocks": "ポート 1 側からの 2 ポートの並び（32 個まで）",
         "impedance": "結果のポートと、基準インピーダンスの無い S ブロックのポートの基準インピーダンス（Ω、既定 50）",
@@ -2762,6 +2762,7 @@
     "td-sphere-scattering": "セラミック球（εr 4、半径 5 mm）への平面波を時間領域で。全電界／散乱電界の分割で、6〜14 GHz の散乱断面積を 1 回の計算で求め、Mie 級数と比較（0.5 mm のセルで約 10 % 大きい）",
     "td-metal-sphere-scattering": "半径 5 mm の金属球への平面波を時間領域で：6〜14 GHz の散乱断面積とレーダー断面積を 1 回の計算で求め、Mie 級数と比較（階段近似の球はやや多く散乱する）",
     "pcb-stub-filter": "マイクロストリップの開放スタブ・ノッチフィルタ、厚さ 0.508 mm の εr = 3.55 基板：50 Ω 線路から出る 1/4 波長スタブ、5 GHz 付近にノッチ",
+    "adsb-receiver": "1090 MHz の ADS-B 受信系。adsb-patch アンテナ、LNA（20 dB、0.6 dB）、adsb-bandpass フィルタ、受信機（20 dB、6 dB）を、EMCraft で解いたアンテナとフィルタの S から circuit.cascade でつなぐ：アンテナ端子から見て 1.09 GHz で雑音指数 0.84 dB、利得 37.4 dB、2 MHz・SNR 10 dB で感度 −100 dBm。基板はフィルタのもので、解き直して `sweep` としてつなげる",
     "adsb-bandpass": "1090 MHz の ADS-B 用バンドパスフィルタ。1.6 mm の FR-4 上の、ギャップ結合した半波長マイクロストリップ共振器 3 段（3 次チェビシェフ、リップル 0.5 dB）、ギャップにチップコンデンサ：1.02〜1.16 GHz の通過損失は約 2.7 dB（FR-4 の損失）、0.98 GHz で 17 dB 減衰",
     "pcb-lowpass": "ステップインピーダンス形マイクロストリップ・ローパスフィルタ：幅の広い低インピーダンスのパッドの間に細い高インピーダンス線路 3 本、5.5 GHz 付近で遮断",
     "pcb-quarter-wave": "マイクロストリップの 1/4 波長変成器：長さ l_q の 70 Ω 区間で 50 Ω から 100 Ω へ、ポート 2 は 100 Ω",
@@ -2776,6 +2777,8 @@
     "E-arm post position": "E 分岐ポストの位置",
     "H-arm post distance": "H 分岐ポストの距離",
     "H-arm post offset": "H 分岐ポストのずれ",
+    "LNA gain (dB)": "LNA の利得（dB）",
+    "LNA noise figure (dB)": "LNA の雑音指数（dB）",
     "absorber wedge length": "吸収体くさびの長さ",
     "air length": "空気部の長さ",
     "air section length": "空気区間の長さ",
@@ -2858,6 +2861,9 @@
     "puck height": "パックの高さ",
     "puck radius": "パックの半径",
     "quarter-wave length": "1/4 波長線路の長さ",
+    "receiver bandwidth": "受信機の帯域幅",
+    "receiver gain (dB)": "受信機の利得（dB）",
+    "receiver noise figure (dB)": "受信機の雑音指数（dB）",
     "reflector length": "反射器の長さ",
     "reflector spacing": "反射器の間隔",
     "relative permittivity": "比誘電率",
