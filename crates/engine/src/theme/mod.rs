@@ -29,6 +29,8 @@ use emcraft_render::Rgb;
 use emcraft_render::palette::{self, Palette};
 use serde_json::{Map, Value, json};
 
+pub mod tint;
+
 use crate::text::{clip, unknown};
 use crate::{EngineError, Params, Result, Session};
 
@@ -46,7 +48,7 @@ pub const MAX_KEY: usize = 40;
 const MAX_PROBLEMS: usize = 20;
 
 /// The keys of a theme file.
-const KEYS: [&str; 6] = ["name", "description", "base", "ui", "scene", "picture"];
+const KEYS: [&str; 7] = ["name", "description", "base", "tint", "ui", "scene", "picture"];
 
 emcraft_macros::named_enum! {
     /// A built-in theme: what a user's theme starts from.
@@ -67,13 +69,13 @@ impl Base {
     /// The built-in theme's file.
     pub const fn text(self) -> &'static str {
         match self {
-            Base::Light => include_str!("../themes/light.json"),
-            Base::Dark => include_str!("../themes/dark.json"),
-            Base::Mono => include_str!("../themes/mono.json"),
-            Base::Graphite => include_str!("../themes/graphite.json"),
-            Base::Sepia => include_str!("../themes/sepia.json"),
-            Base::Midnight => include_str!("../themes/midnight.json"),
-            Base::Forest => include_str!("../themes/forest.json"),
+            Base::Light => include_str!("../../themes/light.json"),
+            Base::Dark => include_str!("../../themes/dark.json"),
+            Base::Mono => include_str!("../../themes/mono.json"),
+            Base::Graphite => include_str!("../../themes/graphite.json"),
+            Base::Sepia => include_str!("../../themes/sepia.json"),
+            Base::Midnight => include_str!("../../themes/midnight.json"),
+            Base::Forest => include_str!("../../themes/forest.json"),
         }
     }
 
@@ -328,23 +330,63 @@ fn check_as(text: &str, builtin: Option<Base>) -> Checked {
         Some(Value::String(d)) if d.chars().count() <= MAX_DESCRIPTION => out.theme.description.clone_from(d),
         Some(_) => out.problem(format!("`description` must be a text of at most {MAX_DESCRIPTION} characters")),
     }
+    let tint = o.get("tint").map(tint::read);
+    let mut tint_base = None;
     match (o.get("base"), builtin) {
         (None, b) => out.theme.base = b.unwrap_or_default(),
-        (Some(_), Some(b)) => {
+        (Some(_), Some(b)) if tint.is_none() => {
             out.theme.base = b;
-            out.problem("a built-in theme has no `base`: it is one".into());
+            out.problem("a built-in theme has no `base`: it is one (or a tint of `light` or `dark`)".into());
         }
-        (Some(b), None) => match b.as_str().and_then(Base::parse) {
-            Some(b) => out.theme.base = b,
+        (Some(v), b) => match v.as_str().and_then(Base::parse) {
+            // A built-in tint starts from a theme that is no tint itself: the reading ends there.
+            Some(from) if b.is_some() && !matches!(from, Base::Light | Base::Dark) => {
+                out.problem("a built-in theme's tint starts from `light` or `dark`".into());
+            }
+            Some(from) => {
+                out.theme.base = b.unwrap_or(from);
+                tint_base = Some(from);
+            }
             None => out.problem(format!("`base` must be {}", <Base as emcraft_macros::Named>::listed())),
         },
     }
     let base = out.theme.base;
     let empty = Value::Object(Map::new());
-    out.theme.ui = colour_map("ui", o.get("ui").unwrap_or(&empty), false, &mut out);
-    out.theme.scene = colour_map("scene", o.get("scene").unwrap_or(&empty), true, &mut out);
-    out.theme.picture = picture(o.get("picture").unwrap_or(&empty), base, builtin.is_some(), &mut out);
+    let own = |k: &str| o.get(k).cloned().unwrap_or_else(|| empty.clone());
+    let (ui, scene, pic, whole) = match tint.map(|t| t.and_then(|t| tinted(tint_base.unwrap_or_default(), t))) {
+        None => (own("ui"), own("scene"), own("picture"), builtin.is_some()),
+        Some(Ok([ui, scene, pic])) => (over(ui, own("ui")), over(scene, own("scene")), over(pic, own("picture")), true),
+        Some(Err(e)) => {
+            out.problem(e);
+            (own("ui"), own("scene"), own("picture"), builtin.is_some())
+        }
+    };
+    out.theme.ui = colour_map("ui", &ui, false, &mut out);
+    out.theme.scene = colour_map("scene", &scene, true, &mut out);
+    out.theme.picture = picture(&pic, base, whole, &mut out);
     out
+}
+
+/// Built-in theme `base`'s colours under `tint`: its `ui`, `scene` and `picture` parts.
+fn tinted(base: Base, tint: tint::Tint) -> std::result::Result<[Value; 3], String> {
+    let c = check_as(base.text(), Some(base));
+    if !c.problems.is_empty() {
+        return Err(format!("the tint's base `{base}` is broken: {}", c.problems.join("; ")));
+    }
+    let colours = |m: &BTreeMap<String, Colour>| Value::Object(m.iter().map(|(k, c)| (k.clone(), json!(c.hex()))).collect());
+    Ok([tint.part("ui", &colours(&c.theme.ui)), tint.part("scene", &colours(&c.theme.scene)), tint.part("picture", &palette_json(&c.theme.picture))])
+}
+
+/// The colours of `own` over those of `under` (objects of colours by name; a list replaced
+/// whole); `own` alone when either is not an object.
+fn over(under: Value, own: Value) -> Value {
+    match (under, own) {
+        (Value::Object(mut u), Value::Object(o)) => {
+            u.extend(o);
+            Value::Object(u)
+        }
+        (_, own) => own,
+    }
 }
 
 /// A user's theme file's text read as a theme; refused with its problems.
@@ -475,6 +517,28 @@ mod tests {
         assert_eq!(palette_json(&Base::Light.palette())["ground"], "#ffffff");
     }
 
+    /// A tint makes a theme from its base: every colour there, neutral ones in the tint's hue at
+    /// the base's lightness (so the same contrasts), the file's own colours over them; the
+    /// built-in one-hue themes are tints of light or dark.
+    #[test]
+    fn a_tint_makes_a_whole_theme_from_its_base() {
+        let t = parse(r##"{"name": "warm", "base": "light", "tint": {"hue": 73, "chroma": 0.05}, "ui": {"accent": "#4a9cf0"}}"##).unwrap();
+        let light = Base::Light.theme().unwrap();
+        assert_eq!((t.ui.len(), t.scene.len()), (light.ui.len(), light.scene.len()));
+        assert_eq!(t.ui["accent"].hex(), "#4a9cf0");
+        let (panel, was) = (t.ui["text_dim"].rgb().oklch(), light.ui["text_dim"].rgb().oklch());
+        assert!((panel.h - 73.0).abs() < 5.0 && (panel.l - was.l).abs() < 0.01, "{panel:?} from {was:?}");
+        assert_eq!(t.ui["error"].rgb().oklch().h.round(), light.ui["error"].rgb().oklch().h.round());
+        assert!(t.picture.contrast_problem().is_none());
+        for b in [Base::Mono, Base::Graphite, Base::Sepia, Base::Midnight, Base::Forest] {
+            let th = b.theme().unwrap();
+            assert_eq!((th.base, th.ui.len()), (b, light.ui.len()), "{b}");
+        }
+        assert!(
+            check_as(r#"{"name": "sepia", "base": "sepia", "tint": {}}"#, Some(Base::Sepia)).problems[0].contains("starts from `light` or `dark`")
+        );
+    }
+
     fn problems(text: &str) -> Vec<String> {
         let c = check(text);
         assert!(parse(text).is_err(), "{text}");
@@ -495,7 +559,9 @@ mod tests {
         one(r#"{"name": "a\u0007b"}"#, "no control characters");
         one(r#"{"name": "Dark"}"#, "is a built-in theme's");
         one(r#"{"name": "t", "base": "paper"}"#, "`base` must be light, dark, mono, graphite, sepia, midnight or forest");
-        one(r#"{"name": "t", "colours": {}}"#, "unknown key `colours` (a theme has name, description, base, ui, scene, picture)");
+        one(r#"{"name": "t", "colours": {}}"#, "unknown key `colours` (a theme has name, description, base, tint, ui, scene, picture)");
+        one(r#"{"name": "t", "tint": {"chroma": 1}}"#, "`tint.chroma` must be a number from 0 to 0.37");
+        one(r#"{"name": "t", "tint": 3}"#, "`tint` must be an object");
         one(r#"{"name": "t", "ui": {"accent": "blue"}}"#, "`ui.accent` must be a colour `#rrggbb` or `#rrggbbaa`, got \"blue\"");
         one(r##"{"name": "t", "ui": {"accent": "#12345"}}"##, "`ui.accent` must be a colour");
         one(r#"{"name": "t", "ui": {"accent": 7}}"#, "got 7");

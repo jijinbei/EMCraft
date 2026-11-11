@@ -14,6 +14,7 @@ pub mod colormap;
 pub mod font;
 pub mod icon;
 pub mod math;
+pub mod oklch;
 pub mod palette;
 pub mod pcb;
 pub mod plot;

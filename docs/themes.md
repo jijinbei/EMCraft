@@ -3,7 +3,8 @@
 A theme sets the colours of the desktop app (its panels, text and accents), of the 3D view and
 of the pictures EMCraft draws (charts and field plots, on screen and written by the `view.*`
 commands). Colours live only in theme files, JSON in the format below — the built-in themes
-too: the files of [`crates/engine/themes`](../crates/engine/themes) name every colour there is
+too: [`crates/engine/themes`](../crates/engine/themes) `light.json` and `dark.json` name every
+colour there is, and the one-hue themes are each a tint of one of them, five numbers
 (`cargo xtask colours` keeps colours out of the code). The scientific colour maps of field plots are the same
 in every theme: what is drawn over them (arrows, their halo, section lines) is chosen to read on
 them.
@@ -20,12 +21,17 @@ them.
 | `midnight` | deep blues, on dark panels |
 | `forest` | greens, on dark panels |
 
-The one-hue themes (`mono` … `forest`) keep the lightness of every colour of `light` or `dark`
-(so the same contrasts) in their own hue. What has to stay told apart keeps its own hue,
+The one-hue themes (`mono` … `forest`) are tints of `light` or `dark` (below): they keep the
+lightness of every colour there (so the same contrasts) in their own hue. What has to stay told apart keeps its own hue,
 softened: errors, warnings and success, the x, y and z axes, ports, sources and materials in 3D,
 and the curves of a chart. The ribbon's tabs share the theme's hue.
 
 ## Making one
+
+The quickest: a tint of a built-in theme, in a hue of your own (OKLCH degrees: 30 red, 73 sepia,
+150 green, 260 blue) — `{"name": "Teal", "base": "dark", "tint": {"hue": 200, "chroma": 0.06,
+"accent": 0.12}}`. Colours named in the file's `ui`, `scene` and `picture` go over the tinted
+ones. Or, colour by colour:
 
 1. Copy one of `crates/engine/themes/*.json` (`dark.json`, say): it is the complete template.
 2. Give it your `name` and set `"base"` to that built-in theme (`"dark"`): the theme starts from
@@ -70,7 +76,8 @@ A JSON object of at most 64 KiB:
 |---|---|
 | `name` | required: 1 to 40 characters, not a built-in theme's name (`light`, `dark`, `mono`, …) |
 | `description` | optional, at most 200 characters: shown as the theme's hint in Settings |
-| `base` | a built-in theme's name (`light` by default): the theme this one changes. The built-in themes have none |
+| `base` | a built-in theme's name (`light` by default): the theme this one changes. The built-in themes have none, but a tint's (`light` or `dark`) |
+| `tint` | optional: every colour of `base` moved in OKLCH by its role (below), before the file's own colours |
 | `ui` | the app's colours by name (below), at most 256 |
 | `scene` | the 3D view's colours by name (below), opaque |
 | `picture` | the pictures' colours by name (below), opaque; `series` a list of up to 6 |
@@ -81,6 +88,21 @@ when its text would be hard to read (WCAG contrast): `text` on `panel` and `form
 `dialog_body` at least 7, `text_dim` on `panel` 3, `on_accent` on `accent` 3, `form_error` on
 `form_error_fill` 4.5, each tab's ink on its soft tint and on `toolbar` 4.5; in pictures `ink`
 on `ground` 4.5 and `ink_dim` on `ground` 3.
+
+### `tint`
+
+Five numbers, each optional; OKLCH (Ottosson's Oklab in lightness, chroma and hue), where equal
+steps look equal:
+
+| Name | What | Default | Range |
+|---|---|---|---|
+| `hue` | the hue neutral colours and accents take (degrees) | 0 | 0–360 |
+| `chroma` | neutral colours' chroma at middle lightness (less towards black and white: `chroma · 4L(1 − L)`) | 0 (greys) | 0–0.37 |
+| `lightness` | neutral colours' and accents' lightness scaled by it | 1 | 0.5–1.5 |
+| `accent` | accents' chroma at most (the accent, selections, the ribbon's tabs, the kinds of analysis) | 0 (grey) | 0–0.37 |
+| `soften` | colours told apart keep their hue and lightness, their chroma scaled by it: errors, warnings and success, the axes, ports, sources, periodic and symmetry planes, materials, the H arrows and a chart's curves | 1 | 0–1 |
+
+Alpha is kept. The tinted theme is checked like any other (the contrasts above).
 
 ### `ui`
 

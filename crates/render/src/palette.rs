@@ -163,13 +163,8 @@ impl Default for Palette {
 impl Rgb {
     /// WCAG contrast of two opaque sRGB colours: 1 (the same) to 21 (black on white).
     pub fn contrast_ratio(self, other: Rgb) -> f64 {
-        let luminance = |c: Rgb| {
-            let linear = |v: u8| {
-                let v = f64::from(v) / 255.0;
-                if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
-            };
-            0.2126 * linear(c.0) + 0.7152 * linear(c.1) + 0.0722 * linear(c.2)
-        };
+        let linear = crate::oklch::linear;
+        let luminance = |c: Rgb| 0.2126 * linear(c.0) + 0.7152 * linear(c.1) + 0.0722 * linear(c.2);
         let (a, b) = (luminance(self), luminance(other));
         (a.max(b) + 0.05) / (a.min(b) + 0.05)
     }
