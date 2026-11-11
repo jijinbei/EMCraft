@@ -64,6 +64,11 @@ fn scenario_analyses() {
 }
 
 #[test]
+fn scenario_system_budget() {
+    scenario("system_budget");
+}
+
+#[test]
 fn scenario_filter_coupling() {
     scenario("filter_coupling");
 }

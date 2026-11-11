@@ -61,6 +61,58 @@ const ANTENNA_TEMPERATURE: ParamSpec = opt("antenna_temperature", K::Number, "th
 /// The signal-to-noise ratio a receiver needs, for a sensitivity.
 const SNR: ParamSpec = opt("snr", K::Number, "the signal-to-noise ratio in dB the receiver needs, with `bandwidth` (default 0)");
 
+/// A system stage's settings (system.stage.add and .edit; circuit.cascade's blocks take the same).
+const STAGE_SETTINGS: [ParamSpec; 17] = [
+    opt("gain", K::Number, "an amplifier's gain in dB"),
+    opt("noise_figure", K::Number, "an amplifier's noise figure in dB from a matched source (default 0)"),
+    opt("oip3", K::Number, "an amplifier's output third-order intercept point in dBm"),
+    opt("p1db", K::Number, "an amplifier's output 1 dB compression point in dBm"),
+    opt("loss", K::Number, "an attenuator's loss in dB"),
+    opt("data", K::String, "a data stage's S: `sweep` (default) or a measurement's name"),
+    opt("flip", K::Boolean, "a data stage's ports swapped"),
+    opt("impedance", K::Number, "a line's impedance in Ω (default 50)"),
+    opt("length", K::Number, "a line's length").of(L),
+    opt("eps_r", K::Number, "a line's effective relative permittivity (default 1)"),
+    opt("attenuation", K::Number, "a line's conductor attenuation in dB per length unit (default 0)"),
+    opt("at", K::Number, "the frequency `attenuation` is given at: it grows as √(f/`at`) (default constant)").of(F),
+    opt("tan_delta", K::Number, "a line's dielectric loss tangent (default 0)"),
+    opt("resistance", K::Number, "a series or shunt element's R in ohms"),
+    opt("inductance", K::Number, "a series or shunt element's L in nanohenries"),
+    opt("capacitance", K::Number, "a series or shunt element's C in picofarads"),
+    opt("arrangement", K::String, "a series or shunt element's parts: `series` (default) or `parallel`").one_of(&emcraft_model::Arrangement::IDS),
+];
+
+/// The kinds of stage.
+const STAGE_TYPE: &[&str] = &crate::system::KINDS;
+
+/// system.stage.add's parameters: the kind, the name and place, then [`STAGE_SETTINGS`].
+const STAGE_ADD: [ParamSpec; 20] = {
+    let mut out = [STAGE_SETTINGS[0]; 20];
+    out[0] = req("type", K::String, "the stage's kind").one_of(STAGE_TYPE);
+    out[1] = opt("name", K::String, "the stage's name, unique in the chain (default its kind and a number)");
+    out[2] = opt("position", K::Integer, "its place from the source, from 1 (default the end)");
+    let mut i = 0;
+    while i < 17 {
+        out[i + 3] = STAGE_SETTINGS[i];
+        i += 1;
+    }
+    out
+};
+
+/// system.stage.edit's parameters: the stage, a new name or kind, then [`STAGE_SETTINGS`].
+const STAGE_EDIT: [ParamSpec; 20] = {
+    let mut out = [STAGE_SETTINGS[0]; 20];
+    out[0] = req("stage", K::String, "the stage: its name, or its place from 1");
+    out[1] = opt("rename", K::String, "a new name for it");
+    out[2] = opt("type", K::String, "another kind for it (its settings then all given)").one_of(STAGE_TYPE);
+    let mut i = 0;
+    while i < 17 {
+        out[i + 3] = STAGE_SETTINGS[i];
+        i += 1;
+    }
+    out
+};
+
 const ORDER: ParamSpec = opt("order", K::Integer, "element order: 1 or 2 (default)");
 const PORT_SOLVER_ORDER: ParamSpec = opt("order", K::Integer, "element order of the cross-section solver, 1 or 2 (default 2)");
 
@@ -318,15 +370,15 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "project.setup",
         label: "Confirm the run's settings",
-        doc: "Confirms the run's settings for the job's kind of analysis (or `kind`), as the Setup step shows them: a sweep's band (`start`, `stop`), `points` and element `order`; the time domain's band, `points`, `cell` and the ports to `excite`; the eigenmodes' `count` near `frequency` and `order`; a radiation solve's `frequency` and `order`. The job is then ready: the Setup step is done and Run (solve.run) runs them. Choosing another kind (project.analysis) takes them back. The band also sets meshing by wavelength (its top) and the port previews. Undo goes back.",
+        doc: "Confirms the run's settings for the job's kind of analysis (or `kind`), as the Setup step shows them: a sweep's band (`start`, `stop`), `points` and element `order`; the time domain's band, `points`, `cell` and the ports to `excite`; the eigenmodes' `count` near `frequency` and `order`; a radiation solve's `frequency` and `order`; a system's band, `points` and the `frequency` its budget is shown at. The job is then ready: the Setup step is done and Run (solve.run) runs them. Choosing another kind (project.analysis) takes them back. The band also sets meshing by wavelength (its top) and the port previews. Undo goes back.",
         params: &[
-            opt("kind", K::String, "the kind of analysis (default the job's): `frequency`, `eigenmodes`, `radiation` or `time_domain`; choosing it as project.analysis does").one_of(&Analysis::IDS),
-            opt("start", K::Number, "the band's start (a sweep, the time domain)").of(F),
-            opt("stop", K::Number, "the band's stop (a sweep, the time domain)").of(F),
+            opt("kind", K::String, "the kind of analysis (default the job's): `frequency`, `eigenmodes`, `radiation`, `time_domain` or `system`; choosing it as project.analysis does").one_of(&Analysis::IDS),
+            opt("start", K::Number, "the band's start (a sweep, the time domain, a system)").of(F),
+            opt("stop", K::Number, "the band's stop (a sweep, the time domain, a system)").of(F),
             opt("points", K::Integer, "the frequency points (default 101)"),
             opt("order", K::Integer, "element order, 1 or 2 (default 2)"),
             opt("count", K::Integer, "the eigenmodes to find, 1 to 50 (default 5)"),
-            opt("frequency", K::Number, "the eigenmodes' search frequency (near) or the radiation solve's").of(F),
+            opt("frequency", K::Number, "the eigenmodes' search frequency (near), the radiation solve's, or a system's budget's (default the band's centre)").of(F),
             opt("cell", K::Number, "the time domain's cell size (default 1 mm)").of(L),
             opt("excite", K::Array, "the time domain's ports to excite, by name (default the first)"),
         ],
@@ -522,7 +574,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "circuit.cascade",
         label: "Cascade",
-        doc: "Two-ports in a chain, port 2 of each to port 1 of the next, by their chain (ABCD) matrices (Pozar, Microwave Engineering, §4.4): `{\"type\": \"data\", \"data\": \"sweep\"}` (the sweep or a measurement, `flip` swapping its ports), `{\"type\": \"series\" | \"shunt\", \"resistance\", \"inductance\", \"capacitance\", \"arrangement\"}` (Ω, nH, pF, `series` or `parallel`, as model.element.create's), `{\"type\": \"line\", \"impedance\", \"length\", \"eps_r\", \"attenuation\", \"at\", \"tan_delta\"}` (Ω, the display length; lossless unless `attenuation` — a conductor's, dB per display length, growing as √(f/`at`) from frequency `at` when given — or `tan_delta`, a dielectric's, π f √εr tan δ / c with εr the line's effective one), `{\"type\": \"amplifier\", \"gain\", \"noise_figure\"}` (dB: an ideal amplifier, matched and unilateral on `impedance`, its noise figure from a matched source, an uncorrelated noise wave kT₀(F − 1) at its input: Γ_opt = 0, R_n = Z₀(F − 1)/4). Its noise is chained too, by Hillbrand and Russer's chain correlation matrices (IEEE Trans. CAS-23(4), 1976): a measurement's noise data (an amplifier's), a passive S block's by Twiss's equilibrium kT(I − SSᴴ) (the sweep's, or a measurement without noise data; one that gains has no noise then, and says why), a lumped element's resistance's thermal noise, a lossy line's from its loss, all at `temperature`, a lossless line none; the reply's `noise` gives the chain's least and greatest noise figure from a source of `impedance` (results.noise on the kept result gives it at every frequency): from `source`, a one-port measurement's impedance (an antenna's terminals from solve.radiation_sweep, a .s1p), when given; with `bandwidth`, the receiver's sensitivity too (results.noise's budget). Its S on `impedance` at each frequency of its first S block (the others interpolated linearly; an error outside their bands), or from `start` to `stop` in `points` without one, kept as a measurement named `name` and drawn over the chart.",
+        doc: "Two-ports in a chain, port 2 of each to port 1 of the next, by their chain (ABCD) matrices (Pozar, Microwave Engineering, §4.4): `{\"type\": \"data\", \"data\": \"sweep\"}` (the sweep or a measurement, `flip` swapping its ports), `{\"type\": \"series\" | \"shunt\", \"resistance\", \"inductance\", \"capacitance\", \"arrangement\"}` (Ω, nH, pF, `series` or `parallel`, as model.element.create's), `{\"type\": \"line\", \"impedance\", \"length\", \"eps_r\", \"attenuation\", \"at\", \"tan_delta\"}` (Ω, the display length; lossless unless `attenuation` — a conductor's, dB per display length, growing as √(f/`at`) from frequency `at` when given — or `tan_delta`, a dielectric's, π f √εr tan δ / c with εr the line's effective one), `{\"type\": \"amplifier\", \"gain\", \"noise_figure\"}` (dB: an ideal amplifier, matched and unilateral on `impedance`, its noise figure from a matched source, an uncorrelated noise wave kT₀(F − 1) at its input: Γ_opt = 0, R_n = Z₀(F − 1)/4), `{\"type\": \"attenuator\", \"loss\"}` (dB, matched) — system.stage.add's stages. Its noise is chained too, by Hillbrand and Russer's chain correlation matrices (IEEE Trans. CAS-23(4), 1976): a measurement's noise data (an amplifier's), a passive S block's by Twiss's equilibrium kT(I − SSᴴ) (the sweep's, or a measurement without noise data; one that gains has no noise then, and says why), a lumped element's resistance's thermal noise, a lossy line's from its loss, all at `temperature`, a lossless line none; the reply's `noise` gives the chain's least and greatest noise figure from a source of `impedance` (results.noise on the kept result gives it at every frequency): from `source`, a one-port measurement's impedance (an antenna's terminals from solve.radiation_sweep, a .s1p), when given; with `bandwidth`, the receiver's sensitivity too (results.noise's budget). Its S on `impedance` at each frequency of its first S block (the others interpolated linearly; an error outside their bands), or from `start` to `stop` in `points` without one, kept as a measurement named `name` and drawn over the chart.",
         params: &[
             req("blocks", K::Array, "the two-ports from port 1 on, at most 32"),
             opt("impedance", K::Number, "the reference impedance in Ω of the result's ports, and of S blocks' ports that have none (default 50)"),
@@ -539,6 +591,83 @@ pub static COMMANDS: &[CommandSpec] = &[
         effect: Effect::View,
         invalidates: None,
         run: crate::circuit::cascade,
+    },
+    CommandSpec {
+        id: "system.stage.add",
+        label: "Add stage",
+        doc: "Adds a stage to the system's chain, from the source on (Analysis `system`, docs/system.md): `amplifier` (an ideal one, matched and unilateral on the chain's impedance: `gain` and `noise_figure` in dB from a matched source, its noise an uncorrelated wave kT₀(F − 1) at its input; `oip3` and `p1db`, its output intercept and compression points in dBm, for the cascade's linearity), `attenuator` (`loss` dB, matched, its noise at the chain's temperature), `data` (a two-port's S: the sweep or a measurement, results.import's Touchstone file; its noise data if it has some, else a passive network's), `line` (Ω, length, εr, conductor `attenuation` in dB per length growing as √(f/`at`), dielectric `tan_delta`), `series` or `shunt` (R, L, C in Ω, nH and pF). Its name is unique in the chain; at most 32 stages. Undo goes back.",
+        params: &STAGE_ADD,
+        effect: Effect::Record,
+        invalidates: Some(Change::System),
+        run: crate::system::stage_add,
+    },
+    CommandSpec {
+        id: "system.stage.edit",
+        label: "Edit stage",
+        doc: "Changes a stage of the system's chain: the settings given replace its own (the rest kept), `rename` names it anew, `type` makes it another kind (its settings then given). Checked as a new stage would be. Undo goes back.",
+        params: &STAGE_EDIT,
+        effect: Effect::Record,
+        invalidates: Some(Change::System),
+        run: crate::system::stage_edit,
+    },
+    CommandSpec {
+        id: "system.stage.delete",
+        label: "Delete stage",
+        doc: "Takes a stage out of the system's chain. Undo goes back.",
+        params: &[req("stage", K::String, "the stage: its name, or its place from 1")],
+        effect: Effect::Record,
+        invalidates: Some(Change::System),
+        run: crate::system::stage_delete,
+    },
+    CommandSpec {
+        id: "system.stage.move",
+        label: "Move stage",
+        doc: "Moves a stage of the system's chain to another place. Undo goes back.",
+        params: &[req("stage", K::String, "the stage: its name, or its place from 1"), req("position", K::Integer, "its new place from the source, from 1")],
+        effect: Effect::Record,
+        invalidates: Some(Change::System),
+        run: crate::system::stage_move,
+    },
+    CommandSpec {
+        id: "system.source",
+        label: "System source",
+        doc: "The system's source: `antenna`, a one-port measurement whose impedance drives the chain (an antenna's S11 from solve.radiation_sweep, a .s1p; \"\" for none: the chain's impedance), its noise `temperature` (K, default 290) and the signal `power` it gives (dBm; for the budget's signal and SNR). The settings left out are kept. Undo goes back.",
+        params: &[
+            opt("antenna", K::String, "a one-port measurement: the source's impedance (\"\" for none)"),
+            opt("temperature", K::Number, "the antenna's noise temperature in K (default 290)"),
+            opt("power", K::Number, "the signal the source gives in dBm"),
+        ],
+        effect: Effect::Record,
+        invalidates: Some(Change::System),
+        run: crate::system::source,
+    },
+    CommandSpec {
+        id: "system.receiver",
+        label: "System receiver",
+        doc: "What the system's chain ends in: its reference `impedance` (Ω, default 50: the amplifiers' and attenuators', and the result's ports), the physical `temperature` of its passive parts (K, default 290), the receiver's noise `bandwidth` (for the noise power, sensitivity and SNR) and the `snr` it needs (dB, default 0). The settings left out are kept. Undo goes back.",
+        params: &[
+            opt("impedance", K::Number, "the chain's reference impedance in Ω (default 50)"),
+            opt("temperature", K::Number, "the passive parts' temperature in K (default 290)"),
+            BANDWIDTH,
+            SNR,
+        ],
+        effect: Effect::Record,
+        invalidates: Some(Change::System),
+        run: crate::system::receiver,
+    },
+    CommandSpec {
+        id: "solve.system",
+        label: "Solve system",
+        doc: "Reads the system's chain over a band (or the confirmed settings'): its S by the stages' chain (ABCD) matrices (Pozar, Microwave Engineering, §4.4), its noise by Hillbrand and Russer's chain correlation matrices (IEEE Trans. CAS-23(4), 1976), from the source's impedance; and its budget stage by stage — each stage's available gain and the chain's from the source (Pozar §12.1), the noise figure and temperature so far, the signal, noise (k(T_A + T_e)B G) and SNR at each stage's output, and the cascade's third-order intercept and 1 dB compression points, input-referred as 1/IIP3 = Σ G_before/IIP3_k (Pozar §10.3) and output-referred. The reply gives the budget at `frequency` (default the band's centre) and the band's least and greatest noise figure; the result is kept for the System view (and the project file). A data stage outside its band, or the antenna outside its, leaves those frequencies' readings out and says why.",
+        params: &[
+            opt("start", K::Number, "the band's start (default the confirmed settings')").of(F),
+            opt("stop", K::Number, "the band's stop (default the confirmed settings')").of(F),
+            opt("points", K::Integer, "frequencies from start to stop, 1 to 4001 (default 101)"),
+            opt("frequency", K::Number, "the frequency the budget is shown at (default the band's centre)").of(F),
+        ],
+        effect: Effect::Solve,
+        invalidates: None,
+        run: crate::system::solve,
     },
     CommandSpec {
         id: "filter.synthesize",

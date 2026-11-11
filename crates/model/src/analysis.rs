@@ -18,6 +18,9 @@ emcraft_macros::named_enum! {
         TimeDomain = "time_domain" => "Time domain",
         /// Routed PCB signal quality and geometric reference-copper screening.
         Pcb = "pcb" => "PCB signal and return path",
+        /// A chain of two-ports from a source to a receiver: its gain, noise and linearity
+        /// stage by stage (a budget), no field solved.
+        System = "system" => "System budget",
     }
 }
 
@@ -41,6 +44,9 @@ impl Analysis {
         // A board's route diagnosis until a region is set; then a model as any other.
         if m.pcb().is_some_and(|b| b.region.is_none()) {
             Analysis::Pcb
+        } else if !m.system.stages.is_empty() && m.bodies().is_empty() {
+            // A chain with nothing to solve a field in.
+            Analysis::System
         } else if !m.sources.is_empty() || !m.lumped.is_empty() || m.domain.open.is_some() {
             Analysis::Radiation
         } else {

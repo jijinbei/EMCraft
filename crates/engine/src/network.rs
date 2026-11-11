@@ -650,7 +650,15 @@ pub(crate) struct Source {
 
 /// The S `data` names: `sweep` (the default) or a measurement.
 pub(crate) fn source(s: &Session, p: &Params) -> Result<Source> {
-    match p.string("data").optional()? {
+    named_source(s, p.string("data").optional()?).map_err(|e| match e {
+        EngineError::Failed(m) if m.starts_with("no measurement") => p.error("data", m),
+        e => e,
+    })
+}
+
+/// The S `name` names: the sweep (none, or `sweep`) or a measurement.
+pub(crate) fn named_source(s: &Session, name: Option<&str>) -> Result<Source> {
+    match name {
         None | Some("sweep") => {
             let sweep = s.results.sweep()?;
             let entries = sweep.entries();
@@ -661,8 +669,13 @@ pub(crate) fn source(s: &Session, p: &Params) -> Result<Source> {
                 noise: Vec::new(),
             })
         }
-        Some(_) => {
-            let m = measurement(s, p, "data")?;
+        Some(name) => {
+            let m = s
+                .views
+                .measured
+                .iter()
+                .find(|m| m.name == name)
+                .ok_or_else(|| EngineError::failed(format!("no measurement `{}`: {}", crate::text::clip(name, 40), names(s))))?;
             Ok(Source {
                 data: (*m.data).clone(),
                 names: (1..=m.data.outputs()).map(|k| k.to_string()).collect(),
@@ -689,6 +702,24 @@ impl SourceImpedance {
         let z = (C::new(1.0, 0.0) + g) / (C::new(1.0, 0.0) - g) * self.reference;
         (z.is_finite() && z.re > 0.0).then_some(z)
     }
+}
+
+/// The impedance of the one-port measurement `name` (an antenna's terminals).
+pub(crate) fn named_impedance(s: &Session, name: &str) -> Result<SourceImpedance> {
+    let m = s
+        .views
+        .measured
+        .iter()
+        .find(|m| m.name == name)
+        .ok_or_else(|| EngineError::failed(format!("no measurement `{}` for the source: {}", crate::text::clip(name, 40), names(s))))?;
+    if m.data.outputs() != 1 {
+        return Err(EngineError::failed(format!(
+            "the source is a one-port (an antenna's S11); `{}` has {} ports",
+            crate::text::clip(&m.name, 40),
+            m.data.outputs()
+        )));
+    }
+    Ok(SourceImpedance { name: m.name.clone(), data: m.data.clone(), reference: m.references[0] })
 }
 
 /// The measurement `source` names, a one-port, when given.

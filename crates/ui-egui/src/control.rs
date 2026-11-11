@@ -365,6 +365,7 @@ fn chart_style(app: &EmcraftApp) -> Value {
         View::Dispersion => ChartId::Dispersion,
         View::Study => ChartId::Study,
         View::Analyses => ChartId::Analyses,
+        View::System => ChartId::System,
         _ => return Value::Null,
     };
     json!({

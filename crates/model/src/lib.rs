@@ -16,6 +16,7 @@
 //! - [`port`]: waveguide ports;
 //! - [`open`]: the open boundary, sources and lumped ports;
 //! - [`symmetry`]: symmetry planes and the images they make, rotations and bodies of revolution;
+//! - [`system`]: a chain of two-port stages from a source to a receiver (a system's budget);
 //! - [`periodic`]: periodic boundaries (unit cells of infinite arrays);
 //! - [`band`]: the frequency band;
 //! - [`analysis`]: the kind of analysis the job is set up for;
@@ -48,6 +49,7 @@ pub mod quantity;
 pub mod region;
 pub mod shape;
 pub mod symmetry;
+pub mod system;
 pub mod units;
 pub mod waveguide;
 

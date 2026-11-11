@@ -216,6 +216,13 @@ pub const ANALYSES: [AnalysisSpec; Analysis::COUNT] = {
             not_needed: &[Excitation, Boundaries, Mesh, Setup],
             results: &[],
         },
+        AnalysisSpec {
+            analysis: Analysis::System,
+            solve: "solve.system",
+            required: &[Setup],
+            not_needed: &[Geometry, Excitation, Boundaries, Mesh],
+            results: &[R::System],
+        },
     ]
 };
 
@@ -342,8 +349,34 @@ pub fn steps(s: &Session) -> [StepState; 8] {
         );
         return states;
     }
+    if s.model.analysis() == Analysis::System {
+        return system_steps(s);
+    }
     // In the bar's order (Step's): the region after the settings whose band sizes it.
     let above = [intent(s), geometry(s), excitation(s), setup(s), boundaries(s), mesh(s)];
+    let (run, results) = run_and_results(s, &above);
+    let [intent, geometry, excitation, setup, boundaries, mesh] = above;
+    [intent, geometry, excitation, setup, boundaries, mesh, run, results]
+}
+
+/// A system's steps: no geometry, excitation, region or mesh (its chain is the System view's);
+/// its band to confirm, and a chain to read.
+fn system_steps(s: &Session) -> [StepState; 8] {
+    let mut setup = StepState::new(Step::Setup);
+    if s.model.system.stages.is_empty() {
+        setup.note(Status::Waiting, emcraft_i18n::text!("the chain has no stages yet: add them in the System view"), Some("system.stage.add"));
+    }
+    if s.model.job.setup().is_none() {
+        setup.note(Status::Todo, emcraft_i18n::text!("the run's settings are not confirmed yet: check them and confirm"), Some("project.setup"));
+    }
+    let above = [
+        intent(s),
+        StepState::new(Step::Geometry),
+        StepState::new(Step::Excitation),
+        setup,
+        StepState::new(Step::Boundaries),
+        StepState::new(Step::Mesh),
+    ];
     let (run, results) = run_and_results(s, &above);
     let [intent, geometry, excitation, setup, boundaries, mesh] = above;
     [intent, geometry, excitation, setup, boundaries, mesh, run, results]

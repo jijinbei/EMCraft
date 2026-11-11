@@ -56,6 +56,9 @@ pub struct Model {
     /// The job: the kind of analysis and the run's confirmed settings.
     #[serde(default)]
     pub job: crate::job::Job,
+    /// A system's chain of stages ([`crate::system`]): changed with its setters.
+    #[serde(default, skip_serializing_if = "crate::system::Chain::is_empty")]
+    pub system: crate::system::Chain,
     /// The mesh of the waveguide (made by `emcraft-mesh`), shared: the copies of the model a
     /// session keeps to undo to share it rather than copy it.
     #[serde(skip)]
@@ -102,6 +105,7 @@ impl Default for Model {
             lumped: Vec::new(),
             elements: Vec::new(),
             job: crate::job::Job::Open,
+            system: crate::system::Chain::default(),
             mesh: None,
         }
     }

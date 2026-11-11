@@ -146,6 +146,9 @@ pub struct StoredSession {
     revolution: Option<StoredRevolution>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     bloch: Option<StoredBloch>,
+    /// A system's chain read over the band: small, kept as it is (checked when read).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    system: Option<crate::system::SystemResult>,
 }
 
 /// The bytes the results' field vectors take.
@@ -175,6 +178,7 @@ impl StoredSession {
             td_radiation: r.td_radiation.as_deref().map(|o| StoredTdRadiation::write(o, w)).transpose()?,
             revolution: r.revolution.as_deref().map(|b| StoredRevolution::write(b, w)).transpose()?,
             bloch: r.bloch.as_deref().map(|b| StoredBloch::write(b, w)).transpose()?,
+            system: r.system.as_deref().cloned(),
         })
     }
 
@@ -214,6 +218,9 @@ impl StoredSession {
         }
         if let Some(x) = self.td_radiation {
             keep("the open time domain", x.read(r).map(|v| out.td_radiation = Some(Arc::new(v))));
+        }
+        if let Some(x) = self.system {
+            keep("the system's budget", x.check().map(|()| out.system = Some(Arc::new(x))));
         }
         (out, dropped)
     }

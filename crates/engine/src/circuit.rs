@@ -6,241 +6,30 @@
 
 use std::sync::Arc;
 
-use emcraft_model::{LumpedElement, Point3};
 use emcraft_solver::{Complex64 as C, SMatrix};
 use serde_json::{Value, json};
 
-use crate::network::{Measured, NoisePoint, interpolate, keep, kept_name, noise_at, source};
-use crate::noise::{Budget, ChainNoise, MAX_TEMPERATURE, NoiseParameters, T0, TwoPort};
+use crate::network::{Measured, NoisePoint, keep, kept_name, source};
+use crate::noise::{Budget, MAX_TEMPERATURE, T0};
 use crate::sdata::SData;
+use crate::system::{Block, s_of_chain};
 use crate::{EngineError, Params, Result, Session};
 
 /// The most blocks a cascade chains.
 const MAX_BLOCKS: usize = 32;
 
-/// The most frequencies a cascade without S blocks is evaluated at.
-const MAX_POINTS: usize = 4001;
-
-/// The speed of light in vacuum (m/s).
-const C0: f64 = 299_792_458.0;
-
 const ONE: C = C::new(1.0, 0.0);
-const ZERO: C = C::new(0.0, 0.0);
 
-/// A two-port of a cascade.
-enum Block {
-    /// S over frequency on its ports' reference impedances; `flip` swaps its ports; its noise
-    /// where known (else a passive network's at the cascade's temperature).
-    Data { data: SData, z0: [f64; 2], flip: bool, name: String, noise: Vec<NoisePoint> },
-    /// A lumped element in series along the line, or shunt across it.
-    Element { element: LumpedElement, shunt: bool },
-    /// A uniform line: its impedance (Ω), length (m), relative permittivity and losses.
-    Line { z0: f64, length: f64, eps_r: f64, loss: LineLoss },
-    /// An ideal amplifier: matched and unilateral on `z0` (Ω), S21 = `gain` (a voltage ratio),
-    /// its noise figure `figure` (a power ratio) from a matched source.
-    Amplifier { gain: f64, figure: f64, z0: f64 },
-}
-
-/// The most gain an amplifier block takes, and the greatest noise figure (dB).
-const MAX_GAIN_DB: f64 = 100.0;
-const MAX_FIGURE_DB: f64 = 60.0;
-
-impl Block {
-    /// An amplifier's S on its ports' `z0`: S21 its gain, nothing reflected or back.
-    fn amplifier_s(gain: f64) -> TwoPort {
-        TwoPort { s11: ZERO, s12: ZERO, s21: C::new(gain, 0.0), s22: ZERO }
-    }
-}
-
-/// A line's losses: a conductor's attenuation (Np/m) at `reference` (Hz), growing as √f from it
-/// (the skin effect; constant without a reference), and its dielectric's loss tangent, whose
-/// attenuation is π f √εr tan δ / c (a uniformly filled line: εr the line's effective one).
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-struct LineLoss {
-    conductor: f64,
-    reference: Option<f64>,
-    tan_delta: f64,
-}
-
-impl LineLoss {
-    /// The attenuation (Np/m) at `f` (Hz) on a line of relative permittivity `eps_r`.
-    fn alpha(&self, f: f64, eps_r: f64) -> f64 {
-        let skin = self.reference.map_or(1.0, |r| (f / r).sqrt());
-        self.conductor * skin + std::f64::consts::PI * f * eps_r.sqrt() * self.tan_delta / C0
-    }
-}
-
-/// The largest attenuation a line takes (dB per length unit).
-const MAX_ATTENUATION: f64 = 1e3;
-
-/// Np per dB.
-const NP_PER_DB: f64 = std::f64::consts::LN_10 / 20.0;
-
-/// A lumped element from a block's `resistance` (Ω), `inductance` (nH), `capacitance` (pF) and
-/// `arrangement`, checked as `model.element.create` checks its own.
-fn element(p: &Params) -> Result<LumpedElement> {
-    // Where it sits does not matter in a circuit: a gap of a millimetre, its ends apart.
-    let e = crate::elements::lumped(p, "block".into(), Point3::ORIGIN, Point3::new(0.0, 0.0, 1e-3), None)?;
-    e.check().map_err(|err| p.error("resistance", err.to_string()))?;
-    Ok(e)
-}
-
-/// A block's S at `f` (Hz) as the chain sees it (its ports swapped when flipped) and its ports'
-/// references, or why it has none.
-fn two_port(data: &SData, z0: [f64; 2], flip: bool, name: &str, f: f64) -> Result<(TwoPort, [f64; 2])> {
-    let at = |p: usize, q: usize| interpolate(data, p, q, f);
-    let [Some(s11), Some(s12), Some(s21), Some(s22)] = [at(0, 0), at(0, 1), at(1, 0), at(1, 1)] else {
-        return Err(EngineError::failed(format!("`{}` has no S at {:.6} GHz: outside its band", crate::text::clip(name, 40), f / 1e9)));
-    };
-    Ok(if flip { (TwoPort { s11: s22, s12: s21, s21: s12, s22: s11 }, [z0[1], z0[0]]) } else { (TwoPort { s11, s12, s21, s22 }, z0) })
-}
-
-/// A block's noise at `f` (Hz), its chain matrix `a`, every part at `temperature` (K): a lumped
-/// element's resistance's thermal noise, none for a lossless line, an S block's noise data, or
-/// without it a passive network's (Twiss); why there is none otherwise.
-fn block_noise(block: &Block, a: [C; 4], f: f64, temperature: f64) -> std::result::Result<ChainNoise, String> {
-    match block {
-        Block::Element { element, shunt: true } => Ok(ChainNoise::shunt(element.admittance(f), temperature)),
-        Block::Element { element, shunt: false } => Ok(ChainNoise::series(ONE / element.admittance(f), temperature)),
-        Block::Line { loss, .. } if *loss == LineLoss::default() => Ok(ChainNoise::NONE),
-        Block::Line { z0, .. } => {
-            let s = s_of_chain(a, *z0).ok_or("a line with no S")?;
-            let s = TwoPort { s11: s[0], s12: s[1], s21: s[2], s22: s[3] };
-            ChainNoise::passive(&s, [*z0, *z0], a, temperature).ok_or_else(|| "a lossy line whose noise is not fixed by its S".to_string())
-        }
-        Block::Data { data, z0, flip, name, noise } => {
-            let name = crate::text::clip(name, 40);
-            if !noise.is_empty() {
-                if *flip {
-                    return Err(format!("`{name}` is flipped: its noise data is its port 1's"));
-                }
-                return noise_at(noise, f).ok_or_else(|| format!("`{name}` has no noise data at {:.6} GHz", f / 1e9));
-            }
-            let (s, z) = two_port(data, *z0, *flip, &name, f).map_err(|e| e.to_string())?;
-            ChainNoise::passive(&s, z, a, temperature)
-                .ok_or_else(|| format!("`{name}` gains and has no noise data (results.import a file with them)"))
-        }
-        // Its own noise an uncorrelated wave kT₀(F − 1) entering its input: F_min = F at
-        // Γ_opt = 0, and F = F_min + (F_min − 1)|Γs|²/(1 − |Γs|²) from another source, which is
-        // R_n = z₀(F − 1)/4 (Hillbrand and Russer's F(Γs) with Γ_opt = 0).
-        Block::Amplifier { figure, z0, .. } => {
-            Ok(ChainNoise::of(NoiseParameters { f_min: *figure, y_opt: C::new(1.0 / z0, 0.0), rn: z0 * (figure - 1.0) / 4.0 }))
-        }
-    }
-}
-
-/// The chain matrix [A, B, C, D] of a block at `f` (Hz).
-fn chain(block: &Block, f: f64) -> Result<[C; 4]> {
-    match block {
-        Block::Element { element, shunt } => {
-            let y = element.admittance(f);
-            if *shunt {
-                Ok([ONE, ZERO, y, ONE])
-            } else if y.norm() == 0.0 {
-                Err(EngineError::failed("a series element open at this frequency: nothing goes through"))
-            } else {
-                Ok([ONE, ONE / y, ZERO, ONE])
-            }
-        }
-        Block::Line { z0, length, eps_r, loss } => {
-            // γl = (α + jβ)l: A = D = cosh γl, B = Z₀ sinh γl, C = sinh γl / Z₀ (Pozar Table 4.1).
-            let beta = 2.0 * std::f64::consts::PI * f * eps_r.sqrt() / C0;
-            let gl = C::new(loss.alpha(f, *eps_r), beta) * length;
-            let (ch, sh) = (gl.cosh(), gl.sinh());
-            Ok([ch, sh * z0, sh / z0, ch])
-        }
-        Block::Amplifier { gain, z0, .. } => {
-            let t = Block::amplifier_s(*gain);
-            let m = [t.s11, t.s12, t.s21, t.s22];
-            SMatrix::from_fn(2, |i, j| m[2 * i + j]).chain([*z0, *z0]).ok_or_else(|| EngineError::failed("an amplifier of no gain passes nothing"))
-        }
-        Block::Data { data, z0, flip, name, .. } => {
-            let (t, z) = two_port(data, *z0, *flip, name, f)?;
-            let m = [t.s11, t.s12, t.s21, t.s22];
-            SMatrix::from_fn(2, |i, j| m[2 * i + j])
-                .chain(z)
-                .ok_or_else(|| EngineError::failed(format!("`{}` passes nothing (S21 = 0) at {:.6} GHz", crate::text::clip(name, 40), f / 1e9)))
-        }
-    }
-}
-
-/// The blocks a cascade's `blocks` lists, and the frequencies the first S block gives.
-fn blocks(s: &Session, p: &Params, z_default: f64) -> Result<(Vec<Block>, Option<Vec<f64>>)> {
+/// The blocks a cascade's `blocks` lists ([`crate::system::part`]'s settings each), and the
+/// frequencies the first S block gives.
+fn blocks(s: &Session, p: &Params, z0: f64) -> Result<(Vec<Block>, Option<Vec<f64>>)> {
     let items = p.items("blocks", "block", MAX_BLOCKS)?;
     if items.is_empty() {
         return Err(p.error("blocks", "at least one block"));
     }
-    let mut out = Vec::new();
-    let mut freqs = None;
-    for b in &items {
-        let kind = b.string("type").required()?;
-        let block = match kind {
-            "series" | "shunt" => Block::Element { element: element(b)?, shunt: kind == "shunt" },
-            "line" => {
-                let z0 = b.positive("impedance").or(50.0)?;
-                let length = b.positive_length("length").required()?;
-                let eps_r = b.positive("eps_r").or(1.0)?;
-                let conductor = b.number("attenuation").or(0.0)?;
-                if !(conductor.is_finite() && (0.0..=MAX_ATTENUATION).contains(&conductor)) {
-                    return Err(b.error("attenuation", format!("from 0 to {MAX_ATTENUATION} dB per length unit")));
-                }
-                let tan_delta = b.number("tan_delta").or(0.0)?;
-                if !(tan_delta.is_finite() && (0.0..=1.0).contains(&tan_delta)) {
-                    return Err(b.error("tan_delta", "from 0 to 1"));
-                }
-                let reference = b.frequency("at").optional()?;
-                if reference.is_some_and(|r| !(r > 0.0)) {
-                    return Err(b.error("at", "a positive frequency"));
-                }
-                // dB per display length to Np/m: the display lengths in a metre.
-                let loss = LineLoss { conductor: conductor * NP_PER_DB * s.show_length(1.0), reference, tan_delta };
-                Block::Line { z0, length, eps_r, loss }
-            }
-            "data" => {
-                let src = source(s, b)?;
-                if src.data.outputs() != 2 || src.data.inputs().len() != 2 {
-                    return Err(b.error("data", format!("a two-port with both ports excited; this has {} ports", src.data.outputs())));
-                }
-                let z = |k: usize| src.references[k].unwrap_or(z_default);
-                freqs.get_or_insert_with(|| src.data.frequencies().to_vec());
-                let name = b.string("data").optional()?.unwrap_or("sweep").to_string();
-                Block::Data { z0: [z(0), z(1)], flip: b.flag("flip").or(false)?, data: src.data, name, noise: src.noise }
-            }
-            "amplifier" => {
-                let gain = b.number("gain").required()?;
-                if !(gain.is_finite() && gain.abs() <= MAX_GAIN_DB) {
-                    return Err(b.error("gain", format!("from −{MAX_GAIN_DB} to {MAX_GAIN_DB} dB")));
-                }
-                let figure = b.number("noise_figure").or(0.0)?;
-                if !(figure.is_finite() && (0.0..=MAX_FIGURE_DB).contains(&figure)) {
-                    return Err(b.error("noise_figure", format!("from 0 to {MAX_FIGURE_DB} dB")));
-                }
-                Block::Amplifier { gain: 10f64.powf(gain / 20.0), figure: 10f64.powf(figure / 10.0), z0: z_default }
-            }
-            other => {
-                return Err(
-                    b.error("type", format!("`{}` is not a block: `data`, `series`, `shunt`, `line` or `amplifier`", crate::text::clip(other, 20)))
-                );
-            }
-        };
-        out.push(block);
-    }
-    Ok((out, freqs))
-}
-
-/// S on `z0` at both ports from a chain matrix (Pozar Table 4.2).
-fn s_of_chain([a, b, c, d]: [C; 4], z0: f64) -> Option<[C; 4]> {
-    let delta = a + b / z0 + c * z0 + d;
-    if delta.norm() == 0.0 {
-        return None;
-    }
-    let det = a * d - b * c;
-    Some([(a + b / z0 - c * z0 - d) / delta, 2.0 * det / delta, 2.0 / delta, (-a + b / z0 - c * z0 + d) / delta])
-}
-
-/// 2 × 2 chain matrices multiplied.
-fn times(x: [C; 4], y: [C; 4]) -> [C; 4] {
-    [x[0] * y[0] + x[1] * y[2], x[0] * y[1] + x[1] * y[3], x[2] * y[0] + x[3] * y[2], x[2] * y[1] + x[3] * y[3]]
+    let list = items.iter().map(|b| Block::of(s, &crate::system::part(s, b)?, z0)).collect::<Result<Vec<_>>>()?;
+    let freqs = list.iter().find_map(Block::frequencies).map(<[f64]>::to_vec);
+    Ok((list, freqs))
 }
 
 /// `circuit.cascade`: the two-ports of `blocks` in a chain, port 2 of each to port 1 of the
@@ -253,7 +42,7 @@ pub fn cascade(s: &mut Session, p: &Params) -> Result<Value> {
         Some(f) => f,
         None => {
             let (a, b) = (p.frequency("start").required()?, p.frequency("stop").required()?);
-            let n = p.integer("points", 2..=MAX_POINTS).or(201)?;
+            let n = p.integer("points", 2..=crate::system::MAX_POINTS).or(201)?;
             if !(a > 0.0 && b > a) {
                 return Err(p.error("stop", "above `start`, both positive"));
             }
@@ -268,17 +57,12 @@ pub fn cascade(s: &mut Session, p: &Params) -> Result<Value> {
     let mut noise: Vec<NoisePoint> = Vec::new();
     let mut why: Option<String> = None;
     for f in &freqs {
-        let mut m = [ONE, ZERO, ZERO, ONE];
-        // The chain's noise so far, or why it has none here.
-        let mut n: std::result::Result<ChainNoise, String> = Ok(ChainNoise::NONE);
-        for b in &list {
-            let a = chain(b, *f)?;
-            n = n.and_then(|n| Ok(n.then(m, block_noise(b, a, *f, temperature)?)));
-            m = times(m, a);
-        }
-        let [s11, s12, s21, s22] = s_of_chain(m, z0).ok_or_else(|| EngineError::failed("the chain has no S on this impedance"))?;
+        let Some(last) = crate::system::walk(&list, *f, temperature)?.pop() else {
+            return Err(p.error("blocks", "at least one block"));
+        };
+        let [s11, s12, s21, s22] = s_of_chain(last.chain, z0).ok_or_else(|| EngineError::failed("the chain has no S on this impedance"))?;
         values.extend([s11, s12, s21, s22]);
-        match n {
+        match last.noise {
             Ok(n) => noise.push(NoisePoint { frequency: *f, noise: n }),
             Err(e) => {
                 why.get_or_insert(e);
@@ -529,17 +313,5 @@ mod tests {
         let l: Vec<C> = w.iter().map(|x| C::new(0.0, x * 3e-9)).collect();
         let f = fit_branch(&w, &l, false, 50.0).unwrap();
         assert!(f.c.is_none() && (f.l.unwrap() - 3e-9).abs() < 1e-18);
-    }
-
-    #[test]
-    fn a_matched_lines_chain_matrix_is_its_own() {
-        // λ/4 line: A = D = 0, B = jZ₀, C = j/Z₀; two make S21 = −1 (Pozar, Microwave Engineering,
-        // 4th ed., §4.4, Tables 4.1–4.2).
-        // λ/4 at 1 GHz in vacuum: A = D = 0, B = j Z₀, C = j/Z₀.
-        let m = chain(&Block::Line { z0: 50.0, length: C0 / 4e9, eps_r: 1.0, loss: LineLoss::default() }, 1e9).unwrap();
-        assert!(m[0].norm() < 1e-12 && (m[1] - C::new(0.0, 50.0)).norm() < 1e-9);
-        // Two in a row: a half wave, S21 = −1.
-        let s = s_of_chain(times(m, m), 50.0).unwrap();
-        assert!((s[2] + ONE).norm() < 1e-12 && s[0].norm() < 1e-12);
     }
 }

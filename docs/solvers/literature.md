@@ -375,6 +375,13 @@ overlap tests).
   and measurement*, IEEE Trans. MTT 40(11):2004–2012, 1992 (noise waves b = Sa + c) give
   `circuit.cascade`'s noise figure of a chain with an amplifier's noise data
   (`emcraft-engine::noise::ChainNoise`).
+- D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §10.3 — the noise figure of a
+  cascade (Friis), and the third-order intercept point of a cascade, input-referred
+  1/IIP3 = Σ G_before/IIP3_k (passive stages none); §12.1 — the available gain from a
+  mismatched source. A system's budget stage by stage (`emcraft-engine::system`,
+  `solve.system`; docs/system.md), its noise read from the chain correlation matrices above
+  rather than Friis' closed form (which the tests check it against), so mismatched stages and
+  measured S between them count.
 - D. M. Pozar, *The active element pattern*, IEEE Trans. Antennas Propag. 42(8):1176–1178, 1994;
   R. C. Hansen, *Phased Array Antennas*, 2nd ed., Wiley 2009, §7.2 — the active reflection of a
   scanned array's element, Γ_m = Σ_n S_mn a_n / a_m with the steering phases a_n = e^{−jk₀ û·r_n}

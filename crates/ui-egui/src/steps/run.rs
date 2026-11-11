@@ -53,9 +53,18 @@ pub fn setup_params(s: &emcraft_engine::Session, f: &mut Fields) -> Result<Value
             put("order", take("order", whole(&f.order.clone(), 2), f));
         }
         Solver::Pcb => return Err(tr(t!("the PCB diagnosis has no run settings")).into()),
+        Solver::System => {
+            put("start", take("start", number(&f.start.clone()), f));
+            put("stop", take("stop", number(&f.stop.clone()), f));
+            put("points", take("points", whole(&f.points.clone(), limit), f));
+            // The budget's frequency: the band's centre when left empty.
+            if !f.frequency.trim().is_empty() {
+                put("frequency", take("frequency", number(&f.frequency.clone()), f));
+            }
+        }
     }
     if let (Ok(a), Ok(z)) = (positive(&f.start), positive(&f.stop))
-        && matches!(solver, Solver::Frequency | Solver::TimeDomain)
+        && matches!(solver, Solver::Frequency | Solver::TimeDomain | Solver::System)
         && z < a
     {
         let e = tr(t!("must not be below the start")).to_owned();

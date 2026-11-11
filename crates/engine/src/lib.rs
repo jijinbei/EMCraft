@@ -67,6 +67,7 @@ mod solve;
 mod store;
 pub mod study;
 mod symmetry;
+pub mod system;
 pub mod tdr;
 pub mod text;
 pub mod theme;

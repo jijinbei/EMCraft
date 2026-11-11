@@ -8,7 +8,8 @@
 //! - `tdr`: time-domain reflectometry;
 //! - `dispersion`: a periodic cell's dispersion diagram;
 //! - `pattern`: an open problem's far-field pattern;
-//! - `study`: a parameter study's sweep or optimization.
+//! - `study`: a parameter study's sweep or optimization;
+//! - `system`: a system's budget along its chain and over the band.
 //!
 //! The `view.*` commands that write them as PNGs are in `commands`; what the charts share
 //! (axes, the dB scale) in `chart`.
@@ -24,6 +25,7 @@ pub mod pulse;
 mod reference;
 mod sparameters;
 pub(crate) mod study;
+mod system;
 mod tdr;
 
 pub use commands::field_view;
@@ -37,4 +39,5 @@ pub use sparameters::{
     FULL_SOLVES, SDisplay, compare_pens, sparameter_chart, sparameter_chart_as, sparameter_chart_compared, sparameter_chart_with, sparameter_pen,
 };
 pub use study::{chart_with_units, goal_unit, variable_unit, variable_units};
+pub use system::{SystemChart, system_chart};
 pub use tdr::tdr_chart;

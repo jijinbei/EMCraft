@@ -63,6 +63,14 @@ pub enum Setup {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         excite: Vec<String>,
     },
+    /// A system's chain at `points` frequencies over `band`, its budget stage by stage at
+    /// `frequency` (none: the band's centre).
+    System {
+        band: Band,
+        points: NonZeroUsize,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        frequency: Option<Hertz>,
+    },
 }
 
 impl Setup {
@@ -73,6 +81,7 @@ impl Setup {
             Setup::Eigenmodes { .. } => Analysis::Eigenmodes,
             Setup::Radiation { .. } => Analysis::Radiation,
             Setup::TimeDomain { .. } => Analysis::TimeDomain,
+            Setup::System { .. } => Analysis::System,
         }
     }
 
@@ -90,7 +99,7 @@ impl Setup {
     /// ```
     pub fn range(&self) -> Band {
         match self {
-            Setup::Frequency { band, .. } | Setup::TimeDomain { band, .. } => *band,
+            Setup::Frequency { band, .. } | Setup::TimeDomain { band, .. } | Setup::System { band, .. } => *band,
             Setup::Eigenmodes { near: f, .. } | Setup::Radiation { frequency: f, .. } => Band { start: *f, stop: *f },
         }
     }

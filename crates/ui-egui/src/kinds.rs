@@ -54,6 +54,12 @@ pub fn kind_card(kind: Solver) -> KindCard {
             t!("A pulse sent through, and what comes back in time"),
             t!("A pulse over the band: S-parameters by finite integration (solve.time_domain)"),
         ),
+        Solver::System => (
+            Glyph::Table,
+            t!("System budget"),
+            t!("Gain, noise and sensitivity along a receiver chain"),
+            t!("An antenna, amplifiers, filters and lines in a chain: its budget stage by stage, no field solved (solve.system)"),
+        ),
     };
     KindCard { glyph, name, plain, detail }
 }
@@ -114,6 +120,7 @@ pub fn colours(kind: Solver) -> [egui::Color32; 2] {
         Solver::Radiation => t.kind_radiation,
         Solver::TimeDomain => t.kind_time_domain,
         Solver::Pcb => [t.success, t.panel],
+        Solver::System => [t.accent, t.panel],
     }
 }
 
@@ -132,6 +139,7 @@ pub fn picture(p: &egui::Painter, r: Rect, kind: Solver) {
         Solver::Radiation => pic.antenna(p),
         Solver::TimeDomain => pic.pulse(p),
         Solver::Pcb => pic.pcb(p),
+        Solver::System => pic.chain(p),
     }
 }
 
@@ -157,6 +165,38 @@ impl Pic {
             p.circle_filled(self.at(x, 0.42), 3., self.edge);
         }
     }
+    /// An antenna feeding three blocks in a row (an amplifier, a filter, a receiver), the
+    /// signal's arrows between them and a gain's steps rising under them.
+    fn chain(&self, p: &egui::Painter) {
+        let mid = 0.4;
+        // The antenna: a mast and a V.
+        p.line_segment([self.at(0.07, mid), self.at(0.07, 0.15)], Stroke::new(2., self.edge));
+        p.line_segment([self.at(0.07, 0.3), self.at(0.02, 0.12)], Stroke::new(2., self.edge));
+        p.line_segment([self.at(0.07, 0.3), self.at(0.12, 0.12)], Stroke::new(2., self.edge));
+        let mut x = 0.07;
+        for (k, x0) in [0.18, 0.46, 0.74].into_iter().enumerate() {
+            let arrow = Stroke::new(1.5, self.ink);
+            p.line_segment([self.at(x, mid), self.at(x0, mid)], arrow);
+            p.line_segment([self.at(x0, mid), self.at(x0 - 0.03, mid - 0.06)], arrow);
+            p.line_segment([self.at(x0, mid), self.at(x0 - 0.03, mid + 0.06)], arrow);
+            let r = Rect::from_min_max(self.at(x0, mid - 0.18), self.at(x0 + 0.2, mid + 0.18));
+            p.rect(r, 3., self.ink.gamma_multiply(0.2), Stroke::new(1.5, self.ink), egui::StrokeKind::Inside);
+            if k == 0 {
+                // The amplifier's triangle.
+                p.add(egui::Shape::convex_polygon(
+                    vec![self.at(x0 + 0.05, mid - 0.1), self.at(x0 + 0.15, mid), self.at(x0 + 0.05, mid + 0.1)],
+                    self.ink,
+                    Stroke::NONE,
+                ));
+            }
+            x = x0 + 0.2;
+        }
+        // The gain along the chain: a step up, a small step down, a step up.
+        let steps = [(0.07, 0.95), (0.18, 0.95), (0.18, 0.75), (0.46, 0.75), (0.46, 0.8), (0.74, 0.8), (0.74, 0.62), (0.94, 0.62)];
+        let pts: Vec<Pos2> = steps.iter().map(|(x, y)| self.at(*x, *y)).collect();
+        p.add(egui::Shape::line(pts, Stroke::new(1.5, self.edge)));
+    }
+
     fn at(&self, x: f32, y: f32) -> Pos2 {
         pos2(self.r.left() + x * self.r.width(), self.r.top() + y * self.r.height())
     }

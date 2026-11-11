@@ -27,6 +27,7 @@ mod model;
 mod pulse;
 mod sparameters;
 mod study;
+mod system;
 mod tables;
 mod tdr;
 
@@ -134,6 +135,7 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
                 View::Study => show_chart::<StudyView>(app, st, ui, out),
                 View::Dispersion => show_chart::<Dispersion>(app, st, ui, out),
                 View::Analyses => show_chart::<analyses::Analyses>(app, st, ui, out),
+                View::System => show_chart::<system::SystemView>(app, st, ui, out),
             };
             // The 3D views fill the card; Home scrolls down; the results both ways.
             match app.place.view() {
@@ -158,7 +160,7 @@ pub(super) fn view_tabs(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) 
             v => v == app.place.view() || v.available(app),
         };
         let any = View::ALL.into_iter().any(result);
-        for v in View::ALL.into_iter().filter(|v| if *v == View::Model { any } else { result(*v) }) {
+        for v in View::ALL.into_iter().filter(|v| if *v == View::Model { any && v.available(app) } else { result(*v) }) {
             let tab = crate::ui_kit::glyph_tab(v.glyph(), shown(v).to_owned(), app.place.view() == v, crate::theme::Emphasis::Primary);
             ui.act(true, tab, Handle::View(v), Action::ShowView(v), out);
         }

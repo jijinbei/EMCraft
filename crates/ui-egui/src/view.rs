@@ -27,6 +27,8 @@ emcraft_macros::named_enum! {
         Dispersion = "dispersion" => "Dispersion",
         /// The analyses read from a sweep: material, noise, active reflection, power, temperature.
         Analyses = "analyses" => "Analyses",
+        /// A system's chain, its block diagram and budget.
+        System = "system" => "System",
     }
 }
 emcraft_macros::named_serde!(View);
@@ -109,6 +111,7 @@ impl View {
             View::Eigenmodes => Glyph::Eigen,
             View::Study => Glyph::ParamSweep,
             View::Dispersion => Glyph::Dispersion,
+            View::System => Glyph::Table,
         }
     }
 
@@ -130,7 +133,7 @@ impl View {
             View::Eigenmodes => Some(t!("No eigenmodes yet: Run (step 6).")),
             View::Study => Some(t!("No study yet: define a variable, then Sweep or Optimize (step 5).")),
             View::Dispersion => Some(t!("No dispersion diagram yet: periodic boundaries (step 4), then Dispersion (step 5).")),
-            View::Analyses => None,
+            View::Analyses | View::System => None,
         }
     }
 
@@ -155,6 +158,7 @@ impl View {
             R::Dispersion => View::Dispersion,
             R::Study => View::Study,
             R::Bloch => View::Pulse,
+            R::System => View::System,
         }
     }
 
@@ -162,7 +166,7 @@ impl View {
     pub fn available(self, app: &EmcraftApp) -> bool {
         let r = app.session.results();
         match self {
-            View::Model => app.session.model().analysis() != crate::steps::Solver::Pcb,
+            View::Model => !matches!(app.session.model().analysis(), crate::steps::Solver::Pcb | crate::steps::Solver::System),
             // The PCB diagnosis' own stages; a board solved by finite elements is the model's.
             View::Pcb => app.session.model().analysis() == crate::steps::Solver::Pcb,
             // A project just opened: its kept sweeps, drawn from the history.
@@ -183,6 +187,7 @@ impl View {
             View::Study => r.study.is_some(),
             View::Dispersion => r.dispersion.is_some(),
             View::Analyses => r.sweep.is_some() || app.replies.analysis.is_some(),
+            View::System => app.session.model().analysis() == crate::steps::Solver::System || r.system.is_some(),
         }
     }
 
@@ -210,6 +215,6 @@ mod tests {
         }
         assert_eq!(View::Tdr.label(), "TDR");
         assert_eq!(View::PortModes.id(), "port_modes");
-        assert_eq!(View::COUNT, 13);
+        assert_eq!(View::COUNT, 14);
     }
 }

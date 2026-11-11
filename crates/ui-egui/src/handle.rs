@@ -163,6 +163,7 @@ emcraft_macros::named_enum! {
         ChartPattern = "chart:pattern",
         ChartStudy = "chart:study",
         ChartAnalyses = "chart:analyses",
+        ChartSystem = "chart:system",
         PictureField = "picture:field",
         FieldPlotZoom = "field:plot:zoom",
         FieldPlotWidth = "field:plot:width",
@@ -371,6 +372,13 @@ pub enum Handle<'a> {
     PulseShow(&'a str),
     /// The Analyses view's button for an analysis (its command): `analysis:results.noise`.
     Analysis(&'a str),
+    /// A system's stage in its block diagram, by name: `system:stage:LNA`.
+    SystemStage(&'a str),
+    /// The system view's buttons: a stage's kind to add, `source`, `receiver`, `solve`:
+    /// `system:add:amplifier`.
+    SystemAdd(&'a str),
+    /// What the system's chart shows: `system:chart:along`.
+    SystemChart(&'a str),
     /// Which of a cell's Bloch waves the pulse goes through (from 1): `pulse:wave:2`.
     PulseWave(usize),
     /// What the S-parameter chart shows: `sparameters:show:phase`.
@@ -478,6 +486,9 @@ impl fmt::Display for Handle<'_> {
             Handle::PulseWave(k) => write!(f, "pulse:wave:{k}"),
             Handle::PulseShow(s) => write!(f, "pulse:show:{s}"),
             Handle::Analysis(c) => write!(f, "analysis:{c}"),
+            Handle::SystemStage(n) => write!(f, "system:stage:{n}"),
+            Handle::SystemAdd(k) => write!(f, "system:add:{k}"),
+            Handle::SystemChart(c) => write!(f, "system:chart:{c}"),
             Handle::SParameters(what) => write!(f, "sparameters:show:{what}"),
             Handle::StyleAxis(axis, part) => write!(f, "chart:style:{axis}:{part}"),
             Handle::Legend(at) => write!(f, "chart:legend:{at}"),

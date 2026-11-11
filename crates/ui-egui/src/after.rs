@@ -15,6 +15,10 @@ pub(crate) fn results_view(session: &emcraft_engine::Session) -> View {
     if session.views().pulse.is_some() && results.bloch.is_some() {
         return View::Pulse;
     }
+    // A system's own view holds its chain as well as its budget.
+    if session.model().analysis() == emcraft_model::Analysis::System {
+        return View::System;
+    }
     let chosen = emcraft_engine::workflow::spec(session.model().analysis()).results.iter().copied().find(|k| results.has(*k));
     chosen.or_else(|| results.kinds().find(|k| k.of_the_model())).map_or(View::Model, View::of)
 }
@@ -96,8 +100,12 @@ impl EmcraftApp {
                 self.views.tdr.params = crate::state::TdrParams::of(params);
                 self.place = self.place.show(View::Tdr);
             }
-            // A measurement drawn over the S-parameter chart.
+            // A measurement drawn over the S-parameter chart (a system's: its S-parameter stages).
+            "results.import" | "results.import.delete" if self.session.model().analysis() == crate::steps::Solver::System => {
+                self.place = self.place.show(View::System);
+            }
             "results.import" | "results.import.delete" | "results.equivalent" | "circuit.cascade" => self.place = self.place.show(View::SParameters),
+            id if id.starts_with("system.") => self.place = self.place.show(View::System),
             "filter.synthesize" | "results.coupling" => {
                 self.replies.coupling = Some(reply.clone());
                 self.place = self.place.show(View::SParameters);
@@ -122,8 +130,14 @@ impl EmcraftApp {
                 }
             }
             "project.analysis" => {
-                // Away from the PCB diagnosis its stages go; the board is the model's.
+                // Away from the PCB diagnosis its stages go; the board is the model's. A
+                // system's chain is its own view's; away from it, the model's.
                 if self.place.view() == View::Pcb && !View::Pcb.available(self) {
+                    self.place = self.place.show(View::Model);
+                }
+                if self.session.model().analysis() == crate::steps::Solver::System {
+                    self.place = self.place.show(View::System);
+                } else if self.place.view() == View::System && !View::System.available(self) {
                     self.place = self.place.show(View::Model);
                 }
             }

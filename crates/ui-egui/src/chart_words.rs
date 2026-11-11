@@ -9,6 +9,13 @@ use emcraft_render::chart::Chart;
 /// The charts' texts, the most specific first: a template is tried before those with fewer
 /// words.
 pub const TEMPLATES: &[&str] = &[
+    t!("System budget at {f} {unit}").en(),
+    t!("System budget").en(),
+    t!("noise figure (dB)").en(),
+    t!("gain (dB)").en(),
+    t!("stage").en(),
+    t!("budget").en(),
+    t!("gain").en(),
     t!("S-parameters").en(),
     t!("Dispersion along {axis}").en(),
     t!("frequency ({unit})").en(),

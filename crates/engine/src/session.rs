@@ -136,6 +136,8 @@ pub struct Results {
     pub revolution: Option<Arc<Revolution>>,
     /// A periodic guide's Bloch waves from one cell.
     pub bloch: Option<Arc<Bloch>>,
+    /// A system's chain and its budget from `solve.system`.
+    pub system: Option<Arc<crate::system::SystemResult>>,
     /// The kinds held that are stale: the model changed after they were solved (without
     /// making them wrong, which drops them). Only kinds held; each solve makes its own fresh.
     stale: std::collections::BTreeSet<ResultKind>,
@@ -152,6 +154,9 @@ pub enum Change {
     Ports,
     /// The open boundary, a source or a lumped port: the open problem's results.
     Open,
+    /// A system's chain, source or receiver: no result solved from it is wrong, its own budget
+    /// stale (read again in a moment).
+    System,
 }
 
 emcraft_macros::named_enum! {
@@ -168,6 +173,7 @@ emcraft_macros::named_enum! {
         Study = "study",
         Revolution = "revolution",
         Bloch = "bloch",
+        System = "system",
     }
 }
 
@@ -185,10 +191,11 @@ impl ResultKind {
     pub const fn dropped_by(self, change: Change) -> bool {
         use ResultKind::*;
         match change {
-            Change::Geometry => !matches!(self, Study),
+            Change::Geometry => !matches!(self, Study | System),
             Change::Walls => matches!(self, Sweep | Eigen | Revolution | Bloch),
             Change::Ports => matches!(self, Sweep | TimeDomain | Revolution | Bloch),
             Change::Open => matches!(self, Radiation | TdRadiation),
+            Change::System => false,
         }
     }
 
@@ -208,6 +215,7 @@ impl ResultKind {
             ResultKind::Study => "study.sweep",
             ResultKind::Revolution => "solve.revolution.frequency",
             ResultKind::Bloch => "solve.bloch",
+            ResultKind::System => "solve.system",
         }
     }
 }
@@ -225,6 +233,7 @@ impl Results {
             ResultKind::Study => self.study.is_some(),
             ResultKind::Revolution => self.revolution.is_some(),
             ResultKind::Bloch => self.bloch.is_some(),
+            ResultKind::System => self.system.is_some(),
         }
     }
 
@@ -275,6 +284,7 @@ impl Results {
                 ResultKind::Study => same(self.study.as_ref(), before.study.as_ref()),
                 ResultKind::Revolution => same(self.revolution.as_ref(), before.revolution.as_ref()),
                 ResultKind::Bloch => same(self.bloch.as_ref(), before.bloch.as_ref()),
+                ResultKind::System => same(self.system.as_ref(), before.system.as_ref()),
             };
             if !unchanged {
                 self.stale.remove(&kind);
@@ -295,6 +305,7 @@ impl Results {
             ResultKind::Study => self.study = None,
             ResultKind::Revolution => self.revolution = None,
             ResultKind::Bloch => self.bloch = None,
+            ResultKind::System => self.system = None,
         }
     }
 
@@ -747,6 +758,10 @@ impl Session {
             "results": self.results.sweep.as_ref().map(|s| json!({"order": s.order.as_u8(), "unknowns": s.driven.dofs.unknowns, "frequencies": s.results.len()})),
             "eigenmodes": self.results.eigen.as_ref().map(|e| e.modes.len()),
         });
+        if !self.model.system.is_empty() || self.results.system.is_some() {
+            let nf = self.results.system.as_ref().and_then(|r| r.nearest(r.at)).and_then(|p| p.rows.last()).and_then(|x| x.nf_db);
+            summary["system"] = json!({"stages": self.model.system.stages.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), "nf_db": nf});
+        }
         if !self.model.elements.is_empty() {
             summary["elements"] = crate::elements::summary(self);
         }

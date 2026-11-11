@@ -169,17 +169,17 @@ Navigates the PCB workflow (board, net, settings, inspect, results) or selects a
 
 ## `project.setup` — Confirm the run's settings
 
-Confirms the run's settings for the job's kind of analysis (or `kind`), as the Setup step shows them: a sweep's band (`start`, `stop`), `points` and element `order`; the time domain's band, `points`, `cell` and the ports to `excite`; the eigenmodes' `count` near `frequency` and `order`; a radiation solve's `frequency` and `order`. The job is then ready: the Setup step is done and Run (solve.run) runs them. Choosing another kind (project.analysis) takes them back. The band also sets meshing by wavelength (its top) and the port previews. Undo goes back.
+Confirms the run's settings for the job's kind of analysis (or `kind`), as the Setup step shows them: a sweep's band (`start`, `stop`), `points` and element `order`; the time domain's band, `points`, `cell` and the ports to `excite`; the eigenmodes' `count` near `frequency` and `order`; a radiation solve's `frequency` and `order`; a system's band, `points` and the `frequency` its budget is shown at. The job is then ready: the Setup step is done and Run (solve.run) runs them. Choosing another kind (project.analysis) takes them back. The band also sets meshing by wavelength (its top) and the port previews. Undo goes back.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `kind` | string |  | no | the kind of analysis (default the job's): `frequency`, `eigenmodes`, `radiation` or `time_domain`; choosing it as project.analysis does |
-| `start` | number | frequency | no | the band's start (a sweep, the time domain) |
-| `stop` | number | frequency | no | the band's stop (a sweep, the time domain) |
+| `kind` | string |  | no | the kind of analysis (default the job's): `frequency`, `eigenmodes`, `radiation`, `time_domain` or `system`; choosing it as project.analysis does |
+| `start` | number | frequency | no | the band's start (a sweep, the time domain, a system) |
+| `stop` | number | frequency | no | the band's stop (a sweep, the time domain, a system) |
 | `points` | integer |  | no | the frequency points (default 101) |
 | `order` | integer |  | no | element order, 1 or 2 (default 2) |
 | `count` | integer |  | no | the eigenmodes to find, 1 to 50 (default 5) |
-| `frequency` | number | frequency | no | the eigenmodes' search frequency (near) or the radiation solve's |
+| `frequency` | number | frequency | no | the eigenmodes' search frequency (near), the radiation solve's, or a system's budget's (default the band's centre) |
 | `cell` | number | length | no | the time domain's cell size (default 1 mm) |
 | `excite` | array |  | no | the time domain's ports to excite, by name (default the first) |
 
@@ -331,7 +331,7 @@ Lumped branches fitted to the sweep's (or a measurement's) network (Pozar, Micro
 
 ## `circuit.cascade` — Cascade
 
-Two-ports in a chain, port 2 of each to port 1 of the next, by their chain (ABCD) matrices (Pozar, Microwave Engineering, §4.4): `{"type": "data", "data": "sweep"}` (the sweep or a measurement, `flip` swapping its ports), `{"type": "series" | "shunt", "resistance", "inductance", "capacitance", "arrangement"}` (Ω, nH, pF, `series` or `parallel`, as model.element.create's), `{"type": "line", "impedance", "length", "eps_r", "attenuation", "at", "tan_delta"}` (Ω, the display length; lossless unless `attenuation` — a conductor's, dB per display length, growing as √(f/`at`) from frequency `at` when given — or `tan_delta`, a dielectric's, π f √εr tan δ / c with εr the line's effective one), `{"type": "amplifier", "gain", "noise_figure"}` (dB: an ideal amplifier, matched and unilateral on `impedance`, its noise figure from a matched source, an uncorrelated noise wave kT₀(F − 1) at its input: Γ_opt = 0, R_n = Z₀(F − 1)/4). Its noise is chained too, by Hillbrand and Russer's chain correlation matrices (IEEE Trans. CAS-23(4), 1976): a measurement's noise data (an amplifier's), a passive S block's by Twiss's equilibrium kT(I − SSᴴ) (the sweep's, or a measurement without noise data; one that gains has no noise then, and says why), a lumped element's resistance's thermal noise, a lossy line's from its loss, all at `temperature`, a lossless line none; the reply's `noise` gives the chain's least and greatest noise figure from a source of `impedance` (results.noise on the kept result gives it at every frequency): from `source`, a one-port measurement's impedance (an antenna's terminals from solve.radiation_sweep, a .s1p), when given; with `bandwidth`, the receiver's sensitivity too (results.noise's budget). Its S on `impedance` at each frequency of its first S block (the others interpolated linearly; an error outside their bands), or from `start` to `stop` in `points` without one, kept as a measurement named `name` and drawn over the chart.
+Two-ports in a chain, port 2 of each to port 1 of the next, by their chain (ABCD) matrices (Pozar, Microwave Engineering, §4.4): `{"type": "data", "data": "sweep"}` (the sweep or a measurement, `flip` swapping its ports), `{"type": "series" | "shunt", "resistance", "inductance", "capacitance", "arrangement"}` (Ω, nH, pF, `series` or `parallel`, as model.element.create's), `{"type": "line", "impedance", "length", "eps_r", "attenuation", "at", "tan_delta"}` (Ω, the display length; lossless unless `attenuation` — a conductor's, dB per display length, growing as √(f/`at`) from frequency `at` when given — or `tan_delta`, a dielectric's, π f √εr tan δ / c with εr the line's effective one), `{"type": "amplifier", "gain", "noise_figure"}` (dB: an ideal amplifier, matched and unilateral on `impedance`, its noise figure from a matched source, an uncorrelated noise wave kT₀(F − 1) at its input: Γ_opt = 0, R_n = Z₀(F − 1)/4), `{"type": "attenuator", "loss"}` (dB, matched) — system.stage.add's stages. Its noise is chained too, by Hillbrand and Russer's chain correlation matrices (IEEE Trans. CAS-23(4), 1976): a measurement's noise data (an amplifier's), a passive S block's by Twiss's equilibrium kT(I − SSᴴ) (the sweep's, or a measurement without noise data; one that gains has no noise then, and says why), a lumped element's resistance's thermal noise, a lossy line's from its loss, all at `temperature`, a lossless line none; the reply's `noise` gives the chain's least and greatest noise figure from a source of `impedance` (results.noise on the kept result gives it at every frequency): from `source`, a one-port measurement's impedance (an antenna's terminals from solve.radiation_sweep, a .s1p), when given; with `bandwidth`, the receiver's sensitivity too (results.noise's budget). Its S on `impedance` at each frequency of its first S block (the others interpolated linearly; an error outside their bands), or from `start` to `stop` in `points` without one, kept as a measurement named `name` and drawn over the chart.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -346,6 +346,109 @@ Two-ports in a chain, port 2 of each to port 1 of the next, by their chain (ABCD
 | `bandwidth` | number | frequency | no | the receiver's noise bandwidth: gives the system noise temperature, noise power and sensitivity |
 | `antenna_temperature` | number |  | no | the antenna's noise temperature in K, with `bandwidth` (default 290) |
 | `snr` | number |  | no | the signal-to-noise ratio in dB the receiver needs, with `bandwidth` (default 0) |
+
+## `system.stage.add` — Add stage
+
+Adds a stage to the system's chain, from the source on (Analysis `system`, docs/system.md): `amplifier` (an ideal one, matched and unilateral on the chain's impedance: `gain` and `noise_figure` in dB from a matched source, its noise an uncorrelated wave kT₀(F − 1) at its input; `oip3` and `p1db`, its output intercept and compression points in dBm, for the cascade's linearity), `attenuator` (`loss` dB, matched, its noise at the chain's temperature), `data` (a two-port's S: the sweep or a measurement, results.import's Touchstone file; its noise data if it has some, else a passive network's), `line` (Ω, length, εr, conductor `attenuation` in dB per length growing as √(f/`at`), dielectric `tan_delta`), `series` or `shunt` (R, L, C in Ω, nH and pF). Its name is unique in the chain; at most 32 stages. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `type` | string |  | yes | the stage's kind |
+| `name` | string |  | no | the stage's name, unique in the chain (default its kind and a number) |
+| `position` | integer |  | no | its place from the source, from 1 (default the end) |
+| `gain` | number |  | no | an amplifier's gain in dB |
+| `noise_figure` | number |  | no | an amplifier's noise figure in dB from a matched source (default 0) |
+| `oip3` | number |  | no | an amplifier's output third-order intercept point in dBm |
+| `p1db` | number |  | no | an amplifier's output 1 dB compression point in dBm |
+| `loss` | number |  | no | an attenuator's loss in dB |
+| `data` | string |  | no | a data stage's S: `sweep` (default) or a measurement's name |
+| `flip` | boolean |  | no | a data stage's ports swapped |
+| `impedance` | number |  | no | a line's impedance in Ω (default 50) |
+| `length` | number | length | no | a line's length |
+| `eps_r` | number |  | no | a line's effective relative permittivity (default 1) |
+| `attenuation` | number |  | no | a line's conductor attenuation in dB per length unit (default 0) |
+| `at` | number | frequency | no | the frequency `attenuation` is given at: it grows as √(f/`at`) (default constant) |
+| `tan_delta` | number |  | no | a line's dielectric loss tangent (default 0) |
+| `resistance` | number |  | no | a series or shunt element's R in ohms |
+| `inductance` | number |  | no | a series or shunt element's L in nanohenries |
+| `capacitance` | number |  | no | a series or shunt element's C in picofarads |
+| `arrangement` | string |  | no | a series or shunt element's parts: `series` (default) or `parallel` |
+
+## `system.stage.edit` — Edit stage
+
+Changes a stage of the system's chain: the settings given replace its own (the rest kept), `rename` names it anew, `type` makes it another kind (its settings then given). Checked as a new stage would be. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `stage` | string |  | yes | the stage: its name, or its place from 1 |
+| `rename` | string |  | no | a new name for it |
+| `type` | string |  | no | another kind for it (its settings then all given) |
+| `gain` | number |  | no | an amplifier's gain in dB |
+| `noise_figure` | number |  | no | an amplifier's noise figure in dB from a matched source (default 0) |
+| `oip3` | number |  | no | an amplifier's output third-order intercept point in dBm |
+| `p1db` | number |  | no | an amplifier's output 1 dB compression point in dBm |
+| `loss` | number |  | no | an attenuator's loss in dB |
+| `data` | string |  | no | a data stage's S: `sweep` (default) or a measurement's name |
+| `flip` | boolean |  | no | a data stage's ports swapped |
+| `impedance` | number |  | no | a line's impedance in Ω (default 50) |
+| `length` | number | length | no | a line's length |
+| `eps_r` | number |  | no | a line's effective relative permittivity (default 1) |
+| `attenuation` | number |  | no | a line's conductor attenuation in dB per length unit (default 0) |
+| `at` | number | frequency | no | the frequency `attenuation` is given at: it grows as √(f/`at`) (default constant) |
+| `tan_delta` | number |  | no | a line's dielectric loss tangent (default 0) |
+| `resistance` | number |  | no | a series or shunt element's R in ohms |
+| `inductance` | number |  | no | a series or shunt element's L in nanohenries |
+| `capacitance` | number |  | no | a series or shunt element's C in picofarads |
+| `arrangement` | string |  | no | a series or shunt element's parts: `series` (default) or `parallel` |
+
+## `system.stage.delete` — Delete stage
+
+Takes a stage out of the system's chain. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `stage` | string |  | yes | the stage: its name, or its place from 1 |
+
+## `system.stage.move` — Move stage
+
+Moves a stage of the system's chain to another place. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `stage` | string |  | yes | the stage: its name, or its place from 1 |
+| `position` | integer |  | yes | its new place from the source, from 1 |
+
+## `system.source` — System source
+
+The system's source: `antenna`, a one-port measurement whose impedance drives the chain (an antenna's S11 from solve.radiation_sweep, a .s1p; "" for none: the chain's impedance), its noise `temperature` (K, default 290) and the signal `power` it gives (dBm; for the budget's signal and SNR). The settings left out are kept. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `antenna` | string |  | no | a one-port measurement: the source's impedance ("" for none) |
+| `temperature` | number |  | no | the antenna's noise temperature in K (default 290) |
+| `power` | number |  | no | the signal the source gives in dBm |
+
+## `system.receiver` — System receiver
+
+What the system's chain ends in: its reference `impedance` (Ω, default 50: the amplifiers' and attenuators', and the result's ports), the physical `temperature` of its passive parts (K, default 290), the receiver's noise `bandwidth` (for the noise power, sensitivity and SNR) and the `snr` it needs (dB, default 0). The settings left out are kept. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `impedance` | number |  | no | the chain's reference impedance in Ω (default 50) |
+| `temperature` | number |  | no | the passive parts' temperature in K (default 290) |
+| `bandwidth` | number | frequency | no | the receiver's noise bandwidth: gives the system noise temperature, noise power and sensitivity |
+| `snr` | number |  | no | the signal-to-noise ratio in dB the receiver needs, with `bandwidth` (default 0) |
+
+## `solve.system` — Solve system
+
+Reads the system's chain over a band (or the confirmed settings'): its S by the stages' chain (ABCD) matrices (Pozar, Microwave Engineering, §4.4), its noise by Hillbrand and Russer's chain correlation matrices (IEEE Trans. CAS-23(4), 1976), from the source's impedance; and its budget stage by stage — each stage's available gain and the chain's from the source (Pozar §12.1), the noise figure and temperature so far, the signal, noise (k(T_A + T_e)B G) and SNR at each stage's output, and the cascade's third-order intercept and 1 dB compression points, input-referred as 1/IIP3 = Σ G_before/IIP3_k (Pozar §10.3) and output-referred. The reply gives the budget at `frequency` (default the band's centre) and the band's least and greatest noise figure; the result is kept for the System view (and the project file). A data stage outside its band, or the antenna outside its, leaves those frequencies' readings out and says why.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `start` | number | frequency | no | the band's start (default the confirmed settings') |
+| `stop` | number | frequency | no | the band's stop (default the confirmed settings') |
+| `points` | integer |  | no | frequencies from start to stop, 1 to 4001 (default 101) |
+| `frequency` | number | frequency | no | the frequency the budget is shown at (default the band's centre) |
 
 ## `filter.synthesize` — Synthesize filter
 

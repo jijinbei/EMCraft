@@ -22,6 +22,7 @@ mod session;
 mod sides;
 mod solve;
 mod symmetry;
+mod system;
 mod view;
 mod views;
 

@@ -69,7 +69,9 @@ history/<id>/s.c64           a kept solve's S-parameters (complex: real then ima
   (each frequency's S, line impedances, backward error and — when `fields` — its field
   vectors), the eigenmodes (frequencies, Q and vectors), the time domain, the dispersion
   diagram, the study's table (every row, its predictions, the surrogate), the open problem
-  (its lumped ports, feed, Huygens samples and field) and the open time domain. Each result's
+  (its lumped ports, feed, Huygens samples and field), the open time domain and a system's
+  budget (`system`: every frequency's S and each stage's row, as JSON, checked when read —
+  a row a stage, every number finite, at most 32 stages and 4001 frequencies). Each result's
   shape is here and its numbers a stream in `results/`, read back in the order written. No
   system is written: a sweep's, the eigenmodes' and an open problem's are built again from the
   model and its mesh (an assembly, no factorization) and the vectors read must fit it. A result

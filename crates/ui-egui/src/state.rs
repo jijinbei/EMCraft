@@ -196,6 +196,8 @@ pub enum SharedChart {
     Pattern(PatternSettings),
     /// An analysis read from the sweep, by its run.
     Analysis(u64),
+    /// A system's chart.
+    System(emcraft_engine::view::SystemChart),
 }
 
 /// The far-field view's cut, its angle (degrees: φ of a φ cut, θ of a θ cut), quantity and
@@ -316,6 +318,8 @@ pub struct ViewState {
     /// How the chart view last drawn packed its blocks: how many beside the chart, how many
     /// under it (`None`: a chart without blocks).
     pub packed: Option<[usize; 2]>,
+    /// What the system view's chart shows.
+    pub system: emcraft_engine::view::SystemChart,
 }
 
 /// The replies of the commands whose results the views show as they came: the last port-mode

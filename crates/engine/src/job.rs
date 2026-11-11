@@ -64,6 +64,7 @@ pub fn parse(s: &Session, p: &Params) -> Result<Setup> {
         },
         Analysis::Radiation => Setup::Radiation { frequency: p.hertz("frequency").required()?, order: order()? },
         Analysis::Pcb => return Err(p.error("kind", "the PCB diagnosis has no run settings: its conditions are pcb.inspect's")),
+        Analysis::System => Setup::System { band: band()?, points: points()?, frequency: p.hertz("frequency").optional()? },
     };
     Ok(setup)
 }
@@ -80,6 +81,7 @@ pub fn setup_reply(s: &Session) -> Value {
         Setup::TimeDomain { band, points, cell, excite } => time_domain(s, *band, *points, *cell, excite),
         Setup::Eigenmodes { near, count, order: o } => json!({"frequency": f(*near), "count": count.get(), "order": order(*o)}),
         Setup::Radiation { frequency, order: o } => json!({"frequency": f(*frequency), "order": order(*o)}),
+        Setup::System { band, points, frequency } => system(s, *band, *points, *frequency),
     };
     v["kind"] = json!(setup.analysis().id());
     v
@@ -106,7 +108,17 @@ pub fn solve_of(s: &Session, setup: &Setup) -> (&'static str, Value) {
         }
         Setup::Eigenmodes { near, count, order } => ("solve.eigenmodes", json!({"near": f(*near), "count": count.get(), "order": u8::from(*order)})),
         Setup::Radiation { frequency, order } => ("solve.radiation", json!({"frequency": f(*frequency), "order": u8::from(*order)})),
+        Setup::System { band, points, frequency } => ("solve.system", system(s, *band, *points, *frequency)),
     }
+}
+
+/// A system's settings as its solve takes them, in display units.
+fn system(s: &Session, band: Band, points: std::num::NonZeroUsize, frequency: Option<emcraft_model::Hertz>) -> Value {
+    let mut v = json!({"start": s.show_frequency(band.start.get()), "stop": s.show_frequency(band.stop.get()), "points": points.get()});
+    if let Some(h) = frequency {
+        v["frequency"] = json!(s.show_frequency(h.get()));
+    }
+    v
 }
 
 /// The time domain's settings as its solve takes them, in display units.
