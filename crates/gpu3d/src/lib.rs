@@ -1,8 +1,9 @@
-//! The 3D view drawn by the GPU (wgpu) with a depth buffer: the window's device through an
-//! `egui_wgpu` paint callback, or a device of the process's own read back into a texture
-//! ([`headless`]: a window that opened with OpenGL, `ui.render`, the scenarios, the start page's
-//! pictures). It is the only 3D renderer (docs/adr/0004-gpu-viewport.md); without any adapter the
-//! view says so.
+//! The 3D view drawn by the GPU (wgpu) with a depth buffer, whatever window shows it: on the
+//! window's own device ([`Renderer::prepare`] and [`Renderer::show`] in its render pass — egui's
+//! paint callback, iced's shader widget), or on a device of the process's own read back into a
+//! picture ([`headless`]: a window that opened with OpenGL, `ui.render`, the scenarios, the start
+//! page's pictures). It is the only 3D renderer (docs/adr/0004-gpu-viewport.md); without any
+//! adapter the view says so.
 //!
 //! - Triangles in a depth buffer, flat-shaded (ambient plus Lambert from a light above and right of
 //!   the eye, both sides alike), multisampled (4× where the device takes it) and supersampled 2×
@@ -27,6 +28,8 @@
 //! the offscreen frame shown by a paint callback, OIT targets and composite; the shaders and
 //! this code are written for EMCraft's scene.
 
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+
 mod field;
 mod gbuffer;
 pub mod headless;
@@ -34,16 +37,14 @@ mod pack;
 mod renderer;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use eframe::{egui_wgpu, wgpu};
 use emcraft_render::view3d::Scene;
+pub use wgpu;
 
 pub use field::{FieldFrame, FieldGrid};
-pub(crate) use pack::{Arrow, Motion};
-pub use pack::{LINE, MAX_BYTES, Packed, TRI_VERTEX, UNIFORM_BYTES, Uniforms};
-pub use renderer::Caps;
-use renderer::Renderer;
+pub use pack::{Arrow, LINE, MAX_BYTES, Motion, Packed, TRI_VERTEX, UNIFORM_BYTES, Uniforms};
+pub use renderer::{Caps, Renderer};
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum Gpu3dError {
@@ -58,87 +59,12 @@ pub enum Gpu3dError {
 }
 
 /// A future that is ready at once (wgpu's native calls), or `None`.
-pub(crate) fn ready<T>(f: impl std::future::Future<Output = T>) -> Option<T> {
+pub fn ready<T>(f: impl std::future::Future<Output = T>) -> Option<T> {
     let mut f = std::pin::pin!(f);
     match f.as_mut().poll(&mut std::task::Context::from_waker(std::task::Waker::noop())) {
         std::task::Poll::Ready(v) => Some(v),
         std::task::Poll::Pending => None,
     }
-}
-
-/// The window's GPU, as its 3D view uses it: kept in the window's context data by [`install`].
-#[derive(Clone)]
-pub struct Available {
-    /// The adapter's name and backend.
-    pub adapter: String,
-    pub caps: Caps,
-    failed: Arc<AtomicBool>,
-    rs: egui_wgpu::RenderState,
-}
-
-impl std::fmt::Debug for Available {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Available").field("adapter", &self.adapter).field("caps", &self.caps).field("failed", &self.failed()).finish()
-    }
-}
-
-/// The tags under window pixel `px` of the frame `key` the GPU drew last: the nearest tagged
-/// triangle's and the nearest solid one's (opacity ≥ 200), 0 for none, as
-/// `emcraft_render::view3d::hits` finds them. `None` where the GPU cannot tell (no GPU view, the
-/// frame drawn last was another, picking off): the caller asks the CPU.
-pub fn pick(ctx: &egui::Context, client: u64, key: u64, px: [u32; 2]) -> Option<(u32, u32)> {
-    match available(ctx) {
-        Some(a) => {
-            let r = a.rs.renderer.read();
-            let i = r.callback_resources.get::<Installed>()?;
-            i.renderer.tags_at(&a.rs.device, &a.rs.queue, key, px)
-        }
-        None => headless::shared().ok()?.tags_at(client, key, px),
-    }
-}
-
-impl Available {
-    /// Whether a GPU error has stopped it (the view draws offscreen from then on).
-    pub fn failed(&self) -> bool {
-        self.failed.load(Ordering::Acquire)
-    }
-}
-
-fn key() -> egui::Id {
-    egui::Id::new("emcraft.gpu3d")
-}
-
-/// The window's GPU for the 3D view, if [`install`] made it and it has not failed.
-pub fn available(ctx: &egui::Context) -> Option<Available> {
-    ctx.data(|d| d.get_temp::<Available>(key())).filter(|a| !a.failed())
-}
-
-/// Makes the 3D view's pipelines on the window's device and records them in `ctx`. GPU errors
-/// nothing else catches are reported (once each, the first few) and stop the GPU's view rather
-/// than panicking, as wgpu's default handler would.
-pub fn install(rs: &egui_wgpu::RenderState, ctx: &egui::Context) -> Result<Available, Gpu3dError> {
-    let failed = Arc::new(AtomicBool::new(false));
-    let seen = Arc::new(AtomicU32::new(0));
-    let flag = failed.clone();
-    rs.device.on_uncaptured_error(Arc::new(move |e: wgpu::Error| {
-        flag.store(true, Ordering::Release);
-        if seen.fetch_add(1, Ordering::Relaxed) < 4 {
-            eprintln!("emcraft: GPU error, the 3D view draws offscreen: {e}");
-        }
-    }));
-    let caps = Caps::of(&rs.adapter, &rs.device);
-    let r = Renderer::new(&rs.device, caps, rs.target_format)?;
-    let info = rs.adapter.get_info();
-    let a = Available { adapter: format!("{} ({:?})", info.name, info.backend), caps, failed: failed.clone(), rs: rs.clone() };
-    rs.renderer.write().callback_resources.insert(Installed { renderer: r, failed });
-    ctx.data_mut(|d| d.insert_temp(key(), a.clone()));
-    Ok(a)
-}
-
-/// What the callback finds in egui's resources.
-struct Installed {
-    renderer: Renderer,
-    failed: Arc<AtomicBool>,
 }
 
 /// What the 3D view draws beyond the plain picture, each switched on its own (Settings ▸ 3D view ▸
@@ -271,7 +197,7 @@ impl Cache {
     }
 
     /// As [`Cache::packed_with`], with the field's arrows.
-    pub(crate) fn packed_arrows(&mut self, scene: &Scene, generation: u64, field: Option<(u32, usize, f64)>, arrows: &[Arrow]) -> Arc<Packed> {
+    pub fn packed_arrows(&mut self, scene: &Scene, generation: u64, field: Option<(u32, usize, f64)>, arrows: &[Arrow]) -> Arc<Packed> {
         match &self.packed {
             Some((k, p)) if *k == (generation, field) => p.clone(),
             _ => {
@@ -281,41 +207,6 @@ impl Cache {
                 self.packed = Some(((generation, field), p.clone()));
                 p
             }
-        }
-    }
-}
-
-/// Paints `frame` into `rect` with the window's GPU.
-pub fn paint(p: &egui::Painter, rect: egui::Rect, frame: Frame) {
-    p.add(egui_wgpu::Callback::new_paint_callback(rect, Callback(frame)));
-}
-
-struct Callback(Frame);
-
-impl egui_wgpu::CallbackTrait for Callback {
-    fn prepare(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        _screen: &egui_wgpu::ScreenDescriptor,
-        encoder: &mut wgpu::CommandEncoder,
-        resources: &mut egui_wgpu::CallbackResources,
-    ) -> Vec<wgpu::CommandBuffer> {
-        if let Some(i) = resources.get_mut::<Installed>()
-            && !i.failed.load(Ordering::Acquire)
-            && let Err(e) = i.renderer.prepare(device, queue, encoder, &self.0)
-        {
-            eprintln!("emcraft: {e}; the 3D view draws offscreen");
-            i.failed.store(true, Ordering::Release);
-        }
-        Vec::new()
-    }
-
-    fn paint(&self, _info: egui::PaintCallbackInfo, pass: &mut wgpu::RenderPass<'static>, resources: &egui_wgpu::CallbackResources) {
-        if let Some(i) = resources.get::<Installed>()
-            && !i.failed.load(Ordering::Acquire)
-        {
-            i.renderer.show(pass);
         }
     }
 }

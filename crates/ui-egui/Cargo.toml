@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 emcraft-engine = { workspace = true }
 emcraft-ui-core = { workspace = true }
+emcraft-gpu3d = { workspace = true }
 emcraft-macros = { workspace = true }
 emcraft-i18n = { workspace = true }
 emcraft-mesh = { workspace = true }
@@ -35,9 +36,6 @@ winit = { version = "0.30", default-features = false, features = ["x11", "waylan
 [dev-dependencies]
 approx = { workspace = true }
 rstest = { workspace = true }
-# Validates the 3D view's WGSL shaders without a GPU (gpu3d's tests; the same naga wgpu compiles
-# them with, docs/adr/0004-gpu-viewport.md).
-naga = { version = "30", default-features = false, features = ["wgsl-in"] }
 
 # The scenarios run the GPU kernels on the CPU (setup_device).
 [target.'cfg(not(all(windows, target_env = "gnu")))'.dev-dependencies]

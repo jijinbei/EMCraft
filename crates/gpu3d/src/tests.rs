@@ -8,7 +8,6 @@ use emcraft_render::colormap::ColourScale;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use eframe::wgpu;
 use emcraft_render::Rgb;
 use emcraft_render::view3d::{Camera, Projection, Scene, StandardView};
 
@@ -54,7 +53,7 @@ fn every_shader_validates() {
         }
     }
     // The shaders sit beside this module; a new one must join the list above.
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/gpu3d");
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut files: Vec<String> =
         std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()?.file_name().into_string().ok()).filter(|n| n.ends_with(".wgsl")).collect();
     files.sort();
@@ -69,18 +68,6 @@ fn no_adapter_is_an_error_not_a_panic() {
         Err(e) => panic!("unexpected: {e}"),
         Ok(_) => panic!("an adapter with no backend"),
     }
-    // A context nothing was installed in (the headless harness, `ui.render`) has no window GPU.
-    assert!(available(&egui::Context::default()).is_none());
-}
-
-/// The window's GPU where it has one, else the offscreen device, else nothing (a message).
-#[test]
-fn the_drawer_falls_back_without_a_window_gpu() {
-    use crate::view3d::Drawer;
-    assert_eq!(Drawer::choose(true, true), Drawer::Window);
-    assert_eq!(Drawer::choose(true, false), Drawer::Window);
-    assert_eq!(Drawer::choose(false, true), Drawer::Offscreen);
-    assert_eq!(Drawer::choose(false, false), Drawer::None);
 }
 
 /// A renderer on a device of the test's own.

@@ -35,7 +35,7 @@ const DERIVED: &str = "Derived here";
 const ORGANISATIONS: &[&str] = &["EIA", "IEC", "IBIS", "DLMF"];
 
 /// Library files whose prints are the window's notices on stderr (no log facade yet).
-const PRINTING_FILES: &[&str] = &["crates/ui-egui/src/lib.rs", "crates/ui-egui/src/gpu3d/mod.rs", "crates/ui-egui/src/gpu3d/headless.rs"];
+const PRINTING_FILES: &[&str] = &["crates/ui-egui/src/lib.rs", "crates/ui-egui/src/gpu3d.rs", "crates/gpu3d/src/headless.rs"];
 
 /// The widest comment line (rustfmt's `max_width`).
 const MAX_COMMENT_WIDTH: usize = 150;

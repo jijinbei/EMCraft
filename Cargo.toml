@@ -20,6 +20,7 @@ emcraft-render = { path = "crates/render" }
 emcraft-solver = { path = "crates/solver" }
 emcraft-fdtd = { path = "crates/fdtd" }
 emcraft-gpu = { path = "crates/gpu" }
+emcraft-gpu3d = { path = "crates/gpu3d" }
 emcraft-io = { path = "crates/io" }
 emcraft-templates = { path = "crates/templates" }
 emcraft-engine = { path = "crates/engine" }
@@ -60,7 +61,7 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 rstest = { version = "0.26", default-features = false }
 
 # ui: the same egui/eframe line as FieldCraft. The window draws with wgpu (the 3D view's depth-buffered
-# renderer, crates/ui-egui/src/gpu3d) and falls back to glow (OpenGL 2) where wgpu finds no adapter
+# renderer, crates/gpu3d) and falls back to glow (OpenGL 2) where wgpu finds no adapter
 # (docs/adr/0004-gpu-viewport.md).
 egui = "0.36"
 eframe = { version = "0.36", default-features = false, features = ["wgpu", "glow", "default_fonts", "wayland", "x11"] }

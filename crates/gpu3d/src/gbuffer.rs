@@ -8,8 +8,6 @@
 //! normals and depths; every tagged triangle's tag; the solid tagged triangles' tags. As in the
 //! CPU's picking, untagged triangles hide nothing.
 
-use eframe::wgpu;
-
 /// The normal (xyz) of the opaque surface.
 pub const NORMAL: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 /// Its window depth (0 near, 1 far; 1 where there is none), as the bits of an f32: 32-bit float

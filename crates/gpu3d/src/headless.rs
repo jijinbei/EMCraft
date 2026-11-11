@@ -7,8 +7,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use eframe::wgpu;
-
 use super::renderer::{Caps, FRAME, Renderer};
 use super::{Frame, Gpu3dError, ready};
 

@@ -2343,6 +2343,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "emcraft-gpu3d"
+version = "0.1.0"
+dependencies = [
+ "emcraft-engine",
+ "emcraft-render",
+ "emcraft-ui-core",
+ "naga",
+ "thiserror 2.0.21",
+ "wgpu",
+]
+
+[[package]]
 name = "emcraft-i18n"
 version = "0.1.0"
 dependencies = [
@@ -2496,6 +2508,7 @@ dependencies = [
  "egui",
  "emcraft-engine",
  "emcraft-gpu",
+ "emcraft-gpu3d",
  "emcraft-i18n",
  "emcraft-macros",
  "emcraft-mesh",
@@ -2503,7 +2516,6 @@ dependencies = [
  "emcraft-render",
  "emcraft-ui-core",
  "fontdb",
- "naga",
  "rstest",
  "serde",
  "serde_json",

@@ -18,8 +18,7 @@
 
 use std::num::NonZeroU64;
 
-use eframe::wgpu;
-use eframe::wgpu::util::DeviceExt;
+use wgpu::util::DeviceExt;
 
 use super::gbuffer;
 use super::pack::{LINE, Packed, TRI_VERTEX, UNIFORM_BYTES, Uniforms};

@@ -4,7 +4,7 @@ Status: accepted (2026-10-31; GPU-only from 2026-11-01).
 
 ## Decision
 
-The 3D view is drawn by the GPU with a depth buffer (`crates/ui-egui/src/gpu3d`, L7), and only by
+The 3D view is drawn by the GPU with a depth buffer (`crates/gpu3d`, L7), and only by
 it: the CPU 3D rasterizer (`emcraft_render::view3d::render`, `flatten`, the egui-mesh drag path)
 is gone. `emcraft_render::view3d` keeps the scene, the camera, the section view and picking by ray
 (through its bounding-volume hierarchy), which the tools' snapping and the fallback read. Charts

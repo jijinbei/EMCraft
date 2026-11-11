@@ -1,0 +1,21 @@
+[package]
+name = "emcraft-gpu3d"
+description = "EMCraft's 3D view drawn by the GPU (wgpu) with a depth buffer, for whatever window shows it: the scene packed, the passes and WGSL shaders, picking by the tags under a pixel, and an offscreen device of the process's own (docs/adr/0004-gpu-viewport.md)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+emcraft-engine = { workspace = true }
+emcraft-render = { workspace = true }
+emcraft-ui-core = { workspace = true }
+thiserror = { workspace = true }
+# The same wgpu as eframe's and iced's (one in the build), with the native backends.
+wgpu = { version = "30", default-features = false, features = ["std", "parking_lot", "dx12", "metal", "gles", "vulkan", "wgsl"] }
+
+[dev-dependencies]
+# Validates the WGSL shaders without a GPU (the same naga wgpu compiles them with).
+naga = { version = "30", default-features = false, features = ["wgsl-in"] }

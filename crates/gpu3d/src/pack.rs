@@ -21,7 +21,7 @@ pub const UNIFORM_BYTES: usize = 64 + 6 * 16;
 /// renderer leaves out primitives beyond `MAX_PRIMITIVES`.
 pub const MAX_BYTES: usize = 256 << 20;
 
-pub(crate) use crate::scene3d::{Arrow, Motion};
+pub use emcraft_ui_core::scene3d::{Arrow, Motion};
 
 pub(crate) const ARROW_VERTICES: usize = 24 * 15;
 
@@ -30,7 +30,7 @@ pub(crate) const ARROW_VERTICES: usize = 24 * 15;
 /// from zero.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Packed {
-    /// The scene this was made from ([`crate::view3d::View3d`]'s scene generation).
+    /// The scene this was made from (the view's scene generation).
     pub id: u64,
     pub origin: [f64; 3],
     /// Half the box's diagonal (m): the depth range is fitted round it.
@@ -69,7 +69,7 @@ impl Packed {
     ///
     /// ```
     /// use emcraft_render::{Rgb, view3d::Scene};
-    /// use emcraft_ui_egui::gpu3d::{Packed, TRI_VERTEX};
+    /// use emcraft_gpu3d::{Packed, TRI_VERTEX};
     /// let mut s = Scene::default();
     /// s.tri([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], Rgb(200, 0, 0), 255);
     /// s.tri([0.0, 0.0, 1.0], [1.0, 0.0, 1.0], [0.0, 1.0, 1.0], Rgb(0, 200, 0), 100);

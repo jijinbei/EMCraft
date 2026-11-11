@@ -62,6 +62,8 @@ pub const TABLE: &[(&str, Class)] = &[
     // L7: the desktop UI, and its second window in iced (docs/adr/0007-iced-window.md).
     ("ui-egui", Class::Layer(7)),
     ("ui-iced", Class::Layer(7)),
+    // L7, below both windows: the 3D view drawn by the GPU (docs/adr/0004-gpu-viewport.md).
+    ("gpu3d", Class::Layer(7)),
     ("testkit", Class::Testkit),
     // apps and tooling
     ("emcraft", Class::Exempt),
@@ -71,8 +73,16 @@ pub const TABLE: &[(&str, Class)] = &[
 ];
 
 /// Explicit orderings *within* a layer (earlier may be used by later).
-pub const INTRA_LAYER_ORDER: &[&[&str]] =
-    &[&["engine", "ui-core"], &["macros", "model"], &["fem", "theory"], &["fem", "mesh"], &["fdtd", "gpu"], &["solver", "gpu"]];
+pub const INTRA_LAYER_ORDER: &[&[&str]] = &[
+    &["engine", "ui-core"],
+    &["gpu3d", "ui-egui"],
+    &["gpu3d", "ui-iced"],
+    &["macros", "model"],
+    &["fem", "theory"],
+    &["fem", "mesh"],
+    &["fdtd", "gpu"],
+    &["solver", "gpu"],
+];
 
 fn intra_layer_allowed(from: &str, to: &str) -> bool {
     let (from, to) = (short_name(from), short_name(to));
