@@ -465,6 +465,8 @@ fn field_value(f: &Field) -> Result<Option<Value>, String> {
 /// geometry, the mesh and the solves (their last run).
 pub const ON_VALUES: &[&str] = &[
     "units.set",
+    "system.source",
+    "system.receiver",
     "solve.device",
     "model.walls",
     "model.open",

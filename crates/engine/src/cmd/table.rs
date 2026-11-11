@@ -469,6 +469,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("name", K::String, "the item of an item's edit command: a material's or a port's name"),
             opt("body", K::String, "geometry.body.edit's body"),
             opt("index", K::Integer, "source.edit's source, 1 = the first"),
+            opt("stage", K::String, "system.stage.edit's stage, by name"),
             opt("axis", K::String, "model.symmetry's plane: `x`, `y` or `z` (default the first there is)").one_of(&Axis::IDS),
         ],
         effect: Effect::None,

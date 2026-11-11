@@ -70,7 +70,7 @@ pub struct Item {
 }
 
 impl Item {
-    fn new(edit: &'static str, delete: &'static str, key: &'static str, value: serde_json::Value) -> Item {
+    pub(crate) fn new(edit: &'static str, delete: &'static str, key: &'static str, value: serde_json::Value) -> Item {
         Item { edit, delete, key, value }
     }
 
@@ -318,6 +318,9 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
         }
         return vec![(t!("PCB").en(), rows)];
     }
+    if m.analysis() == crate::steps::Solver::System {
+        return system_tree(app);
+    }
     // The variables the job defined (a study's), not a template's own dimensions: double-click
     // to change one.
     let own_variables = variables(&app.session);
@@ -338,6 +341,72 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
             r.eye = r.pick.and_then(|p| p.display_object(m));
         }
     }
+    sections
+}
+
+/// A system's tree: its variables, the source, the stages in order (each edited and deleted from
+/// its row), the receiver, the measurements its S-parameter stages read and its budget.
+fn system_tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
+    let s = &app.session;
+    let m = s.model();
+    let fu = s.display().frequency;
+    let mut sections = Vec::new();
+    let own_variables = variables(s);
+    if !own_variables.is_empty() {
+        sections.push((t!("Variables").en(), own_variables));
+    }
+    let src = &m.system.source;
+    let antenna = src.antenna.clone().unwrap_or_else(|| format!("{} Ω", m.system.receiver.impedance));
+    let power = src.power.map_or_else(String::new, |p| format!(" · {p} dBm"));
+    let source =
+        node("system:source", own(&antenna), Some(own(&format!("{} K{power}", src.temperature))), Glyph::Radiation, Act::Edit("system.source"));
+    sections.push((t!("Source").en(), vec![source]));
+    let stages = m
+        .system
+        .stages
+        .iter()
+        .map(|st| {
+            let kind = crate::system_ui::kind_name(&st.part);
+            let summary = crate::system_ui::summary(st);
+            let detail = Both { en: format!("{} · {summary}", kind.en()), shown: format!("{} · {summary}", lang::tr(kind)) };
+            let glyph = match st.part.kind() {
+                "amplifier" => Glyph::Sweep,
+                "data" => Glyph::Touchstone,
+                "line" => Glyph::Waveguide,
+                _ => Glyph::Lumped,
+            };
+            node(format!("stage:{}", st.name), own(&st.name), Some(detail), glyph, Act::None).item(crate::system_ui::item(&st.name))
+        })
+        .collect();
+    sections.push((t!("Stages").en(), stages));
+    let r = &m.system.receiver;
+    let bw = r.bandwidth.map_or_else(String::new, |b| format!(" · {} {}", fu.from_si(b), fu.symbol()));
+    let receiver = node(
+        "system:receiver",
+        own(&format!("{} Ω", r.impedance)),
+        Some(own(&format!("SNR {} dB{bw}", r.snr))),
+        Glyph::Table,
+        Act::Edit("system.receiver"),
+    );
+    sections.push((t!("Receiver").en(), vec![receiver]));
+    let measured = s
+        .views()
+        .measured
+        .iter()
+        .map(|x| {
+            let detail = words(t!("{ports} ports · {n} frequencies"), args!(ports = x.data.outputs(), n = x.data.frequencies().len()));
+            node(format!("measured:{}", x.name), own(&x.name), Some(detail), Glyph::Touchstone, Act::Show(View::SParameters))
+        })
+        .collect();
+    sections.push((t!("Measurements").en(), measured));
+    let results = match &s.results().system {
+        Some(r) => {
+            let detail = words(t!("{n} frequencies"), args!(n = r.points.len()));
+            vec![node("result:system", words(t!("System budget"), &[]), Some(detail), Glyph::Table, Act::Show(View::System))]
+        }
+        None => Vec::new(),
+    };
+    sections.push((t!("Results").en(), results));
     sections
 }
 
@@ -884,6 +953,10 @@ fn section_glyph(section: &str) -> Glyph {
         "Mesh" => Glyph::Mesh,
         "Results" => Glyph::Chart,
         "PCB" => Glyph::Part,
+        "Source" => Glyph::Radiation,
+        "Stages" => Glyph::Lumped,
+        "Receiver" => Glyph::Table,
+        "Measurements" => Glyph::Touchstone,
         _ => Glyph::Blank,
     }
 }

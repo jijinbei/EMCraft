@@ -1,33 +1,12 @@
 //! The system view: the chain as a block diagram from its source on (a click opens a stage's
-//! settings, its menu moves or deletes it; a row of buttons adds stages and sets the source and
-//! receiver), the chart `solve.system`'s result is read in (along the chain, or over the band)
-//! and the budget stage by stage under it.
+//! settings in the Chain step, its menu moves or deletes it; the ribbon's SYSTEM tab adds
+//! stages), the chart `solve.system`'s result is read in (along the chain, or over the band) and
+//! the budget stage by stage under it. With no stage yet, a button for each kind.
 
 use super::*;
+use crate::system_ui;
 use emcraft_engine::system::{Row, SystemResult};
 use emcraft_engine::view::SystemChart;
-use emcraft_model::system::{DataSource, Part, Stage};
-
-/// The stages the buttons add, each with its settings to start from.
-const ADD: [(&str, crate::lang::Text, crate::lang::Text); 6] = [
-    ("amplifier", t!("Amplifier"), t!("An ideal amplifier: its gain, noise figure, OIP3 and P1dB")),
-    ("attenuator", t!("Attenuator"), t!("A matched attenuator: its loss")),
-    ("data", t!("S-parameters"), t!("A two-port's S: the sweep or an imported Touchstone file (a filter, a measured LNA)")),
-    ("line", t!("Line"), t!("A transmission line: its impedance, length and losses")),
-    ("series", t!("Series element"), t!("R, L and C in series along the line")),
-    ("shunt", t!("Shunt element"), t!("R, L and C across the line")),
-];
-
-/// The settings a new stage of `kind` starts from.
-fn starting(kind: &str) -> Value {
-    match kind {
-        "amplifier" => json!({"type": kind, "gain": 20, "noise_figure": 1}),
-        "attenuator" => json!({"type": kind, "loss": 3}),
-        "data" => json!({"type": kind, "data": "sweep"}),
-        "line" => json!({"type": kind, "impedance": 50, "length": 10}),
-        _ => json!({"type": kind, "capacitance": 1}),
-    }
-}
 
 pub(super) struct SystemView;
 
@@ -38,8 +17,6 @@ impl ChartView for SystemView {
     const HEIGHT: Height = Height::new(0.45, 220.0, 520.0);
 
     fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) -> Option<Self::Key> {
-        buttons(app, ui, out);
-        ui.add_space(6.0);
         diagram(app, ui, out);
         ui.add_space(6.0);
         let r = app.session.results().system.as_deref()?;
@@ -79,66 +56,25 @@ fn chart_label(c: SystemChart) -> crate::lang::Text {
     }
 }
 
-/// The row of buttons: a stage of each kind, the source, the receiver, and Run.
-fn buttons(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    let busy = app.busy();
-    ui.horizontal_wrapped(|ui| {
-        for (kind, label, tip) in ADD {
-            let b = egui::Button::new(format!("+ {}", tr(label)));
-            ui.act(!busy, b, Handle::SystemAdd(kind), Action::OpenDialog { id: "system.stage.add".into(), values: Some(starting(kind)) }, out).hint(tip);
-        }
-        ui.separator();
-        let m = app.session.model();
-        let source = serde_json::to_value(&m.system.source).unwrap_or_else(|_| json!({}));
-        ui.act(!busy, egui::Button::new(tr(t!("Source…"))), Handle::SystemAdd("source"), Action::OpenDialog { id: "system.source".into(), values: Some(source) }, out)
-            .hint(t!("The antenna whose impedance drives the chain, its noise temperature and the signal it gives"));
-        let r = &m.system.receiver;
-        let receiver = json!({"impedance": r.impedance, "temperature": r.temperature, "bandwidth": r.bandwidth.map(|b| app.session.display().frequency.from_si(b)), "snr": r.snr});
-        ui.act(!busy, egui::Button::new(tr(t!("Receiver…"))), Handle::SystemAdd("receiver"), Action::OpenDialog { id: "system.receiver".into(), values: Some(receiver) }, out)
-            .hint(t!("The chain's impedance and temperature, the receiver's bandwidth and the SNR it needs"));
-        ui.separator();
-        let ready = !m.system.stages.is_empty();
-        let run = if m.job.setup().is_some() { Action::run("solve.run", json!({})) } else { Action::OpenStep(Some(crate::steps::Step::Setup)) };
-        ui.act(ready && !busy, egui::Button::new(tr(t!("Solve"))), Handle::SystemAdd("solve"), run, out)
-            .hint(t!("Read the chain over the band (solve.system); the band is the Setup step's"));
+/// A chain with no stage yet: what a system is, and a large button for each kind of stage.
+fn start(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
+    let t = &Tokens::get();
+    ui.add_space(24.0);
+    ui.vertical_centered(|ui| {
+        ui.text(Style::Heading, t!("A chain from the antenna to the receiver"));
+        ui.add_space(4.0);
+        ui.text(Style::Dim, t!("Add its stages in order: an LNA, a filter's S-parameters (a Touchstone file or a sweep), lines, more amplifiers."));
+        ui.add_space(12.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
+            for (kind, label, tip) in system_ui::KINDS {
+                let b = egui::Button::new(egui::RichText::new(format!("+ {}", tr(label))).size(t.font_heading)).min_size(vec2(170.0, 44.0));
+                if ui.named_enabled(!app.busy(), b, Handle::SystemStart(kind)).on_hover_text(tr(tip)).clicked() {
+                    out.extend(system_ui::add(kind));
+                }
+            }
+        });
     });
-}
-
-/// A stage's numbers as its block shows them, in a line.
-fn summary(stage: &Stage) -> String {
-    let g = |x: f64| format!("{x:.1} dB");
-    match &stage.part {
-        Part::Amplifier { gain, noise_figure, .. } => format!("G {}  NF {}", g(*gain), g(*noise_figure)),
-        Part::Attenuator { loss } => format!("−{}", g(*loss)),
-        Part::Data { data: DataSource::Sweep, .. } => "S: sweep".to_owned(),
-        Part::Data { data: DataSource::Measurement { name }, .. } => format!("S: {}", emcraft_engine::text::clip(name, 16)),
-        Part::Line { impedance, .. } => format!("{impedance:.0} Ω"),
-        Part::Element { element, .. } => {
-            let mut parts = Vec::new();
-            if element.resistance > 0.0 {
-                parts.push(format!("{:.3} Ω", element.resistance));
-            }
-            if element.inductance > 0.0 {
-                parts.push(format!("{:.3} nH", element.inductance * 1e9));
-            }
-            if element.capacitance > 0.0 {
-                parts.push(format!("{:.3} pF", element.capacitance * 1e12));
-            }
-            parts.join(" ")
-        }
-    }
-}
-
-/// A stage's kind as its block names it.
-fn kind_name(part: &Part) -> crate::lang::Text {
-    match part {
-        Part::Amplifier { .. } => t!("Amplifier"),
-        Part::Attenuator { .. } => t!("Attenuator"),
-        Part::Data { .. } => t!("S-parameters"),
-        Part::Line { .. } => t!("Line"),
-        Part::Element { shunt: false, .. } => t!("Series element"),
-        Part::Element { shunt: true, .. } => t!("Shunt element"),
-    }
 }
 
 /// The block diagram: the source, each stage a block with its name, kind and numbers, arrows
@@ -148,7 +84,7 @@ fn diagram(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let m = app.session.model();
     let stages = &m.system.stages;
     if stages.is_empty() {
-        ui.text(Style::Dim, t!("No stages yet: add an amplifier, a filter's S-parameters or a line with the buttons above."));
+        start(app, ui, out);
         return;
     }
     let (w, h, gap) = (150.0, 64.0, 34.0);
@@ -180,18 +116,16 @@ fn diagram(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         let fill = if resp.hovered() { t.hover } else { t.panel };
         p.rect(r, 8.0, fill, Stroke::new(1.5, if resp.hovered() { t.accent } else { t.border }), egui::StrokeKind::Inside);
         p.text(r.center_top() + vec2(0.0, 13.0), Align2::CENTER_CENTER, emcraft_engine::text::clip(&stage.name, 20), font(t.font_body), t.text);
-        p.text(r.center() + vec2(0.0, 2.0), Align2::CENTER_CENTER, tr(kind_name(&stage.part)), font(t.font_small), t.text_dim);
-        p.text(r.center_bottom() - vec2(0.0, 12.0), Align2::CENTER_CENTER, summary(stage), font(t.font_small), t.accent);
-        let mut values = emcraft_engine::system::stage_params(&app.session, &stage.part);
-        values["stage"] = json!(stage.name);
+        p.text(r.center() + vec2(0.0, 2.0), Align2::CENTER_CENTER, tr(system_ui::kind_name(&stage.part)), font(t.font_small), t.text_dim);
+        p.text(r.center_bottom() - vec2(0.0, 12.0), Align2::CENTER_CENTER, system_ui::summary(stage), font(t.font_small), t.accent);
         if resp.clicked() {
-            out.push(Action::OpenDialog { id: "system.stage.edit".into(), values: Some(values.clone()) });
+            out.extend(system_ui::edit(&stage.name));
         }
         let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).hint(t!("Click to change it; right-click to move or delete it"));
         let (n, k1) = (stages.len(), k + 1);
         resp.context_menu(|ui| {
             if ui.button(tr(t!("Edit…"))).clicked() {
-                out.push(Action::OpenDialog { id: "system.stage.edit".into(), values: Some(values.clone()) });
+                out.extend(system_ui::edit(&stage.name));
                 ui.close();
             }
             if ui.add_enabled(k > 0, egui::Button::new(tr(t!("Move toward the source")))).clicked() {

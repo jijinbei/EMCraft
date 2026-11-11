@@ -89,6 +89,7 @@ mod shots;
 pub mod state;
 mod status;
 pub mod steps;
+mod system_ui;
 pub mod template_dialog;
 pub mod theme;
 pub mod tools3d;

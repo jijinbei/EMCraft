@@ -248,6 +248,7 @@ The parameters that reproduce the model's current state for `command`, in the di
 | `name` | string |  | no | the item of an item's edit command: a material's or a port's name |
 | `body` | string |  | no | geometry.body.edit's body |
 | `index` | integer |  | no | source.edit's source, 1 = the first |
+| `stage` | string |  | no | system.stage.edit's stage, by name |
 | `axis` | string |  | no | model.symmetry's plane: `x`, `y` or `z` (default the first there is) |
 
 ## `edit.undo` — Undo

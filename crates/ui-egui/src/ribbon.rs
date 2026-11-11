@@ -28,6 +28,8 @@ emcraft_macros::named_enum! {
         Mesh = "MESH",
         Simulate = "SIMULATE",
         Results = "RESULTS",
+        /// A system's chain: its stages, source and receiver.
+        System = "SYSTEM",
     }
 }
 emcraft_macros::named_serde!(RibbonTab);
@@ -82,7 +84,16 @@ pub const TABS: &[(RibbonTab, &[(&str, &[&str])])] = &[
             // The analyses read from a sweep are the Analyses view's buttons.
         ],
     ),
+    // A system's own: its stages (each kind a button, [`STAGES`]), its source and receiver,
+    // the Touchstone files its S-parameter stages read, its variables.
+    (
+        RibbonTab::System,
+        &[(STAGES, &[]), (t!("CHAIN").en(), &["system.source", "system.receiver", "results.import"]), (t!("STUDY").en(), &["project.variable"])],
+    ),
 ];
+
+/// The system tab's panel whose buttons add each kind of stage.
+const STAGES: &str = t!("STAGES").en();
 
 /// The 3D view's tools on the ribbon, after a panel's commands: the ports made by pointing at
 /// the model, beside the port commands.
@@ -250,7 +261,12 @@ fn panels(app: &EmcraftApp, ui: &mut egui::Ui, card: Rect, right: f32, top: f32,
     let t = &Tokens::get();
     let tab = app.tab;
     // The PCB diagnosis has its own stages, not the steps: every tab's panels that fit it.
-    let shown: Vec<RibbonTab> = if chosen_kind(app) == Some(crate::steps::Solver::Pcb) { RibbonTab::ALL.to_vec() } else { vec![tab] };
+    let shown: Vec<RibbonTab> = match chosen_kind(app) {
+        Some(crate::steps::Solver::Pcb) => RibbonTab::ALL.to_vec(),
+        // A system's chain has its own tab, whichever step is open.
+        Some(crate::steps::Solver::System) => vec![RibbonTab::System],
+        _ => vec![tab],
+    };
     let panels: Vec<(RibbonTab, &str, Vec<Item>)> = TABS
         .iter()
         .filter(|(name, _)| shown.contains(name))
@@ -316,14 +332,19 @@ impl Panel {
     fn items(&self, app: &EmcraftApp, tab: RibbonTab) -> Vec<Item> {
         let ports = chosen_kind(app).is_none_or(|k| fits(k, "model.port.create"));
         let tools = TOOLS.iter().filter(|(on, p, _)| ports && *on == tab && *p == self.name).flat_map(|(_, _, tools)| tools.iter().copied());
-        self.commands.iter().map(|&id| Item::Command(id)).chain(tools.map(Item::Tool)).collect()
+        let stages = crate::system_ui::KINDS.iter().filter(|_| self.name == STAGES).map(|(kind, _, _)| Item::Stage(kind));
+        self.commands.iter().map(|&id| Item::Command(id)).chain(tools.map(Item::Tool)).chain(stages).collect()
     }
 }
 
 /// The tab's panels and their commands; SIMULATE's with the solve of the kind of analysis chosen
 /// at step 0 first (its panel first, the solve first in it).
 fn chosen_kind(app: &EmcraftApp) -> Option<crate::steps::Solver> {
-    app.session.model().job.chosen().or_else(|| app.session.model().pcb().map(|_| crate::steps::Solver::Pcb))
+    let m = app.session.model();
+    m.job
+        .chosen()
+        .or_else(|| m.pcb().map(|_| crate::steps::Solver::Pcb))
+        .or_else(|| (m.analysis() == crate::steps::Solver::System).then_some(crate::steps::Solver::System))
 }
 
 fn ordered(app: &EmcraftApp, panels: &'static [(&'static str, &'static [&'static str])]) -> Vec<Panel> {
@@ -335,7 +356,7 @@ fn ordered(app: &EmcraftApp, panels: &'static [(&'static str, &'static [&'static
             name,
             commands: items.iter().copied().filter(|id| chosen.is_none_or(|k| fits(k, id)) && ready(app, id)).collect(),
         })
-        .filter(|p| !p.commands.is_empty())
+        .filter(|p| !p.commands.is_empty() || p.name == STAGES)
         .collect();
     out
 }
@@ -351,11 +372,16 @@ fn ready(app: &EmcraftApp, id: &str) -> bool {
 /// Whether a ribbon command belongs to a job of this kind of analysis: those of the other kinds
 /// are left out of the ribbon once a kind is chosen (the search still finds them).
 pub fn fits(kind: crate::steps::Solver, id: &str) -> bool {
-    use crate::steps::Solver::{Eigenmodes, Frequency, Pcb, Radiation, TimeDomain};
+    use crate::steps::Solver::{Eigenmodes, Frequency, Pcb, Radiation, System, TimeDomain};
     if kind == Pcb {
         return id.starts_with("pcb.") || id.starts_with("file.") || matches!(id, "project.variable" | "project.analysis" | "units.set");
     }
-    if id.starts_with("pcb.") {
+    if kind == System {
+        return id.starts_with("system.")
+            || id.starts_with("file.")
+            || matches!(id, "solve.system" | "results.import" | "project.variable" | "project.analysis" | "units.set");
+    }
+    if id.starts_with("pcb.") || id.starts_with("system.") || id == "solve.system" {
         return false;
     }
     match id {
@@ -378,6 +404,8 @@ pub fn fits(kind: crate::steps::Solver, id: &str) -> bool {
 enum Item {
     Command(&'static str),
     Tool(Tool),
+    /// A system's stage of a kind, added through its dialog.
+    Stage(&'static str),
 }
 
 impl Item {
@@ -385,6 +413,7 @@ impl Item {
         match self {
             Item::Command(id) => button_label(id),
             Item::Tool(tool) => crate::lang::lookup(tool.label()),
+            Item::Stage(kind) => crate::system_ui::KINDS.iter().find(|(k, _, _)| *k == kind).map_or(kind, |(_, name, _)| crate::lang::tr(*name)),
         }
     }
 
@@ -392,6 +421,10 @@ impl Item {
         match self {
             Item::Command(id) => glyph(id),
             Item::Tool(tool) => tool.glyph(),
+            Item::Stage("amplifier") => Glyph::Sweep,
+            Item::Stage("data") => Glyph::Touchstone,
+            Item::Stage("line") => Glyph::Waveguide,
+            Item::Stage(_) => Glyph::Lumped,
         }
     }
 
@@ -399,6 +432,7 @@ impl Item {
         match self {
             Item::Command(id) => Handle::Toolbar(id),
             Item::Tool(tool) => Handle::RibbonTool(tool),
+            Item::Stage(kind) => Handle::SystemAdd(kind),
         }
     }
 
@@ -407,6 +441,10 @@ impl Item {
         match self {
             Item::Command(id) => app.ui_state.dialog().is_some_and(|d| d.command.id == id),
             Item::Tool(tool) => app.ui_state.tool() == Some(tool),
+            Item::Stage(kind) => app
+                .ui_state
+                .dialog()
+                .is_some_and(|d| d.command.id == "system.stage.add" && d.fields.iter().any(|f| f.name == "type" && f.text == kind)),
         }
     }
 
@@ -414,6 +452,10 @@ impl Item {
         match self {
             Item::Command(id) => crate::ui_kit::command_tip(r, id),
             Item::Tool(tool) => r.hint(tool.hint()),
+            Item::Stage(kind) => match crate::system_ui::KINDS.iter().find(|(k, _, _)| *k == kind) {
+                Some((_, _, tip)) => r.hint(*tip),
+                None => r,
+            },
         }
     }
 
@@ -422,6 +464,7 @@ impl Item {
         match self {
             Item::Command(id) => Action::dialog(id),
             Item::Tool(tool) => Action::Tool((!active).then_some(tool)),
+            Item::Stage(kind) => Action::dialog_with("system.stage.add", crate::system_ui::starting(kind)),
         }
     }
 }

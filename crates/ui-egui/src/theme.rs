@@ -284,6 +284,7 @@ impl Tokens {
             RibbonTab::Mesh => self.tab_mesh,
             RibbonTab::Simulate => self.tab_simulate,
             RibbonTab::Results => self.tab_results,
+            RibbonTab::System => self.tab_simulate,
         }
     }
 

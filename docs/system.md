@@ -6,6 +6,15 @@ the System view as a block diagram, a chart and a budget table. It is how a rece
 once its parts are known — an antenna and a filter solved by EMCraft (or measured), the
 amplifiers from their data sheets.
 
+## In the window
+
+A system's job has its own four steps — **Chain** (in the geometry's place), Setup, Run,
+Results — and keeps the System view whichever is open: the chain as a block diagram (a click
+edits a stage in the Chain step, its menu moves or deletes it; an empty chain offers a button
+for each kind), the budget's chart and table. The ribbon's SYSTEM tab adds stages and sets the
+source and receiver; the browser lists the source, the stages, the receiver, the measurements
+the S-parameter stages read and the budget. No bodies, materials, region or mesh are shown.
+
 ## The chain
 
 | Stage (`system.stage.add` `type`) | Settings | Its S | Its noise |

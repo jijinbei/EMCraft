@@ -9,6 +9,7 @@ mod model;
 mod results;
 mod run;
 mod setup;
+mod system;
 
 pub use results::export_touchstone;
 
@@ -64,6 +65,7 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
                         match step {
                             // The step bar's switch.
                             Step::Intent => {}
+                            Step::Geometry if is_system(app) => system::chain(app, ui, has_dialog, out),
                             Step::Geometry => {
                                 model::geometry(app, ui, has_dialog, out);
                                 model::materials(app, ui, out);
@@ -105,7 +107,8 @@ fn header(app: &EmcraftApp, ui: &mut egui::Ui, s: &StepState) {
         } else {
             mark(ui.painter(), r.center(), s.status);
         }
-        ui.text(Style::Heading, trf(t!("Step {n} · {step}"), args!(n = s.step.index(), step = shown(s.step))));
+        let (n, name) = numbered(app, s.step);
+        ui.text(Style::Heading, trf(t!("Step {n} · {step}"), args!(n = n, step = name)));
         if run_going {
             ui_kit::small(ui, t!("running"), t.accent);
         } else {

@@ -70,7 +70,10 @@ impl Step {
         Some(match id {
             "project.analysis" | "units.set" => Step::Intent,
             "project.setup" => Step::Setup,
-            _ if id.starts_with("geometry.") || id == "file.sample" || id.starts_with("model.material.") => Step::Geometry,
+            // A system's chain stands where a model's geometry does.
+            _ if id.starts_with("geometry.") || id == "file.sample" || id.starts_with("model.material.") || id.starts_with("system.") => {
+                Step::Geometry
+            }
             _ if id.starts_with("model.port.") || id.starts_with("source.") || id == "solve.port_modes" => Step::Excitation,
             "model.region" | "model.background" | "model.walls" | "model.open" | "model.symmetry" => Step::Boundaries,
             "mesh.generate" | "project.estimate" => Step::Mesh,
@@ -219,8 +222,9 @@ pub const ANALYSES: [AnalysisSpec; Analysis::COUNT] = {
         AnalysisSpec {
             analysis: Analysis::System,
             solve: "solve.system",
-            required: &[Setup],
-            not_needed: &[Geometry, Excitation, Boundaries, Mesh],
+            // Its chain stands in the geometry's step.
+            required: &[Geometry, Setup],
+            not_needed: &[Excitation, Boundaries, Mesh],
             results: &[R::System],
         },
     ]
@@ -359,24 +363,22 @@ pub fn steps(s: &Session) -> [StepState; 8] {
     [intent, geometry, excitation, setup, boundaries, mesh, run, results]
 }
 
-/// A system's steps: no geometry, excitation, region or mesh (its chain is the System view's);
-/// its band to confirm, and a chain to read.
+/// A system's steps: its chain where a model's geometry stands, its band to confirm, then Run
+/// and Results; no excitation, region or mesh.
 fn system_steps(s: &Session) -> [StepState; 8] {
-    let mut setup = StepState::new(Step::Setup);
+    let mut chain = StepState::new(Step::Geometry);
     if s.model.system.stages.is_empty() {
-        setup.note(Status::Waiting, emcraft_i18n::text!("the chain has no stages yet: add them in the System view"), Some("system.stage.add"));
+        chain.note(
+            Status::Todo,
+            emcraft_i18n::text!("the chain has no stages yet: add an amplifier, a filter's S-parameters or a line"),
+            Some("system.stage.add"),
+        );
     }
+    let mut setup = StepState::new(Step::Setup);
     if s.model.job.setup().is_none() {
         setup.note(Status::Todo, emcraft_i18n::text!("the run's settings are not confirmed yet: check them and confirm"), Some("project.setup"));
     }
-    let above = [
-        intent(s),
-        StepState::new(Step::Geometry),
-        StepState::new(Step::Excitation),
-        setup,
-        StepState::new(Step::Boundaries),
-        StepState::new(Step::Mesh),
-    ];
+    let above = [intent(s), chain, StepState::new(Step::Excitation), setup, StepState::new(Step::Boundaries), StepState::new(Step::Mesh)];
     let (run, results) = run_and_results(s, &above);
     let [intent, geometry, excitation, setup, boundaries, mesh] = above;
     [intent, geometry, excitation, setup, boundaries, mesh, run, results]

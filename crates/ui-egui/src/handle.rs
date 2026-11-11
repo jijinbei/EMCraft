@@ -379,6 +379,11 @@ pub enum Handle<'a> {
     SystemAdd(&'a str),
     /// What the system's chart shows: `system:chart:along`.
     SystemChart(&'a str),
+    /// The Chain step's rows and buttons: a stage by name, a kind to add, `source`, `receiver`:
+    /// `system:panel:LNA`.
+    SystemPanel(&'a str),
+    /// The System view's buttons while the chain is empty, a kind each: `system:start:amplifier`.
+    SystemStart(&'a str),
     /// Which of a cell's Bloch waves the pulse goes through (from 1): `pulse:wave:2`.
     PulseWave(usize),
     /// What the S-parameter chart shows: `sparameters:show:phase`.
@@ -489,6 +494,8 @@ impl fmt::Display for Handle<'_> {
             Handle::SystemStage(n) => write!(f, "system:stage:{n}"),
             Handle::SystemAdd(k) => write!(f, "system:add:{k}"),
             Handle::SystemChart(c) => write!(f, "system:chart:{c}"),
+            Handle::SystemPanel(n) => write!(f, "system:panel:{n}"),
+            Handle::SystemStart(k) => write!(f, "system:start:{k}"),
             Handle::SParameters(what) => write!(f, "sparameters:show:{what}"),
             Handle::StyleAxis(axis, part) => write!(f, "chart:style:{axis}:{part}"),
             Handle::Legend(at) => write!(f, "chart:legend:{at}"),

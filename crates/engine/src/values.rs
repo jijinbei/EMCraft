@@ -62,6 +62,29 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
         "source.edit" => source(m, p, s.display)?,
         "geometry.body.edit" => body(m, p, s.display)?,
         "geometry.body.material" => body_material(m, p)?,
+        "system.stage.edit" => {
+            let name = p.string("stage").required()?;
+            let i = m.system.index(name).map_err(|e| p.error("stage", e.to_string()))?;
+            let mut v = crate::system::stage_params(s, &m.system.stages[i].part);
+            v["stage"] = json!(name);
+            v
+        }
+        "system.source" => {
+            let src = &m.system.source;
+            let mut v = json!({"antenna": src.antenna.clone().unwrap_or_default(), "temperature": src.temperature});
+            if let Some(x) = src.power {
+                v["power"] = json!(x);
+            }
+            v
+        }
+        "system.receiver" => {
+            let r = &m.system.receiver;
+            let mut v = json!({"impedance": r.impedance, "temperature": r.temperature, "snr": r.snr});
+            if let Some(b) = r.bandwidth {
+                v["bandwidth"] = json!(s.show_frequency(b));
+            }
+            v
+        }
         _ if spec.effect == crate::Effect::Solve => match s.runs.iter().find(|r| r.command == spec.id) {
             Some(run) => crate::runs::shown(s, run)?,
             None => json!({}),

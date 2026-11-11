@@ -27,7 +27,7 @@ pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             let row = card.shrink2(vec2(8.0, 4.0));
             let kind = Rect::from_min_size(row.min, vec2(crate::kinds::SWITCH_WIDTH, row.height()));
             crate::kinds::switch(app, ui, kind, out);
-            let states: Vec<&StepState> = states.iter().filter(|s| s.step != Step::Intent).collect();
+            let states: Vec<&StepState> = states.iter().filter(|s| on_bar(app, s.step)).collect();
             let list: Vec<Pill> = states
                 .iter()
                 .map(|s| {
@@ -44,20 +44,19 @@ pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                     if let Some(why) = &unneeded {
                         checks.insert(0, why.clone());
                     }
-                    let tip = if checks.is_empty() || run_going {
-                        format!("{}: {status}", shown(s.step))
-                    } else {
-                        format!("{}: {status}\n{}", shown(s.step), checks.join("\n"))
-                    };
+                    let name = numbered(app, s.step).1;
+                    let tip =
+                        if checks.is_empty() || run_going { format!("{name}: {status}") } else { format!("{name}: {status}\n{}", checks.join("\n")) };
                     let look = match (run_going, unneeded.is_some(), s.status) {
                         (true, _, _) => Look::Running,
                         (false, true, Status::Done) => Look::Skipped,
                         (false, true, status) => Look::Unneeded(status),
                         (false, false, status) => Look::Plain(status),
                     };
+                    let (n, name) = numbered(app, s.step);
                     Pill {
-                        text: format!("{} {}", s.step.index(), shown(s.step)),
-                        short: s.step.index().to_string(),
+                        text: format!("{n} {name}"),
+                        short: n.to_string(),
                         said: status.to_owned(),
                         look,
                         active: app.place.step() == Some(s.step),
