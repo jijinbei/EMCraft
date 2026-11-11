@@ -59,12 +59,14 @@ pub const TABLE: &[(&str, Class)] = &[
     ("engine", Class::Layer(6)),
     // L6, after the engine: what every window shares, no GUI toolkit (egui, iced) below it.
     ("ui-core", Class::Layer(6)),
-    // L7: the desktop UI.
+    // L7: the desktop UI, and its second window in iced (docs/adr/0007-iced-window.md).
     ("ui-egui", Class::Layer(7)),
+    ("ui-iced", Class::Layer(7)),
     ("testkit", Class::Testkit),
     // apps and tooling
     ("emcraft", Class::Exempt),
     ("cli", Class::Exempt),
+    ("iced", Class::Exempt),
     ("xtask", Class::Exempt),
 ];
 
@@ -82,7 +84,7 @@ fn intra_layer_allowed(from: &str, to: &str) -> bool {
 
 /// External crates that constitute a UI toolkit / windowing dependency.
 /// Entries ending in `*` are prefixes.
-pub const UI_CRATES: &[&str] = &["egui", "eframe", "egui-wgpu", "wgpu", "winit", "egui_kittest", "rfd", "glow", "bevy*"];
+pub const UI_CRATES: &[&str] = &["egui", "eframe", "egui-wgpu", "wgpu", "winit", "egui_kittest", "rfd", "glow", "iced*", "bevy*"];
 
 /// First layer allowed to use UI crates.
 pub const UI_MIN_LAYER: u8 = 7;

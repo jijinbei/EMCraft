@@ -25,6 +25,7 @@ emcraft-templates = { path = "crates/templates" }
 emcraft-engine = { path = "crates/engine" }
 emcraft-ui-core = { path = "crates/ui-core" }
 emcraft-ui-egui = { path = "crates/ui-egui" }
+emcraft-ui-iced = { path = "crates/ui-iced" }
 
 # foundation
 thiserror = "2"
@@ -63,6 +64,11 @@ rstest = { version = "0.26", default-features = false }
 # (docs/adr/0004-gpu-viewport.md).
 egui = "0.36"
 eframe = { version = "0.36", default-features = false, features = ["wgpu", "glow", "default_fonts", "wayland", "x11"] }
+
+# ui, the second window (crates/ui-iced, docs/adr/0007-iced-window.md): iced's main line, pinned,
+# for the wgpu the rest of the build has (iced 0.14 is on wgpu 27).
+iced = { git = "https://github.com/iced-rs/iced", rev = "c3d2cfd0a8503fd4b13754467953b427be259c55", default-features = false, features = ["wgpu", "tiny-skia", "canvas", "image-without-codecs", "x11", "wayland", "wayland-dlopen", "thread-pool"] }
+iced_test = { git = "https://github.com/iced-rs/iced", rev = "c3d2cfd0a8503fd4b13754467953b427be259c55" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

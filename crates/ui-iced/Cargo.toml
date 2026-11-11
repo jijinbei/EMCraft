@@ -1,0 +1,21 @@
+[package]
+name = "emcraft-ui-iced"
+description = "EMCraft's second window, in iced, on the same shared rules as the egui one (emcraft-ui-core): a system's node editor — the band, the canvas of nodes edited in place, the chart and the budget — so far (docs/adr/0007-iced-window.md)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+emcraft-engine = { workspace = true }
+emcraft-i18n = { workspace = true }
+emcraft-model = { workspace = true }
+emcraft-render = { workspace = true }
+emcraft-ui-core = { workspace = true }
+iced = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+iced_test = { workspace = true }
