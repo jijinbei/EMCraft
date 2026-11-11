@@ -107,7 +107,7 @@ impl Base {
 }
 
 /// A colour as a theme file writes it: `#rrggbb` or `#rrggbbaa`, the alpha straight.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Colour {
     pub r: u8,
     pub g: u8,

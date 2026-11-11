@@ -261,7 +261,7 @@ fn theme_card(ui: &mut egui::Ui, th: &Theme, current: bool) -> egui::Response {
     };
     p.rect(r, 10.0, t.panel_header, ring, egui::StrokeKind::Inside);
     // The window in miniature.
-    let (o, s) = (&th.tokens, &th.palette);
+    let (o, s) = (&crate::theme::tokens_of(th), &th.palette);
     let win = Rect::from_min_size(r.min + vec2(8.0, 8.0), vec2(CARD[0] - 16.0, 84.0));
     p.rect_filled(win, 5.0, o.panel);
     let bar = Rect::from_min_size(win.min, vec2(win.width(), 10.0));
