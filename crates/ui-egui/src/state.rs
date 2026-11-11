@@ -322,40 +322,7 @@ pub struct ViewState {
     pub system: emcraft_engine::view::SystemChart,
 }
 
-/// The replies of the commands whose results the views show as they came: the last port-mode
-/// solve's, the last comparison with theory's.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Replies {
-    pub pcb: Option<emcraft_engine::pcb::Inspection>,
-    pub port_modes: Option<emcraft_engine::PortModes>,
-    pub compare: Option<emcraft_engine::Comparison>,
-    /// What the import dialog's file holds (`geometry.import.inspect`).
-    pub import: Option<ImportProbe>,
-    /// The last `results.pulse`'s reply.
-    pub pulse: Option<Value>,
-    /// The last coupling matrix (`filter.synthesize`, `results.coupling`).
-    pub coupling: Option<Value>,
-    /// The last analysis read from the sweep ([`ANALYSES`]): its command, reply and run count.
-    pub analysis: Option<Analysis>,
-}
-
-/// The analyses read from a sweep that the Analyses view shows, in its buttons' order.
-pub const ANALYSES: [&str; 5] = ["results.material", "results.noise", "results.active", "results.breakdown", "results.thermal"];
-
-/// An analysis' reply as the Analyses view keeps it.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Analysis {
-    pub command: String,
-    pub reply: Value,
-    pub run: u64,
-}
-
-/// `geometry.import.inspect`'s reply for the file (and STL unit) `key` names, or why not.
-#[derive(Clone, Debug, PartialEq)]
-pub struct ImportProbe {
-    pub key: String,
-    pub reply: Result<emcraft_engine::ImportInspection, String>,
-}
+pub use emcraft_ui_core::replies::{ANALYSES, Analysis, ImportProbe, Replies};
 
 /// PCB controls and an explicit pinned comparison, independent of the volume-field state.
 pub struct PcbCopperCache {

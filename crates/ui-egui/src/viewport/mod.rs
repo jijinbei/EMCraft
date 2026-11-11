@@ -4,7 +4,6 @@
 //! port-mode and eigenmode tables, the far-field pattern and the comparison with theory. Charts
 //! and fields are `emcraft-render`'s CPU pictures, shown as textures.
 
-use crate::view::ViewExt;
 use egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, pos2, vec2};
 use emcraft_engine::view::{self, Plane};
 use serde_json::{Value, json};
@@ -110,12 +109,12 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
             let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(r.shrink(10.0)));
             view_tabs(app, &mut inner, out);
             inner.add_space(4.0);
-            if let Some(text) = app.place.view().missing(app) {
+            if let Some(text) = app.place.view().missing(&app.session, &app.replies) {
                 empty(&mut inner, text);
                 return;
             }
             // Results of a model changed after their run say so over the view, which is dimmed.
-            let stale = app.place.view().is_result() && app.place.view().stale(app);
+            let stale = app.place.view().is_result() && app.place.view().stale(&app.session);
             if stale {
                 stale_band(&mut inner, out);
                 inner.add_space(4.0);
@@ -158,10 +157,10 @@ pub(super) fn view_tabs(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) 
         let result = |v: View| match v {
             View::Model | View::Pcb => false,
             View::PortModes => app.place.view() == v,
-            v => v == app.place.view() || v.available(app),
+            v => v == app.place.view() || v.available(&app.session, &app.replies),
         };
         let any = View::ALL.into_iter().any(result);
-        for v in View::ALL.into_iter().filter(|v| if *v == View::Model { any && v.available(app) } else { result(*v) }) {
+        for v in View::ALL.into_iter().filter(|v| if *v == View::Model { any && v.available(&app.session, &app.replies) } else { result(*v) }) {
             let tab = crate::ui_kit::glyph_tab(v.glyph(), shown(v).to_owned(), app.place.view() == v, crate::theme::Emphasis::Primary);
             ui.act(true, tab, Handle::View(v), Action::ShowView(v), out);
         }

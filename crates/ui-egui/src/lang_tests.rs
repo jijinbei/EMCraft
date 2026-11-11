@@ -1,7 +1,6 @@
 //! The translations stay whole: every command and sample translated, the placeholders kept,
 //! and a tour of the window in Japanese that finds no English left and no translation unused.
 
-use crate::view::ViewExt;
 use std::collections::BTreeSet;
 
 use serde_json::{Value, json};
@@ -335,7 +334,7 @@ fn tour() -> Record {
         }
         let _ = crate::status::text("file.sample", &json!({"name": "highpass"}), &json!({}), &h.app.session);
         h.app.workflow.fields = crate::steps::Fields::default();
-        let views: Vec<View> = View::ALL.into_iter().filter(|v| i == 0 || v.available(&h.app)).collect();
+        let views: Vec<View> = View::ALL.into_iter().filter(|v| i == 0 || v.available(&h.app.session, &h.app.replies)).collect();
         for v in views {
             if v == View::Field {
                 h.app.field.beside_3d = true;
@@ -447,7 +446,7 @@ fn tour() -> Record {
         // Results of a model changed after their run: out of date in their view and the browser.
         if h.app.session.results().any() {
             let _ = h.call("engine.execute", json!({"command": "project.setup", "params": {"kind": "frequency", "start": 7, "stop": 9.5}}));
-            if let Some(v) = View::ALL.into_iter().find(|v| v.is_result() && v.available(&h.app)) {
+            if let Some(v) = View::ALL.into_iter().find(|v| v.is_result() && v.available(&h.app.session, &h.app.replies)) {
                 call(&mut h, "ui.set", json!({"view": v.id()}));
                 h.frames(2);
             }

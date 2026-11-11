@@ -1,7 +1,6 @@
 //! The model in 3D (its section view: `crate::section3d`).
 
 use super::*;
-use crate::view::ViewExt;
 
 /// The model in 3D, in the active step's overlay.
 pub(super) fn model3d(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
@@ -9,7 +8,7 @@ pub(super) fn model3d(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: 
     ui.allocate_rect(area, Sense::hover());
     let mut overlay = app.place.step().map_or(crate::scene3d::Overlay::Plain, crate::steps::overlay);
     // In Results, the field's plane in the model.
-    if app.place.step() == Some(crate::steps::Step::Results) && View::Field.available(app) {
+    if app.place.step() == Some(crate::steps::Step::Results) && View::Field.available(&app.session, &app.replies) {
         overlay = crate::scene3d::Overlay::Field;
     }
     crate::view3d::show(app, st, ui, area, overlay, out);

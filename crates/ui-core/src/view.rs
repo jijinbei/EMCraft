@@ -136,6 +136,55 @@ impl View {
         }
     }
 
+    /// Whether what the view shows of `s` is stale: its own kinds of result, or (a view of no
+    /// one kind) any.
+    pub fn stale(self, s: &emcraft_engine::Session) -> bool {
+        let r = s.results();
+        let mut own = emcraft_engine::ResultKind::ALL.into_iter().filter(|k| View::of(*k) == self).peekable();
+        if own.peek().is_none() {
+            return r.any_stale();
+        }
+        own.any(|k| r.is_stale(k))
+    }
+
+    /// Whether the view has something to show of `s` with `replies` kept: the model always,
+    /// results once solved.
+    pub fn available(self, s: &emcraft_engine::Session, replies: &crate::replies::Replies) -> bool {
+        use emcraft_engine::workflow::Analysis as Solver;
+        let r = s.results();
+        let analysis = s.model().analysis();
+        match self {
+            View::Model => !matches!(analysis, Solver::Pcb | Solver::System),
+            // The PCB diagnosis' own stages; a board solved by finite elements is the model's.
+            View::Pcb => analysis == Solver::Pcb,
+            // A project just opened: its kept sweeps, drawn from the history.
+            View::SParameters => {
+                r.sweep.is_some()
+                    || r.time_domain.is_some()
+                    || r.revolution.is_some()
+                    || s.archive().iter().any(|a| a.kept.sweep.is_some())
+                    || !s.views().measured.is_empty()
+            }
+            View::Tdr => r.sweep.is_some() || r.time_domain.is_some(),
+            View::Pulse => r.sweep.is_some() || r.time_domain.is_some() || r.revolution.is_some(),
+            View::Field => r.sweep.is_some() || r.eigen.is_some() || r.radiation.is_some(),
+            View::PortModes => replies.port_modes.is_some() || (s.model().mesh.is_some() && !s.model().ports.is_empty()),
+            View::FarField => r.radiation.is_some() || r.td_radiation.is_some(),
+            View::Compare => r.sweep.is_some(),
+            View::Eigenmodes => r.eigen.is_some(),
+            View::Study => r.study.is_some(),
+            View::Dispersion => r.dispersion.is_some(),
+            View::Analyses => r.sweep.is_some() || replies.analysis.is_some(),
+            View::System => analysis == Solver::System || r.system.is_some(),
+        }
+    }
+
+    /// What the card says instead of the view while it has nothing to show, for the views that
+    /// leave it to the card.
+    pub fn missing(self, s: &emcraft_engine::Session, replies: &crate::replies::Replies) -> Option<crate::lang::Text> {
+        if self.available(s, replies) { None } else { self.empty() }
+    }
+
     /// The view that shows a kind of result first.
     pub const fn of(kind: emcraft_engine::ResultKind) -> View {
         use emcraft_engine::ResultKind as R;

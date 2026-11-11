@@ -1,6 +1,5 @@
 //! The app's own tests: the headless scenarios in `tests/scenarios/` and a few direct checks.
 
-use crate::view::ViewExt;
 use serde_json::{Value, json};
 
 use crate::scenario::Harness;
@@ -972,12 +971,12 @@ fn a_board_solved_by_finite_elements_has_no_pcb_route_view() {
     let mut h = Harness::new();
     assert_eq!(h.call("engine.execute", json!({"command":"file.sample","params":{"name":"pcb-lowpass"}}))["ok"], true);
     h.frames(2);
-    assert!(!crate::View::Pcb.available(&h.app));
+    assert!(!crate::View::Pcb.available(&h.app.session, &h.app.replies));
     assert_ne!(h.app.place.view(), crate::View::Pcb);
     assert!(crate::browser::tree(&h.app).iter().all(|(section, _)| *section != "PCB"));
     // The same board under the PCB diagnosis keeps its stages.
     assert_eq!(h.call("engine.execute", json!({"command":"project.analysis","params":{"kind":"pcb"}}))["ok"], true);
-    assert!(crate::View::Pcb.available(&h.app));
+    assert!(crate::View::Pcb.available(&h.app.session, &h.app.replies));
     assert_eq!(h.call("engine.execute", json!({"command":"project.analysis","params":{"kind":"frequency"}}))["ok"], true);
     h.frames(1);
     assert_ne!(h.app.place.view(), crate::View::Pcb);

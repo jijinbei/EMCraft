@@ -34,6 +34,7 @@ macro_rules! t {
 }
 
 pub mod action;
+pub mod after;
 pub mod browser;
 pub mod chart_words;
 pub mod commands;
@@ -52,6 +53,7 @@ pub mod pen;
 pub mod pick;
 pub mod prefs;
 pub mod record;
+pub mod replies;
 pub mod ribbon;
 pub mod selection;
 pub mod steps;
