@@ -2539,7 +2539,7 @@
       "label": "PCB データの読み込み",
       "doc": "セッションの長さの単位で書かれた PCB のデータを読み込む。モデルを置き換え、形状を確かめてから確定する。積層、ネット、配線、ビア、塗りつぶし銅箔は履歴に埋め込まれる。",
       "params": {
-        "data": "PCB のオブジェクト：`name`、`layers`（`name`、`z`、`eps_below`、`loss_below`：下の誘電体の tan δ、既定 0）、`segments`（`id`、`net`、`layer`、`start`、`end`、`width`）、`vias`、`copper`（`net`、`layer`、`polygon`）、`notes`。数値はどれも式で書ける（`\"=h\"`）"
+        "data": "PCB のオブジェクト：`name`、`layers`（`name`、`z`、`eps_below`、`loss_below`：下の誘電体の tan δ、既定 0、`copper`：銅の厚さ、既定 0 で面。最上層か最下層ではその厚さだけ空気側に立ち、model.walls の損失は面の特異な縁ではなく厚い帯のものになる）、`segments`（`id`、`net`、`layer`、`start`、`end`、`width`）、`vias`、`copper`（`net`、`layer`、`polygon`）、`notes`。数値はどれも式で書ける（`\"=h\"`）"
       }
     },
     "pcb.import": {
@@ -2547,7 +2547,7 @@
       "doc": "KiCad の基板から配線（円弧は折れ線にする）、ビア、部品の銅パッド（めっき穴はビアにする）、明示された積層（各層の epsilon_r と loss_tangent）、保存済みの塗りつぶし銅箔を読む。塗りつぶしていないゾーンは銅箔として扱わない。マスクと銅厚は含まない。データはプロジェクトに埋め込むので、開き直すときに元のファイルは要らない。",
       "params": {
         "path": "KiCad の .kicad_pcb ファイル（64 MiB 以下）",
-        "stackup": "銅の層の配列（`name`、`z`、`eps_below`、`loss_below`）、長さは表示単位。ファイルの積層を置き換える"
+        "stackup": "銅の層の配列（`name`、`z`、`eps_below`、`loss_below`、`copper`）、長さは表示単位。ファイルの積層を置き換える（`copper` は最上層・最下層の銅の厚さ、既定 0）"
       }
     },
     "pcb.sample": {

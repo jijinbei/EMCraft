@@ -1,0 +1,9 @@
+[
+ {"command": "pcb.load", "params": {"data": {"name": "copper microstrip", "layers": [{"name": "F.Cu", "z": 0, "eps_below": 9.8, "copper": 0.035}, {"name": "B.Cu", "z": 0.635, "eps_below": 1}], "segments": [{"id": "s", "net": "S", "layer": "F.Cu", "start": [-1, 0], "end": [5, 0], "width": 0.600075}]}}},
+ {"command": "pcb.region", "params": {"lo": [0, -3.6], "hi": [4, 3.6], "above": 6, "below": 0}},
+ {"command": "model.walls", "params": {"conductivity": 58000000.0}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "axis": "x", "face": [0, 0, 0, 6.635, 7.2], "modes": 1}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "axis": "x", "face": [4, 0, 0, 6.635, 7.2], "modes": 1}},
+ {"command": "mesh.generate", "params": {"size": 1, "strip_edge": 0.1}},
+ {"command": "solve.frequency", "params": {"frequencies": [1], "order": 2}, "id": "solve"}
+]

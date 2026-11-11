@@ -159,8 +159,16 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
         edge_size: edge,
     })?;
     let material = |l: &emcraft_model::pcb::Layer| -> Result<u32> { if is_air(l) { Ok(0) } else { Ok(s.model.material(&substrate(l))?.0 as u32) } };
-    let (slabs, sheets) = stack(&board, &region, edge, size, layer, material)?;
-    let holes = barrels(&board, &copper, &planar, &sheets, s.display.length)?;
+    let (slabs, sheets, thick) = stack(&board, &region, edge, size, layer, material)?;
+    let mut holes = barrels(&board, &copper, &planar, &sheets, s.display.length)?;
+    // Thick copper: each outer layer's copper a conductor through its own slab.
+    for &(l, from, to) in &thick {
+        let on = planar.nets.get(l).map_or(&[][..], Vec::as_slice);
+        let triangles: Vec<u32> = (0..on.len() as u32).filter(|&t| on[t as usize] != emcraft_mesh::planar::NO_NET).collect();
+        if !triangles.is_empty() {
+            holes.push(Hole { triangles, from, to });
+        }
+    }
     let (mut mesh, sheet_nets) = extrude(&planar, &Stack { z0: 0.0, slabs, sheets, holes })?;
     // Into the model's axes: the board's (x, y, height) is (x, z, y); the swap mirrors, so
     // each tetrahedron's last two nodes swap to keep its volume positive.
@@ -271,7 +279,10 @@ fn layer_index(board: &Board, name: &str) -> Result<usize> {
 }
 
 /// The stack from the floor up — the open boundary's layer (`layer`, its thickness), the air,
-/// the substrates, the air, the layer — and each copper layer's interface in it. A substrate is
+/// the substrates, the air, the layer — each copper layer's interface in it, and the slabs thick
+/// copper fills (its layer, the interfaces below and above): the top layer's copper stands into
+/// the air above it, the bottom layer's into the air below, a slab of the copper's thickness
+/// each (copper on an inner layer is a sheet: not supported thick yet). A substrate is
 /// two halves, each fine at a layer with traces (the fields' edge singularities) and growing to
 /// the middle, at a plane alone from a few edge sizes; the air grows away from the board.
 fn stack(
@@ -281,7 +292,7 @@ fn stack(
     size: f64,
     layer: Option<f64>,
     material: impl Fn(&emcraft_model::pcb::Layer) -> Result<u32>,
-) -> Result<(Vec<Slab>, Vec<(usize, usize)>)> {
+) -> Result<(Vec<Slab>, Vec<(usize, usize)>, Vec<(usize, usize, usize)>)> {
     const VACUUM: u32 = 0;
     // A slab `h` thick whose cells grow by `growth` from `first` at its bottom (`up`) or top.
     let graded = |h: f64, material: u32, first: f64, growth: f64, up: bool| {
@@ -297,9 +308,26 @@ fn stack(
     let depth = layer.unwrap_or(0.0);
     let heights = board.heights();
     let up = upwards(board);
+    let (bottom, top) = (up.first().copied(), up.last().copied());
+    if let Some(l) = up.iter().skip(1).take(up.len().saturating_sub(2)).find(|&&l| board.layers[l].copper > 0.0) {
+        return Err(failed(format!("not supported yet: copper thickness on an inner layer ({}); give it 0, a sheet", board.layers[*l].name)));
+    }
+    // Copper on the box's floor or under its cover (no air beyond) is the box's wall: no slab.
+    let thickness = |l: Option<usize>, air: f64| if air > 0.0 { l.map_or(0.0, |l| board.layers[l].copper) } else { 0.0 };
+    let (t_bottom, t_top) = (thickness(bottom, region.below), thickness(top, region.above));
+    if t_bottom > 0.0 && t_bottom >= region.below - depth || t_top > 0.0 && t_top >= region.above - depth {
+        return Err(failed("the copper is thicker than the air the region leaves beside the board: raise pcb.region's above and below"));
+    }
+    // The copper's slab: one cell through its thickness.
+    let metal = |t: f64| Slab { thickness: t, material: VACUUM, cells: 1, ratio: 1.0 };
+    let mut thick = Vec::new();
     let mut slabs: Vec<Slab> = layer.map(layer_slab).into_iter().collect();
     if region.below > 0.0 {
-        slabs.push(air(region.below - depth, false));
+        slabs.push(air(region.below - depth - t_bottom, false));
+    }
+    if let (Some(l), true) = (bottom, t_bottom > 0.0) {
+        thick.push((l, slabs.len(), slabs.len() + 1));
+        slabs.push(metal(t_bottom));
     }
     let mut sheets = up.first().map(|&l| (l, slabs.len())).into_iter().collect::<Vec<_>>();
     let routed = |l: usize| board.segments.iter().any(|g| g.layer == board.layers[l].name);
@@ -313,11 +341,15 @@ fn stack(
         slabs.push(graded(h / 2.0, m, first(upper), SUBSTRATE_GROWTH, false));
         sheets.push((upper, slabs.len()));
     }
+    if let (Some(l), true) = (top, t_top > 0.0) {
+        thick.push((l, slabs.len(), slabs.len() + 1));
+        slabs.push(metal(t_top));
+    }
     if region.above > 0.0 {
-        slabs.push(air(region.above - depth, true));
+        slabs.push(air(region.above - depth - t_top, true));
     }
     slabs.extend(layer.map(layer_slab));
-    Ok((slabs, sheets))
+    Ok((slabs, sheets, thick))
 }
 
 /// Each via's barrel as a hole through the stack between its layers' interfaces (`sheets`),

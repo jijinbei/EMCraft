@@ -1,0 +1,20 @@
+{
+ "title": "Microstrip with copper 35 µm thick (σ = 5.8e7 S/m) on alumina (εr = 9.8, h = 0.635 mm, W/h = 0.945) loaded as a board at 1 GHz: the conductor loss of a 4 mm line",
+ "kind": "theory",
+ "source": "R. A. Pucel, D. J. Massé, C. P. Hartwig, Losses in microstrip, IEEE Trans. MTT 16(6):342–350, 1968 (Wheeler's incremental-inductance rule on the strip and the ground), in E. Hammerstad and Ø. Jensen's closed form (IEEE MTT-S International Microwave Symposium Digest, 1980, pp. 407–409) for W/h ≤ 1: α_c = 1.38 A R_s/(h Z0) (32 − (W_e/h)²)/(32 + (W_e/h)²) dB per length, W_e = W + (t/π)(1 + ln(2h/t)), A = 1 + (h/W_e)(1 + ln(2h/t)/π), R_s = √(πfμ0/σ) = 8.2502 mΩ, Z0 = 50.661 Ω (`cargo run --release -p emcraft-theory --example pcb_line_reference -- 0.600075 0.635 9.8 4 50 1`): 1.02393 dB/m, evaluated independently of the code; the 4 mm line's |S21| −α_c L",
+ "quantities": [
+  {
+   "id": "s21_db",
+   "quantity": "the 4 mm line's |S21| in dB",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s21/db"
+   },
+   "value": -0.004095711001735473,
+   "tolerance": {
+    "relative": 0.15
+   },
+   "reason": "+10.3 % measured with the strip's edges graded to 0.1 mm (+5.8 % at 0.05 mm: the edges' current crowding converges from above), the box's own walls (lossy too, 7.2 mm wide and 6 mm up), and the formula's own approximations (Wheeler's rule, the corners); as sheets (`copper` 0) the loss is +40 %"
+  }
+ ]
+}

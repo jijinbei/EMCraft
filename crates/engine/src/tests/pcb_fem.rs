@@ -362,3 +362,48 @@ fn a_board_is_edited_by_commands_and_undone() {
     }
     assert_eq!(count(&s), (before.0 + 1, before.1 + 1, before.2 + 1));
 }
+
+#[test]
+fn thick_copper_stands_into_the_air_and_lowers_the_lines_impedance() {
+    // The strip 0.1 mm thick: its prisms leave the mesh, and a thick strip's impedance is below
+    // a sheet's (its edges' extra capacitance; Wheeler's W_e > W).
+    let port_mode = |copper: f64| {
+        let mut s = Session::new();
+        let board = json!({
+            "name": "microstrip",
+            "layers": [{"name": "F.Cu", "z": 0, "eps_below": 9.8, "copper": copper}, {"name": "B.Cu", "z": 0.635, "eps_below": 1}],
+            "segments": [{"id": "s", "net": "S", "layer": "F.Cu", "start": [-1, 0], "end": [5, 0], "width": 0.6}],
+        });
+        s.execute("pcb.load", &json!({"data": board})).unwrap();
+        s.execute("pcb.region", &json!({"lo": [0, -7.2], "hi": [4, 7.2], "above": 23.4, "below": 0})).unwrap();
+        for (name, end, at) in [("1", "start", 0.0), ("2", "end", 4.0)] {
+            s.execute("model.port.create", &json!({"name": name, "end": end, "axis": "x", "face": [at, 0, 0, 24.035, 14.4], "modes": 1})).unwrap();
+        }
+        let m = s.execute("mesh.generate", &json!({"size": 2.0})).unwrap();
+        let r = s.execute("solve.port_modes", &json!({"frequency": 1})).unwrap();
+        (m["tetrahedra"].as_u64().unwrap(), first_mode(&r, "impedance"))
+    };
+    let (sheet, thick) = (port_mode(0.0), port_mode(0.1));
+    assert!(thick.1 < sheet.1 - 1.0, "{sheet:?} {thick:?}");
+    assert!(thick.0 > sheet.0, "the copper's slab adds a level: {sheet:?} {thick:?}");
+    // Copper on an inner layer, or thicker than the air beside it: refused.
+    let mut s = Session::new();
+    let board = json!({
+        "name": "stripline",
+        "layers": [{"name": "F", "z": 0, "eps_below": 4}, {"name": "In", "z": 0.5, "eps_below": 4, "copper": 0.035}, {"name": "B", "z": 1, "eps_below": 1}],
+        "segments": [{"id": "s", "net": "S", "layer": "In", "start": [-1, 0], "end": [5, 0], "width": 0.3}],
+    });
+    s.execute("pcb.load", &json!({"data": board})).unwrap();
+    s.execute("pcb.region", &json!({"lo": [0, -3], "hi": [4, 3], "above": 0, "below": 0})).unwrap();
+    assert!(s.execute("mesh.generate", &json!({"size": 1.0})).is_err());
+    let mut s = Session::new();
+    let board = json!({
+        "name": "microstrip",
+        "layers": [{"name": "F.Cu", "z": 0, "eps_below": 4, "copper": 0.5}, {"name": "B.Cu", "z": 1, "eps_below": 1}],
+        "segments": [{"id": "s", "net": "S", "layer": "F.Cu", "start": [-1, 0], "end": [5, 0], "width": 1}],
+    });
+    s.execute("pcb.load", &json!({"data": board})).unwrap();
+    s.execute("pcb.region", &json!({"lo": [0, -3], "hi": [4, 3], "above": 0.4, "below": 0})).unwrap();
+    assert!(s.execute("mesh.generate", &json!({"size": 1.0})).is_err());
+    assert!(s.execute("pcb.load", &json!({"data": {"name": "x", "layers": [{"name": "F", "z": 0, "eps_below": 4, "copper": -1}, {"name": "B", "z": 1, "eps_below": 1}], "segments": []}})).is_err());
+}

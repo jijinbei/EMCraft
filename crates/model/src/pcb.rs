@@ -14,6 +14,9 @@ pub const MAX_VERTICES: usize = 2_000_000;
 
 /// A copper layer: its name (as the source names it, e.g. `F.Cu`), its height z (m) and the
 /// relative permittivity and loss tangent of the dielectric below it, down to the next layer.
+/// The thickest copper a layer takes (m).
+pub const MAX_COPPER_THICKNESS: f64 = 1e-3;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Layer {
     pub name: String,
@@ -22,6 +25,10 @@ pub struct Layer {
     /// tan δ of the dielectric below (0: lossless).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub loss_below: f64,
+    /// The copper's thickness on this layer (m): 0, a conducting sheet; on the board's top or
+    /// bottom layer the copper stands that thick into the air, its surfaces conducting.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub copper: f64,
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref, reason = "serde's skip_serializing_if passes a reference")]
@@ -124,7 +131,7 @@ impl Board {
     /// let empty = Board { name: "empty".into(), layers: vec![], segments: vec![], vias: vec![], copper: vec![], notes: vec![], region: None };
     /// assert!(empty.bounds().is_none());
     /// let segment = Segment { id: "0".into(), net: "A".into(), layer: "F.Cu".into(), start: [0.0, 0.001], end: [0.01, 0.002], width: 2e-4 };
-    /// let line = Board { segments: vec![segment], layers: vec![Layer { name: "F.Cu".into(), z: 0.0, eps_below: 4.2, loss_below: 0.0 }], ..empty };
+    /// let line = Board { segments: vec![segment], layers: vec![Layer { name: "F.Cu".into(), z: 0.0, eps_below: 4.2, loss_below: 0.0, copper: 0.0 }], ..empty };
     /// assert_eq!(line.bounds(), Some(([0.0, 0.001], [0.01, 0.002])));
     /// ```
     pub fn bounds(&self) -> Option<([f64; 2], [f64; 2])> {
@@ -170,6 +177,7 @@ impl Board {
                 || !l.eps_below.is_finite()
                 || !(1.0..=128.0).contains(&l.eps_below)
                 || !(0.0..=1.0).contains(&l.loss_below)
+                || !(0.0..=MAX_COPPER_THICKNESS).contains(&l.copper)
                 || self.layers[..i].iter().any(|q| q.name == l.name || q.z >= l.z)
             {
                 return Err(bad());
@@ -220,7 +228,7 @@ impl Board {
     ///
     /// ```
     /// use emcraft_model::pcb::{Board, Layer};
-    /// let layers = vec![Layer { name: "F.Cu".into(), z: 0.0, eps_below: 4.2, loss_below: 0.0 }, Layer { name: "B.Cu".into(), z: 1.6e-3, eps_below: 1.0, loss_below: 0.0 }];
+    /// let layers = vec![Layer { name: "F.Cu".into(), z: 0.0, eps_below: 4.2, loss_below: 0.0, copper: 0.0 }, Layer { name: "B.Cu".into(), z: 1.6e-3, eps_below: 1.0, loss_below: 0.0, copper: 0.0 }];
     /// let b = Board { name: "b".into(), layers, segments: vec![], vias: vec![], copper: vec![], notes: vec![], region: None };
     /// assert_eq!(b.heights(), vec![1.6e-3, 0.0]);
     /// ```
@@ -234,13 +242,14 @@ impl Board {
     ///
     /// ```
     /// use emcraft_model::pcb::{Board, Layer};
-    /// let mut b = Board { name: "b".into(), layers: vec![Layer { name: "F.Cu".into(), z: 1.6, eps_below: 4.2, loss_below: 0.0 }], segments: vec![], vias: vec![], copper: vec![], notes: vec![], region: None };
+    /// let mut b = Board { name: "b".into(), layers: vec![Layer { name: "F.Cu".into(), z: 1.6, eps_below: 4.2, loss_below: 0.0, copper: 0.0 }], segments: vec![], vias: vec![], copper: vec![], notes: vec![], region: None };
     /// b.map_lengths(|mm| mm * 1e-3);
     /// assert_eq!(b.layers[0].z, 1.6e-3);
     /// ```
     pub fn map_lengths(&mut self, mut convert: impl FnMut(f64) -> f64) {
         for l in &mut self.layers {
             l.z = convert(l.z);
+            l.copper = convert(l.copper);
         }
         for s in &mut self.segments {
             for p in [&mut s.start, &mut s.end] {

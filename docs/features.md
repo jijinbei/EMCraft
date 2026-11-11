@@ -8,7 +8,7 @@ Loads native PCB routing data in the session's length units. Replaces the model;
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `data` | object |  | yes | PCB object: name, layers [{name,z,eps_below,loss_below}] (loss_below the tan δ below, default 0), segments [{id,net,layer,start,end,width}], vias [{net,at,layers,diameter}], copper [{net,layer,polygon}], notes; any number may be an expression ("=h") |
+| `data` | object |  | yes | PCB object: name, layers [{name,z,eps_below,loss_below,copper}] (loss_below the tan δ below, default 0; copper the copper's thickness, default 0 a sheet — on the top or bottom layer it stands that thick into the air, its loss with model.walls then the thick strip's, not a sheet's singular edges'), segments [{id,net,layer,start,end,width}], vias [{net,at,layers,diameter}], copper [{net,layer,polygon}], notes; any number may be an expression ("=h") |
 
 ## `pcb.import` — Import PCB
 
@@ -17,7 +17,7 @@ Reads a KiCad board's tracks (arcs as chords), vias, footprints' copper pads (a 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `path` | string |  | yes | KiCad .kicad_pcb file, at most 64 MiB |
-| `stackup` | array |  | no | optional copper layers [{name,z,eps_below,loss_below}], lengths in display units; replaces file stackup |
+| `stackup` | array |  | no | optional copper layers [{name,z,eps_below,loss_below,copper}], lengths in display units; replaces file stackup (copper the thickness on the top or bottom layer, default 0) |
 
 ## `pcb.sample` — PCB return-path example
 

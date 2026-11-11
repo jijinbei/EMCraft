@@ -245,7 +245,7 @@ fn stackup(root: &Node) -> Result<Vec<Layer>> {
                 previous.eps_below = eps.ok_or_else(|| bad("dielectric epsilon_r is missing"))?;
                 previous.loss_below = tan_d.unwrap_or(0.0);
             }
-            layers.push(Layer { name: name.into(), z, eps_below: 1.0, loss_below: 0.0 });
+            layers.push(Layer { name: name.into(), z, eps_below: 1.0, loss_below: 0.0, copper: 0.0 });
             eps = None;
             tan_d = None;
         } else if n.child("epsilon_r").is_some() || n.child("type").and_then(|n| n.text(1).ok()).is_some_and(|t| t == "prepreg" || t == "core") {
