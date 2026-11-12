@@ -179,6 +179,8 @@ fn the_3d_frame_draws_the_model() {
         finish(&mut app);
         let ports = Message::View3d(crate::view3d::Nav::Overlay(emcraft_ui_core::scene3d::Overlay::Ports));
         let field = Message::View3d(crate::view3d::Nav::Overlay(emcraft_ui_core::scene3d::Overlay::Field));
+        let cut = app.view3d.bounds().map(|b| emcraft_ui_core::scene3d::Cut::middle(0, b));
+        let section = Message::View3d(crate::view3d::Nav::Section(cut));
         let pick = Message::Click(crate::view3d::Click { at: emcraft_ui_core::geom::Point::new(400.0, 300.0), add: false, double: false });
         for (name, page, then) in [
             ("sparameters", emcraft_ui_core::view::View::SParameters, None),
@@ -186,6 +188,7 @@ fn the_3d_frame_draws_the_model() {
             ("model-ports", emcraft_ui_core::view::View::Model, Some(ports)),
             ("model-field", emcraft_ui_core::view::View::Model, Some(field)),
             ("model-selected", emcraft_ui_core::view::View::Model, Some(pick)),
+            ("model-section", emcraft_ui_core::view::View::Model, Some(section)),
         ] {
             app.update(Message::Page(page));
             if let Some(m) = then {
@@ -302,4 +305,39 @@ fn the_gpu_colours_the_field_and_a_phase_moves_only_the_frame() {
     let cpu = shown(&app);
     assert!(cpu.field.is_none());
     assert!(cpu.built.scene.tris.len() > gpu.built.scene.tris.len(), "the plane's cells in the scene");
+}
+
+/// The section view: the GPU clips the scene at the cut (nothing built again), the other side
+/// kept at a click, and a click still picks a part on the side kept. Analytic evidence: the
+/// cut through the guide's middle across z leaves the half of the box below it, so the picture
+/// changes and the other half differs again.
+#[test]
+fn the_section_view_clips_on_the_gpu() {
+    use crate::view3d::{Click, Nav};
+    use emcraft_ui_core::geom::Point;
+    use emcraft_ui_core::scene3d::Cut;
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::View3d(Nav::Size(800.0, 600.0)));
+    let packed = app.view3d.shown.as_ref().map(|s| s.packed.id);
+    let picture = |app: &App| {
+        let shown = app.view3d.shown.clone().unwrap_or_else(|| panic!("no scene"));
+        emcraft_gpu3d::picture(0, &crate::view3d::shader::frame(&app.shot(&shown), [400, 300], 1.0))
+    };
+    let whole = picture(&app);
+    let Some(bounds) = app.view3d.bounds() else { panic!("no box") };
+    let cut = Cut::middle(2, bounds);
+    app.update(Message::View3d(Nav::Section(Some(cut))));
+    assert_eq!(app.view3d.shown.as_ref().map(|s| s.packed.id), packed, "clipped by the GPU: the scene stays");
+    let low = picture(&app);
+    app.update(Message::View3d(Nav::Section(Some(Cut { keep: cut.keep.flipped(), ..cut }))));
+    let high = picture(&app);
+    match (whole, low, high) {
+        (Ok(w), Ok(l), Ok(h)) => assert!(w.rgba != l.rgba && l.rgba != h.rgba, "each side clipped"),
+        (Err(emcraft_gpu3d::Gpu3dError::NoAdapter(e)), ..) => eprintln!("skipped the pictures: {e}"),
+        (w, l, h) => panic!("{:?} {:?} {:?}", w.err(), l.err(), h.err()),
+    }
+    app.update(Message::Click(Click { at: Point::new(400.0, 300.0), add: false, double: false }));
+    assert_eq!(app.selection.len(), 1, "a part on the side kept picked");
+    app.update(Message::View3d(Nav::Section(None)));
+    assert!(app.view3d.section.is_none());
 }

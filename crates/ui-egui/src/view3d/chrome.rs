@@ -129,9 +129,7 @@ pub(super) fn gpu_frame(
     let line_width = ppp.max(1.0) * f64::from(supersample);
     let mut uniforms = crate::gpu3d::Uniforms::new(&packed, &v.camera, size, line_width, (rgb(t.viewport_top), rgb(t.viewport_bottom)));
     if let Some(cut) = v.section {
-        let sign = cut.keep.sign() as f32;
-        uniforms.clip[cut.axis] = sign;
-        uniforms.clip[3] = (f64::from(sign) * (cut.at - packed.origin[cut.axis])) as f32;
+        uniforms.clip = cut.clip(packed.origin);
     }
     let gpu_look = crate::gpu3d::Look { edges: look.edges, ao: look.ao, outline: look.outline, pick: look.pick || look.outline };
     let rgba = |c: Color32, a: f32| [f32::from(c.r()) / 255.0, f32::from(c.g()) / 255.0, f32::from(c.b()) / 255.0, a];

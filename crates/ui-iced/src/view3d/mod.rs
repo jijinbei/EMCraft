@@ -17,8 +17,11 @@ use emcraft_gpu3d::{FieldGrid, Packed};
 use emcraft_render::Rgb;
 use emcraft_render::colormap::ColourScale;
 use emcraft_render::view3d::{Camera, StandardView};
-use emcraft_ui_core::scene3d::{self, Colours, Overlay, Pick};
+use emcraft_ui_core::scene3d::{self, Colours, Cut, Overlay, Pick};
 use emcraft_ui_core::theme::Theme;
+
+/// Most triangles a click under a section looks through for one on the side kept.
+const MOST_HITS: usize = 256;
 
 /// A box (m): its low and high corners.
 pub type Bounds = ([f64; 3], [f64; 3]);
@@ -48,6 +51,8 @@ pub enum Nav {
     At(f64),
     /// The field's phase ωt (rad): the picture shows Re(F e^{jωt}).
     Phase(f64),
+    /// The section view's cut, or none (the whole model).
+    Section(Option<Cut>),
 }
 
 /// A click on the view: where (points from its corner), whether Shift or Ctrl was held, whether
@@ -116,6 +121,8 @@ pub struct View3d {
     pub shown: Option<Shown>,
     /// What the field overlay shows, its plane's samples and why it could not be drawn.
     pub field: FieldView,
+    /// The section view's cut: the GPU clips the scene there.
+    pub section: Option<Cut>,
     pub(crate) sampled: Option<field::Sampled>,
     /// The plane's phasors as uploaded, for the generation and the view they were made from.
     grid: Option<((u64, FieldView), Arc<FieldGrid>)>,
@@ -131,6 +138,7 @@ impl Default for View3d {
             size: (800.0, 600.0),
             shown: None,
             field: field::start(),
+            section: None,
             sampled: None,
             grid: None,
             field_error: None,
@@ -205,12 +213,25 @@ impl View3d {
         }
     }
 
-    /// What is under `at` (points from the view's corner): the part its nearest triangle is.
+    /// What is under `at` (points from the view's corner): the part its nearest triangle is
+    /// (the nearest solid one first); with a section, the nearest on the side kept.
     pub fn pick(&self, at: emcraft_ui_core::geom::Point) -> Option<Pick> {
         let shown = self.shown.as_ref()?;
         let (w, h) = (f64::from(self.size.0), f64::from(self.size.1));
         let pixel = emcraft_render::view3d::Pixel::new(f64::from(at.x), f64::from(at.y), w, h);
-        shown.built.pick(&self.camera, pixel).and_then(Pick::from_tag)
+        let tag = match self.section {
+            None => shown.built.pick(&self.camera, pixel),
+            Some(cut) => {
+                let scene = &shown.built.scene;
+                let kept: Vec<_> = emcraft_render::view3d::hits_in_order(scene, self.camera.ray(pixel)?, MOST_HITS)
+                    .into_iter()
+                    .filter(|h| cut.keeps(h.at))
+                    .collect();
+                let solid = kept.iter().find(|h| scene.tris.get(h.index).is_some_and(|t| t.alpha >= 200));
+                solid.or_else(|| kept.first()).map(|h| h.tag)
+            }
+        };
+        tag.and_then(Pick::from_tag)
     }
 
     /// The model's box, once there is one.
@@ -265,6 +286,7 @@ impl View3d {
                 View3d { field: FieldView { phase: phase.rem_euclid(std::f64::consts::TAU), ..self.field.clone() }, ..self }
             }
             Nav::Phase(_) => self,
+            Nav::Section(cut) => View3d { section: cut.filter(|c| c.at.is_finite()), ..self },
             Nav::Size(w, h) if w.is_finite() && h.is_finite() && w >= 1.0 && h >= 1.0 => {
                 let unmoved = self.fitted.is_some_and(|(_, c)| c == self.camera);
                 let view = View3d { size: (w, h), ..self };

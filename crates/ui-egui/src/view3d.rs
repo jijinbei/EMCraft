@@ -12,7 +12,7 @@
 use std::time::Instant;
 
 use egui::{Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
-use emcraft_render::view3d::{self, Camera, CameraAnim, Drag, Keep, Projection, StandardView};
+use emcraft_render::view3d::{self, Camera, CameraAnim, Drag, Projection, StandardView};
 
 use emcraft_engine::view::{FieldView, Plane};
 
@@ -70,31 +70,11 @@ struct Facing {
     at: f64,
 }
 
-/// A section view's cut: across `axis` (0 x, 1 y, 2 z) at `at` (m), the `keep` side kept.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Cut {
-    pub axis: usize,
-    pub at: f64,
-    pub keep: Keep,
-}
+pub use emcraft_ui_core::scene3d::Cut;
 
-impl Cut {
-    /// The cut through the middle of `bounds` (m) across `axis`, the low side kept.
-    pub fn middle(axis: usize, (lo, hi): ([f64; 3], [f64; 3])) -> Cut {
-        let k = axis.min(2);
-        Cut { axis: k, at: 0.5 * (lo[k] + hi[k]), keep: Keep::Low }
-    }
-
-    /// The render's section, outlined in the theme's scene edge colour.
-    fn section(self) -> view3d::Section {
-        view3d::Section { outline: Some(crate::theme::scene_colours().wire), ..view3d::Section::across(self.axis, self.at, self.keep) }
-    }
-
-    /// The cut for `ui.inspect`, `at` in display units.
-    pub fn inspect(self, l: emcraft_model::units::Length) -> serde_json::Value {
-        let axis = crate::handle::AXES.get(self.axis).copied().unwrap_or("x");
-        serde_json::json!({"axis": axis, "at": l.from_si(self.at), "keep": self.keep.id()})
-    }
+/// The render's section of `cut`, outlined in the theme's scene edge colour.
+fn section_of(cut: Cut) -> view3d::Section {
+    view3d::Section { outline: Some(crate::theme::scene_colours().wire), ..view3d::Section::across(cut.axis, cut.at, cut.keep) }
 }
 
 /// The 3D view's state.
@@ -287,7 +267,7 @@ impl View3d {
         if self.cut.as_ref().is_some_and(|(k, c, _)| k == key && *c == now) {
             return;
         }
-        let s = now.section();
+        let s = section_of(now);
         match view3d::section::section(&full.scene, &s) {
             Ok(mut scene) => {
                 // Keep the cut open: generated caps otherwise overlap the mesh slice and

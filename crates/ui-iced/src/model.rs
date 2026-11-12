@@ -4,8 +4,9 @@
 
 use emcraft_engine::view::{Component, Plane};
 use emcraft_render::view3d::StandardView;
+use emcraft_ui_core::handle::AXES;
 use emcraft_ui_core::lang::{args, lookup, tr, trf};
-use emcraft_ui_core::scene3d::Overlay;
+use emcraft_ui_core::scene3d::{Cut, Overlay};
 use iced::widget::{Space, canvas, column, container, image, pick_list, row, shader, slider, stack, text};
 use iced::{Alignment, Element, Fill, Widget};
 
@@ -43,7 +44,11 @@ fn bar(app: &App) -> Element<'_, Message> {
     let solved = app.session.results().sweep.is_some();
     let offered = OVERLAYS.iter().copied().chain(solved.then_some((Overlay::Field, t!("Field"))));
     let overlays = offered.map(|(o, label)| tool(t, tr(label), o == overlay, Some(Message::View3d(Nav::Overlay(o)))));
+    let section = app.view3d.section;
+    let cut = app.view3d.bounds().map(|b| Cut::middle(0, b));
+    let sectioning = tool(t, tr(t!("Section view")), section.is_some(), Some(Message::View3d(Nav::Section(section.map_or(cut, |_| None)))));
     let views = std::iter::once(tool(t, tr(t!("Fit")), false, Some(Message::View3d(Nav::Fit))))
+        .chain(std::iter::once(sectioning))
         .chain(VIEWS.iter().map(|(v, label)| tool(t, tr(*label), false, Some(Message::View3d(Nav::Standard(*v))))));
     let idle = app.job.is_none();
     let commands = COMMANDS.iter().map(|(id, label)| tool(t, tr(*label), *id == "solve.run", idle.then(|| Message::Start((*id).to_owned()))));
@@ -99,6 +104,24 @@ fn field_bar(app: &App) -> Element<'_, Message> {
     .spacing(8)
     .align_y(Alignment::Center)
     .boxed()
+}
+
+/// The section view's choices: the axis it cuts across, where along it, and which side is kept.
+fn section_bar(app: &App, cut: Cut) -> Element<'_, Message> {
+    let t = app.look.tokens;
+    let set = |c: Cut| Message::View3d(Nav::Section(Some(c)));
+    let Some((lo, hi)) = app.view3d.bounds() else { return Space::new().boxed() };
+    let axes = AXES.iter().enumerate().map(|(k, name)| {
+        let label = trf(t!("Cut across {axis}"), args!(axis = name));
+        tool(t, &label, k == cut.axis, Some(set(Cut { axis: k, ..Cut::middle(k, (lo, hi)) })))
+    });
+    let k = cut.axis.min(2);
+    let range = lo[k]..=hi[k].max(lo[k] + f64::MIN_POSITIVE);
+    let place = slider(range, cut.at, move |at| set(Cut { at, ..cut })).step((hi[k] - lo[k]) / 200.0).width(240);
+    let l = app.session.display().length;
+    let shown = text(format!("{:.3} {}", l.from_si(cut.at), l.symbol())).size(t.font_body).color(t.text_dim);
+    let flip = tool(t, tr(t!("Keep the other side")), false, Some(set(Cut { keep: cut.keep.flipped(), ..cut })));
+    row(axes.chain([place.boxed(), shown.boxed(), flip])).spacing(8).align_y(Alignment::Center).boxed()
 }
 
 /// The field's colour bar: its quantity, its gradient and its ticks.
@@ -159,5 +182,6 @@ pub fn view(app: &App) -> Element<'_, Message> {
             .boxed(),
     };
     let field = (app.view3d.overlay == Overlay::Field).then(|| field_bar(app));
-    column(std::iter::once(bar(app)).chain(field).chain(std::iter::once(picture))).spacing(8).padding(12).height(Fill).boxed()
+    let section = app.view3d.section.map(|c| section_bar(app, c));
+    column(std::iter::once(bar(app)).chain(section).chain(field).chain(std::iter::once(picture))).spacing(8).padding(12).height(Fill).boxed()
 }

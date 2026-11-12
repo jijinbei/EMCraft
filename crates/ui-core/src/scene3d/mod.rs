@@ -74,6 +74,52 @@ pub struct Motion {
     pub max_length: f64,
 }
 
+/// A section view's cut: across `axis` (0 x, 1 y, 2 z) at `at` (m), the `keep` side kept.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cut {
+    pub axis: usize,
+    pub at: f64,
+    pub keep: emcraft_render::view3d::Keep,
+}
+
+impl Cut {
+    /// The cut through the middle of `bounds` (m) across `axis`, the low side kept.
+    ///
+    /// ```
+    /// use emcraft_ui_core::scene3d::Cut;
+    /// let c = Cut::middle(2, ([0.0; 3], [1.0, 1.0, 4.0]));
+    /// assert_eq!(c.at, 2.0);
+    /// assert!(c.keeps([0.0, 0.0, 1.0]) && !c.keeps([0.0, 0.0, 3.0]));
+    /// // The GPU's clipping plane round an origin: n·p ≤ d keeps the low side.
+    /// assert_eq!(c.clip([0.0, 0.0, 1.0]), [0.0, 0.0, 1.0, 1.0]);
+    /// ```
+    pub fn middle(axis: usize, (lo, hi): ([f64; 3], [f64; 3])) -> Cut {
+        let k = axis.min(2);
+        Cut { axis: k, at: 0.5 * (lo[k] + hi[k]), keep: emcraft_render::view3d::Keep::Low }
+    }
+
+    /// Whether point `p` (m) lies on the side kept (or on the cut).
+    pub fn keeps(&self, p: [f64; 3]) -> bool {
+        self.keep.sign() * (p[self.axis.min(2)] - self.at) <= 0.0
+    }
+
+    /// The GPU's clipping plane for a scene packed round `origin` (`n·p ≤ d` kept).
+    pub fn clip(&self, origin: [f64; 3]) -> [f32; 4] {
+        let k = self.axis.min(2);
+        let sign = self.keep.sign();
+        let mut c = [0.0f32; 4];
+        c[k] = sign as f32;
+        c[3] = (sign * (self.at - origin[k])) as f32;
+        c
+    }
+
+    /// The cut for `ui.inspect`, `at` in display units.
+    pub fn inspect(self, l: emcraft_model::units::Length) -> serde_json::Value {
+        let axis = crate::handle::AXES.get(self.axis).copied().unwrap_or("x");
+        serde_json::json!({"axis": axis, "at": l.from_si(self.at), "keep": self.keep.id()})
+    }
+}
+
 /// A text placed in 3D.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Label {

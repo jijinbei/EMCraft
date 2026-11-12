@@ -223,6 +223,7 @@ impl App {
                 scale: *scale,
                 contours: self.view3d.field.contours,
             }),
+            cut: self.view3d.section,
             moving: false,
         }
     }

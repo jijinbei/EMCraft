@@ -32,6 +32,8 @@ pub struct Shot {
     pub look: emcraft_gpu3d::Look,
     /// The field's plane for the GPU to colour, with this frame's phase.
     pub field: Option<emcraft_gpu3d::FieldFrame>,
+    /// The section view's cut, which the GPU clips the scene at.
+    pub cut: Option<emcraft_ui_core::scene3d::Cut>,
     /// The tags the GPU rings (what is selected) and the ring's colour (0–1).
     pub selected: Vec<u32>,
     pub outline: [f32; 4],
@@ -45,7 +47,7 @@ pub struct Shot {
 /// # use std::sync::Arc;
 /// use emcraft_ui_iced::view3d::shader::{Shot, frame};
 /// let packed = Arc::new(emcraft_gpu3d::Packed::new(&emcraft_render::view3d::Scene::default(), 1));
-/// let shot = Shot { packed, camera: Default::default(), ground: Default::default(), look: Default::default(), field: None, selected: Vec::new(), outline: [0.0; 4], moving: false };
+/// let shot = Shot { packed, camera: Default::default(), ground: Default::default(), look: Default::default(), field: None, cut: None, selected: Vec::new(), outline: [0.0; 4], moving: false };
 /// let f = frame(&shot, [800, 600], 1.0);
 /// assert_eq!((f.out, f.size, f.supersample), ([800, 600], [1600, 1200], 2));
 /// // Moving, the picture is drawn at its own size.
@@ -57,7 +59,11 @@ pub fn frame(shot: &Shot, out: [u32; 2], ppp: f32) -> Frame {
     let supersample = if !shot.moving && small { 2 } else { 1 };
     let size = out.map(|s| s * supersample);
     let line_width = f64::from(ppp.max(1.0)) * f64::from(supersample);
-    let uniforms = Uniforms::new(&shot.packed, &shot.camera, size, line_width, shot.ground);
+    let plain = Uniforms::new(&shot.packed, &shot.camera, size, line_width, shot.ground);
+    let uniforms = match shot.cut {
+        Some(c) => Uniforms { clip: c.clip(shot.packed.origin), ..plain },
+        None => plain,
+    };
     Frame {
         look: shot.look,
         ppp,
