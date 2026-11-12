@@ -4,6 +4,7 @@
 
 use crate::axes::{self, Axis};
 use crate::palette::{Palette, Pen};
+use crate::shapes::{Align, Drawing, Shape};
 use crate::{Canvas, Rgb};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -153,22 +154,29 @@ pub fn layout_of(chart: &Chart, width: usize, height: usize) -> Layout {
     at
 }
 
+/// A line from `a` to `b`.
+fn line(a: [f64; 2], b: [f64; 2], width: f64, color: Rgb) -> Shape {
+    Shape::Line { a, b, width, color }
+}
+
 /// A diamond marker of half-diagonal `r` about `q`.
-fn diamond(c: &mut Canvas, q: [f64; 2], r: f64, color: Rgb) {
-    c.triangle([[q[0], q[1] - r], [q[0] + r, q[1]], [q[0], q[1] + r]], color);
-    c.triangle([[q[0], q[1] - r], [q[0], q[1] + r], [q[0] - r, q[1]]], color);
+fn diamond(q: [f64; 2], r: f64, color: Rgb) -> [Shape; 2] {
+    [
+        Shape::Triangle { p: [[q[0], q[1] - r], [q[0] + r, q[1]], [q[0], q[1] + r]], color },
+        Shape::Triangle { p: [[q[0], q[1] - r], [q[0], q[1] + r], [q[0] - r, q[1]]], color },
+    ]
 }
 
 /// A diamond's outline of half-diagonal `r` about `q`.
-fn hollow_diamond(c: &mut Canvas, q: [f64; 2], r: f64, color: Rgb) {
+fn hollow_diamond(q: [f64; 2], r: f64, color: Rgb) -> Vec<Shape> {
     let corners = [[q[0], q[1] - r], [q[0] + r, q[1]], [q[0], q[1] + r], [q[0] - r, q[1]]];
-    for k in 0..4 {
-        c.line(corners[k], corners[(k + 1) % 4], (r * 0.35).max(1.0), color);
-    }
+    (0..4).map(|k| line(corners[k], corners[(k + 1) % 4], (r * 0.35).max(1.0), color)).collect()
 }
 
-/// A dashed polyline through `pts`, the dashes running on across its corners.
-fn dashed(c: &mut Canvas, pts: &[[f64; 2]], width: f64, color: Rgb, keep: impl Fn([f64; 2]) -> bool) {
+/// A dashed polyline through `pts`, the dashes running on across its corners; the dashes with
+/// an end `keep` takes.
+fn dashed(pts: &[[f64; 2]], width: f64, color: Rgb, keep: impl Fn([f64; 2]) -> bool) -> Vec<Shape> {
+    let mut out = Vec::new();
     // Where along the pattern the next piece starts, from 0 to the pattern's length.
     let period = DASH[0] + DASH[1];
     let mut phase = 0.0;
@@ -185,62 +193,45 @@ fn dashed(c: &mut Canvas, pts: &[[f64; 2]], width: f64, color: Rgb, keep: impl F
             let (on, left) = if phase < DASH[0] { (true, DASH[0] - phase) } else { (false, period - phase) };
             let step = left.min(len - t);
             if on && (keep(at(t)) || keep(at(t + step))) {
-                c.line(at(t), at(t + step), width, color);
+                out.push(line(at(t), at(t + step), width, color));
             }
             t += step;
             phase = (phase + step) % period;
         }
     }
+    out
 }
 
-/// A band: `pts` the upper edge left to right and then the lower edge back, tinting each pixel
-/// column between the two edges within the plot `area`.
-fn band(c: &mut Canvas, pts: &[[f64; 2]], area: [f64; 4], color: Rgb) {
-    let m = pts.len() / 2;
-    if m < 2 || pts.len() != 2 * m {
-        return;
-    }
-    let (upper, lower): (Vec<[f64; 2]>, Vec<[f64; 2]>) = (pts[..m].to_vec(), pts[m..].iter().rev().copied().collect());
-    let [x0, y0, pw, ph] = area;
-    for i in 0..m - 1 {
-        let (u0, u1, l0, l1) = (upper[i], upper[i + 1], lower[i], lower[i + 1]);
-        let (xa, xb) = (u0[0].max(x0), u1[0].min(x0 + pw));
-        if !(xb > xa) {
-            continue;
-        }
-        for px in xa.floor() as i64..xb.ceil() as i64 {
-            let x = px as f64 + 0.5;
-            let t = if u1[0] > u0[0] { ((x - u0[0]) / (u1[0] - u0[0])).clamp(0.0, 1.0) } else { 0.0 };
-            let (yu, yl) = (u0[1] + t * (u1[1] - u0[1]), l0[1] + t * (l1[1] - l0[1]));
-            let (top, bottom) = (yu.min(yl).max(y0), yu.max(yl).min(y0 + ph));
-            for py in top.floor() as i64..bottom.ceil() as i64 {
-                c.blend(px, py, color, BAND_ALPHA);
-            }
-        }
-    }
+/// A band's shape: `pts` the upper edge left to right and then the lower edge back, within the
+/// plot `area`.
+fn band(pts: Vec<[f64; 2]>, area: [f64; 4], color: Rgb) -> Shape {
+    Shape::Band { edge: pts, clip: area, color, alpha: BAND_ALPHA }
 }
 
 /// The legend's sample of a series at `[x, y]` (the row's top left).
-fn sample(c: &mut Canvas, s: &Series, at: [f64; 2], color: Rgb) {
+fn sample(s: &Series, at: [f64; 2], color: Rgb) -> Vec<Shape> {
     let [lx, ly] = at;
+    let (a, b, mid) = ([lx, ly + 7.0], [lx + 26.0, ly + 7.0], [lx + 13.0, ly + 7.0]);
     match s.style {
-        Style::Line => c.line([lx, ly + 7.0], [lx + 26.0, ly + 7.0], s.drawn_width(), color),
-        Style::Markers => diamond(c, [lx + 13.0, ly + 7.0], s.drawn_width(), color),
-        Style::Joined => {
-            c.line([lx, ly + 7.0], [lx + 26.0, ly + 7.0], 1.0, color);
-            diamond(c, [lx + 13.0, ly + 7.0], s.drawn_width(), color);
-        }
-        Style::Dashed => dashed(c, &[[lx, ly + 7.0], [lx + 26.0, ly + 7.0]], s.drawn_width(), color, |_| true),
-        Style::Hollow => hollow_diamond(c, [lx + 13.0, ly + 7.0], s.drawn_width(), color),
-        Style::Band => band(c, &[[lx, ly + 2.0], [lx + 26.0, ly + 2.0], [lx + 26.0, ly + 12.0], [lx, ly + 12.0]], [lx, ly, 26.0, 14.0], color),
+        Style::Line => vec![line(a, b, s.drawn_width(), color)],
+        Style::Markers => diamond(mid, s.drawn_width(), color).to_vec(),
+        Style::Joined => std::iter::once(line(a, b, 1.0, color)).chain(diamond(mid, s.drawn_width(), color)).collect(),
+        Style::Dashed => dashed(&[a, b], s.drawn_width(), color, |_| true),
+        Style::Hollow => hollow_diamond(mid, s.drawn_width(), color),
+        Style::Band => vec![band(vec![[lx, ly + 2.0], [lx + 26.0, ly + 2.0], [lx + 26.0, ly + 12.0], [lx, ly + 12.0]], [lx, ly, 26.0, 14.0], color)],
     }
 }
 
 /// Draws the chart in `palette`'s colours.
 pub fn draw(chart: &Chart, width: usize, height: usize, palette: &Palette) -> Canvas {
-    let mut c = Canvas::new(width, height, palette.ground);
+    drawing(chart, width, height, palette).canvas()
+}
+
+/// The chart `width` × `height` pixels in `palette`'s colours, as shapes (any surface draws
+/// them: [`draw`] on the CPU, a window's vector canvas on its GPU).
+pub fn drawing(chart: &Chart, width: usize, height: usize, palette: &Palette) -> Drawing {
     let ink = palette.ink;
-    let layout = layout_of(chart, c.w, c.h);
+    let layout = layout_of(chart, width, height);
     let [x0, y0, pw, ph] = layout.plane;
     let (xa, xb) = layout.x;
     // Far points drawn at most a plot's size beyond it, so lines toward them keep their slope.
@@ -251,101 +242,83 @@ pub fn draw(chart: &Chart, width: usize, height: usize, palette: &Palette) -> Ca
     let inside = |q: [f64; 2]| q[0] >= x0 - 1.0 && q[0] <= x0 + pw + 1.0 && q[1] >= y0 - 1.0 && q[1] <= y0 + ph + 1.0;
     // A point a log axis cannot place (zero, negative) is left out.
     let placed = |p: &&[f64; 2]| p[0].is_finite() && p[1].is_finite() && (!layout.log[0] || p[0] > 0.0) && (!layout.log[1] || p[1] > 0.0);
-    c.text(x0, 12.0, &chart.title, 2, ink);
+    let title = Shape::Text { at: [x0, 12.0], text: chart.title.clone(), scale: 2, color: ink, align: Align::Left, up: false };
     // The axes over the ranges laid out (an equal chart's widened).
     let (mut ax, mut ay) = (chart.x.clone(), chart.y.clone());
     if chart.look.equal {
         (ax.min, ax.max) = layout.x;
         (ay.min, ay.max) = layout.y;
     }
-    axes::frame(&mut c, [x0, y0, pw, ph], &ax, &ay, ink, chart.look.grid.then_some(palette.grid));
-    for (x, label) in &chart.marks {
-        if !(x.is_finite() && *x > xa && *x < xb) {
-            continue;
-        }
+    let frame = axes::frame_shapes([x0, y0, pw, ph], &ax, &ay, ink, chart.look.grid.then_some(palette.grid));
+    let marks = chart.marks.iter().filter(|(x, _)| x.is_finite() && *x > xa && *x < xb).flat_map(|(x, label)| {
         let px = to_px([*x, layout.y.0])[0];
-        let mut y = y0;
-        while y < y0 + ph {
-            c.line([px, y], [px, (y + 6.0).min(y0 + ph)], 1.2, palette.mark);
-            y += 10.0;
-        }
-        c.text(px + 4.0, y0 + 4.0, label, 2, palette.ink_dim);
-    }
+        let dashes = std::iter::successors(Some(y0), |y| Some(y + 10.0)).take_while(move |y| *y < y0 + ph);
+        let dashes = dashes.map(move |y| line([px, y], [px, (y + 6.0).min(y0 + ph)], 1.2, palette.mark));
+        dashes.chain(std::iter::once(Shape::Text {
+            at: [px + 4.0, y0 + 4.0],
+            text: label.clone(),
+            scale: 2,
+            color: palette.ink_dim,
+            align: Align::Left,
+            up: false,
+        }))
+    });
     // Bands first, under the curves they go with.
-    for s in chart.series.iter().filter(|s| s.style == Style::Band) {
+    let bands = chart.series.iter().filter(|s| s.style == Style::Band).filter_map(|s| {
         let pts: Vec<[f64; 2]> = s.points.iter().map(|p| if placed(&p) { to_px(*p) } else { [f64::NAN; 2] }).collect();
-        if pts.iter().flatten().all(|v| v.is_finite()) {
-            band(&mut c, &pts, [x0, y0, pw, ph], palette.pen(s.pen));
-        }
-    }
-    for s in chart.series.iter().filter(|s| s.style != Style::Band) {
+        pts.iter().flatten().all(|v| v.is_finite()).then(|| band(pts, [x0, y0, pw, ph], palette.pen(s.pen)))
+    });
+    let curves = chart.series.iter().filter(|s| s.style != Style::Band).flat_map(|s| {
         let color = palette.pen(s.pen);
         let width = s.drawn_width();
         let pts: Vec<[f64; 2]> = s.points.iter().filter(placed).map(|p| to_px(*p)).collect();
+        let joining = |w: f64| pts.windows(2).filter(|w| inside(w[0]) || inside(w[1])).map(|p| line(p[0], p[1], w, color)).collect::<Vec<_>>();
+        let shown = pts.iter().filter(|q| inside(**q));
         match s.style {
-            Style::Line => {
-                for w in pts.windows(2) {
-                    if inside(w[0]) || inside(w[1]) {
-                        c.line(w[0], w[1], width, color);
-                    }
-                }
-            }
-            Style::Markers => {
-                for q in pts.iter().filter(|q| inside(**q)) {
-                    diamond(&mut c, *q, width, color);
-                }
-            }
+            Style::Line => joining(width),
+            Style::Markers => shown.flat_map(|q| diamond(*q, width, color)).collect(),
             Style::Joined => {
-                for w in pts.windows(2) {
-                    if inside(w[0]) || inside(w[1]) {
-                        c.line(w[0], w[1], (width * 0.3).max(1.0), color);
-                    }
-                }
                 // Many points close together: smaller markers, so the line still reads.
                 let small = if pts.len() > 40 { width * 0.6 } else { width };
-                for q in pts.iter().filter(|q| inside(**q)) {
-                    diamond(&mut c, *q, small, color);
-                }
+                joining((width * 0.3).max(1.0)).into_iter().chain(shown.flat_map(|q| diamond(*q, small, color))).collect()
             }
-            Style::Dashed => dashed(&mut c, &pts, width, color, inside),
-            Style::Hollow => {
-                for q in pts.iter().filter(|q| inside(**q)) {
-                    hollow_diamond(&mut c, *q, width, color);
-                }
-            }
-            Style::Band => {}
+            Style::Dashed => dashed(&pts, width, color, inside),
+            Style::Hollow => shown.flat_map(|q| hollow_diamond(*q, width, color)).collect(),
+            Style::Band => Vec::new(),
         }
-    }
-    legend(&mut c, chart, [x0, y0, pw, ph], palette);
-    c
+    });
+    let shapes =
+        std::iter::once(title).chain(frame).chain(marks).chain(bands).chain(curves).chain(legend(chart, [x0, y0, pw, ph], width, palette)).collect();
+    Drawing { size: [width, height], ground: palette.ground, shapes }
 }
 
 /// The legend: a sample and the label of each named series, under the plot (wrapping to more
-/// rows) or in a box in a corner of the plot area.
-fn legend(c: &mut Canvas, chart: &Chart, area: [f64; 4], palette: &Palette) {
+/// rows within a picture `width` pixels wide) or in a box in a corner of the plot area.
+fn legend(chart: &Chart, area: [f64; 4], width: usize, palette: &Palette) -> Vec<Shape> {
     let [x0, y0, pw, ph] = area;
     let named: Vec<&Series> = chart.series.iter().filter(|s| !s.label.is_empty()).collect();
     let item = |s: &Series| 52.0 + Canvas::text_width(&s.label, 2) as f64;
+    let label = |at: [f64; 2], s: &Series| Shape::Text { at, text: s.label.clone(), scale: 2, color: palette.ink, align: Align::Left, up: false };
+    let row = |s: &Series, at: [f64; 2]| sample(s, at, palette.pen(s.pen)).into_iter().chain(std::iter::once(label([at[0] + 32.0, at[1]], s)));
     match chart.look.legend {
-        Legend::None => {}
+        Legend::None => Vec::new(),
         Legend::Below => {
+            let mut out = Vec::new();
             let mut lx = x0;
             let mut ly = y0 + ph + 56.0;
             for s in named {
-                // Wrap to a second row rather than run off the canvas.
-                if lx > x0 && lx + item(s) > c.w as f64 - 10.0 {
+                // Wrap to a second row rather than run off the picture.
+                if lx > x0 && lx + item(s) > width as f64 - 10.0 {
                     lx = x0;
                     ly += 20.0;
                 }
-                sample(c, s, [lx, ly], palette.pen(s.pen));
-                c.text(lx + 32.0, ly, &s.label, 2, palette.ink);
+                out.extend(row(s, [lx, ly]));
                 lx += item(s);
             }
+            out
         }
+        _ if named.is_empty() => Vec::new(),
         corner => {
-            if named.is_empty() {
-                return;
-            }
             // One row per series in a box on the plot's ground, framed.
             let w = named.iter().map(|s| item(s) - 12.0).fold(0.0, f64::max) + 8.0;
             let h = 20.0 * named.len() as f64 + 8.0;
@@ -353,15 +326,11 @@ fn legend(c: &mut Canvas, chart: &Chart, area: [f64; 4], palette: &Palette) {
             let top = matches!(corner, Legend::TopLeft | Legend::TopRight);
             let bx = if left { x0 + 8.0 } else { x0 + pw - 8.0 - w };
             let by = if top { y0 + 8.0 } else { y0 + ph - 8.0 - h };
-            c.rect(bx, by, w, h, palette.ground);
-            for (a, b) in [([bx, by], [bx + w, by]), ([bx + w, by], [bx + w, by + h]), ([bx + w, by + h], [bx, by + h]), ([bx, by + h], [bx, by])] {
-                c.line(a, b, 1.0, palette.grid);
-            }
-            for (i, s) in named.iter().enumerate() {
-                let (lx, ly) = (bx + 6.0, by + 5.0 + 20.0 * i as f64);
-                sample(c, s, [lx, ly], palette.pen(s.pen));
-                c.text(lx + 32.0, ly, &s.label, 2, palette.ink);
-            }
+            let ground = Shape::Rect { at: [bx, by], size: [w, h], color: palette.ground };
+            let sides = [([bx, by], [bx + w, by]), ([bx + w, by], [bx + w, by + h]), ([bx + w, by + h], [bx, by + h]), ([bx, by + h], [bx, by])]
+                .map(|(a, b)| line(a, b, 1.0, palette.grid));
+            let rows = named.iter().enumerate().flat_map(|(i, s)| row(s, [bx + 6.0, by + 5.0 + 20.0 * i as f64]));
+            std::iter::once(ground).chain(sides).chain(rows).collect()
         }
     }
 }

@@ -1,6 +1,7 @@
 //! Axes: ranges, linear or logarithmic, "nice" tick values (1, 2 or 5 times a power of ten) and
 //! tick labels.
 
+use crate::shapes::{Align, Shape};
 use crate::{Canvas, Rgb};
 
 /// An axis: its label (with unit) and range, in display units, and whether its scale is
@@ -144,6 +145,12 @@ impl Layout {
 
 /// Draws a frame, tick marks and labels for a plot area (x0, y0, w, h) in pixels.
 pub fn frame(c: &mut Canvas, area: [f64; 4], x: &Axis, y: &Axis, ink: Rgb, grid: Option<Rgb>) {
+    crate::shapes::paint(c, &frame_shapes(area, x, y, ink, grid));
+}
+
+/// A plot area's frame (x0, y0, w, h in pixels) as shapes: the grid when asked, the tick marks
+/// and their numbers, the frame, and the axes' names (y's written upwards).
+pub fn frame_shapes(area: [f64; 4], x: &Axis, y: &Axis, ink: Rgb, grid: Option<Rgb>) -> Vec<Shape> {
     let [x0, y0, w, h] = area;
     let (xs, ys) = (x.span(), y.span());
     let (xl, yl) = (x.is_log(), y.is_log());
@@ -154,31 +161,25 @@ pub fn frame(c: &mut Canvas, area: [f64; 4], x: &Axis, y: &Axis, ink: Rgb, grid:
         if a.is_log() { log_ticks(lo, hi, count) } else { ticks(lo, hi, count) }
     };
     let scale = 2;
-    for t in marks(x, 6) {
+    let line = |a: [f64; 2], b: [f64; 2], width: f64, color: Rgb| Shape::Line { a, b, width, color };
+    let text = |at: [f64; 2], s: String, align: Align, up: bool| Shape::Text { at, text: s, scale, color: ink, align, up };
+    let along_x = marks(x, 6).into_iter().flat_map(|t| {
         let p = px(t);
-        if let Some(g) = grid {
-            c.line([p, y0], [p, y0 + h], 1.0, g);
-        }
-        c.line([p, y0 + h], [p, y0 + h + 5.0], 1.0, ink);
-        let s = format(t);
-        c.text(p - Canvas::text_width(&s, scale) as f64 / 2.0, y0 + h + 9.0, &s, scale, ink);
-    }
-    for t in marks(y, 5) {
+        let ruled = grid.map(|g| line([p, y0], [p, y0 + h], 1.0, g));
+        ruled.into_iter().chain([line([p, y0 + h], [p, y0 + h + 5.0], 1.0, ink), text([p, y0 + h + 9.0], format(t), Align::Center, false)])
+    });
+    let along_y = marks(y, 5).into_iter().flat_map(|t| {
         let p = py(t);
-        if let Some(g) = grid {
-            c.line([x0, p], [x0 + w, p], 1.0, g);
-        }
-        c.line([x0 - 5.0, p], [x0, p], 1.0, ink);
-        let s = format(t);
-        c.text(x0 - 9.0 - Canvas::text_width(&s, scale) as f64, p - 7.0, &s, scale, ink);
-    }
-    for (a, b) in [([x0, y0], [x0 + w, y0]), ([x0 + w, y0], [x0 + w, y0 + h]), ([x0 + w, y0 + h], [x0, y0 + h]), ([x0, y0 + h], [x0, y0])] {
-        c.line(a, b, 1.2, ink);
-    }
-    let lw = Canvas::text_width(&x.label, scale) as f64;
-    c.text(x0 + w / 2.0 - lw / 2.0, y0 + h + 30.0, &x.label, scale, ink);
-    let lh = Canvas::text_width(&y.label, scale) as f64;
-    c.text_up(x0 - 62.0, y0 + h / 2.0 + lh / 2.0, &y.label, scale, ink);
+        let ruled = grid.map(|g| line([x0, p], [x0 + w, p], 1.0, g));
+        ruled.into_iter().chain([line([x0 - 5.0, p], [x0, p], 1.0, ink), text([x0 - 9.0, p - 7.0], format(t), Align::Right, false)])
+    });
+    let sides = [([x0, y0], [x0 + w, y0]), ([x0 + w, y0], [x0 + w, y0 + h]), ([x0 + w, y0 + h], [x0, y0 + h]), ([x0, y0 + h], [x0, y0])]
+        .map(|(a, b)| line(a, b, 1.2, ink));
+    let names = [
+        text([x0 + w / 2.0, y0 + h + 30.0], x.label.clone(), Align::Center, false),
+        text([x0 - 62.0, y0 + h / 2.0], y.label.clone(), Align::Center, true),
+    ];
+    along_x.chain(along_y).chain(sides).chain(names).collect()
 }
 
 #[cfg(test)]

@@ -11,7 +11,8 @@
 //! - [`model`]: the model in 3D ([`view3d`], drawn by the GPU in iced's shader widget), meshed
 //!   and solved from its bar; [`sparameters`]: the sweep's chart;
 //! - [`system`]: a system's node editor — the band, the canvas, the chart and the budget;
-//! - [`charts`]: the engine's charts as pictures, drawn again only when they change;
+//! - [`charts`]: the engine's charts, made again only when they change; [`chart`]: one drawn
+//!   as vectors by the GPU;
 //! - [`look`]: the theme's tokens as iced's styles;
 //! - [`geom`]: the shared points on iced's screen and back.
 
@@ -26,6 +27,7 @@ macro_rules! t {
 }
 
 pub mod app;
+pub mod chart;
 pub mod charts;
 pub mod geom;
 pub mod look;
@@ -51,7 +53,8 @@ pub fn run(sample: Option<String>, shoot: Option<std::path::PathBuf>) -> iced::R
         .subscription(app::App::subscription)
         .title(app::App::title)
         .theme(app::App::theme)
-        .fonts(font)
+        // The language's font, and the pictures' face the charts' labels are set in.
+        .fonts(font.map(std::borrow::Cow::Owned).into_iter().chain([std::borrow::Cow::Borrowed(emcraft_render::text::face_bytes())]))
         .window_size((1400.0, 900.0))
         .run()
 }

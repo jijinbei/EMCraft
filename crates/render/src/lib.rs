@@ -18,6 +18,7 @@ pub mod oklch;
 pub mod palette;
 pub mod pcb;
 pub mod plot;
+pub mod shapes;
 pub mod text;
 pub mod view3d;
 

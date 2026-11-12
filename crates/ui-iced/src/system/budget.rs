@@ -1,12 +1,16 @@
-//! Under the canvas: the chart chosen (drawn by the engine) and the budget at its frequency.
+//! Under the canvas: the chart chosen (drawn by the GPU) and the budget at its frequency.
 
 use emcraft_engine::view::SystemChart;
 use emcraft_ui_core::lang::tr;
 use emcraft_ui_core::system::budget;
-use iced::widget::{Column, button, column, image, row, space, table, text};
+use iced::widget::{Column, button, canvas, column, row, space, table, text};
 use iced::{Element, Fill, Widget};
 
 use crate::app::{App, Message};
+use crate::chart::Plot;
+
+/// The chart's height (points).
+const CHART_H: f32 = 320.0;
 use crate::look;
 
 /// A chart choice's name.
@@ -29,7 +33,7 @@ pub(super) fn chart(app: &App) -> Element<'_, Message> {
         .map(|c| button(text(tr(label(c))).size(t.font_button)).style(look::button(t, c == app.chart)).on_press(Message::Chart(c)).boxed());
     let at = super::budget_at(app).map(|s| text(s).size(t.font_body).color(t.text_dim).boxed());
     let picture: Element<Message> = match app.charts.system.as_ref().map(|p| &p.shown) {
-        Some(Ok(h)) => image(h.clone()).width(Fill).boxed(),
+        Some(Ok(c)) => canvas(Plot { chart: c, palette: &app.look.theme.palette }).width(Fill).height(CHART_H).boxed(),
         Some(Err(e)) => text(e.clone()).boxed(),
         None => space().boxed(),
     };

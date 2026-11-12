@@ -29,6 +29,12 @@ const EM_PER_SCALE: f32 = 9.0;
 /// DejaVu Sans's capital height in ems (1493 of 2048 units).
 const CAP_HEIGHT: f32 = 0.729;
 
+/// The face pictures write with (DejaVu Sans, subset), for a window that draws the same labels
+/// as vectors with its own text engine.
+pub fn face_bytes() -> &'static [u8] {
+    FACE_BYTES
+}
+
 fn face() -> Option<&'static FontRef<'static>> {
     static FACE: OnceLock<Option<FontRef<'static>>> = OnceLock::new();
     FACE.get_or_init(|| FontRef::try_from_slice(FACE_BYTES).ok()).as_ref()

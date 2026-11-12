@@ -15,6 +15,11 @@ fn gpu() -> std::sync::MutexGuard<'static, ()> {
     GPU.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+/// The window's settings as it runs: the pictures' face loaded for the charts' labels.
+fn settings() -> iced::Settings {
+    iced::Settings { fonts: vec![emcraft_render::text::face_bytes().into()], ..iced::Settings::default() }
+}
+
 fn field(node: &str, key: &'static str) -> Field {
     Field { node: node.to_owned(), key }
 }
@@ -89,7 +94,7 @@ fn an_empty_chain_offers_its_stages_and_a_click_adds_one() {
         for (name, theme, language) in [("system", "light", "en"), ("system-dark", "dark", "en"), ("system-ja-sepia", "sepia", "ja")] {
             emcraft_ui_core::lang::set(language);
             let sample = App::new(Some("adsb-receiver")).dressed(themes.get(theme));
-            let mut ui = iced_test::Simulator::with_size(iced::Settings::default(), (1400.0, 1300.0), sample.view());
+            let mut ui = iced_test::Simulator::with_size(settings(), (1400.0, 1300.0), sample.view());
             let shot = ui.snapshot(&sample.theme()).unwrap_or_else(|e| panic!("{e}"));
             let path = std::path::Path::new(&dir).join(name);
             let _ = std::fs::remove_file(std::path::Path::new(&dir).join(format!("{name}-wgpu.png")));
@@ -205,7 +210,7 @@ fn the_3d_frame_draws_the_model() {
             if let Some(m) = then {
                 app.update(m);
             }
-            let mut ui = iced_test::Simulator::with_size(iced::Settings::default(), (1400.0, 900.0), app.view());
+            let mut ui = iced_test::Simulator::with_size(settings(), (1400.0, 900.0), app.view());
             let shot = ui.snapshot(&app.theme()).unwrap_or_else(|e| panic!("{e}"));
             let _ = std::fs::remove_file(std::path::Path::new(&dir).join(format!("{name}-wgpu.png")));
             assert!(shot.matches_image(std::path::Path::new(&dir).join(name)).unwrap_or(false));
