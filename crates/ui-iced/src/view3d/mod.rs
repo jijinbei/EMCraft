@@ -55,6 +55,8 @@ pub enum Nav {
     Section(Option<Cut>),
     /// The field's arrows shown: E's, H's.
     Arrows(bool, bool),
+    /// An eigenmode's field (by its index) instead of the sweep's, or the sweep's.
+    Mode(Option<usize>),
 }
 
 /// A click on the view: where (points from its corner), whether Shift or Ctrl was held, whether
@@ -310,6 +312,7 @@ impl View3d {
                 let (show_e, show_h) = (!component.is_magnetic(), component.is_magnetic());
                 View3d { field: FieldView { component, show_e, show_h, ..self.field.clone() }, ..self }
             }
+            Nav::Mode(mode) => View3d { field: FieldView { mode, ..self.field.clone() }, ..self },
             Nav::Arrows(show_e, show_h) => View3d { field: FieldView { show_e, show_h, ..self.field.clone() }, ..self },
             Nav::Frequency(frequency) => View3d { field: FieldView { frequency, ..self.field.clone() }, ..self },
             Nav::At(at) => View3d { field: FieldView { at: Some(at), ..self.field.clone() }, ..self },

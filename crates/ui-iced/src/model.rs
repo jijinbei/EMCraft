@@ -41,7 +41,7 @@ fn bar(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
     let overlay = app.view3d.overlay;
     // The field once there is a sweep to show it from.
-    let solved = app.session.results().sweep.is_some();
+    let solved = app.session.results().sweep.is_some() || app.session.results().eigen.is_some();
     let offered = OVERLAYS.iter().copied().chain(solved.then_some((Overlay::Field, t!("Field"))));
     let overlays = offered.map(|(o, label)| tool(t, tr(label), o == overlay, Some(Message::View3d(Nav::Overlay(o)))));
     let section = app.view3d.section;
@@ -73,8 +73,20 @@ fn field_bar(app: &App) -> Element<'_, Message> {
     let components = pick_list(Some(v.component), Component::ALL, |c| c.label().to_owned()).on_select(move |c| nav(Nav::Component(c)));
     let solved: Vec<f64> = app.session.results().sweep.iter().flat_map(|s| s.results.iter().map(|r| r.frequency)).collect();
     let nearest = solved.iter().copied().min_by(|a, b| (a - v.frequency).abs().total_cmp(&(b - v.frequency).abs()));
-    let frequencies =
-        pick_list(nearest, solved, move |f| format!("{:.4} {}", fu.from_si(*f), fu.symbol())).on_select(move |f| nav(Nav::Frequency(f)));
+    // An eigenmode's field: which mode; else the sweep's frequency.
+    let modes: Vec<(usize, f64)> = app.session.results().eigen.iter().flat_map(|e| e.modes.iter().map(|m| m.frequency).enumerate()).collect();
+    let frequencies: Element<Message> = match v.mode {
+        Some(k) => pick_list(modes.iter().copied().find(|(i, _)| *i == k), modes, move |(i, f)| {
+            format!("{} {} · {:.4} {}", tr(t!("Mode")), i + 1, fu.from_si(*f), fu.symbol())
+        })
+        .on_select(move |(i, _)| nav(Nav::Mode(Some(i))))
+        .style(look::choice(t))
+        .boxed(),
+        None => pick_list(nearest, solved, move |f| format!("{:.4} {}", fu.from_si(*f), fu.symbol()))
+            .on_select(move |f| nav(Nav::Frequency(f)))
+            .style(look::choice(t))
+            .boxed(),
+    };
     let span = app.view3d.bounds().map_or(0.0, |(lo, hi)| {
         let k = field::normal(v.plane);
         hi[k] - lo[k]
@@ -98,7 +110,7 @@ fn field_bar(app: &App) -> Element<'_, Message> {
         label(tr(t!("Component"))),
         components.style(look::choice(t)),
         label(tr(t!("Frequency"))),
-        frequencies.style(look::choice(t)),
+        frequencies,
         place,
         shown_at,
         Space::new().width(16),

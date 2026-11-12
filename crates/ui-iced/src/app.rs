@@ -78,6 +78,8 @@ pub enum Message {
     View3d(Nav),
     /// A click on the 3D view: what is under it picked.
     Click(Click),
+    /// Eigenmode `i`'s field shown in the 3D view.
+    Mode(usize),
     /// Where the pointer is over the 3D view (points from its corner), or that it left.
     Hover(Option<emcraft_ui_core::geom::Point>),
     /// A browser row clicked (by its id): what it names selected, what it shows or runs.
@@ -515,6 +517,7 @@ impl App {
         let bar = container(bar).padding([6, 14]).width(Fill).style(look::app_bar(t));
         let page = match self.page {
             View::Model => crate::model::view(self),
+            View::Eigenmodes => crate::eigenmodes::view(self),
             v if v.chart().is_some() => crate::results::view(self, v),
             _ => crate::system::view(self),
         };
@@ -559,6 +562,12 @@ impl App {
                 None
             }
             Message::Row(id) => self.row(&id),
+            Message::Mode(i) => {
+                self.page = View::Model;
+                let view = std::mem::take(&mut self.view3d).navigated(Nav::Overlay(emcraft_ui_core::scene3d::Overlay::Field));
+                self.view3d = view.navigated(Nav::Mode(Some(i)));
+                None
+            }
             Message::Hover(at) => {
                 self.hover = at;
                 None

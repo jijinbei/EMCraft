@@ -553,3 +553,36 @@ fn the_pointer_over_the_plane_reads_the_field() {
     app.update(Message::View3d(Nav::Overlay(Overlay::Plain)));
     assert!(app.probe().is_none(), "no field shown");
 }
+
+/// A cavity's eigenmodes: Run solves them and lands on their page; a mode's Field shows its
+/// field on the 3D view's plane (the GPU colouring it), the mode chosen in the field's bar.
+/// Analytic evidence: the first is TE101 of the 22.86 × 10.16 × 30 mm box, f = (c/2)·√(1/a² +
+/// 1/d²) ≈ 8.245 GHz (to the mesh's half per cent), and the modes come in ascending order.
+#[test]
+fn a_cavitys_modes_are_listed_and_one_is_shown() {
+    use emcraft_ui_core::view::View;
+    let mut app = App::new(Some("cavity"));
+    app.update(Message::Start("solve.run".into()));
+    finish(&mut app);
+    assert_eq!(app.error, None);
+    assert_eq!(app.page, View::Eigenmodes);
+    let freqs: Vec<f64> = app.session.results().eigen.iter().flat_map(|e| e.modes.iter().map(|m| m.frequency)).collect();
+    assert!(!freqs.is_empty() && freqs.windows(2).all(|w| w[0] <= w[1]), "{freqs:?}");
+    let c = 299_792_458.0;
+    let te101 = c / 2.0 * (1.0 / 0.02286f64.powi(2) + 1.0 / 0.03f64.powi(2)).sqrt();
+    assert!((freqs[0] / te101 - 1.0).abs() < 5e-3, "{} against {te101}", freqs[0]);
+    app.update(Message::Mode(0));
+    assert_eq!((app.page, app.view3d.field.mode), (View::Model, Some(0)));
+    assert_eq!(app.view3d.field_error, None);
+    assert!(app.view3d.shown.as_ref().is_some_and(|s| s.field.is_some()), "the mode's field on the plane");
+    if let Ok(dir) = std::env::var("EMCRAFT_ICED_SHOTS") {
+        let _gpu = gpu();
+        for (name, page) in [("eigenmodes", View::Eigenmodes), ("cavity-mode", View::Model)] {
+            app.update(Message::Page(page));
+            let mut ui = iced_test::Simulator::with_size(settings(), (1400.0, 900.0), app.view());
+            let shot = ui.snapshot(&app.theme()).unwrap_or_else(|e| panic!("{e}"));
+            let _ = std::fs::remove_file(std::path::Path::new(&dir).join(format!("{name}-wgpu.png")));
+            assert!(shot.matches_image(std::path::Path::new(&dir).join(name)).unwrap_or(false));
+        }
+    }
+}
