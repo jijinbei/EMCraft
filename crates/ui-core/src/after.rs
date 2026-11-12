@@ -115,7 +115,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// The view each kind of command calls for, as the egui window showed it: a solve its
+    /// The view each kind of command calls for: a solve its
     /// results' (port modes left to the Excitation step's table there), an import over the
     /// S-parameters (a system's on its own view), a PCB's command its window, undo away from a
     /// window the project no longer has.

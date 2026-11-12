@@ -155,20 +155,14 @@ fn in_source() -> BTreeSet<String> {
     }
     let mut out = BTreeSet::new();
     let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    // The egui window's too, while it is there (ADR 0008).
-    for dir in ["ui-iced/src", "ui-core/src", "engine/src", "ui-egui/src"] {
+    for dir in ["ui-iced/src", "ui-core/src", "engine/src"] {
         walk(&crates.join(dir), &mut out);
     }
     out
 }
 
 /// Texts the tour cannot reach, with why.
-/// The egui window's alone go with it (ADR 0008).
-const UNREACHED: &[(&str, &str)] = &[
-    ("More tabs", "the egui window's ribbon, too narrow for its tabs"),
-    ("order", "the egui window's Setup field, looked up by its id"),
-    ("points", "the egui window's Setup field, looked up by its id"),
-];
+const UNREACHED: &[(&str, &str)] = &[];
 
 /// Drawn in Japanese, nothing on screen is left in English, and every translation is used.
 #[test]

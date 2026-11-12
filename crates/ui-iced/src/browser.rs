@@ -1,5 +1,5 @@
 //! The browser: the model and its results as a tree beside the 3D view ([`emcraft_ui_core::browser`]
-//! reads it from the session), as the egui window's: each section a heading with its count that
+//! reads it from the session): each section a heading with its count that
 //! folds and unfolds (an empty one stays folded), each row its glyph — a port its role's mark,
 //! ⇄ the input whose reflection is S11, ➜ an output — its name and its detail dimmer (symbols
 //! set as Unicode mathematics), a port's role in a pill of its colour, an eye that shows or hides

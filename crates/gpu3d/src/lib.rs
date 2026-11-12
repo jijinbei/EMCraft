@@ -1,6 +1,6 @@
 //! The 3D view drawn by the GPU (wgpu) with a depth buffer, whatever window shows it: on the
-//! window's own device ([`Renderer::prepare`] and [`Renderer::show`] in its render pass — egui's
-//! paint callback, iced's shader widget), or on a device of the process's own read back into a
+//! window's own device ([`Renderer::prepare`] and [`Renderer::show`] in its render pass — iced's
+//! shader widget), or on a device of the process's own read back into a
 //! picture ([`headless`]: a window that opened with OpenGL, `ui.render`, the scenarios, the start
 //! page's pictures). It is the only 3D renderer (docs/adr/0004-gpu-viewport.md); without any
 //! adapter the view says so.

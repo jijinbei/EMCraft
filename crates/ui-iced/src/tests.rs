@@ -1,5 +1,5 @@
 //! The window driven as a person would: its messages (typing, dragging, buttons) each changing
-//! the chain as the egui window's do, and the view drawn headless and clicked.
+//! the chain do, and the view drawn headless and clicked.
 
 use emcraft_model::system::RECEIVER;
 use emcraft_ui_core::geom::Point;
@@ -784,7 +784,7 @@ fn settle(app: &mut App) {
     }
 }
 
-/// The 3D view's keys and box, as the egui window's. Analytic evidence: an arrow tap turns the
+/// The 3D view's keys and box. Analytic evidence: an arrow tap turns the
 /// level front view's yaw by exactly 15° (Shift 90°), Ctrl+5 looks down (pitch 90°), a held arrow turns at 90°/s
 /// for the frames' time past the tap (capped at 0.1 s a frame), and a box dragged round the
 /// whole view by window takes every part that is drawn.
@@ -870,7 +870,7 @@ fn ctrl_key(c: &str) -> iced::Event {
     })
 }
 
-/// The 3D view's tools, as the egui window's. Analytic evidence: the measure tool snapped to two
+/// The 3D view's tools. Analytic evidence: the measure tool snapped to two
 /// corners of the face under the pointer measures exactly their coordinates' difference (the
 /// engine's `geometry.measure`, compared with the corners themselves, in mm); the port tool on a
 /// guide's end that has a port selects that port; its reference plane dragged off the face lands
@@ -1030,7 +1030,7 @@ fn the_section_shows_its_dimensions_and_looks_at_the_cut() {
     assert!(app.section_notes().is_none(), "dimensions off");
 }
 
-/// What the egui window did alone, now here too. Analytic evidence: an orbit about the origin
+/// The orbit's pivot, the field's plane dragged, the reference plane typed. Analytic evidence: an orbit about the origin
 /// keeps the origin where it was on screen; the field's plane dragged by its whole extent on
 /// screen moves by the model's whole extent along its normal (clamped there); facing the plane
 /// looks along its normal; the reference plane typed as 2.5 mm is 2.5 mm, and 0 puts it back.

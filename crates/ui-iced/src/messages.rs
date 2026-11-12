@@ -1,4 +1,4 @@
-//! The message area at the window's foot, as the egui window's: the running job's row (Cancel,
+//! The message area at the window's foot: the running job's row (Cancel,
 //! where it runs, what it does and how far it is), the last message on a line (an error in its
 //! colour, a message repeated counted), and the earlier ones a click away (▴ with how many there
 //! are opens the newest of them, scrolled to the end; ▾ folds them).

@@ -1,6 +1,9 @@
 # ADR 0004: The 3D view drawn only by the GPU, with wgpu
 
-Status: accepted (2026-10-31; GPU-only from 2026-11-01).
+Status: accepted (2026-10-31; GPU-only from 2026-11-01). Since [ADR 0008](0008-retire-egui.md)
+(2026-11-13) the window is iced's: `gpu3d` draws in iced's shader widget, offscreen for
+`ui.render` and the start page's pictures; what follows about egui, eframe and glow is the
+history of the decision.
 
 ## Decision
 

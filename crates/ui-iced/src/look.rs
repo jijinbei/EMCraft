@@ -1,8 +1,8 @@
 //! The window's look from the theme ([`emcraft_ui_core::theme`]): its tokens in iced's colours,
 //! iced's theme seeded from them, and the styles of the window's parts — buttons, fields,
 //! choices, cards and their headers, the canvas' ground, the application bar — each a function
-//! of the tokens, so every theme (built-in, tinted or the user's) dresses the iced window as it
-//! dresses the egui one.
+//! of the tokens, so every theme (built-in, tinted or the user's) dresses the window, its
+//! 3D view and its pictures alike.
 
 use std::rc::Rc;
 

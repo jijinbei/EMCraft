@@ -87,6 +87,11 @@ impl App {
     }
 
     /// Runs `id` (a project opened or begun; it shows as a new window would, [`App::after`]).
+    /// Project file `path` opened, as Open would.
+    pub(crate) fn open_path(&mut self, path: &str) {
+        self.opened("file.open", &json!({ "path": path }));
+    }
+
     fn opened(&mut self, id: &str, params: &Value) {
         // The changes before were saved or let go: their copy goes.
         self.autosave.drop_copy();

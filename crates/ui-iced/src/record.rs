@@ -5,9 +5,9 @@
 //! command for command; the follow-ups a command makes (the rest of a list after a job) are not
 //! listed, they follow again.
 //!
-//! Played back (a recording, or a crash report's folder: `emcraft-iced --replay FOLDER`), the
+//! Played back (a recording, or a crash report's folder: `emcraft --replay FOLDER`), the
 //! project is built again from its history, then the entries one a frame, each after the job
-//! before it. A recording from the egui window plays too, as far as its actions run commands
+//! before it. A recording from the former egui window plays too, as far as its actions run commands
 //! (its dialogs' OK with their values, its runs, Undo and Redo, its pages); the rest are counted
 //! and said.
 //!
@@ -140,7 +140,7 @@ impl App {
         match entry.action {
             Action::Run { id, params } => self.start(&id, params),
             Action::RunAll(list) => self.queue(list),
-            // The egui window's dialog, OK'd with the values it had.
+            // A dialog of the former egui window, OK'd with the values it had.
             Action::DialogOk => match entry.dialog {
                 Some((id, values)) => self.start(&id, values),
                 None => self.recorder.skipped += 1,

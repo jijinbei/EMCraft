@@ -1,4 +1,4 @@
-//! Importing a part in the iced window, as the egui window's: a SolidCraft design, 3MF or STL
+//! Importing a part in the iced window: a SolidCraft design, 3MF or STL
 //! (and a KiCad board, through the PCB's own import) chosen with the system's file dialog or
 //! dropped on the window opens `geometry.import`'s dialog on it, the geometry's step open; the
 //! dialog shows above its fields what can be imported (the format the file is lit), Choose

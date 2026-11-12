@@ -315,7 +315,6 @@ mod tests {
         let cut = face().unwrap();
         let mut chars: Vec<char> = (' '..='~').collect();
         let mut dirs: Vec<_> = std::fs::read_dir(root.join("crates")).unwrap().flatten().map(|e| e.path().join("src")).collect();
-        dirs.retain(|d| !d.starts_with(root.join("crates/ui-egui")));
         while let Some(dir) = dirs.pop() {
             for p in std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.path()) {
                 if p.is_dir() {

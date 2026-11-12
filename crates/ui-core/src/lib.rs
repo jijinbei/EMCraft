@@ -1,6 +1,6 @@
-//! What EMCraft's windows share, whatever draws them (docs/architecture.md): no GUI toolkit is
-//! below this crate, so the egui window and any other (iced) build on the same texts and the
-//! same rules for what the window shows. The modules:
+//! What EMCraft's window decides, whatever draws it (docs/architecture.md): no GUI toolkit is
+//! below this crate, so the window (iced, `emcraft-ui-iced`) only lays out and draws what these
+//! texts and rules say it shows. The modules:
 //!
 //! - [`lang`]: the languages, the texts looked up by their English (`t!`), the commands' and
 //!   samples' translations;

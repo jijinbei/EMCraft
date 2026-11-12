@@ -1,5 +1,5 @@
 //! The window's glyphs by name: what each command, view and tool shows beside its label. Each
-//! window draws them its own way (egui's `glyphs::paint`).
+//! is drawn from its shared marks ([`crate::glyph_marks`]) in the window's toolkit.
 
 emcraft_macros::named_enum! {
     /// A glyph; its id names it (a picture sheet, a test).

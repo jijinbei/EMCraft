@@ -13,7 +13,7 @@ use serde_json::json;
 use crate::app::{App, Field, Message};
 use crate::look;
 
-/// A row's label column (points), as the egui card's.
+/// A row's label column (points).
 const LABEL_W: f32 = 56.0;
 
 /// The card of `node`.

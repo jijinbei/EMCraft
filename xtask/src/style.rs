@@ -36,13 +36,7 @@ const ORGANISATIONS: &[&str] = &["EIA", "IEC", "IBIS", "DLMF"];
 
 /// Library files whose prints are the window's notices on stderr (no log facade yet): the GPU
 /// failing under a window's 3D view, a picture of the iced window that could not be written.
-const PRINTING_FILES: &[&str] = &[
-    "crates/ui-egui/src/lib.rs",
-    "crates/ui-egui/src/gpu3d.rs",
-    "crates/gpu3d/src/headless.rs",
-    "crates/ui-iced/src/app.rs",
-    "crates/ui-iced/src/view3d/shader.rs",
-];
+const PRINTING_FILES: &[&str] = &["crates/gpu3d/src/headless.rs", "crates/ui-iced/src/app.rs", "crates/ui-iced/src/view3d/shader.rs"];
 
 /// The widest comment line (rustfmt's `max_width`).
 const MAX_COMMENT_WIDTH: usize = 150;

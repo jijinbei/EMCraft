@@ -1,4 +1,4 @@
-//! Scenarios in the iced window, as the egui window runs them (`tests/scenarios/*.json`): the
+//! Scenarios in the iced window (`tests/scenarios/*.json`): the
 //! window driven by the control channel's requests the way an agent drives it, with checks on
 //! what it shows. A step is
 //! - `{"call": METHOD, "params": {…}, "fail"?: true}`: a request (`fail`: it must be refused),

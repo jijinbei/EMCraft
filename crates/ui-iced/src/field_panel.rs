@@ -1,5 +1,5 @@
 //! The field view's side column on the model page, beside the 3D view while it shows the field
-//! (as the egui window's field side): the power that reaches each port at the field's frequency,
+//!: the power that reaches each port at the field's frequency,
 //! the project's probes with the field coloured there (+ adds one at the pinned point, else the
 //! plane's middle; ✕ takes one away), the fields at the pinned point (a click on the plane pins
 //! it), and the picture and the animation saved through their dialogs (`view.field`,

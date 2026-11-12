@@ -57,8 +57,9 @@ People trust EMCraft with their models; a crash loses their work. **This outrank
   `run`) + tests. The UI, scripts and CLI all reach the same commands. Programmatic calls never
   open dialogs.
 - **Layering** is enforced by `cargo xtask layers` (`docs/architecture.md`): L0 `model` → L1
-  `mesh`, `fem`, `theory`, `render` → L2 `solver` → L6 `engine` → L7 `ui-egui` → apps. Nothing
-  below L7 depends on egui/eframe/winit/wgpu/glow.
+  `mesh`, `fem`, `theory`, `render` → L2 `solver` → L6 `engine`, `ui-core`, `control` → L7
+  `ui-iced`, `gpu3d` → apps. Nothing below L7 depends on iced/winit/wgpu/rfd. What the window
+  decides (state, rules, texts) is written in `ui-core`; `ui-iced` only lays it out and draws it.
 - **Determinism.** The same input gives the same mesh and the same solver result, bit for bit:
   no hash-order iteration into output, no thread-count-dependent sums (the factorization splits
   work by columns, each entry summed in one fixed order).
@@ -110,12 +111,15 @@ People trust EMCraft with their models; a crash loses their work. **This outrank
   - `{"id":1,"method":"engine.execute","params":{"command":"solve.frequency","params":{"start":6,"stop":9}}}`
   - `{"id":2,"method":"ui.click","params":{"handle":"toolbar:mesh.generate"}}` (`ui.handles` lists them)
   - `{"id":3,"method":"ui.render","params":{"path":"/tmp/shot.png"}}` then read the PNG.
-- **For UI work, look at the result.** `ui.render` draws the whole window on the CPU, no window
-  or display needed; `ui.screenshot` captures the presented window. Without a display, use the
-  headless scenarios: `EMCRAFT_SCENARIO_SHOTS=DIR cargo test -p emcraft-ui-egui scenario` writes
-  each scenario's `shot` steps as PNGs into DIR.
-- Every UI behaviour lands with a scenario in `crates/ui-egui/tests/scenarios/` (real clicks,
-  keys and text through the control requests, checks on `ui.inspect`), run by `cargo test`.
+- **For UI work, look at the result.** `ui.render` draws the whole window on the CPU (tiny-skia;
+  the 3D view offscreen on the GPU), no window or display needed; `ui.screenshot` captures the
+  presented window. Without a display, use the headless scenarios:
+  `EMCRAFT_SCENARIO_SHOTS=DIR ICED_TEST_BACKEND=tiny-skia cargo test -p emcraft-ui-iced scenarios`
+  writes each scenario's `shot` steps as PNGs into DIR.
+- Every UI behaviour lands with a scenario in `crates/ui-iced/tests/scenarios/` (one task end to
+  end: handles clicked, widgets pressed where they are drawn, fields typed into, keys; checks on
+  `ui.inspect`), run by `cargo test`. Translations: `crates/ui-iced/src/lang_tests.rs` tours the
+  window in Japanese.
 - Launch-check the real app with a timeout (`timeout 10 cargo run --release -p emcraft --
   --sample highpass`) and confirm it starts without errors.
 

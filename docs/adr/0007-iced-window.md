@@ -1,6 +1,7 @@
 # ADR 0007: A second window in iced, on the rules every window shares
 
-Status: accepted (2026-11-12).
+Status: accepted (2026-11-12); since [ADR 0008](0008-retire-egui.md) (2026-11-13) the iced window
+is the only one, run by `apps/emcraft`.
 
 ## Context
 

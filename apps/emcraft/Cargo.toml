@@ -1,6 +1,6 @@
 [package]
 name = "emcraft"
-description = "EMCraft desktop app"
+description = "EMCraft desktop app: the iced window (crates/ui-iced) on the system's file dialog and the control channel"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -21,8 +21,12 @@ cubecl-cpu = ["emcraft-engine/cubecl-cpu"]
 emcraft-control = { workspace = true }
 emcraft-engine = { workspace = true }
 emcraft-picker = { workspace = true }
-emcraft-ui-egui = { workspace = true }
-serde_json = { workspace = true }
+emcraft-ui-core = { workspace = true }
+emcraft-ui-iced = { workspace = true }
+
+# The message box a window program shows when its window cannot open (no console there).
+[target.'cfg(windows)'.dependencies]
+rfd = "0.17"
 
 [build-dependencies]
 # The icon and version resource of emcraft.exe (build.rs, docs/adr/0001-libraries.md).

@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 
 /// Ported code kept close to its upstream (ATTRIBUTION.md), and the egui window until it goes
 /// (ADR 0008), and so left out.
-const SKIP_CRATES: &[&str] = &["tetmesh", "ui-egui"];
+const SKIP_CRATES: &[&str] = &["tetmesh"];
 
 /// Declarative tables, whose entries look alike by design.
 const SKIP_FILES: &[&str] = &["crates/engine/src/cmd/table.rs"];

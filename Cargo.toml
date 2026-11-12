@@ -27,7 +27,6 @@ emcraft-io = { path = "crates/io" }
 emcraft-templates = { path = "crates/templates" }
 emcraft-engine = { path = "crates/engine" }
 emcraft-ui-core = { path = "crates/ui-core" }
-emcraft-ui-egui = { path = "crates/ui-egui" }
 emcraft-ui-iced = { path = "crates/ui-iced" }
 
 # foundation
@@ -62,14 +61,9 @@ approx = { version = "0.5", default-features = false, features = ["std"] }
 proptest = { version = "1", default-features = false, features = ["std"] }
 rstest = { version = "0.26", default-features = false }
 
-# ui: the same egui/eframe line as FieldCraft. The window draws with wgpu (the 3D view's depth-buffered
-# renderer, crates/gpu3d) and falls back to glow (OpenGL 2) where wgpu finds no adapter
-# (docs/adr/0004-gpu-viewport.md).
-egui = "0.36"
-eframe = { version = "0.36", default-features = false, features = ["wgpu", "glow", "default_fonts", "wayland", "x11"] }
-
-# ui, the second window (crates/ui-iced, docs/adr/0007-iced-window.md): iced's main line, pinned,
-# for the wgpu the rest of the build has (iced 0.14 is on wgpu 27).
+# ui: the window (crates/ui-iced, docs/adr/0007-iced-window.md, docs/adr/0008-retire-egui.md): iced's
+# main line, pinned, for the wgpu the rest of the build has (iced 0.14 is on wgpu 27); it draws with
+# wgpu (the 3D view's depth-buffered renderer, crates/gpu3d) and tiny-skia on the CPU.
 iced = { git = "https://github.com/iced-rs/iced", rev = "c3d2cfd0a8503fd4b13754467953b427be259c55", default-features = false, features = ["wgpu", "tiny-skia", "canvas", "image-without-codecs", "x11", "wayland", "wayland-dlopen", "thread-pool"] }
 # The window drawn without one (ui.render): iced's user interface run headless.
 iced_runtime = { git = "https://github.com/iced-rs/iced", rev = "c3d2cfd0a8503fd4b13754467953b427be259c55" }
@@ -131,27 +125,12 @@ opt-level = 3
 # third smaller than thin LTO in 16 units with line tables, with the same numbers bit for bit
 # (Rust does not contract or reassociate floating point); CI's tests build with thin LTO
 # (.github/workflows/ci.yml). The window's crates are optimised for size: their speed is
-# egui's layout, far from the solvers' loops, which stay at opt-level 3.
+# the window's layout, far from the solvers' loops, which stay at opt-level 3.
 [profile.release]
 opt-level = 3
 lto = "fat"
 codegen-units = 1
 strip = true
-
-[profile.release.package.egui]
-opt-level = "s"
-
-[profile.release.package.epaint]
-opt-level = "s"
-
-[profile.release.package.eframe]
-opt-level = "s"
-
-[profile.release.package.egui_glow]
-opt-level = "s"
-
-[profile.release.package.glow]
-opt-level = "s"
 
 [profile.release.package.winit]
 opt-level = "s"
@@ -159,6 +138,6 @@ opt-level = "s"
 [profile.release.package.rfd]
 opt-level = "s"
 
-[profile.release.package.emcraft-ui-egui]
+[profile.release.package.emcraft-ui-iced]
 opt-level = "s"
 

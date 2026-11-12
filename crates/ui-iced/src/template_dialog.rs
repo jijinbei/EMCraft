@@ -1,4 +1,4 @@
-//! A template opened from the start page, as the egui window's: a card over the window with the
+//! A template opened from the start page: a card over the window with the
 //! template's parameters on the left (each its words, its name dim under them, its value and
 //! unit, red while it is no number) and its model drawn on the right, drawn again off the
 //! window's thread as they change (the last good picture kept, dimmed, with why the values make

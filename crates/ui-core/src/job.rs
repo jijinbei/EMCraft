@@ -20,7 +20,7 @@ use crate::dialogs::Dialog;
 use crate::lang::{args, tr, trf};
 use crate::view::View;
 
-/// What wakes the window when a job ends (egui: a repaint asked for; iced: a message sent).
+/// What wakes the window when a job ends (none: the window looks at its job every frame).
 pub type Wake = Box<dyn Fn() + Send>;
 
 /// Whether command `id` solves (its job says where it runs).

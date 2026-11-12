@@ -57,28 +57,25 @@ pub const TABLE: &[(&str, Class)] = &[
     ("gpu", Class::Layer(2)),
     // L6: commands.
     ("engine", Class::Layer(6)),
-    // L6, after the engine: what every window shares, no GUI toolkit (egui, iced) below it.
+    // L6, after the engine: what the window decides, no GUI toolkit below it.
     ("ui-core", Class::Layer(6)),
-    // L6: the control channel either window serves (docs/control-protocol.md), no GUI toolkit.
+    // L6: the control channel the window serves (docs/control-protocol.md), no GUI toolkit.
     ("control", Class::Layer(6)),
-    // L7: the desktop UI, and its second window in iced (docs/adr/0007-iced-window.md).
-    ("ui-egui", Class::Layer(7)),
+    // L7: the desktop window, in iced (docs/adr/0007-iced-window.md).
     ("ui-iced", Class::Layer(7)),
-    // L7, below both windows: the 3D view drawn by the GPU (docs/adr/0004-gpu-viewport.md).
+    // L7, below the window: the 3D view drawn by the GPU (docs/adr/0004-gpu-viewport.md).
     ("gpu3d", Class::Layer(7)),
     ("picker", Class::Layer(7)),
     ("testkit", Class::Testkit),
     // apps and tooling
     ("emcraft", Class::Exempt),
     ("cli", Class::Exempt),
-    ("iced", Class::Exempt),
     ("xtask", Class::Exempt),
 ];
 
 /// Explicit orderings *within* a layer (earlier may be used by later).
 pub const INTRA_LAYER_ORDER: &[&[&str]] = &[
     &["engine", "ui-core"],
-    &["gpu3d", "ui-egui"],
     &["gpu3d", "ui-iced"],
     &["macros", "model"],
     &["fem", "theory"],
@@ -277,8 +274,8 @@ mod tests {
             c("emcraft-model", &[("serde", Normal, false)]),
             c("emcraft-solver", &[("emcraft-model", Normal, true)]),
             c("emcraft-engine", &[("emcraft-solver", Normal, true), ("emcraft-testkit", Dev, true)]),
-            c("emcraft-ui-egui", &[("emcraft-engine", Normal, true), ("egui", Normal, false)]),
-            c("emcraft-cli", &[("emcraft-ui-egui", Normal, true)]),
+            c("emcraft-ui-iced", &[("emcraft-engine", Normal, true), ("iced", Normal, false)]),
+            c("emcraft-cli", &[("emcraft-ui-iced", Normal, true)]),
         ];
         assert!(check(&g).is_empty(), "{:?}", check(&g));
     }
@@ -336,7 +333,7 @@ mod tests {
             assert!(matches!(v[..], [Violation::UiBelowUiLayer { layer: 2, .. }]), "{dep}");
         }
         assert!(check(&[c("emcraft-engine", &[("egui_extras_not", Normal, false)])]).is_empty());
-        assert!(check(&[c("emcraft-ui-egui", &[("winit", Normal, false)])]).is_empty());
+        assert!(check(&[c("emcraft-ui-iced", &[("winit", Normal, false)])]).is_empty());
     }
 
     #[test]
@@ -357,7 +354,7 @@ mod tests {
     #[test]
     fn apps_and_xtask_exempt() {
         for app in ["emcraft", "emcraft-cli", "xtask"] {
-            assert!(check(&[c(app, &[("egui", Normal, false), ("emcraft-ui-egui", Normal, true)])]).is_empty());
+            assert!(check(&[c(app, &[("iced", Normal, false), ("emcraft-ui-iced", Normal, true)])]).is_empty());
         }
     }
 

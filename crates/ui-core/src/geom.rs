@@ -1,5 +1,5 @@
 //! Points, offsets and rectangles on screen (points, y down), as the shared rules lay things
-//! out; each window converts them to its toolkit's own (egui's `Pos2`, iced's `Point`).
+//! out; the window converts them to its toolkit's own (iced's `Point`).
 //!
 //! ```
 //! use emcraft_ui_core::geom::{Point, Rect, Vector};

@@ -1,4 +1,4 @@
-//! Escape on the iced window, as the egui window's: given to the top layer open
+//! Escape on the iced window: given to the top layer open
 //! ([`emcraft_ui_core::layer::Layer`], top first) — a question, the template's card, the command
 //! search, the dialog, the settings, the 3D view's tool (what it picked first, then the tool), the
 //! selection — unless a field it does not own has the keyboard (Escape then only lets go of the

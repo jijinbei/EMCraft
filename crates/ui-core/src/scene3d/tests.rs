@@ -243,7 +243,7 @@ fn a_large_scene_moves_coarser_and_is_picked_in_full() {
 }
 
 /// Milliseconds per pick, face and moving picture on the magic tee's fine mesh, scanned and
-/// through the index: `cargo test --release -p emcraft-ui-egui pick_timings -- --ignored
+/// through the index: `cargo test --release -p emcraft-ui-core pick_timings -- --ignored
 /// --nocapture`.
 #[test]
 #[ignore = "timing report: run by hand"]

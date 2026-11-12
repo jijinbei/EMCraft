@@ -1,7 +1,9 @@
-//! The EMCraft desktop app: `emcraft [PROJECT.emcraft] [--sample NAME] [--control PORT]`. A
-//! project file is opened; `--sample` opens a sample and solves it; with neither the start page
-//! shows. `--control` listens for an agent's JSON-line requests on 127.0.0.1:PORT
-//! (docs/control-protocol.md). `--help` and `--version` print and exit.
+//! The EMCraft desktop app: `emcraft [PROJECT.emcraft] [--sample NAME] [--control PORT]
+//! [--replay REPORT] [--shot PNG]`. A project file or a sample is opened; with neither the start
+//! page shows. `--control` listens for an agent's JSON-line requests on 127.0.0.1:PORT
+//! (docs/control-protocol.md; `EMCRAFT_CONTROL_PORT` too); `--replay` plays back a recording or
+//! a crash report's folder; `--shot` writes a picture of the window once it has drawn, then
+//! closes it. `--help` and `--version` print and exit.
 //!
 //! On Windows the release build is a window program with no console (a file opened from
 //! Explorer opens no terminal); what it prints shows only when its output is redirected.
@@ -13,7 +15,7 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let env_port = std::env::var("EMCRAFT_CONTROL_PORT").ok().and_then(|p| p.parse().ok());
-    let Cli { sample, project, replay, control } = match parse_args(&args, env_port) {
+    let Cli { sample, project, replay, control, shot } = match parse_args(&args, env_port) {
         Parsed::Run(cli) => cli,
         Parsed::Print(text) => {
             println!("{text}");
@@ -24,32 +26,22 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let host = emcraft_ui_egui::Host {
-        picker: Some(std::sync::Arc::new(emcraft_picker::SystemPicker)),
-        prefs: emcraft_ui_egui::prefs::default_path(),
-        themes: emcraft_ui_egui::theme::default_dir(),
-        open: project,
-        autosave: emcraft_ui_egui::autosave::default_dir(),
-        crashes: emcraft_ui_egui::crash::default_dir(),
-        replay,
-    };
-    // The token file lives as long as the app.
-    let mut token_file = None;
-    let result = emcraft_ui_egui::run_with(sample, host, |ctx| {
-        let port = control?;
-        let ctx = ctx.clone();
-        match emcraft_control::server::start(port, move || ctx.request_repaint()) {
-            Ok(started) => {
-                eprintln!("emcraft: {}", started.note);
-                token_file = started.token_file;
-                Some(started.requests)
-            }
-            Err(e) => {
-                eprintln!("emcraft: control channel not started: {e}");
-                None
-            }
+    // The control channel; its token file lives as long as the app (the window looks at its
+    // requests every frame).
+    let (requests, token_file) = match control.map(|p| emcraft_control::server::start(p, || {})) {
+        Some(Ok(started)) => {
+            eprintln!("emcraft: {}", started.note);
+            (Some(started.requests), started.token_file)
         }
-    });
+        Some(Err(e)) => {
+            eprintln!("emcraft: control channel not started: {e}");
+            (None, None)
+        }
+        None => (None, None),
+    };
+    let picker: std::sync::Arc<dyn emcraft_ui_core::files::Picker> = std::sync::Arc::new(emcraft_picker::SystemPicker);
+    let launch = emcraft_ui_iced::Launch { sample, project, shoot: shot, replay, picker: Some(picker), control: requests };
+    let result = emcraft_ui_iced::run(launch);
     drop(token_file);
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -63,14 +55,15 @@ fn main() -> ExitCode {
     }
 }
 
-/// The command line's choices: a sample to open and solve, a project file, a crash report or
-/// recording to replay, and the control channel's port.
+/// The command line's choices: a sample or a project file to open, a crash report or recording
+/// to replay, the control channel's port, a picture to take.
 #[derive(Debug, Default, PartialEq)]
 struct Cli {
     sample: Option<String>,
     project: Option<String>,
     replay: Option<std::path::PathBuf>,
     control: Option<u16>,
+    shot: Option<std::path::PathBuf>,
 }
 
 /// What the command line asks: run with its choices, print a text and stop (help, version),
@@ -85,7 +78,7 @@ enum Parsed {
 /// The usage line with the samples' names.
 fn usage_text() -> String {
     format!(
-        "usage: emcraft [PROJECT.emcraft] [--sample NAME] [--control PORT] [--replay REPORT]   (samples: {})",
+        "usage: emcraft [PROJECT.emcraft] [--sample NAME] [--control PORT] [--replay REPORT] [--shot PNG]   (samples: {})",
         emcraft_engine::templates::names().join(", ")
     )
 }
@@ -108,6 +101,10 @@ fn parse_args(args: &[String], control: Option<u16>) -> Parsed {
                 Some(path) => cli.replay = Some(std::path::PathBuf::from(path)),
                 None => return Parsed::Usage,
             },
+            "--shot" => match it.next() {
+                Some(path) => cli.shot = Some(std::path::PathBuf::from(path)),
+                None => return Parsed::Usage,
+            },
             "--control" => match it.next().map(|p| p.parse::<u16>()) {
                 Some(Ok(p)) => cli.control = Some(p),
                 _ => return Parsed::Usage,
@@ -119,7 +116,7 @@ fn parse_args(args: &[String], control: Option<u16>) -> Parsed {
     Parsed::Run(cli)
 }
 
-/// The window could not open (typically no OpenGL 2 driver: a virtual machine, a remote
+/// The window could not open (typically no graphics driver: a virtual machine, a remote
 /// desktop). A window program on Windows has no console for the error, so it is shown in a
 /// message box; elsewhere the terminal shows it. Not with `--control`: an agent reads stderr.
 #[cfg(all(windows, not(debug_assertions)))]
@@ -127,9 +124,7 @@ fn show_start_error(error: &str) {
     rfd::MessageDialog::new()
         .set_level(rfd::MessageLevel::Error)
         .set_title("EMCraft")
-        .set_description(format!(
-            "EMCraft could not open its window.\n\n{error}\n\nEMCraft draws with OpenGL 2 or later: install or update the graphics driver."
-        ))
+        .set_description(format!("EMCraft could not open its window.\n\n{error}\n\nInstall or update the graphics driver."))
         .set_buttons(rfd::MessageButtons::Ok)
         .show();
 }
@@ -148,11 +143,20 @@ mod tests {
     #[test]
     fn arguments_choose_what_opens_and_bad_ones_give_the_usage() {
         assert_eq!(parse(&[], Some(7)), Parsed::Run(Cli { control: Some(7), ..Cli::default() }));
-        let Parsed::Run(cli) = parse(&["model.emcraft", "--sample", "highpass", "--control", "9000"], Some(7)) else { panic!("not run") };
-        assert_eq!(cli, Cli { sample: Some("highpass".into()), project: Some("model.emcraft".into()), replay: None, control: Some(9000) });
+        let Parsed::Run(cli) = parse(&["model.emcraft", "--sample", "highpass", "--control", "9000", "--shot", "a.png"], Some(7)) else {
+            panic!("not run")
+        };
+        let want = Cli {
+            sample: Some("highpass".into()),
+            project: Some("model.emcraft".into()),
+            control: Some(9000),
+            shot: Some("a.png".into()),
+            replay: None,
+        };
+        assert_eq!(cli, want);
         assert!(matches!(parse(&["--version"], None), Parsed::Print(v) if v.starts_with("emcraft ")));
         assert!(matches!(parse(&["--help"], None), Parsed::Print(u) if u.starts_with("usage:")));
-        for bad in [&["--sample", "no-such"][..], &["--control", "x"], &["--control"], &["a", "b"], &["--what"], &["--replay"]] {
+        for bad in [&["--sample", "no-such"][..], &["--control", "x"], &["--control"], &["a", "b"], &["--what"], &["--replay"], &["--shot"]] {
             assert_eq!(parse(bad, None), Parsed::Usage, "{bad:?}");
         }
     }

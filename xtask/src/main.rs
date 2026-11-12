@@ -57,9 +57,8 @@ commands:
   desktop [--exec CMD]
                   write emcraft.desktop and its icon into the user's data directory, so a
                   Linux desktop's dock shows EMCraft's icon (the window's app id is emcraft)
-  font-subset     write the embedded fonts' subsets from the full fonts beside them
-                  (crates/ui-egui/fonts/full, crates/render/fonts/full), checked glyph by
-                  glyph against them
+  font-subset     write the pictures' font's subset from the full font beside it
+                  (crates/render/fonts/full), checked glyph by glyph against it
   installer-windows [--out FILE]
                   build the Windows installer on Linux: release binaries cross-compiled with
                   MinGW-w64, packed by NSIS (both fetched through nix-shell when missing;

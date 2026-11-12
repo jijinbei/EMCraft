@@ -156,5 +156,6 @@ Alpha is kept. The tinted theme is checked like any other (the contrasts above).
   each series and arrow set carries.
 - `emcraft_engine::theme`: the file format, its checks and caps, the built-in themes (compiled
   in), `theme.check`, and the `theme` parameter of the `view.*` commands.
-- `emcraft_ui_egui::theme`: `Tokens` and `Scene` (their names written once, in a table),
-  `Theme`, `Themes` (the built-in and the user's), the current theme of the thread drawing.
+- `emcraft_ui_core::theme`: `Tokens` and `Scene` (their names written once, in a table),
+  `Theme`, `Themes` (the built-in and the user's); `emcraft_ui_iced::look`: the window's styles
+  from them.

@@ -182,7 +182,7 @@ fn a_part_is_inspected_without_importing_it() {
     assert!(r["parameters"].as_array().is_some_and(|p| p.iter().any(|q| q["name"] == "l")), "{r}");
     assert!(!r["bodies"].as_array().unwrap().is_empty());
     assert!((r["size"][0].as_f64().unwrap() - 22.86).abs() < 1e-6, "{r}");
-    let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../ui-egui/tests/fixtures/post-and-puck.3mf");
+    let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/post-and-puck.3mf");
     let r = s.execute("geometry.import.inspect", &json!({"path": fixture})).unwrap();
     assert_eq!(r["format"], "3mf");
     let names: Vec<&str> = r["bodies"].as_array().unwrap().iter().filter_map(|b| b["name"].as_str()).collect();

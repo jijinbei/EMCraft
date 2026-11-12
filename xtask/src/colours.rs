@@ -225,6 +225,6 @@ fn f<'a>(s: &'a str) -> Rgb { Rgb(2, 2, 2) }
         assert!(lines("crates/render/src/canvas.rs", consts).is_empty());
         // Only those lines, only there.
         assert_eq!(lines("crates/render/src/canvas.rs", "pub const RED: Rgb = Rgb(255, 0, 0);"), [1]);
-        assert_eq!(lines("crates/ui-egui/src/theme.rs", consts), [1, 2]);
+        assert_eq!(lines("crates/ui-iced/src/look.rs", consts), [1, 2]);
     }
 }

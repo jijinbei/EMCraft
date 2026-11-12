@@ -1,10 +1,7 @@
-//! `cargo xtask font-subset`: the fonts the apps embed, cut down to the characters they need,
-//! from the full fonts kept beside them (`fonts/full/`).
+//! `cargo xtask font-subset`: the font the pictures embed, cut down to the characters they need,
+//! from the full font kept beside it (`fonts/full/`). (The window's language is shown with the
+//! system's fonts, `emcraft_ui_core::fonts`; nothing else is embedded.)
 //!
-//! - Noto Sans JP (the window's Japanese fallback, `crates/ui-egui/fonts/`): ASCII, Latin-1,
-//!   general punctuation, kana (with the half-width forms), CJK symbols and full-width forms,
-//!   JIS X 0208's non-kanji rows 1–8 and first-level kanji (rows 16–47, 2965 kanji), read from
-//!   the WHATWG EUC-JP table through `encoding_rs`, and every character of `locales/ja.json`.
 //! - DejaVu Sans (the text in pictures, `crates/render/fonts/`): Latin (Basic to Extended-B),
 //!   Greek, Cyrillic, punctuation, scripts, currency, letterlike symbols, number forms, arrows,
 //!   mathematical operators, technical symbols, geometric shapes, and every character the
@@ -24,20 +21,11 @@ use allsorts::subset::{CmapTarget, SubsetProfile, subset};
 /// What a subset does with the source's kerning.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kerning {
-    /// Left out of the subset.
-    Dropped,
     /// Its `kern` table rebuilt for the subset's glyph ids (pictures kern by it).
     Rebuilt,
 }
 
 pub fn run(root: &Path) -> Result<(), String> {
-    let ui = root.join("crates/ui-egui/fonts");
-    let mut jp = ranges(&[(0x20, 0x7E), (0xA0, 0xFF), (0x2000, 0x206F), (0x3000, 0x30FF), (0x31F0, 0x31FF), (0xFF00, 0xFFEF)]);
-    jp.extend(jis_x_0208());
-    let ja = std::fs::read_to_string(root.join("locales/ja.json")).map_err(|e| format!("ja.json: {e}"))?;
-    jp.extend(ja.chars().filter(|c| !c.is_control()));
-    write(&ui.join("full/NotoSansJP-Regular.otf"), &ui.join("NotoSansJP-Regular-subset.otf"), jp, Kerning::Dropped)?;
-
     let render = root.join("crates/render/fonts");
     let mut dv = ranges(&[
         (0x20, 0x7E),
@@ -62,28 +50,12 @@ fn ranges(r: &[(u32, u32)]) -> Vec<char> {
     r.iter().flat_map(|&(a, b)| (a..=b).filter_map(char::from_u32)).collect()
 }
 
-/// JIS X 0208's rows 1–8 (symbols, digits, kana, Greek, Cyrillic, box drawing) and 16–47
-/// (first-level kanji), decoded through EUC-JP (row r, cell c: bytes 0xA0 + r, 0xA0 + c).
-fn jis_x_0208() -> Vec<char> {
-    let mut out = Vec::new();
-    for row in (1u8..=8).chain(16..=47) {
-        for cell in 1u8..=94 {
-            let bytes = [0xA0 + row, 0xA0 + cell];
-            let (s, _, unmapped) = encoding_rs::EUC_JP.decode(&bytes);
-            if !unmapped {
-                out.extend(s.chars());
-            }
-        }
-    }
-    out
-}
-
 /// Every character other than ASCII in the sources of the crates below the UI (what pictures
 /// can write, and more).
 fn source_chars(root: &Path) -> Result<Vec<char>, String> {
     let mut out = Vec::new();
     let crates = std::fs::read_dir(root.join("crates")).map_err(|e| format!("crates: {e}"))?;
-    let mut dirs: Vec<_> = crates.flatten().map(|e| e.path()).filter(|p| !p.ends_with("ui-egui")).collect();
+    let mut dirs: Vec<_> = crates.flatten().map(|e| e.path()).collect();
     dirs.sort();
     for d in dirs {
         let mut stack = vec![d.join("src")];
@@ -105,7 +77,7 @@ fn source_chars(root: &Path) -> Result<Vec<char>, String> {
 /// Subsets `source` to `chars` (those it has) and writes `out`, after checking the subset.
 fn write(source: &Path, out: &Path, mut chars: Vec<char>, kern: Kerning) -> Result<(), String> {
     let src = std::fs::read(source).map_err(|e| format!("{}: {e}", source.display()))?;
-    chars.sort();
+    chars.sort_unstable();
     chars.dedup();
     let bytes = cut(&src, &chars, kern).map_err(|e| format!("{}: {e}", source.display()))?;
     std::fs::write(out, &bytes).map_err(|e| format!("{}: {e}", out.display()))?;
@@ -118,7 +90,7 @@ fn cut(src: &[u8], chars: &[char], kern: Kerning) -> Result<Vec<u8>, String> {
     let face = ttf_parser::Face::parse(src, 0).map_err(|e| format!("not a font: {e}"))?;
     let kept: Vec<char> = chars.iter().copied().filter(|c| face.glyph_index(*c).is_some_and(|g| g.0 != 0)).collect();
     let mut glyphs: Vec<u16> = std::iter::once(0).chain(kept.iter().filter_map(|c| face.glyph_index(*c)).map(|g| g.0)).collect();
-    glyphs.sort();
+    glyphs.sort_unstable();
     glyphs.dedup();
     let data = ReadScope::new(src).read::<FontData>().map_err(|e| format!("allsorts: {e}"))?;
     let provider = data.table_provider(0).map_err(|e| format!("allsorts: {e}"))?;

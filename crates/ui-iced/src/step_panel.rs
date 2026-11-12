@@ -1,4 +1,4 @@
-//! The open step's panel at the right of the page, as the egui window's: its header (the
+//! The open step's panel at the right of the page: its header (the
 //! status's mark, `Step n · name`, the status), why the kind chosen does without it, its checks
 //! each with the Fix it leads to, and the step's own part — the geometry's bodies and materials,
 //! the boundaries, the mesh's statistics and the solve's estimate, the ports with their roles

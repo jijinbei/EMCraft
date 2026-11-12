@@ -1,4 +1,4 @@
-//! The S-parameters page, as the egui window's: how S is shown (in dB, a magnitude, a phase, a
+//! The S-parameters page: how S is shown (in dB, a magnitude, a phase, a
 //! group delay, a Smith chart; mixed mode where the ports pair), the chart drawn by the GPU — a
 //! click picks the nearest solved frequency for the field view and opens it, a drag picks a band
 //! to solve more finely (`solve.refine`), the field view's frequency marked — the ports'

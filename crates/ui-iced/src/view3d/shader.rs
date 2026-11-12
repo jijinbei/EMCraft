@@ -18,7 +18,7 @@ use iced::{Point, Rectangle, Size, keyboard, mouse};
 use super::{Click, GripMove, Nav};
 use crate::app::Message;
 
-/// Supersampled at rest up to this many output pixels (as the egui window's).
+/// Supersampled at rest up to this many output pixels.
 const SUPERSAMPLE_PIXELS: f64 = 1.3e6;
 
 /// Zoom steps a point dragged with the zoom mode makes, and a pixel scrolled.
@@ -330,7 +330,7 @@ impl shader::Pipeline for Gpu {
     fn new(device: &wgpu::Device, _queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Gpu {
         let renderer = Renderer::new(device, Caps::guaranteed(device), format);
         if let Err(e) = &renderer {
-            eprintln!("emcraft-iced: {e}");
+            eprintln!("emcraft: {e}");
         }
         Gpu { renderer }
     }
@@ -348,11 +348,11 @@ impl shader::Primitive for Shot {
         let f = frame(self, out, ppp);
         // Its own encoder, submitted before the window's: the frame is drawn when shown.
         let drawn = emcraft_gpu3d::scoped(device, || {
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("emcraft_iced_view3d") });
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("emcraft_view3d") });
             r.prepare(device, queue, &mut encoder, &f).map(|()| queue.submit([encoder.finish()]))
         });
         if let Err(e) = drawn.map_err(Gpu3dError::Frame).and_then(|r| r.map(|_| ())) {
-            eprintln!("emcraft-iced: {e}; the 3D view stops");
+            eprintln!("emcraft: {e}; the 3D view stops");
             gpu.renderer = Err(e);
         }
     }
@@ -365,7 +365,7 @@ impl shader::Primitive for Shot {
     }
 }
 
-/// The view's keys (when no field takes them), as the egui window's: the arrows turn the view
+/// The view's keys (when no field takes them): the arrows turn the view
 /// 15° (Shift: a quarter turn) and keep turning while held, Ctrl+arrows move the picture, and
 /// Ctrl+1…7 turn to Front, Back, Left, Right, Top, Bottom and the isometric view.
 pub fn keys(event: iced::Event, status: iced::event::Status, _: iced::window::Id) -> Option<Message> {

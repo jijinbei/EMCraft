@@ -1,7 +1,7 @@
-//! EMCraft's second window, in iced (docs/adr/0007-iced-window.md), built on the same shared
-//! rules as the egui one ([`emcraft_ui_core`]): what a view holds, what each gesture and field
-//! ends in and the texts it shows come from there; this crate only lays them out and draws
-//! them. It grows alongside the egui window until it does as much.
+//! EMCraft's window, in iced (docs/adr/0007-iced-window.md, docs/adr/0008-retire-egui.md),
+//! built on the shared rules ([`emcraft_ui_core`]): what a view holds, what each gesture and
+//! field ends in and the texts it shows come from there; this crate only lays them out and draws
+//! them.
 //!
 //! An iced program is its state, the messages that change it and the view drawn from it:
 //! [`app::App`], [`app::Message`], [`app::App::update`] and [`app::App::view`]. Every change to
@@ -73,20 +73,50 @@ pub mod view3d;
 
 use emcraft_ui_core::{prefs, theme};
 
-/// Runs the window, on sample `sample` when one is named, in the preferences the egui window
-/// keeps: its language, its theme (the user's themes too), the font the language is shown with
-/// and the 3D view's mouse mapping and drawing. With `shoot`, a picture of the window is written
-/// there once it has drawn (a running job ended first) and the window closes. `picker`: the
-/// host's file dialog; `control`: the control channel's requests (docs/control-protocol.md);
-/// `replay`: a recording or a crash report's folder played back once the window is up. The
-/// desktop window keeps crash reports (crate::record) unless it takes a picture.
-pub fn run(
-    sample: Option<String>,
-    shoot: Option<std::path::PathBuf>,
-    replay: Option<std::path::PathBuf>,
-    picker: Option<std::sync::Arc<dyn emcraft_ui_core::files::Picker>>,
-    control: Option<std::sync::mpsc::Receiver<emcraft_control::ControlRequest>>,
-) -> iced::Result {
+/// The desktop's id for the window: a dock shows the icon of `emcraft.desktop`
+/// (`cargo xtask desktop`).
+pub const APP_ID: &str = "emcraft";
+
+/// The window: its size, the smallest it may be, its icon and (on Linux) its app id.
+fn window_settings() -> iced::window::Settings {
+    let icon = iced::window::icon::from_rgba(emcraft_render::icon::rgba(64), 64, 64).ok();
+    #[cfg(target_os = "linux")]
+    let platform_specific = iced::window::settings::PlatformSpecific { application_id: APP_ID.into(), ..Default::default() };
+    #[cfg(not(target_os = "linux"))]
+    let platform_specific = Default::default();
+    iced::window::Settings {
+        size: iced::Size::new(1400.0, 900.0),
+        min_size: Some(iced::Size::new(900.0, 600.0)),
+        icon,
+        platform_specific,
+        exit_on_close_request: false,
+        ..Default::default()
+    }
+}
+
+/// What the window opens on and with.
+#[derive(Default)]
+pub struct Launch {
+    /// A sample to open, or a project file (`.emcraft`); with neither, the start page.
+    pub sample: Option<String>,
+    pub project: Option<String>,
+    /// Where a picture of the window is written once it has drawn (a running job ended first);
+    /// the window then closes.
+    pub shoot: Option<std::path::PathBuf>,
+    /// A recording or a crash report's folder, played back once the window is up.
+    pub replay: Option<std::path::PathBuf>,
+    /// The host's file dialog.
+    pub picker: Option<std::sync::Arc<dyn emcraft_ui_core::files::Picker>>,
+    /// The control channel's requests (docs/control-protocol.md).
+    pub control: Option<std::sync::mpsc::Receiver<emcraft_control::ControlRequest>>,
+}
+
+/// Runs the window as `launch` asks, in the preferences it keeps: its language, its theme (the
+/// user's themes too), the font the language is shown with and the 3D view's mouse mapping and
+/// drawing. It keeps crash reports (crate::record) and copies of unsaved work unless it takes a
+/// picture.
+pub fn run(launch: Launch) -> iced::Result {
+    let Launch { sample, project, shoot, replay, picker, control } = launch;
     // The control channel's queue goes to the first window made.
     let control = std::sync::Mutex::new(control);
     let prefs = prefs::default_path().map(|p| prefs::Prefs::load(&p)).unwrap_or_default();
@@ -110,6 +140,9 @@ pub fn run(
             .serving(control.lock().ok().and_then(|mut c| c.take()))
             .with_crash_reports(crashes.clone(), true)
             .with_font(font_state.clone());
+        if let Some(path) = &project {
+            app.open_path(path);
+        }
         if let Some(path) = &replay
             && let Err(e) = emcraft_ui_core::record::Recording::read(path).and_then(|r| app.play(r))
         {
@@ -126,7 +159,7 @@ pub fn run(
         .theme(app::App::theme)
         // The language's font, and the pictures' face the charts' labels are set in.
         .fonts(font.map(std::borrow::Cow::Owned).into_iter().chain([std::borrow::Cow::Borrowed(emcraft_render::text::face_bytes())]))
-        .window_size((1400.0, 900.0))
+        .window(window_settings())
         .run()
 }
 

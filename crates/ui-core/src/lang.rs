@@ -237,7 +237,7 @@ pub fn lookup(english: &str) -> &str {
     found.map_or(english, String::as_str)
 }
 
-/// The characters of language `id`'s translation that egui's own fonts lack — kana, kanji,
+/// The characters of language `id`'s translation that the window's Latin fonts lack — kana, kanji,
 /// hangul, full-width forms — which its font must show; sorted, each once; none for English.
 pub fn script_chars(id: &str) -> Vec<char> {
     let Some(l) = find(id).filter(|l| l.id != ENGLISH) else { return Vec::new() };

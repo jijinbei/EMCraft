@@ -35,12 +35,11 @@ changes at once and the choice is kept with the preferences (`language` in `pref
   translated is not checked: its missing texts show in English. A test reads every `t!` and
   `text!` in the sources and finds no translation that none of them, the tour of the window or
   a label asks for.
-- **Handles never change**: the control channel's names (`tab:MODEL`, `row:Port 1 (start): 1
-  mode`, `settings:language:ja`) are made from the English and the ids whatever is shown, so
-  scenarios and agents work in any language. A browser row keeps its English (`Row::text`, its
-  handle and key) beside what is shown (`Row::shown`).
-- **The font**: egui's own fonts have no Japanese, so the window shows Japanese with a font of
-  the system's (`crates/ui-egui/src/fonts/system.rs`, `fontdb`: the system's font folders, on
+- **Handles never change**: the control channel's names (`tab:model`, `row:<id>`,
+  `command:mesh.generate`) are made from ids whatever is shown, so scenarios and agents work in
+  any language.
+- **The font**: the window shows Japanese with a font of the system's
+  (`crates/ui-core/src/fonts.rs`, `fontdb`: the system's font folders, on
   Linux those fontconfig names) or a font file chosen in Settings ▸ Language (kept with the
   preferences): the chosen file first, then by family — Windows "Yu Gothic UI", "Yu Gothic",
   "Meiryo UI", "Meiryo", "MS UI Gothic", "MS Gothic"; macOS "Hiragino Sans", "Hiragino Kaku
@@ -51,12 +50,9 @@ changes at once and the choice is kept with the preferences (`language` in `pref
   the window is in a language that needs it. **Nothing is embedded**: where no font shows the
   language, the window stays in English and says once what is missing, what to install
   (Linux: `fonts-noto-cjk`) and that a font file can be chosen; Settings ▸ Language shows the
-  font in use or the same error, the file field and Look again. `ui.inspect`'s `font` names
-  the family in use. The tests draw with a subset of Noto Sans JP Regular
-  (`crates/ui-egui/fonts/`, SIL Open Font License 1.1; `cargo xtask font-subset` remakes it from
-  `fonts/full/`, a test checks it holds every character of `ja.json`) and never the machine's
-  fonts, so the headless scenarios and `ui.render` draw the same on every machine; it is not in
-  the app.
+  font in use or the same error, the file field (Enter) and Look again. `ui.inspect`'s `font`
+  names the family in use. The face found also sets the pictures' text (charts and labels drawn on
+  the CPU, `emcraft_render::text::set_fallback`); one read from a chosen file is given to iced.
 - **The current language belongs to the thread** drawing the frame (`lang::set`, as the theme
   does), so tests drawing apps on threads of their own keep their own.
 
@@ -79,9 +75,9 @@ changes at once and the choice is kept with the preferences (`language` in `pref
   `ja.json` — the build says where one is missing. A text with values is a template with `{name}` placeholders,
   not a `format!`.
 - **A new language**: add `locales/<id>.json` in the same format and a line to
-  `BUILT_IN` in `crates/ui-egui/src/lang.rs`; the settings page lists it by its `name`. A
-  language whose script egui's fonts lack needs a fallback font too (`crates/ui-egui/src/fonts.rs`
-  and ATTRIBUTION.md).
+  `BUILT_IN` in `crates/ui-core/src/lang.rs`; the settings page lists it by its `name`. A
+  language in another script needs its families in `crates/ui-core/src/fonts.rs`'s `PREFERRED`
+  and its characters in `lang::script_chars`.
 
 ## How the Japanese is written
 
@@ -127,20 +123,18 @@ One voice across the window, kept by the checks below where a machine can tell.
 
 ## The checks that keep it whole
 
-`cargo test -p emcraft-ui-egui lang::` (`crates/ui-egui/src/lang/tests.rs`):
+`cargo test -p emcraft-ui-core lang_tests` (`crates/ui-core/src/lang_tests.rs`) and
+`cargo test -p emcraft-ui-iced lang_tests` (`crates/ui-iced/src/lang_tests.rs`):
 
 - every engine command has a Japanese label, description and parameter descriptions, with no
   command or parameter that does not exist; every sample has its description;
 - each translation has the same placeholders as its English;
 - the Japanese keeps its style: spaces between Latin letters or digits and Japanese, no ～, no
   です・ます in a command's texts (`the_japanese_keeps_its_style`);
-- **a tour of the window in Japanese** draws every page — the start page, every settings
-  section, the prompts and menus, ten models with each kind of result (every view, the steps,
-  each solver), every command's dialog (some refused), a job running, the search — recording
-  every lookup (`lang::record`): it fails on any text shown without a translation, and on any
-  translation the tour never asked for (stale), apart from a short list of texts it cannot
-  reach, each with why (`UNREACHED`);
-- the scenario `crates/ui-egui/tests/scenarios/languages.json` switches to Japanese from the
-  settings page, checks that the handles stay English and the messages follow, and switches
-  back (`EMCRAFT_SCENARIO_SHOTS=DIR cargo test -p emcraft-ui-egui scenario_languages` writes its
-  pictures).
+- **a tour of the window in Japanese** plays every scenario step by step (each step's window
+  built, drawn headless on the CPU where it ends), visits every page, step, the message log and
+  the settings, the start page with each purpose and every command's dialog, recording every
+  lookup (`lang::record`): it fails on any text shown without a translation, and on any
+  translation nothing asks for (stale) — not the tour, not a label looked up by name, not a
+  `t!` in the sources — apart from a list of texts it cannot reach, each with why
+  (`UNREACHED`).

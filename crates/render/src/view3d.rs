@@ -3,8 +3,8 @@
 //! projection and rays, picking by ray (Möller–Trumbore, through the scene's bounding-volume
 //! hierarchy, [`bvh`]), the view changes ([`navigate`]), the coarser copy drawn while moving
 //! ([`simplify`]) and the section view ([`section::section`]: the scene cut by a plane, the far
-//! side removed and the cut bodies capped). The window's GPU draws it (`emcraft-ui-egui`'s
-//! `gpu3d`, docs/adr/0004-gpu-viewport.md).
+//! side removed and the cut bodies capped). The window's GPU draws it (`emcraft-gpu3d`,
+//! docs/adr/0004-gpu-viewport.md).
 //!
 //! Deterministic: one thread, a fixed order, the same input gives the same scene and picks.
 

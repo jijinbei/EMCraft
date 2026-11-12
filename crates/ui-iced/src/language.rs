@@ -1,4 +1,4 @@
-//! The window's language and the font that shows it, as the egui window's
+//! The window's language and the font that shows it,
 //! ([`emcraft_ui_core::fonts`]): the preferred language shown when a font has its characters —
 //! the system's, or a font file chosen in Settings — else the window in English, said once, with
 //! what to install. The face found also sets the pictures' text (charts and labels drawn on the

@@ -73,16 +73,17 @@ solvers run on the CPU as everywhere; `solve.time_domain` on a GPU backend repor
 backend is not built.
 
 What is in: the whole engine (every command, the finite element and time-domain solvers, the
-importers, SolidCraft designs through `solidcraft-exchange`), the desktop app drawn with OpenGL
-(eframe's wgpu renderer — DirectX 12, Vulkan or OpenGL — with glow, OpenGL 2, as its fallback; docs/adr/0004-gpu-viewport.md), the system's file dialogs. What is out: CUDA and CubeCL's CPU runtime.
+importers, SolidCraft designs through `solidcraft-exchange`), the desktop app (iced on wgpu —
+DirectX 12, Vulkan or OpenGL —, with tiny-skia drawing on the CPU where no adapter is found;
+docs/adr/0004-gpu-viewport.md), the system's file dialogs. What is out: CUDA and CubeCL's CPU runtime.
 
-The window needs an OpenGL 2 driver. Windows' own fallback (OpenGL 1.1, as in a virtual machine
-without a graphics driver, or some remote desktops) is not enough: the app then shows a message
-box ("EMCraft could not open its window") and exits; `emcraft-cli` works there all the same.
+The 3D view needs a graphics adapter (any wgpu backend; a software one such as WARP will do).
+If the window cannot open at all, the app shows a message box ("EMCraft could not open its
+window") and exits; `emcraft-cli` works there all the same.
 
 Japanese text in the window is drawn in the system's Japanese font (Yu Gothic UI, else Yu
-Gothic, Meiryo UI, Meiryo, MS UI Gothic, MS Gothic), or in the embedded subset of Noto Sans JP
-when none is found (docs/languages.md).
+Gothic, Meiryo UI, Meiryo, MS UI Gothic, MS Gothic), or a font file chosen in Settings ▸
+Language; with none, the window stays in English and says so (docs/languages.md).
 
 ## Building the installer on Linux
 

@@ -16,7 +16,7 @@ pub const PERIOD: f64 = 2.0;
 /// Strips in the colour bar's gradient.
 const BAR_STRIPS: u32 = 90;
 
-/// The field view the window starts from: the H-plane's E field (the egui window's).
+/// The field view the window starts from: the H-plane's E field.
 pub fn start() -> FieldView {
     FieldView { show_h: false, ..FieldView::new(10.0e9, Plane::H) }
 }

@@ -3,8 +3,8 @@
 //! mapping (orbit, pan, zoom), fitted to the model and turned to the standard views. Its state is
 //! a value: each [`Nav`] gives the next ([`View3d::navigated`]), each change to the project the
 //! scene built again when what it shows changed ([`View3d::refreshed`]). View changes (fit, the
-//! standard views, the arrow keys' turns) are animated by the frames' clock ([`Nav::Tick`]), as
-//! the egui window's; a held arrow turns the view steadily. On the field overlay the field view's
+//! standard views, the arrow keys' turns) are animated by the frames' clock ([`Nav::Tick`]); a held
+//! arrow turns the view steadily. On the field overlay the field view's
 //! plane is drawn in it, coloured by the field ([`field`]).
 
 pub mod cube;

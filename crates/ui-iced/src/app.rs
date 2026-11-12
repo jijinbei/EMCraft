@@ -746,7 +746,7 @@ impl App {
                 if let Some((path, _)) = self.shoot.take()
                     && let Some(e) = save_screenshot(&shot, path.to_str()).get("error")
                 {
-                    eprintln!("emcraft-iced: {e}");
+                    eprintln!("emcraft: {e}");
                 }
                 iced::exit()
             }

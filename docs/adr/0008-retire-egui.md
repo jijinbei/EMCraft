@@ -1,6 +1,7 @@
 # ADR 0008: Retiring the egui window
 
-Status: accepted (2026-11-12); stages A and B done.
+Status: accepted (2026-11-12); done (2026-11-13): stages A–F landed, `apps/emcraft` runs the iced
+window and `crates/ui-egui` is gone.
 
 ## Context
 
@@ -39,7 +40,7 @@ lines against 7 000). Keeping two windows doubles every UI change.
     coverage over `ui-iced` and `ui-core` (the static checks in `emcraft-ui-core`, a tour of the
     iced window in Japanese); `ui.render` without a GPU (iced's tiny-skia renderer, the 3D view
     drawn offscreen into its place).
-  - **F Switch**: `apps/emcraft` on iced (`emcraft-iced` folded in), `crates/ui-egui` and egui,
+  - **F Switch** (done): `apps/emcraft` on iced (`emcraft-iced` folded in), `crates/ui-egui` and egui,
     eframe and glow removed; AGENTS.md, docs/architecture.md, ADRs 0001, 0004, 0007 and
     docs/control-protocol.md brought up to date.
 - **Scenarios by task.** An iced scenario is one task a person does, end to end, checked on
@@ -51,22 +52,27 @@ lines against 7 000). Keeping two windows doubles every UI change.
 |---|---|
 | `workflow` (A, done) | workflow_walk, workflow_missing_port, step_status, browser_steps, setup_band, setup_proposal, setup_restore, run_estimate, stale_results, busy_rule |
 | `navigation`, `tools` (done) | navigation, view3d_orbit, box_select, view3d_picking, view3d_measure, view3d_port_tool, view3d_lumped_tool, view3d_tools_ja, tool_mode, view3d_side_ports, view3d_ports_before_mesh |
-| `view3d_section_symmetry` | section_view, symmetry_eye, symmetry_plane, rotation_sector |
-| `purpose_and_kind` | purpose_first, home_analysis_setup, analysis_kind, setup_device |
-| `pcb` (two) | pcb_board, pcb_edit, pcb_fem, pcb_fem_model, pcb_region, pcb_route, pcb_templates, pcb_workflow |
-| `fields` | field_view, field_probes, field_context, field_plot_zoom, dipole_fields, view3d_field_arrows |
+| `the_section_view_clips_on_the_gpu`, `the_section_shows_its_dimensions_and_looks_at_the_cut`, `the_boundaries_step_finds_the_mirror_planes` (unit tests) | section_view, symmetry_eye, symmetry_plane, rotation_sector |
+| `purpose_and_template` (C), `every_steps_panel_and_the_kind` (a unit test) | purpose_first, home_analysis_setup, analysis_kind, setup_device |
+| `pcb_diagnosis`, `a_boards_route_is_diagnosed` (a unit test) | pcb_board, pcb_edit, pcb_fem, pcb_fem_model, pcb_region, pcb_route, pcb_templates, pcb_workflow |
+| `the_field_overlay_draws_the_plane_with_its_colour_bar`, `the_field_column_reads_power_probes_and_a_pinned_point`, `the_pointer_over_the_plane_reads_the_field` (unit tests) | field_view, field_probes, field_context, field_plot_zoom, dipole_fields, view3d_field_arrows |
 | `import` (C, done) | import_bodies, import_cavity, import_design |
-| `hostile_input` | hostile_dialog_input, hostile_step_input (a unit test today), errors_in_place |
+| `messages` (D: a refusal in place and in the log), `hostile_setup_input_is_refused_in_place` (a unit test) | hostile_dialog_input, hostile_step_input (a unit test today), errors_in_place |
 | `sparameters` (B, done) | sparameter_display, refine_and_planes, run_history, network_views, chart_style |
 | `result_views` (B, done) | tdr_view, pulse_view, far_field_cuts, dispersion_diagram |
 | `study` (B, done) | study_grid, study_optimize, study_surrogate, study_sweep |
 | `escape_closes_the_top_layer_first` (D, a unit test) | escape_layers |
 | dropped (egui only) | chart_packing, small_window, view3d_gpu, wgsl_port_directions |
 
-  The rest (results views, templates, the shell's) are mapped as their stages land.
+  The rest map to the scenarios of their stages: `purpose_and_template`, `ribbon_search`,
+  `import`, `messages`, `keys_and_pointer` and the unit tests beside them.
 
 ## Consequences
 
-- Until F, the egui window changes only for a fix; new behaviour goes into `emcraft-ui-core`
-  and the iced window.
-- The gate keeps both windows' tests until F; then the egui ones go with their crate.
+- The egui window's tests went with its crate; the iced ones, the shared crate's and the
+  Japanese tour (`crates/ui-iced/src/lang_tests.rs`) keep what it did.
+- What only the egui window had and was not carried over: Export history as script (the
+  project file holds the history; `emcraft-cli` runs one), the control channel's raw pointer and
+  key requests (`ui.move`, `ui.drag`, `ui.scroll`, `ui.key`, `ui.text`; scenarios press, type
+  and key through iced's simulator instead), `ui.start`, `ui.resize`, `app.quit` and
+  `app.autosave`. The Japanese strings only it used were taken out of `locales/ja.json`.
