@@ -1,14 +1,15 @@
 [
-  {"note": "An item edited through its dialog: the browser's row selected, the card's Edit, a field set and refused, then set and confirmed"},
+  {"note": "An item edited in the properties panel: the browser's row selected opens its form, a field set and refused, then set and applied, the form staying on the new value; a step's node gives the panel back to the step"},
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
   {"click": "row:material:ptfe-like"},
-  {"expect": {"inspect": {"selection.0": "Material(1)"}, "handles": ["card:edit", "card:delete"]}},
-  {"click": "card:edit"},
-  {"expect": {"inspect": {"dialog.command": "model.material.edit", "dialog.fields.eps_r.text": "2"}}},
+  {"expect": {"inspect": {"selection.0": "Material(1)", "dialog.command": "model.material.edit", "dialog.fields.eps_r.text": "2"}, "handles": ["card:delete"]}},
   {"call": "ui.dialog", "params": {"set": {"eps_r": -3}, "ok": true}},
   {"expect": {"inspect": {"dialog.command": "model.material.edit"}}},
   {"call": "ui.dialog", "params": {"set": {"eps_r": 2.5}, "ok": true}},
-  {"expect": {"inspect": {"dialog": null, "project.dirty": true}}},
+  {"expect": {"inspect": {"dialog.command": "model.material.edit", "dialog.fields.eps_r.text": "2.5", "project.dirty": true}}},
+  {"shot": "properties"},
+  {"click": "step:mesh"},
+  {"expect": {"inspect": {"dialog": null, "workflow.step": "mesh"}}},
   {"click": "edit:undo"},
   {"expect": {"handles": ["edit:redo"]}}
 ]

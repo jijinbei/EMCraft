@@ -2,6 +2,7 @@
   "name": "Japanese",
   "complete": true,
   "strings": {
+    "Apply": "適用",
     "Measured": "測定値",
     "Against measured": "測定と比較",
     "Z, Y, ABCD": "Z・Y・ABCD",
@@ -186,7 +187,6 @@
     "EXPORT": "書き出し",
     "Edge angle": "稜の角度",
     "Edges": "エッジ",
-    "Edit": "編集",
     "Eigenmodes": "固有モード",
     "Eigenmodes (resonances)": "固有モード（共振）",
     "Element order": "要素次数",

@@ -1,6 +1,6 @@
 # ADR 0009: One model tree, a properties panel and the 3D view
 
-Status: accepted (2026-11-13); G1 done.
+Status: accepted (2026-11-13); G1 and G2 done.
 
 ## Context
 
@@ -42,7 +42,10 @@ later, an agent are shortcuts over the same commands.
   tree's top; the step bar removed. With it, the start page: its scroll bar at the window's
   edge, no New project button (a blank project starts from the purpose chosen), "not chosen"
   until a kind is.
-- **G2 Properties panel:** the right column as above.
+- **G2 Properties panel** (done): the right column as above; a dialog on a project's page docks
+  there, over the window elsewhere; a row selected (in the tree or the 3D view) shows its item's
+  form (`Dialog::item`), Apply keeping it open on the new values; a step's node gives the column
+  back to the step's panel.
 - **G3 ＋ and ▶; the ribbon goes:** each step's commands in `emcraft_ui_core::outline` (the
   ribbon's `TABS` folded in), the search in the app bar.
 - **G4 Results in the tree; the page tabs go.**

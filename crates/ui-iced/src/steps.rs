@@ -277,6 +277,11 @@ impl App {
     pub(crate) fn open_step(&mut self, step: Option<Step>) {
         let (home, settings) = (false, false);
         (self.home, self.settings) = (home, settings);
+        // A step's node shows its panel: an item's form gives way, its row let go.
+        if self.dialog.as_ref().is_some_and(|d| d.item.is_some()) {
+            self.dialog = None;
+            self.selection = emcraft_ui_core::selection::Selection::default();
+        }
         match (self.solver(), step) {
             (_, None) => self.workflow.step = None,
             (Solver::Pcb, Some(_)) => self.page = View::Pcb,

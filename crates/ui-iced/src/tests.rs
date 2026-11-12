@@ -410,7 +410,7 @@ fn a_browser_row_selects_its_part_and_shows_its_page() {
     assert_eq!(app.page, View::SParameters);
 }
 
-/// A dialog over the window: a material's row edited opens on its values (εr 2), OK unchanged
+/// An item's form in the properties panel: a material's row selected opens it on its values (εr 2), OK unchanged
 /// runs nothing, a value the engine refuses comes back under its field with the dialog open, a
 /// good one is set; a port selected and deleted is gone. Analytic evidence: the PTFE-like
 /// sections' εr is the sample's own 2; the edit's value is read back from the model.
@@ -435,8 +435,9 @@ fn a_dialog_edits_an_item_and_delete_takes_one_away() {
     assert_eq!(refused, Some(true), "refused, the dialog kept with why");
     app.update(Message::Dialog(Edit::Text(k, "2.5".into())));
     app.update(Message::Dialog(Edit::Ok));
-    assert!(app.dialog.is_none());
     assert_eq!(eps(&app), Some(2.5));
+    // The item's form stays in the properties panel, on the value set.
+    assert_eq!(app.dialog.as_ref().map(|d| d.fields[k].text.clone()), Some("2.5".into()));
     // A port deleted from the card.
     let ports = app.session.model().ports.len();
     let port = app.rows().find(|r| r.pick == Some(emcraft_ui_core::scene3d::Pick::Port(1))).map(|r| r.id.clone()).unwrap_or_default();

@@ -1,4 +1,6 @@
-//! A command's dialog over the window: each parameter's field as the shared rules make it
+//! A command's dialog — in the properties panel at the page's right on the project's pages (an
+//! item's form follows the selection, docs/adr/0009-model-tree-window.md), over the window
+//! elsewhere: each parameter's field as the shared rules make it
 //! ([`emcraft_ui_core::dialogs`]: its kind, its initial value, how its text parses), its
 //! error under it, and OK (named for what the command does) or Cancel. OK runs the command — on
 //! the worker when it is long — and a refusal comes back under the field it names; OK on the
@@ -141,9 +143,9 @@ fn editor<'a>(t: Tokens, i: usize, f: &'a Field) -> Element<'a, Message> {
     }
 }
 
-/// The open dialog `d` over the window: its title, its fields with their units and errors, the
-/// error the engine gave, OK and Cancel.
-pub fn view<'a>(app: &'a App, d: &'a Dialog) -> Element<'a, Message> {
+/// Dialog `d`'s card inside `padding`: its title, its fields with their units and errors, the error the engine
+/// gave, OK and Cancel (an item's form: Delete too).
+fn body<'a>(app: &'a App, d: &'a Dialog, padding: iced::Padding) -> Element<'a, Message> {
     let t = app.look.tokens;
     let id = d.command.id;
     let shown = crate::import::shown(app, d);
@@ -155,23 +157,46 @@ pub fn view<'a>(app: &'a App, d: &'a Dialog) -> Element<'a, Message> {
         Column::with_children([head.boxed(), editor(t, i, f)].into_iter().chain(error)).spacing(3).boxed()
     });
     let busy = app.job.is_some();
-    let ok =
-        button(text(tr(dialogs::ok_label(id))).size(t.font_button)).style(look::button(t, true)).on_press_maybe((!busy).then_some(send(Edit::Ok)));
+    // An item's form applies its changes and stays.
+    let ok_label = if d.item.is_some() { t!("Apply") } else { dialogs::ok_label(id) };
+    let ok = button(text(tr(ok_label)).size(t.font_button)).style(look::button(t, true)).on_press_maybe((!busy).then_some(send(Edit::Ok)));
     let cancel = button(text(tr(t!("Cancel"))).size(t.font_button)).style(look::button(t, false)).on_press(send(Edit::Cancel));
+    // An item's form deletes it too.
+    let deletable = d.item.is_some() && app.picked().iter().any(|r| r.item.as_ref().is_some_and(|i| !i.delete.is_empty()));
+    let delete = deletable.then(|| {
+        button(text(tr(t!("Delete"))).size(t.font_button)).style(look::button(t, false)).on_press_maybe((!busy).then_some(Message::Delete)).boxed()
+    });
     let error = d.error.as_ref().map(|e| text(e.clone()).size(t.font_body).color(t.error).boxed());
     let title = text(lang::command_label(id).to_owned()).size(t.font_heading).boxed();
-    let list = scrollable(Column::with_children(fields).spacing(10).padding([0, 8])).height(iced::Length::Shrink).boxed();
-    let footer = row![Space::new().width(Fill), cancel, ok].spacing(8).boxed();
+    let list = Column::with_children(fields).spacing(10).padding([0, 8]).boxed();
+    let footer = row(delete.into_iter().chain([Space::new().width(Fill).boxed(), cancel.boxed(), ok.boxed()])).spacing(8).boxed();
     // The import's head: the formats, Choose file…, what the file holds (crate::import).
     let head = crate::import::head(app, d);
     let (fold, help) = (crate::import::fold(app, d), crate::import::help(app, d));
-    let body =
-        Column::with_children(std::iter::once(title).chain(head).chain(fold).chain([list]).chain(help).chain(error).chain(std::iter::once(footer)))
-            .spacing(12);
-    let card = container(body).padding(18).width(WIDTH).style(look::ground(t));
+    Column::with_children(std::iter::once(title).chain(head).chain(fold).chain([list]).chain(help).chain(error).chain(std::iter::once(footer)))
+        .spacing(12)
+        .padding(padding)
+        .boxed()
+}
+
+/// The open dialog `d` over the window (a page that is not the project's: the start page).
+pub fn view<'a>(app: &'a App, d: &'a Dialog) -> Element<'a, Message> {
+    let t = app.look.tokens;
+    let card = container(scrollable(body(app, d, iced::Padding::ZERO)).height(iced::Length::Shrink)).padding(18).width(WIDTH).style(look::ground(t));
     let veil = container(center(card))
         .width(Fill)
         .height(Fill)
         .style(|_: &iced::Theme| container::Style { background: Some(Color { a: 0.35, ..Color::BLACK }.into()), ..container::Style::default() });
     opaque(veil).boxed()
+}
+
+/// The properties panel's width (points).
+pub const PANEL: f32 = 400.0;
+
+/// Dialog `d` in the properties panel at the page's right (docs/adr/0009-model-tree-window.md):
+/// the model beside it stays in sight and in reach.
+pub fn panel<'a>(app: &'a App, d: &'a Dialog) -> Element<'a, Message> {
+    let t = app.look.tokens;
+    let list = body(app, d, iced::Padding { top: 12.0, right: 18.0, bottom: 12.0, left: 12.0 });
+    container(scrollable(list).height(Fill)).width(PANEL).height(Fill).style(look::ground(t)).boxed()
 }

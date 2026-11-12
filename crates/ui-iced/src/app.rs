@@ -241,6 +241,8 @@ pub struct App {
     /// generation it was read for.
     pub(crate) selection: Selection,
     pub(crate) tree: Option<(u64, Tree)>,
+    /// The row the properties panel last followed the selection to.
+    pub(crate) followed: Option<String>,
     /// The replies of commands the views show (port modes, a comparison, …), kept and let go
     /// by the shared table.
     pub(crate) replies: Replies,
@@ -350,6 +352,7 @@ impl App {
             pinned: None,
             selection: Selection::default(),
             tree: None,
+            followed: None,
             replies: Replies::default(),
             dialog: None,
             tab: Default::default(),
@@ -431,7 +434,9 @@ impl App {
     /// Whether the 3D view's keys are its: the view shown, no dialog, question, start or
     /// settings page over it.
     fn keys_free(&self) -> bool {
-        matches!(self.page, View::Model | View::Pcb) && self.dialog.is_none() && self.asking.is_none() && !self.home && !self.settings
+        // An item's form beside the view leaves them free (a field typed in takes its own keys).
+        let form = self.dialog.as_ref().is_none_or(|d| d.item.is_some());
+        matches!(self.page, View::Model | View::Pcb) && form && self.asking.is_none() && !self.home && !self.settings
     }
 
     fn picked_route(&mut self) -> Option<Command> {
@@ -551,6 +556,7 @@ impl App {
             let sections = browser::tree(&self.session, &self.replies);
             self.tree = Some((self.generation, emcraft_ui_core::outline::outline(sections, self.solver())));
         }
+        self.follow_selection();
         let charts = crate::charts::Source {
             session: &self.session,
             replies: &self.replies,
@@ -589,12 +595,12 @@ impl App {
     /// shows (a page) or runs; the command it runs.
     fn row(&mut self, id: &str) -> Option<Command> {
         let r = self.rows().find(|r| r.id == id)?.clone();
-        self.selection = Selection::of(r.pick.into_iter().collect(), Some(r.id.clone()));
         // A row of the model takes the workflow to its step (the mesh's to Mesh, a port's to
-        // Excitation), whose panel shows it.
+        // Excitation); its form shows in the properties panel.
         if let Some(step) = crate::browser::step_of(&r).filter(|s| self.workflow.step != Some(*s) && crate::steps::stepped(self)) {
             self.open_step(Some(step));
         }
+        self.selection = Selection::of(r.pick.into_iter().collect(), Some(r.id.clone()));
         match r.act {
             Act::Show(v) if crate::run::PAGES.contains(&v) => self.page = v,
             Act::Run(id, params) => self.start(id, params),
@@ -603,23 +609,59 @@ impl App {
         None
     }
 
-    /// The one row selected: its item's edit dialog, else the dialog its command edits with.
-    fn edit(&mut self) {
-        let Some(r) =
-            self.picked().first().map(|r| (*r).clone()).or_else(|| self.rows().find(|r| self.selection.row() == Some(r.id.as_str())).cloned())
-        else {
-            return;
-        };
+    /// The one row selected: what is picked when one part is, else the row clicked.
+    fn selected_row(&self) -> Option<Row> {
+        let picked = self.picked();
+        match picked.as_slice() {
+            [r] if self.selection.len() == 1 => Some((*r).clone()),
+            _ => self.rows().find(|r| self.selection.row() == Some(r.id.as_str())).cloned(),
+        }
+    }
+
+    /// Row `r`'s form: its item's edit dialog, else the dialog its command edits with (none for a
+    /// row that edits nothing).
+    fn form_for(&mut self, r: &Row) -> Option<Result<Dialog, String>> {
         let opened = match (&r.item, &r.act) {
-            (Some(item), _) => dialogs::edit(item, &mut self.session, false).map_err(|e| e.to_string()),
+            (Some(item), _) => dialogs::edit(item, &mut self.session, true).map_err(|e| e.to_string()),
             (None, Act::Edit(id)) => self.open(id, &serde_json::json!({})),
             (None, Act::EditWith(id, values)) => self.open(id, values),
-            _ => return,
+            _ => return None,
         };
-        match opened {
-            Ok(d) => self.dialog = Some(d),
-            Err(e) => self.fail(e),
+        Some(opened.map(|d| d.for_row(&r.id)))
+    }
+
+    /// The one row selected: its form in the properties panel.
+    fn edit(&mut self) {
+        let Some(r) = self.selected_row() else { return };
+        match self.form_for(&r) {
+            Some(Ok(d)) => self.dialog = Some(d),
+            Some(Err(e)) => self.fail(e),
+            None => {}
         }
+    }
+
+    /// The properties panel following the selection (docs/adr/0009-model-tree-window.md): a row
+    /// selected shows its form, the form of one no longer selected goes; a command's dialog open
+    /// (not a form) is left as it is. Only a change of selection does it: a form closed stays
+    /// closed while its row stays selected.
+    fn follow_selection(&mut self) {
+        let row = self.selected_row();
+        let key = row.as_ref().map(|r| r.id.clone());
+        if key == self.followed {
+            return;
+        }
+        self.followed = key;
+        if self.dialog.as_ref().is_some_and(|d| d.item.is_none()) {
+            return;
+        }
+        self.dialog = match row.and_then(|r| self.form_for(&r)) {
+            Some(Ok(d)) => Some(d),
+            Some(Err(e)) => {
+                self.fail(e);
+                None
+            }
+            None => None,
+        };
     }
 
     /// Command `id` from the ribbon: its dialog on the model's values, or (without parameters) run.
@@ -671,6 +713,10 @@ impl App {
             Ok(reply) => {
                 self.error = None;
                 self.after(id, &params, &reply);
+                // An item's form stays, on the item as it is now.
+                if d.item.is_some() {
+                    self.followed = None;
+                }
             }
             // Shown under the field it names, and said in the message area.
             Err(e) => {
@@ -867,8 +913,10 @@ impl App {
         // The ribbon's commands are the project's: not over the settings or the start page.
         let project = !self.settings && !self.home;
         let ribbon = project.then(|| crate::ribbon::view(self));
-        // The tree at the page's left, the open step's panel at its right.
-        let panel = crate::step_panel::view(self).filter(|_| crate::steps::stepped(self));
+        // The tree at the page's left; at its right the properties panel: the open dialog (an
+        // item's form), else the open step's panel.
+        let docked = self.dialog.as_ref().filter(|_| project).map(|d| crate::dialog::panel(self, d));
+        let panel = docked.or_else(|| crate::step_panel::view(self).filter(|_| crate::steps::stepped(self)));
         let page = match project {
             true => row(std::iter::once(crate::browser::view(self)).chain(std::iter::once(page)).chain(panel)).spacing(8).height(Fill).boxed(),
             false => page,
@@ -878,6 +926,7 @@ impl App {
         let over = self
             .dialog
             .as_ref()
+            .filter(|_| !project)
             .map(|d| crate::dialog::view(self, d))
             .or_else(|| crate::template_dialog::view(self))
             .or_else(|| crate::reports::view(self))

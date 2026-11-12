@@ -239,14 +239,11 @@ fn card(app: &App) -> Element<'_, Message> {
         ([r], 1) => format!("{}  ·  {}", r.shown, r.detail),
         (_, n) => trf(t!("{n} selected"), args!(n = n)),
     };
-    // Edit for one row that edits; Delete for the items of the model selected.
-    let editable = matches!(rows.as_slice(), [r] if r.item.is_some() || r.act.edits());
+    // Delete for the items of the model selected (one is edited in the properties panel).
     let deletable = rows.iter().any(|r| r.item.as_ref().is_some_and(|i| !i.delete.is_empty()));
     let idle = app.job.is_none();
-    let edit = editable.then(|| tool(t, tr(t!("Edit")), false, idle.then_some(Message::Edit)));
     let delete = deletable.then(|| tool(t, tr(t!("Delete")), false, idle.then_some(Message::Delete)));
-    let line =
-        row(std::iter::once(text(line).size(t.font_body).color(t.text).boxed()).chain(edit).chain(delete)).spacing(10).align_y(Alignment::Center);
+    let line = row(std::iter::once(text(line).size(t.font_body).color(t.text).boxed()).chain(delete)).spacing(10).align_y(Alignment::Center);
     let card = container(line).padding([6, 12]).style(look::ground(t));
     let reference = reference_field(app).map(|r| container(r).padding([4, 12]).style(look::ground(t)));
     container(column(std::iter::once(card.boxed()).chain(reference.map(iced::Widget::boxed))).spacing(6).align_x(Alignment::Center))

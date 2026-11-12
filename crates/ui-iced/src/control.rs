@@ -99,7 +99,7 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         let picks = emcraft_ui_core::search::matches(&app.search).into_iter().map(|c| (format!("search:{}", c.id), Message::SearchPick(Some(c.id))));
         std::iter::once(("search:enter".to_owned(), Message::SearchPick(None))).chain(picks).collect::<Vec<_>>()
     });
-    let card = (!app.selection.is_clear()).then(|| [("card:edit".to_owned(), Message::Edit), ("card:delete".to_owned(), Message::Delete)]);
+    let card = (!app.selection.is_clear()).then(|| [("card:delete".to_owned(), Message::Delete)]);
     let dialog = app.dialog.is_some().then(|| {
         [
             ("dialog:ok".to_owned(), Message::Dialog(crate::dialog::Edit::Ok)),

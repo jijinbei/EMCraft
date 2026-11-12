@@ -225,6 +225,9 @@ pub struct Dialog {
     pub options: bool,
     /// The command's description is shown (its "?").
     pub help: bool,
+    /// The browser row whose item it edits, when it is that item's form in the properties panel
+    /// (docs/adr/0009-model-tree-window.md): it follows the selection.
+    pub item: Option<String>,
 }
 
 /// `text` cut to [`MAX_FIELD`] characters.
@@ -271,7 +274,18 @@ impl Dialog {
                 f
             })
             .collect();
-        Dialog { command, fields, error: None, docked, focus_first: true, widgets: Vec::new(), unchanged: None, options: false, help: false }
+        Dialog {
+            command,
+            fields,
+            error: None,
+            docked,
+            focus_first: true,
+            widgets: Vec::new(),
+            unchanged: None,
+            options: false,
+            help: false,
+            item: None,
+        }
     }
 
     /// The dialog opened on the model's own values (`project.values`): OK with them unchanged
@@ -279,6 +293,11 @@ impl Dialog {
     pub fn on_model(mut self) -> Dialog {
         self.unchanged = self.clone().params().ok();
         self
+    }
+
+    /// The form of row `id`'s item.
+    pub fn for_row(self, id: &str) -> Dialog {
+        Dialog { item: Some(id.to_owned()), ..self }
     }
 
     pub fn field_mut(&mut self, name: &str) -> Option<&mut Field> {
