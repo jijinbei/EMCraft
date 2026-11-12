@@ -122,7 +122,7 @@ fn checks<'a>(t: Tokens, s: &StepState) -> Element<'a, Message> {
     Column::with_children(rows).spacing(6).boxed()
 }
 
-/// The geometry: the two ways to begin while there is none, the bodies, the extent, the
+/// The geometry: the two ways to begin while there is none (a SolidCraft design, a template), the bodies, the extent, the
 /// materials and New material.
 fn geometry(app: &App) -> Vec<Element<'_, Message>> {
     let t = app.look.tokens;
@@ -131,7 +131,8 @@ fn geometry(app: &App) -> Vec<Element<'_, Message>> {
     let begin = m.bounds().is_none().then(|| {
         row![
             action(t, tr(t!("Import a SolidCraft design")), true, idle.then(|| send(Act::Fix("geometry.import".into())))),
-            action(t, tr(t!("Waveguide")), false, idle.then(|| send(Act::Fix("geometry.waveguide".into()))))
+            // A shape is a design's or a template's (docs/adr/0010-geometry-from-solidcraft.md).
+            action(t, tr(t!("Templates")), false, Some(Message::Home(true)))
         ]
         .spacing(6)
         .boxed()

@@ -107,8 +107,8 @@ and the UI should make the same habits easy for the user's own models.
 │ ✔ 1 Geometry   ＋│                                               │ the selected      │
 │    Bodies …      │                3D view                        │ item's form       │
 │    Materials …   │     (the open step's overlay; view cube,      │ (Apply, Delete),  │
-│ ! 2 Excitation ＋│      standard views, fit; grips on what is    │ a command's       │
-│ ✔ 3 Setup      ＋│      selected)                                │ dialog, or the    │
+│ ! 2 Excitation ＋│      standard views, fit)                     │ a command's       │
+│ ✔ 3 Setup      ＋│                                               │ dialog, or the    │
 │ ✔ 4 Region     ＋│                                               │ open step's       │
 │ ○ 5 Mesh     ▶ ＋│       (a result's page in its place)          │ panel             │
 │ ○ 6 Run      ▶ ＋│                                               │                   │
@@ -147,9 +147,9 @@ where they meet it, named and sized. There is no separate 2D outline view: the s
 Each control is in one place: a step's commands on its ＋, its checks and own settings (the
 band, the device, Run's preflight) in its panel, the views of the 3D view in the bar over it, files
 and samples in the bar and on the start page; the 3D view's orientation is a view cube (or the six
-signed axes, Settings ▸ 3D view ▸ Navigator). A waveguide or a body selected carries grips: its
-walls, a section's far end, a box's faces, a cylinder's radius and length, dragged or typed while
-held, one edit when let go, the form beside following.
+signed axes, Settings ▸ 3D view ▸ Navigator). The window makes no shapes
+(docs/adr/0010-geometry-from-solidcraft.md): a template's are set by its parameters (the tree's
+Parameters), a design's in SolidCraft; a body's form is what it is made of.
 
 **Navigating the 3D view** works as in SolidCraft, so the sibling apps feel alike
 (`crates/ui-core/src/navigation.rs`, `cube.rs`, `crates/ui-iced/src/view3d/`; scenario `navigation`):

@@ -304,7 +304,6 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 scene: Some(&s.built.scene),
                 model: app.session.model(),
                 reference: app.reference(),
-                grips: app.body_grips(),
                 section: app.section_notes(),
                 port_inks: (look::rgb(app.look.theme.scene.port_input), look::rgb(app.look.theme.scene.port_output)),
                 length: app.session.display().length,

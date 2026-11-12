@@ -224,7 +224,7 @@ pub fn tree(session: &Session, replies: &Replies) -> Vec<(&'static str, Vec<Row>
     // to change one.
     let own_variables = variables(session);
     if !own_variables.is_empty() {
-        sections.push((t!("Variables").en(), own_variables));
+        sections.push((t!("Parameters").en(), own_variables));
     }
     sections.extend([
         (t!("Bodies").en(), bodies(m, &f)),
@@ -251,7 +251,7 @@ fn system_tree(s: &Session) -> Vec<(&'static str, Vec<Row>)> {
     let mut sections = Vec::new();
     let own_variables = variables(s);
     if !own_variables.is_empty() {
-        sections.push((t!("Variables").en(), own_variables));
+        sections.push((t!("Parameters").en(), own_variables));
     }
     let src = &m.system.source;
     let antenna = src.antenna.clone().unwrap_or_else(|| format!("{} Ω", m.system.receiver.impedance));
@@ -308,16 +308,23 @@ fn system_tree(s: &Session) -> Vec<(&'static str, Vec<Row>)> {
     sections
 }
 
+/// The project's parameters: a template's (what sets its shape, ADR 0010: each with what it is)
+/// and the variables the job defined; a click edits one (`project.variable`), the model built
+/// again with it.
 fn variables(s: &emcraft_engine::Session) -> Vec<Row> {
-    let template: Vec<String> = s.sample().and_then(emcraft_engine::template_parameters).unwrap_or_default().into_iter().map(|p| p.name).collect();
+    let template = s.sample().and_then(emcraft_engine::template_parameters).unwrap_or_default();
     s.variables()
         .iter()
-        .filter(|(name, _)| !template.contains(name))
         .map(|(name, value)| {
             let given = s.history().iter().rev().find(|st| st.defines(name)).and_then(|st| st.param("value").cloned());
             let expression = given.as_ref().and_then(serde_json::Value::as_str).map(|e| format!(" ({e})")).unwrap_or_default();
             let edit = serde_json::json!({"name": name, "value": given.unwrap_or_else(|| serde_json::json!(value))});
-            let detail = Both { en: format!("= {value}{expression}"), shown: format!("= {value}{expression}") };
+            let label = template.iter().find(|p| p.name == *name).and_then(|p| p.label.clone());
+            let said = |shown: &str| match &label {
+                Some(_) => format!("= {value}{expression} · {shown}"),
+                None => format!("= {value}{expression}"),
+            };
+            let detail = Both { en: said(label.as_deref().unwrap_or("")), shown: said(label.as_deref().map_or("", crate::lang::parameter_label)) };
             node(format!("variable:{name}"), own(name), Some(detail), Glyph::Variable, Act::EditWith("project.variable", edit))
         })
         .collect()
@@ -389,7 +396,8 @@ fn bodies(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
 fn waveguide_bodies(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
     let (mm, lu) = (|x| f.len(x), f.unit());
     let mut rows = Vec::new();
-    let edit = || Act::Edit("geometry.waveguide");
+    // Its shape is the template's parameters' (ADR 0010): a row selects, it edits nothing.
+    let edit = || Act::None;
     let mut count = [0usize; 4];
     for body in m.bodies().iter().filter(|b| b.is_extruded()) {
         let material = body.material().unwrap_or("vacuum");
@@ -475,7 +483,8 @@ fn placed_bodies(m: &emcraft_model::Model, region: &str) -> Vec<Row> {
             emcraft_engine::bodies::BodyRef::Feature(i) => Pick::Feature(i),
             emcraft_engine::bodies::BodyRef::Inclusion(i) => Pick::Inclusion(i),
         };
-        let item = Item::new("geometry.body.edit", "geometry.body.delete", "body", serde_json::json!(b.name));
+        // What it is made of is EMCraft's; its shape is the template's or the design's (ADR 0010).
+        let item = Item::new("geometry.body.material", "", "body", serde_json::json!(b.name));
         let detail = words(t!("{material} · {shape}"), args!(material = material_name(&b.material).shown, shape = b.shape.to_lowercase()));
         let glyph = body_glyph(&b.material, region);
         rows.push(node(format!("body:{}", b.name), own(&b.name), Some(detail), glyph, Act::None).picks(pick).item(item));
@@ -567,18 +576,12 @@ fn domain(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
                 (words(t!("inside {name} · {material}"), args!(name = name, material = material)), Act::Edit("model.background"))
             }
             other => {
-                (words(t!("{shape} · {material}"), args!(shape = other.kind().to_lowercase(), material = material)), Act::Edit("geometry.solid"))
+                (words(t!("{shape} · {material}"), args!(shape = other.kind().to_lowercase(), material = material)), Act::Edit("model.background"))
             }
         };
         rows.push(node("region", words(t!("Region"), &[]), Some(detail), Glyph::Region, act).picks(Pick::Solid));
     } else if m.waveguide().is_some() {
-        rows.push(node(
-            "region",
-            words(t!("Region"), &[]),
-            Some(words(t!("inside the waveguide"), &[])),
-            Glyph::Region,
-            Act::Edit("geometry.waveguide"),
-        ));
+        rows.push(node("region", words(t!("Region"), &[]), Some(words(t!("inside the waveguide"), &[])), Glyph::Region, Act::None));
     }
     if rows.is_empty() {
         return rows;

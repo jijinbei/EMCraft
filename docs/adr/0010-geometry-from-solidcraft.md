@@ -1,0 +1,57 @@
+# ADR 0010: Shapes are made in SolidCraft
+
+Status: accepted (2026-11-13); H1 done.
+
+## Context
+
+The window offers part of a CAD: boxes, cylinders and spheres (`geometry.body`), a waveguide
+(`geometry.waveguide`), the region's shape (`geometry.solid`), grips that resize them — but no
+sketches, no Booleans the person controls, no history. It is not enough to model with, and it
+copies what SolidCraft (the sibling CAD) does properly. The same commands also build 73 of the
+79 templates, the oracle's cases and old projects, so they cannot simply go.
+
+## Decision
+
+- **The window makes no shapes.** Geometry comes from a template (its shape set by its
+  parameters) or a SolidCraft design (its parameters too, and edited in SolidCraft). Geometry's ＋
+  offers the import, a new design in SolidCraft, the templates and new materials (the materials
+  are EMCraft's: what a body is made of electromagnetically). A body's form chooses its material;
+  its dimensions are the template's or the design's parameters, shown in the tree's Parameters.
+  The grips that resized bodies and the waveguide (ADR 0005 P2, ADR 0009 G5) go.
+- **The shape commands stay in the engine** — `geometry.solid`, `geometry.body`,
+  `geometry.feature`, `geometry.inclusion`, `geometry.waveguide`, `geometry.iris_filter` — as the
+  language of scripts, templates, the oracle, agents and saved projects; the window's ＋ lists
+  and search leave them out.
+- **A round trip with SolidCraft.** An imported design opens in SolidCraft (`solidcraft <file>`;
+  where SolidCraft is, in Settings, else on the PATH); saved there, EMCraft reads it again
+  (`geometry.reload`: the import and everything after it run again). A port on a design's face
+  names the face (`face_name`, the design's persistent face names), so it follows the face
+  through an edit; a face gone is an error naming the port, never a port moved silently.
+- **Templates test the SolidCraft path.** The templates whose shape is CAD-like (the region's
+  shape, bodies, inclusions, features: 41) are rebuilt as SolidCraft designs driven by their
+  variables (`geometry.import {parameters: {"a": "=a"}}`); those written in the electromagnetic
+  structure itself (the waveguide's sections, layers, strips and vias: 16) and the boards and the
+  system (15) stay scripts. A design's source is a SolidCraft command script
+  (`crates/templates/designs/<name>.json`), built by `solidcraft-cli run … --save` at the commit
+  EMCraft pins and checked by `cargo xtask designs`; EMCraft still depends on
+  `solidcraft-exchange` alone (ADR 0003). Some templates keep a script twin: the two must agree
+  with each other and with the closed form, which tests the import, its exact surfaces and the
+  mesh. Moving the SolidCraft pin then runs every design template through open, mesh and solve.
+- **Size.** A design holds its history, not a mesh: 5–23 kB (1–3 kB deflated); 41 more add under
+  1 MB to the repository and the binary.
+
+## Stages
+
+- **H1** (done) The window makes no shapes: the ＋ lists and the search without the shape
+  commands, the Parameters in the tree (a template's; a design's with H2), a body's form its
+  material, the grips gone.
+- **H2** The round trip: Open in SolidCraft, read again when saved (`geometry.reload`), a new
+  design.
+- **H3** Ports by face name.
+- **H4** Designs from SolidCraft scripts: the six designs' Rust generators replaced,
+  `cargo xtask designs`.
+- **H5** A pilot: six templates moved (an H-plane bend, a cylindrical cavity, a coaxial line, an
+  inductive post, a metal sphere's scattering, the cross-guide coupler), each with its script twin
+  and the closed form.
+- **H6** The other CAD-like templates, in batches; an oracle fixture that moves says why.
+- **H7** Docs and scenarios.

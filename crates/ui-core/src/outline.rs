@@ -54,7 +54,7 @@ impl Part {
 /// use emcraft_engine::workflow::Step;
 /// assert_eq!(step_of_section("Materials"), Some(Step::Geometry));
 /// assert_eq!(step_of_section("Domain"), Some(Step::Boundaries));
-/// assert_eq!(step_of_section("Variables"), None);
+/// assert_eq!(step_of_section("Parameters"), None);
 /// ```
 pub fn step_of_section(section: &str) -> Option<Step> {
     match section {
@@ -86,7 +86,9 @@ pub fn outline(sections: Vec<(&'static str, Vec<Row>)>, kind: Analysis) -> Vec<P
 /// What each step's ＋ adds (docs/adr/0009-model-tree-window.md: every command the ribbon had,
 /// each in one place), in the workflow's order.
 const STEP_ADDS: &[(Step, &[&str])] = &[
-    (Step::Geometry, &["geometry.import", "geometry.waveguide", "geometry.body", "model.background", "model.material.create"]),
+    // No shapes are made here (docs/adr/0010-geometry-from-solidcraft.md): they come from a
+    // SolidCraft design or a template.
+    (Step::Geometry, &["geometry.import", "model.background", "model.material.create"]),
     (Step::Excitation, &["model.port.create", "model.port.lumped", "model.element.create", "source.dipole", "source.plane_wave", "source.clear"]),
     (Step::Setup, &["units.set"]),
     (Step::Boundaries, &["model.region", "model.walls", "model.open", "model.symmetry.auto", "model.symmetry", "model.rotation", "model.periodic"]),
@@ -114,7 +116,7 @@ const STEP_ADDS: &[(Step, &[&str])] = &[
 
 /// What the ＋ of a section of its own adds: the variables', a board's and a system chain's.
 const SECTION_ADDS: &[(&str, &[&str])] = &[
-    ("Variables", &["project.variable"]),
+    ("Parameters", &["project.variable"]),
     ("PCB", &["pcb.import", "pcb.sample", "pcb.segment", "pcb.via", "pcb.pour", "pcb.element", "units.set"]),
     ("Source", &["system.source", "units.set"]),
     ("Receiver", &["system.receiver"]),
@@ -145,6 +147,29 @@ pub fn adds(head: Head, kind: Analysis) -> (Vec<&'static str>, Vec<crate::tools:
         _ => Vec::new(),
     };
     (commands, tools)
+}
+
+/// The commands that make shapes: the language of scripts, templates, the oracle and agents,
+/// which the window does not offer (docs/adr/0010-geometry-from-solidcraft.md).
+pub const SHAPES: &[&str] = &[
+    "geometry.solid",
+    "geometry.body",
+    "geometry.body.edit",
+    "geometry.body.delete",
+    "geometry.feature",
+    "geometry.inclusion",
+    "geometry.waveguide",
+    "geometry.iris_filter",
+];
+
+/// Whether the window offers command `id` (in a ＋ list or the search): not one that makes shapes.
+///
+/// ```
+/// assert!(!emcraft_ui_core::outline::offered("geometry.body"));
+/// assert!(emcraft_ui_core::outline::offered("geometry.import"));
+/// ```
+pub fn offered(id: &str) -> bool {
+    !SHAPES.contains(&id)
 }
 
 /// The command a step's ▶ runs: the mesh made, the confirmed run.
@@ -255,9 +280,10 @@ mod tests {
         parts.iter().map(|p| p.head).collect()
     }
 
-    /// A filter's tree: a node a step from the geometry on, in order, the bodies and materials
-    /// under the geometry, the region's walls under Region, Setup and Run with no rows of their
-    /// own; every row of the browser in it once.
+    /// A filter's tree: its parameters (the template's: its guide's width and height, the filled
+    /// and empty sections' lengths, εr) first, then a node a step from the geometry on, in order,
+    /// the bodies and materials under the geometry, the region's walls under Region, Setup and Run
+    /// with no rows of their own; every row of the browser in it once.
     #[test]
     fn a_filters_tree_is_its_workflow() {
         let mut s = emcraft_engine::Session::new();
@@ -266,13 +292,16 @@ mod tests {
         let all = sections.iter().map(|(_, r)| r.len()).sum::<usize>();
         let parts = outline(sections, s.model().analysis());
         let steps = [Step::Geometry, Step::Excitation, Step::Setup, Step::Boundaries, Step::Mesh, Step::Run, Step::Results];
-        assert_eq!(heads(&parts), steps.map(Head::Step));
-        let groups: Vec<&str> = parts[0].groups.iter().map(|(n, _)| *n).collect();
+        let want: Vec<Head> = std::iter::once(Head::Section("Parameters")).chain(steps.map(Head::Step)).collect();
+        assert_eq!(heads(&parts), want);
+        let names: Vec<&str> = parts[0].rows().map(|r| r.id.as_str()).collect();
+        assert!(["variable:a", "variable:b", "variable:er"].iter().all(|n| names.contains(n)), "{names:?}");
+        let groups: Vec<&str> = parts[1].groups.iter().map(|(n, _)| *n).collect();
         assert_eq!(groups, ["Bodies", "Materials"]);
-        assert!(parts[0].count() > 0 && parts[1].count() > 0);
-        assert_eq!((parts[2].count(), parts[5].count()), (0, 0));
+        assert!(parts[1].count() > 0 && parts[2].count() > 0);
+        assert_eq!((parts[3].count(), parts[6].count()), (0, 0));
         assert_eq!(parts.iter().map(Part::count).sum::<usize>(), all);
-        assert_eq!(parts[3].key(), "boundaries");
+        assert_eq!(parts[4].key(), "boundaries");
     }
 
     /// A system's tree is its own sections, none stepped.
@@ -296,6 +325,7 @@ mod tests {
         let stepped: Vec<&str> = STEP_ADDS.iter().flat_map(|(_, ids)| ids.iter()).copied().collect();
         let once = stepped.iter().all(|id| stepped.iter().filter(|x| *x == id).count() == 1);
         assert!(once, "a command on two steps' ＋");
+        assert!(all.iter().all(|id| offered(id)), "a shape command offered");
         for kind in Analysis::ALL {
             let heads = [Head::Step(Step::Geometry), Head::Section("PCB"), Head::Section("Source")];
             assert!(heads.iter().any(|h| !adds(*h, kind).0.is_empty()), "{kind:?}");

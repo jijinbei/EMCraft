@@ -1,6 +1,7 @@
 # ADR 0005: Geometry as bodies in an automatic region
 
-Status: accepted (2026-11-06).
+Status: accepted (2026-11-06). Decision 5 (handles on a body) withdrawn by ADR 0010 (2026-11-13):
+the window makes no shapes.
 
 ## Context
 

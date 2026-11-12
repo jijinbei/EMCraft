@@ -5,7 +5,7 @@
 
 use emcraft_ui_core::lang::tr;
 use emcraft_ui_core::selection::Selection;
-use emcraft_ui_core::tools::{Measured, Outcome, RefPlane, Sight, grips, reference};
+use emcraft_ui_core::tools::{Measured, Outcome, RefPlane, Sight, reference};
 
 use crate::app::App;
 use crate::view3d::GripMove;
@@ -87,76 +87,31 @@ impl App {
         Some(emcraft_ui_core::scene3d::section::notes(self.session.model(), l, self.session.driven_port(), cut, outline))
     }
 
-    /// The selected body's grips to draw, the drag applied.
-    pub(crate) fn body_grips(&self) -> Vec<grips::Mark> {
-        grips::marks(self.session.model(), &self.selection, self.body_drag.as_ref(), self.session.display().length)
-    }
-
-    /// Every grip a press takes, on the view: the selected body's and the reference plane's.
+    /// Every grip a press takes, on the view: the reference plane's (a shape has none, ADR 0010).
     pub(crate) fn grip_points(&self) -> Vec<emcraft_ui_core::geom::Point> {
-        let (camera, size) = (self.view3d.camera, self.view_size());
-        let body = self.body_grips().into_iter().filter_map(move |m| emcraft_ui_core::tools::screen(&camera, size, m.at));
-        body.chain(self.grip_at()).collect()
+        self.grip_at().into_iter().collect()
     }
 
-    /// A grip dragged: a body's under the press (else the reference plane's) begun, moved, let go
-    /// into one `geometry.body.edit` (or `model.port.edit {deembed}`).
+    /// The reference plane's grip dragged: begun, moved, let go into one `model.port.edit
+    /// {deembed}`.
     pub(crate) fn grip(&mut self, m: GripMove) {
         let (camera, size, l) = (self.view3d.camera, self.view_size(), self.session.display().length);
         match m {
             _ if self.job.is_some() => {}
-            GripMove::Start(at) => {
-                self.body_drag = grips::start(self.session.model(), &self.selection, &camera, size, at);
-                if self.body_drag.is_none() {
-                    self.tools.drag = self.reference().map(reference::start);
-                }
-            }
+            GripMove::Start(_) => self.tools.drag = self.reference().map(reference::start),
             GripMove::By(dx, dy) => {
                 let d = emcraft_ui_core::geom::Vector::new(dx, dy);
-                if let Some(bd) = self.body_drag.take() {
-                    self.body_drag = Some(grips::dragged(bd, self.session.model(), l, &camera, size, d));
-                } else if let (Some(r), Some(drag)) = (self.reference(), self.tools.drag.take()) {
+                if let (Some(r), Some(drag)) = (self.reference(), self.tools.drag.take()) {
                     self.tools.drag = Some(reference::dragged(drag, &r, self.session.model(), &camera, size, d));
                 }
             }
-            GripMove::End => self.let_go(),
-        }
-    }
-
-    /// The grip let go: its edit run (a body's, the waveguide's), when it moved something.
-    fn let_go(&mut self) {
-        let l = self.session.display().length;
-        if let Some(bd) = self.body_drag.take() {
-            match grips::let_go(&bd, l) {
-                Some(grips::Edit::Body(params)) => self.run_now("geometry.body.edit", &params),
-                // The waveguide built again with the dimension the grip gave.
-                Some(grips::Edit::Guide(e)) => {
-                    let now = self.session.execute("project.values", &serde_json::json!({"command": "geometry.waveguide"}));
-                    match now.map(|v| grips::patched(v, e)) {
-                        Ok(Some(params)) => self.run_now("geometry.waveguide", &params),
-                        Ok(None) => self.fail("the waveguide's dimensions were not found"),
-                        Err(e) => self.fail(e.to_string()),
-                    }
+            GripMove::End => {
+                if let Some(d) = self.tools.drag.take()
+                    && let Some(params) = reference::let_go(&d, self.session.model(), l)
+                {
+                    self.run_now("model.port.edit", &params);
                 }
-                None => {}
             }
-        } else if let Some(d) = self.tools.drag.take()
-            && let Some(params) = reference::let_go(&d, self.session.model(), l)
-        {
-            self.run_now("model.port.edit", &params);
-        }
-    }
-
-    /// A key typed while a body's grip is held: the digits give its value exactly, Enter lets
-    /// go with it (nothing while no grip is held).
-    pub(crate) fn typed(&mut self, key: Option<char>) {
-        match (self.body_drag.take(), key) {
-            (Some(bd), Some('\n')) => {
-                self.body_drag = Some(bd);
-                self.let_go();
-            }
-            (Some(bd), key) => self.body_drag = Some(grips::typed(bd, key)),
-            (None, _) => {}
         }
     }
 }

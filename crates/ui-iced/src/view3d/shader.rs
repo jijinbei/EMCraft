@@ -388,12 +388,6 @@ pub fn keys(event: iced::Event, status: iced::event::Status, _: iced::window::Id
         Event::KeyPressed { key: Key::Named(Named::Delete), .. } => Some(Message::DeleteKey),
         // `/` searches the commands.
         Event::KeyPressed { key: Key::Character(c), modifiers, .. } if c.as_str() == "/" && !modifiers.command() => Some(Message::FocusSearch),
-        // Digits typed while a grip is held (the window takes them only then), Enter as '\n'.
-        Event::KeyPressed { key: Key::Named(Named::Backspace), .. } => Some(Message::GripKey(None)),
-        Event::KeyPressed { key: Key::Named(Named::Enter), .. } => Some(Message::GripKey(Some('\n'))),
-        Event::KeyPressed { key: Key::Character(c), modifiers, .. } if !modifiers.command() && !modifiers.alt() && c.len() == 1 => {
-            c.chars().next().filter(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | 'e')).map(|c| Message::GripKey(Some(c)))
-        }
         Event::KeyPressed { key, modifiers, repeat, .. } if !modifiers.alt() => match (arrow(&key), &key) {
             (Some((right, up)), _) if !repeat || modifiers.command() => {
                 Some(Message::Key3d(Nav::Arrow { right, up, shift: modifiers.shift(), ctrl: modifiers.command() }))

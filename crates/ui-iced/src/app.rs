@@ -119,10 +119,8 @@ pub enum Message {
     Style(crate::style_card::StyleAct),
     /// A command's dialog opened with these values over the model's.
     Open(&'static str, serde_json::Value),
-    /// A grip dragged: a selected body's, or the selected port's reference plane's.
+    /// The selected port's reference plane's grip dragged.
     Grip(crate::view3d::GripMove),
-    /// A key typed while a body's grip is held: a digit (Enter as '\n'), or Backspace.
-    GripKey(Option<char>),
     /// The selected port's reference plane typed, set (Enter), or put back on its face.
     RefText(String),
     RefSet,
@@ -209,8 +207,6 @@ pub struct App {
     /// picked, the measurement, the reference plane's drag).
     pub(crate) tool: Option<emcraft_ui_core::tools::Tool>,
     pub(crate) tools: emcraft_ui_core::tools::Tools,
-    /// A selected body's grip being dragged.
-    pub(crate) body_drag: Option<emcraft_ui_core::tools::grips::BodyDrag>,
     /// The reference plane's number as typed: the port, the text, and the value (display
     /// units) it was typed over (the text follows the port and a drag until it is edited).
     pub(crate) ref_text: Option<(usize, String, f64)>,
@@ -335,7 +331,6 @@ impl App {
             hover: None,
             tool: None,
             tools: Default::default(),
-            body_drag: None,
             ref_text: None,
             workflow: Default::default(),
             sview: Default::default(),
@@ -1027,10 +1022,6 @@ impl App {
                 self.tools.reset(tool);
                 None
             }
-            Message::Escape(_) if self.body_drag.is_some() => {
-                self.body_drag = None;
-                None
-            }
             Message::Step(step) => {
                 self.open_step(step);
                 None
@@ -1106,10 +1097,6 @@ impl App {
             Message::RefZero => {
                 self.ref_text = None;
                 self.set_reference(Some(0.0));
-                None
-            }
-            Message::GripKey(key) => {
-                self.typed(key);
                 None
             }
             Message::Escape(captured) => match crate::escape::target(self, captured) {

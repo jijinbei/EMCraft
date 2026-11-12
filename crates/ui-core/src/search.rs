@@ -19,8 +19,10 @@ pub const MAX_RESULTS: usize = 12;
 pub fn matches(query: &str) -> Vec<&'static CommandSpec> {
     let q = query.trim().to_lowercase();
     let q = q.split_whitespace().next().unwrap_or("");
+    // The commands that make shapes are scripts' (docs/adr/0010-geometry-from-solidcraft.md).
     let mut scored: Vec<(u8, &'static CommandSpec)> = emcraft_engine::COMMANDS
         .iter()
+        .filter(|c| crate::outline::offered(c.id))
         .filter_map(|c| {
             let (id, label, shown) = (c.id.to_lowercase(), c.label.to_lowercase(), crate::lang::command_label(c.id).to_lowercase());
             let doc = |d: &str| d.to_lowercase().contains(q);

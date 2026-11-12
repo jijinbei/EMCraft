@@ -5,12 +5,12 @@
 //!   (`model.port.lumped`).
 //! - **Measure**: two clicks, snapped the same way, measured by `geometry.measure` (a face brings
 //!   its normal, an edge its direction): the distance, Δx, Δy, Δz and the gap or angle.
-//! - A selected port's **reference plane**, dragged along its line by its grip ([`reference`]),
-//!   and a selected body's grips: its sizes, its place and its axis ([`grips`]).
+//! - A selected port's **reference plane**, dragged along its line by its grip ([`reference`]).
+//!   Shapes have no grips: they are a template's or a SolidCraft design's
+//!   (docs/adr/0010-geometry-from-solidcraft.md).
 //!
 //! Every change goes through a command ([`Outcome`]); a tool never edits the model itself.
 
-pub mod grips;
 pub mod port;
 pub mod reference;
 pub mod snap;

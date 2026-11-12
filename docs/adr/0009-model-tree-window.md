@@ -53,7 +53,8 @@ later, an agent are shortcuts over the same commands.
 - **G4 Results in the tree; the page tabs go** (done): a result's row opens its page (the time
   response, the pulse and the analyses under the sweep, the fields on the model), a row of the
   model goes back to the model; `page:<id>` stays as a handle.
-- **G5 Direct manipulation** (done): the port tools from Excitation's ＋ (G3); grips on a
+- **G5 Direct manipulation** (done; its grips withdrawn by ADR 0010, the window making no
+  shapes): the port tools from Excitation's ＋ (G3); grips on a
   waveguide's broad and narrow walls and on each section's far end, letting go running
   `geometry.waveguide` again with the new dimension; an item's form not edited follows the model
   when it changes under it (a grip let go, undo).

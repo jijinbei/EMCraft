@@ -952,95 +952,32 @@ fn the_tools_measure_select_ports_and_move_the_reference_plane() {
     assert!(seen["tools"]["drag"].is_null() && seen["tools"]["tool"].is_null());
 }
 
-/// A selected body's grips. Analytic evidence: a 10 mm metal cube in a 40 mm box; its +x face's
-/// grip dragged lands its size on the grid (2 mm: the round step near a fiftieth of the box's
-/// 69.3 mm diagonal) or on another face's plane, and digits typed while a grip is held give the
-/// size exactly (15 mm); each let-go is one `geometry.body.edit`.
+/// A template's shape is set by its parameters, not drawn (docs/adr/0010-geometry-from-solidcraft.md):
+/// the guide width's row opens its form, Apply builds the filter again at the new width; a body's
+/// form is its material; the search offers no command that makes a shape. Analytic evidence: the
+/// high-pass filter's guide is a = 22.86 mm wide (WR-90), set to 20 mm.
 #[test]
-fn a_bodys_grips_resize_it() {
-    use crate::view3d::{GripMove, Nav};
-    use emcraft_ui_core::scene3d::Pick;
-    use emcraft_ui_core::tools::grips::Grip;
-    let mut app = App::new(None);
-    app.run_now("file.new", &json!({}));
-    app.run_now("geometry.solid", &json!({"shape": "box", "size": [40, 40, 40]}));
-    app.run_now("geometry.body", &json!({"material": "metal", "shape": "box", "size": [10, 10, 10], "at": [15, 15, 15]}));
-    assert!(app.error.is_none(), "{:?}", app.error);
-    app.update(Message::View3d(Nav::Size(800.0, 600.0)));
-    settle(&mut app);
-    app.selection = emcraft_ui_core::selection::Selection::of(vec![Pick::Feature(0)], None);
-    let size_x = |app: &App| app.session.model().features().first().map(emcraft_model::Feature::bounds).map_or(0.0, |b| (b.max.x - b.min.x) * 1e3);
-    let grip = |app: &App| {
-        let m = app.body_grips().into_iter().find(|m| m.grip == Grip::Side { axis: 0, far: true }).unwrap_or_else(|| panic!("the +x grip"));
-        emcraft_ui_core::tools::screen(&app.view3d.camera, emcraft_ui_core::geom::Vector::new(800.0, 600.0), m.at)
-            .unwrap_or_else(|| panic!("in view"))
-    };
-    let along = |app: &App| {
-        let g = grip(app);
-        let c = app.view3d.camera;
-        let further = emcraft_ui_core::tools::screen(&c, emcraft_ui_core::geom::Vector::new(800.0, 600.0), [0.03, 0.02, 0.02]).unwrap_or(g);
-        let (dx, dy) = (further.x - g.x, further.y - g.y);
-        let n = dx.hypot(dy).max(1e-3);
-        (dx / n, dy / n)
-    };
-    assert!((size_x(&app) - 10.0).abs() < 1e-9);
-    // Dragged out along +x on screen.
-    let (ux, uy) = along(&app);
-    app.update(Message::Grip(GripMove::Start(grip(&app))));
-    assert!(app.body_drag.is_some(), "the grip taken");
-    app.update(Message::Grip(GripMove::By(ux * 60.0, uy * 60.0)));
-    app.update(Message::Grip(GripMove::End));
-    let dragged = size_x(&app);
-    assert!(dragged > 10.0, "grown: {dragged} mm {:?}", app.error);
-    let on_grid = ((dragged / 2.0).round() * 2.0 - dragged).abs() < 1e-6;
-    let on_plane = [15.0, 25.0, 40.0].iter().any(|p| (15.0 + dragged - p).abs() < 1e-6);
-    assert!(on_grid || on_plane, "{dragged} mm on the 2 mm grid or a face's plane");
-    // Typed while held: exactly 15 mm.
-    app.update(Message::Grip(GripMove::Start(grip(&app))));
-    for c in ['1', '5'] {
-        app.update(Message::GripKey(Some(c)));
-    }
-    app.update(Message::GripKey(Some('\n')));
-    assert!(app.body_drag.is_none());
-    assert!((size_x(&app) - 15.0).abs() < 1e-9, "typed 15: {} mm", size_x(&app));
-    // Escape lets a drag go with nothing changed.
-    app.update(Message::Grip(GripMove::Start(grip(&app))));
-    app.update(Message::Grip(GripMove::By(ux * 80.0, uy * 80.0)));
-    app.update(Message::Escape(false));
-    app.update(Message::Grip(GripMove::End));
-    assert!((size_x(&app) - 15.0).abs() < 1e-9, "Escape kept it");
-}
-
-/// A waveguide's section selected has one grip, at its far end; typed while held it gives the
-/// section's length exactly, one `geometry.waveguide` run again with it, the section's form in
-/// the properties panel following. Analytic evidence: the high-pass filter's sections are 15,
-/// 20 and 15 mm; the first set to 12 mm makes the guide 47 mm long, the others kept.
-#[test]
-fn a_sections_grip_sets_its_length_and_the_form_follows() {
-    use crate::view3d::{GripMove, Nav};
-    use emcraft_ui_core::tools::grips::Grip;
+fn a_templates_shape_is_its_parameters() {
+    use crate::dialog::Edit;
     let mut app = App::new(Some("highpass"));
-    app.update(Message::View3d(Nav::Size(800.0, 600.0)));
-    settle(&mut app);
-    app.update(Message::Row("section:1".into()));
-    let lengths = |app: &App| app.session.model().waveguide().map(|w| w.sections.iter().map(|s| s.length.get() * 1e3).collect::<Vec<_>>());
-    assert_eq!(lengths(&app), Some(vec![15.0, 20.0, 15.0]));
-    let marks = app.body_grips();
-    assert_eq!(marks.iter().map(|m| m.grip).collect::<Vec<_>>(), [Grip::Side { axis: 2, far: true }], "its far end alone");
-    assert_eq!(app.dialog.as_ref().map(|d| d.command.id), Some("geometry.waveguide"), "its form beside the view");
-    let at = emcraft_ui_core::tools::screen(&app.view3d.camera, emcraft_ui_core::geom::Vector::new(800.0, 600.0), marks[0].at)
-        .unwrap_or_else(|| panic!("in view"));
-    app.update(Message::Grip(GripMove::Start(at)));
-    assert!(app.body_drag.is_some(), "the grip taken");
-    for c in ['1', '2'] {
-        app.update(Message::GripKey(Some(c)));
-    }
-    app.update(Message::GripKey(Some('\n')));
+    let width = |app: &App| app.session.model().waveguide().map(|w| w.width.get() * 1e3);
+    assert!(width(&app).is_some_and(|w| (w - 22.86).abs() < 1e-9));
+    app.update(Message::Row("variable:a".into()));
+    assert_eq!(app.dialog.as_ref().map(|d| d.command.id), Some("project.variable"));
+    let value = app.dialog.as_ref().and_then(|d| d.fields.iter().position(|f| f.name == "value")).unwrap_or_else(|| panic!("its value"));
+    app.update(Message::Dialog(Edit::Text(value, "20".into())));
+    app.update(Message::Dialog(Edit::Ok));
+    // The model is built again on the worker.
+    finish(&mut app);
     assert!(app.error.is_none(), "{:?}", app.error);
-    let got = lengths(&app).unwrap_or_default();
-    assert!(got.len() == 3 && (got[0] - 12.0).abs() < 1e-9 && (got[1] - 20.0).abs() < 1e-9, "{got:?}");
-    let shown = app.dialog.as_ref().and_then(|d| d.fields.iter().find(|f| f.name == "sections")).and_then(|f| f.rows.first().cloned());
-    assert!(shown.is_some_and(|row| row.iter().any(|c| c == "12")), "the form shows the new length");
+    assert!(width(&app).is_some_and(|w| (w - 20.0).abs() < 1e-9), "{:?}", width(&app));
+    let ids = |q: &str| emcraft_ui_core::search::matches(q).into_iter().map(|c| c.id).collect::<Vec<_>>();
+    assert!(!ids("geometry").iter().any(|id| emcraft_ui_core::outline::SHAPES.contains(id)), "{:?}", ids("geometry"));
+    assert!(ids("geometry").contains(&"geometry.import"));
+    let mut posts = App::new(Some("inductive-post"));
+    let body = posts.rows().find(|r| r.id.starts_with("body:")).map_or_else(|| panic!("a body"), |r| r.id.clone());
+    posts.update(Message::Row(body));
+    assert_eq!(posts.dialog.as_ref().map(|d| d.command.id), Some("geometry.body.material"));
 }
 
 /// The section view's dimensions, presets and the look at the cut. Analytic evidence: the iris
