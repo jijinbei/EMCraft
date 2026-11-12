@@ -60,6 +60,7 @@ pub mod steps;
 pub mod style_card;
 pub mod system;
 pub mod table;
+pub mod template_dialog;
 pub mod tools;
 pub mod view3d;
 

@@ -26,10 +26,16 @@ pub type Thumbs = (String, BTreeMap<&'static str, Result<Handle, String>>);
 
 /// Template `name` drawn in `theme`, on a thread of its own: its pixels, or why not.
 pub(crate) fn drawn(name: &'static str, theme: Theme) -> Result<(u32, u32, Vec<u8>), String> {
-    let canvas = match template_picture(name, &serde_json::Value::Null, PIXELS, &theme)? {
+    drawn_with(name, &serde_json::Value::Null, theme, PIXELS)
+}
+
+/// Template `name` built with `values` (its parameters' changed) and drawn in `theme` at
+/// `pixels`: its pixels, or why not.
+pub(crate) fn drawn_with(name: &str, values: &serde_json::Value, theme: Theme, pixels: [usize; 2]) -> Result<(u32, u32, Vec<u8>), String> {
+    let canvas = match template_picture(name, values, pixels, &theme)? {
         TemplatePicture::Board(c) => c,
         TemplatePicture::Scene { scene, camera, ground } => {
-            emcraft_gpu3d::scene_picture(&scene, &camera, [PIXELS[0] as u32, PIXELS[1] as u32], ground).map_err(|e| e.to_string())?
+            emcraft_gpu3d::scene_picture(&scene, &camera, [pixels[0] as u32, pixels[1] as u32], ground).map_err(|e| e.to_string())?
         }
     };
     Ok((canvas.w as u32, canvas.h as u32, canvas.rgba))
@@ -70,8 +76,9 @@ fn card<'a>(app: &'a App, name: &'static str) -> Element<'a, Message> {
     let body = column![picture, text(title.to_owned()).size(t.font_body), text(rest.to_owned()).size(t.font_small).color(t.text_dim)]
         .spacing(4)
         .width(CARD[0]);
-    let open = Then::Sample { name: name.to_owned(), values: serde_json::Value::Null, purpose: None };
-    button(body).padding(8).style(look::row(t, false)).on_press(Message::File(FileAction::Request(open))).boxed()
+    // Its card opens: its parameters and its model, before it is built.
+    let open = Message::Template(crate::template_dialog::TemplateAct::Open(Some(name)));
+    button(body).padding(8).style(look::row(t, false)).on_press(open).boxed()
 }
 
 /// The start page.
@@ -93,15 +100,41 @@ pub fn view(app: &App) -> Element<'_, Message> {
         });
         column![text(tr(t!("Recent projects"))).size(t.font_heading), Column::with_children(paths).spacing(2)].spacing(6).boxed()
     });
+    // What the job is for: a kind chosen shows its templates (again: every one), a blank
+    // project for it beside them.
+    let kinds = emcraft_ui_core::steps::Solver::ALL.into_iter().map(|k| {
+        let on = app.purpose == Some(k);
+        let face = row![
+            crate::icons::view(emcraft_ui_core::steps::kinds::card(k).glyph, 22.0, t.icon, t.accent),
+            column![
+                text(tr(emcraft_ui_core::steps::kinds::card(k).name)).size(t.font_body),
+                text(tr(emcraft_ui_core::steps::kinds::card(k).plain)).size(t.font_small).color(t.text_dim)
+            ]
+            .spacing(2)
+        ]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
+        button(face).padding(8).width(260).style(look::row(t, on)).on_press(Message::Purpose((!on).then_some(k))).boxed()
+    });
+    let purposes = column![text(tr(t!("Analysis"))).size(t.font_heading), row(kinds).spacing(10).wrap().vertical_spacing(10)].spacing(8);
+    let shown = |s: &&emcraft_engine::templates::Template| app.purpose.is_none_or(|k| s.kinds.contains(&k));
     let groups = Group::ALL.into_iter().filter_map(|g| {
-        let cards: Vec<Element<Message>> = TEMPLATES.iter().filter(|s| s.group == g).map(|s| card(app, s.name)).collect();
+        let cards: Vec<Element<Message>> = TEMPLATES.iter().filter(|s| s.group == g).filter(shown).map(|s| card(app, s.name)).collect();
         (!cards.is_empty()).then(|| {
             column![text(tr(group_title(g))).size(t.font_body).color(t.form_dim), row(cards).spacing(10).wrap().vertical_spacing(10)]
                 .spacing(6)
                 .boxed()
         })
     });
-    let templates = column![text(tr(t!("Templates"))).size(t.font_heading), Column::with_children(groups).spacing(18)].spacing(10);
-    let page = Column::with_children(std::iter::once(head.boxed()).chain(recent).chain(std::iter::once(templates.boxed()))).spacing(24).padding(28);
+    let blank = app.purpose.map(|_| {
+        button(text(tr(t!("Blank"))).size(t.font_button))
+            .style(look::button(t, false))
+            .on_press(Message::File(FileAction::Request(Then::New)))
+            .boxed()
+    });
+    let heading =
+        row(std::iter::once(text(tr(t!("Templates"))).size(t.font_heading).boxed()).chain(blank)).spacing(12).align_y(iced::Alignment::Center);
+    let templates = column![heading, Column::with_children(groups).spacing(18)].spacing(10);
+    let page = Column::with_children([head.boxed()].into_iter().chain(recent).chain([purposes.boxed(), templates.boxed()])).spacing(24).padding(28);
     container(scrollable(page)).width(Fill).height(Fill).boxed()
 }

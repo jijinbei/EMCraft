@@ -1,0 +1,14 @@
+[
+  {"note": "Purpose first: on the start page the analysis is chosen, a template made for it opened as a card, a parameter that is no number keeping it from being built, the project built with a = 25 mm and analysed as chosen"},
+  {"call": "ui.set", "params": {"start": true}},
+  {"click": "purpose:frequency"},
+  {"expect": {"inspect": {"purpose": "frequency"}}},
+  {"click": "template:highpass"},
+  {"expect": {"inspect": {"template.name": "highpass"}, "handles": ["template:build", "template:cancel"]}},
+  {"call": "ui.set", "params": {"template": {"a": "wide"}}},
+  {"click": "template:build"},
+  {"expect": {"inspect": {"template.name": "highpass"}}},
+  {"call": "ui.set", "params": {"template": {"a": 25}}},
+  {"click": "template:build"},
+  {"expect": {"inspect": {"template": null, "project.name": "highpass", "workflow.solver": "frequency", "start": false}}}
+]

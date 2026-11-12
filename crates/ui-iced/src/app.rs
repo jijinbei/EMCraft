@@ -104,6 +104,9 @@ pub enum Message {
     Search(String),
     SearchPick(Option<&'static str>),
     FocusSearch,
+    /// What the template card asks for; what the job is for, chosen on the start page.
+    Template(crate::template_dialog::TemplateAct),
+    Purpose(Option<emcraft_ui_core::steps::Solver>),
     /// A browser section folded or unfolded; Delete pressed (the selected items deleted).
     Fold(String),
     DeleteKey,
@@ -216,6 +219,9 @@ pub struct App {
     pub(crate) search: String,
     /// The browser's sections folded.
     pub(crate) folded: Vec<String>,
+    /// The template card open, and what the start page chose the job is for.
+    pub(crate) template: crate::template_dialog::Open,
+    pub(crate) purpose: Option<emcraft_ui_core::steps::Solver>,
     /// The point pinned on the field's plane (its coordinates, display units).
     pub(crate) pinned: Option<[f64; 2]>,
     /// What is selected (in the 3D view or the browser), and the browser's tree for the
@@ -300,6 +306,8 @@ impl App {
             style: Default::default(),
             search: String::new(),
             folded: Vec::new(),
+            template: Default::default(),
+            purpose: None,
             pinned: None,
             selection: Selection::default(),
             tree: None,
@@ -693,6 +701,11 @@ impl App {
                 task
             }
             Message::FocusSearch => iced::widget::operation::focus(crate::ribbon::SEARCH),
+            Message::Template(a) => {
+                let task = self.template_act(a);
+                self.settle();
+                task
+            }
             // The start page (again in a new theme) draws the templates' pictures.
             m @ (Message::Home(true) | Message::Pref(_)) => {
                 self.update(m);
@@ -797,7 +810,12 @@ impl App {
         };
         let parts = std::iter::once(bar.boxed()).chain(ribbon).chain(steps).chain(crate::files::recoveries(self)).chain(std::iter::once(page));
         let window = container(iced::widget::Column::with_children(parts)).width(Fill).height(Fill).style(look::window(t));
-        let over = self.dialog.as_ref().map(|d| crate::dialog::view(self, d)).or_else(|| crate::files::question(self));
+        let over = self
+            .dialog
+            .as_ref()
+            .map(|d| crate::dialog::view(self, d))
+            .or_else(|| crate::template_dialog::view(self))
+            .or_else(|| crate::files::question(self));
         match over {
             Some(o) => iced::widget::stack![window, o].boxed(),
             None => window.boxed(),
@@ -915,6 +933,15 @@ impl App {
                 None
             }
             Message::FocusSearch => None,
+            Message::Template(a) => {
+                // Without iced's runtime (the tests): the preview is not drawn.
+                let _ = self.template_act(a);
+                None
+            }
+            Message::Purpose(p) => {
+                self.purpose = p;
+                None
+            }
             Message::Fold(section) => {
                 match self.folded.iter().position(|f| *f == section) {
                     Some(i) => {

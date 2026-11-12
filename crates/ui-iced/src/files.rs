@@ -39,7 +39,17 @@ impl App {
             Then::New => self.opened("file.new", &json!({})),
             Then::Open => return self.pick(Purpose::Open),
             Then::OpenPath(path) => self.opened("file.open", &json!({ "path": path })),
-            Then::Sample { name, .. } => self.opened("file.sample", &json!({ "name": name })),
+            Then::Sample { name, values, purpose } => {
+                // Its parameters as changed, and the analysis chosen for it.
+                let mut params = json!({ "name": name });
+                if values.as_object().is_some_and(|v| !v.is_empty()) {
+                    params["values"] = values;
+                }
+                if let Some(kind) = purpose {
+                    params["analysis"] = json!(kind.id());
+                }
+                self.opened("file.sample", &params);
+            }
             Then::Quit => {
                 self.autosave.drop_copy();
                 return iced::exit();

@@ -1402,3 +1402,32 @@ fn the_browser_folds_hides_and_deletes() {
     app.update(Message::DeleteKey);
     assert_eq!(app.session.model().materials.len(), materials, "{:?}", app.error);
 }
+
+/// A template's card: its parameters edited before it is built (one that is no number keeps
+/// Open from building it), the project then built with them; the purpose chosen on the start
+/// page is the project's analysis. Evidence: the high-pass filter built with a = 25 mm has a
+/// guide 25 mm wide; the cavity opened for eigenmodes is analysed for eigenmodes.
+#[test]
+fn a_templates_card_builds_it_with_its_parameters() {
+    use crate::template_dialog::TemplateAct;
+    let mut app = App::new(None);
+    app.update(Message::Template(TemplateAct::Open(Some("highpass"))));
+    let card = app.template.card.clone().unwrap_or_else(|| panic!("the card"));
+    let a = card.fields.iter().position(|f| f.name == "a").unwrap_or_else(|| panic!("a parameter a: {:?}", card.fields));
+    app.update(Message::Template(TemplateAct::Field(a, "wide".into())));
+    assert!(app.template.card.as_ref().is_some_and(|c| c.values().is_err()));
+    app.update(Message::Template(TemplateAct::Build));
+    assert!(app.template.card.is_some(), "not built with a word for a number");
+    let _ = app.view();
+    app.update(Message::Template(TemplateAct::Field(a, "25".into())));
+    app.update(Message::Template(TemplateAct::Build));
+    assert!(app.template.card.is_none());
+    let width = app.session.model().waveguide().map_or(0.0, |w| w.width.get());
+    assert!((width - 25e-3).abs() < 1e-12, "{width} {:?}", app.error);
+    // A purpose chosen, a template made for it opened for it.
+    app.update(Message::Purpose(Some(emcraft_ui_core::steps::Solver::Eigenmodes)));
+    app.update(Message::Template(TemplateAct::Open(Some("cavity"))));
+    app.update(Message::Template(TemplateAct::Build));
+    assert_eq!(app.solver(), emcraft_ui_core::steps::Solver::Eigenmodes);
+    assert_eq!(app.session.model().job.chosen(), Some(emcraft_ui_core::steps::Solver::Eigenmodes));
+}

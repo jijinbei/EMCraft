@@ -79,6 +79,20 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
     let spar = crate::sparameters::handles(app);
     let result_views = crate::results::handles(app);
     let style = crate::style_card::handles(app);
+    // The start page's purposes and templates, and the template card's buttons.
+    use crate::template_dialog::TemplateAct;
+    let start = app.home.then(|| {
+        let purposes = emcraft_ui_core::steps::Solver::ALL.into_iter().map(|k| (format!("purpose:{}", k.id()), Message::Purpose(Some(k))));
+        let templates =
+            emcraft_engine::templates::TEMPLATES.iter().map(|s| (format!("template:{}", s.name), Message::Template(TemplateAct::Open(Some(s.name)))));
+        purposes.chain(templates).collect::<Vec<_>>()
+    });
+    let card_buttons = app.template.card.is_some().then(|| {
+        [
+            ("template:build".to_owned(), Message::Template(TemplateAct::Build)),
+            ("template:cancel".to_owned(), Message::Template(TemplateAct::Open(None))),
+        ]
+    });
     let search = (!app.search.trim().is_empty()).then(|| {
         let picks = emcraft_ui_core::search::matches(&app.search).into_iter().map(|c| (format!("search:{}", c.id), Message::SearchPick(Some(c.id))));
         std::iter::once(("search:enter".to_owned(), Message::SearchPick(None))).chain(picks).collect::<Vec<_>>()
@@ -106,6 +120,8 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         .chain(spar)
         .chain(result_views)
         .chain(style)
+        .chain(start.into_iter().flatten())
+        .chain(card_buttons.into_iter().flatten())
         .chain(search.into_iter().flatten())
         .chain(card.into_iter().flatten())
         .chain(dialog.into_iter().flatten())
@@ -136,6 +152,8 @@ pub fn inspect(app: &App) -> Value {
         "asking": app.asking.as_ref().map(|t| format!("{t:?}")),
         "selection": app.selection.iter().map(|p| format!("{p:?}")).collect::<Vec<_>>(),
         "tools": app.tools.inspect(app.tool, app.session.display().length),
+        "template": app.template.card.as_ref().map(emcraft_ui_core::template_card::TemplateCard::inspect),
+        "purpose": app.purpose.map(emcraft_model::Analysis::id),
         "search": {"query": app.search, "matches": emcraft_ui_core::search::matches(&app.search).iter().map(|c| c.id).collect::<Vec<_>>()},
         "workflow": crate::steps::inspect(app),
         "sparameters": crate::sparameters::inspect(app),
@@ -284,6 +302,16 @@ impl App {
         }
         if let Some(f) = p.get("pick").and_then(Value::as_f64).filter(|f| f.is_finite()) {
             self.update(Message::S(crate::sparameters::SAct::Pick(fu.to_si(f))));
+        }
+        // The open template card's parameters typed, by name.
+        if let Some(fields) = p.get("template").and_then(Value::as_object) {
+            for (k, v) in fields {
+                let Some(i) = self.template.card.as_ref().and_then(|c| c.fields.iter().position(|f| f.name == *k)) else {
+                    return err(format!("no template parameter `{}`", emcraft_engine::text::clip(k, 40)));
+                };
+                let text = v.as_str().map_or_else(|| v.to_string(), str::to_owned);
+                self.update(Message::Template(crate::template_dialog::TemplateAct::Field(i, text)));
+            }
         }
         // The command search typed (Enter: `search:enter`).
         if let Some(q) = p.get("search").and_then(Value::as_str) {
