@@ -1337,3 +1337,35 @@ fn the_style_card_edits_the_charts_style() {
     assert_ne!(chart(&app).title, "Filter");
     let _ = app.view();
 }
+
+/// Command search: `/` focuses it; a query lists the commands that match, one picked opens as
+/// its ribbon button would (its dialog); Enter on a command written with its parameters runs it;
+/// JSON that does not read keeps the query and says why.
+#[test]
+fn the_command_search_finds_opens_and_runs() {
+    let mut app = App::new(Some("highpass"));
+    let slash = iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+        key: iced::keyboard::Key::Character("/".into()),
+        modified_key: iced::keyboard::Key::Character("/".into()),
+        physical_key: iced::keyboard::key::Physical::Unidentified(iced::keyboard::key::NativeCode::Unidentified),
+        location: iced::keyboard::Location::Standard,
+        modifiers: iced::keyboard::Modifiers::empty(),
+        text: None,
+        repeat: false,
+    });
+    let focus = crate::view3d::shader::keys(slash, iced::event::Status::Ignored, iced::window::Id::unique());
+    assert!(matches!(focus, Some(Message::FocusSearch)));
+    app.update(Message::Search("material.create".into()));
+    assert!(emcraft_ui_core::search::matches(&app.search).iter().any(|c| c.id == "model.material.create"));
+    let _ = app.view();
+    app.update(Message::SearchPick(Some("model.material.create")));
+    assert_eq!(app.dialog.as_ref().map(|d| d.command.id), Some("model.material.create"));
+    assert!(app.search.is_empty());
+    app.update(Message::Dialog(crate::dialog::Edit::Cancel));
+    app.update(Message::Search(r#"units.set {"length": "m"}"#.into()));
+    app.update(Message::SearchPick(None));
+    assert_eq!(app.session.display().length.symbol(), "m", "{:?}", app.error);
+    app.update(Message::Search("units.set {oops".into()));
+    app.update(Message::SearchPick(None));
+    assert!(app.error.as_deref().is_some_and(|e| e.starts_with("not JSON")) && !app.search.is_empty());
+}

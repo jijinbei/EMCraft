@@ -79,6 +79,10 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
     let spar = crate::sparameters::handles(app);
     let result_views = crate::results::handles(app);
     let style = crate::style_card::handles(app);
+    let search = (!app.search.trim().is_empty()).then(|| {
+        let picks = emcraft_ui_core::search::matches(&app.search).into_iter().map(|c| (format!("search:{}", c.id), Message::SearchPick(Some(c.id))));
+        std::iter::once(("search:enter".to_owned(), Message::SearchPick(None))).chain(picks).collect::<Vec<_>>()
+    });
     let card = (!app.selection.is_clear()).then(|| [("card:edit".to_owned(), Message::Edit), ("card:delete".to_owned(), Message::Delete)]);
     let dialog = app.dialog.is_some().then(|| {
         [
@@ -102,6 +106,7 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         .chain(spar)
         .chain(result_views)
         .chain(style)
+        .chain(search.into_iter().flatten())
         .chain(card.into_iter().flatten())
         .chain(dialog.into_iter().flatten())
         .chain(asking.into_iter().flatten())
@@ -131,6 +136,7 @@ pub fn inspect(app: &App) -> Value {
         "asking": app.asking.as_ref().map(|t| format!("{t:?}")),
         "selection": app.selection.iter().map(|p| format!("{p:?}")).collect::<Vec<_>>(),
         "tools": app.tools.inspect(app.tool, app.session.display().length),
+        "search": {"query": app.search, "matches": emcraft_ui_core::search::matches(&app.search).iter().map(|c| c.id).collect::<Vec<_>>()},
         "workflow": crate::steps::inspect(app),
         "sparameters": crate::sparameters::inspect(app),
         "result_views": crate::results::inspect(app),
@@ -278,6 +284,10 @@ impl App {
         }
         if let Some(f) = p.get("pick").and_then(Value::as_f64).filter(|f| f.is_finite()) {
             self.update(Message::S(crate::sparameters::SAct::Pick(fu.to_si(f))));
+        }
+        // The command search typed (Enter: `search:enter`).
+        if let Some(q) = p.get("search").and_then(Value::as_str) {
+            self.update(Message::Search(q.to_owned()));
         }
         // The Setup form's fields typed, by name.
         if let Some(fields) = p.get("setup").and_then(Value::as_object) {

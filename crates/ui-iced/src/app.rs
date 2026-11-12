@@ -99,6 +99,11 @@ pub enum Message {
     StepAct(crate::step_panel::Act),
     /// What a control of the S-parameters page asks for.
     S(crate::sparameters::SAct),
+    /// The command search typed, a command picked from it (`None`: Enter, the first match or a
+    /// command written with its parameters), the field focused (`/`).
+    Search(String),
+    SearchPick(Option<&'static str>),
+    FocusSearch,
     /// What a result page's choice asks for, and its chart's style card.
     R(crate::results::RAct),
     Style(crate::style_card::StyleAct),
@@ -204,6 +209,8 @@ pub struct App {
     pub(crate) study: emcraft_ui_core::results::study::StudyView,
     /// The open chart's style card.
     pub(crate) style: emcraft_ui_core::results::style::StyleForm,
+    /// The command search's query.
+    pub(crate) search: String,
     /// The point pinned on the field's plane (its coordinates, display units).
     pub(crate) pinned: Option<[f64; 2]>,
     /// What is selected (in the 3D view or the browser), and the browser's tree for the
@@ -286,6 +293,7 @@ impl App {
             pulse: Default::default(),
             study: Default::default(),
             style: Default::default(),
+            search: String::new(),
             pinned: None,
             selection: Selection::default(),
             tree: None,
@@ -339,6 +347,25 @@ impl App {
     }
 
     /// On the PCB page, a net picked in 3D: the command that makes it the route.
+    /// A command picked from the search: opened as its ribbon button would (`None`: Enter — a
+    /// command written with its parameters runs, else the first match opens); the query cleared.
+    fn search_pick(&mut self, pick: Option<&'static str>) {
+        let query = std::mem::take(&mut self.search);
+        match (pick, emcraft_ui_core::search::direct(&query)) {
+            (Some(id), _) => self.command(id),
+            (None, Some(Ok((id, params)))) => self.start(&id, params),
+            (None, Some(Err(e))) => {
+                self.error = Some(e);
+                self.search = query;
+            }
+            (None, None) => {
+                if let Some(c) = emcraft_ui_core::search::matches(&query).first() {
+                    self.command(c.id);
+                }
+            }
+        }
+    }
+
     /// Whether the 3D view's keys are its: the view shown, no dialog, question, start or
     /// settings page over it.
     fn keys_free(&self) -> bool {
@@ -654,6 +681,7 @@ impl App {
                 self.settle();
                 task
             }
+            Message::FocusSearch => iced::widget::operation::focus(crate::ribbon::SEARCH),
             // The start page (again in a new theme) draws the templates' pictures.
             m @ (Message::Home(true) | Message::Pref(_)) => {
                 self.update(m);
@@ -867,6 +895,15 @@ impl App {
                 self.r_act(a);
                 None
             }
+            Message::Search(q) => {
+                self.search = q.chars().take(emcraft_ui_core::search::MAX_QUERY).collect();
+                None
+            }
+            Message::SearchPick(pick) => {
+                self.search_pick(pick);
+                None
+            }
+            Message::FocusSearch => None,
             Message::Style(a) => {
                 self.style_act(a);
                 None

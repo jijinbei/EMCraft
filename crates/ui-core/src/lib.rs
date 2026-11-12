@@ -66,6 +66,7 @@ pub mod results;
 pub mod ribbon;
 pub mod scenario;
 pub mod scene3d;
+pub mod search;
 pub mod selection;
 pub mod start;
 pub mod steps;

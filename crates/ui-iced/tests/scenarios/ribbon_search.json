@@ -1,0 +1,12 @@
+[
+  {"note": "The ribbon's command search: a query lists the commands that match, the first opened by Enter as its ribbon button would (its dialog); a command written with its parameters runs as typed"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"call": "ui.set", "params": {"search": "material.create"}},
+  {"expect": {"inspect": {"search.matches.0": "model.material.create"}, "handles": ["search:enter", "search:model.material.create"]}},
+  {"click": "search:enter"},
+  {"expect": {"inspect": {"dialog.command": "model.material.create", "search.query": ""}}},
+  {"click": "dialog:cancel"},
+  {"call": "ui.set", "params": {"search": "units.set {\"frequency\": \"MHz\"}"}},
+  {"click": "search:enter"},
+  {"expect": {"inspect": {"search.query": "", "error": null}}}
+]
