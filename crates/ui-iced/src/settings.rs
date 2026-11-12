@@ -15,6 +15,11 @@ use crate::app::{App, Message};
 use crate::look::{self, Tokens};
 
 /// A choice among others: lit when it is the one kept.
+/// A row of choices under its title.
+fn titled<'a>(t: Tokens, title: Text, items: Vec<Element<'a, Message>>) -> Element<'a, Message> {
+    row![text(tr(title)).size(t.font_body).width(140)].extend(items).spacing(6).align_y(Alignment::Center).wrap().boxed()
+}
+
 fn choice<'a>(t: Tokens, label: &str, on: bool, pref: Pref) -> Element<'a, Message> {
     button(text(label.to_owned()).size(t.font_button)).style(look::button(t, on)).on_press(Message::Pref(pref)).boxed()
 }
@@ -58,6 +63,21 @@ pub fn view(app: &App) -> Element<'_, Message> {
     }))
     .spacing(6)
     .wrap();
+    // What an orbit turns about, and the orientation control in the view's corner.
+    use emcraft_ui_core::navigation::{Navigator, OrbitAround};
+    let around = OrbitAround::ALL.iter().map(|o| choice(t, lookup(o.label()), *o == p.orbit_around(), Pref::OrbitAround(*o))).collect();
+    let navigators = Navigator::ALL.iter().map(|n| choice(t, lookup(n.label()), *n == p.navigator(), Pref::Navigator(*n))).collect();
+    let mouse = column![
+        mappings,
+        text(tr(t!(
+            "Every mapping: Ctrl+left drag orbits, Shift snaps an orbit, the wheel zooms to the cursor, arrows turn, Ctrl+1–7 standard views."
+        )))
+        .size(t.font_small)
+        .color(t.text_dim),
+        titled(t, t!("Orbit around"), around),
+        titled(t, t!("Navigator"), navigators),
+    ]
+    .spacing(8);
     let l = p.gpu_look;
     let switches: [(Text, bool, fn(GpuLook) -> GpuLook); 4] = [
         (t!("Edges"), l.edges, |l| GpuLook { edges: !l.edges, ..l }),
@@ -77,7 +97,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
             )),
             units.boxed(),
         ),
-        section(t, t!("Mouse"), tr(nav.help), mappings.boxed()),
+        section(t, t!("Mouse"), tr(nav.help), mouse.boxed()),
         section(t, t!("Drawing"), tr(t!("What the 3D view adds to the plain picture, each its own switch.")), drawing.boxed()),
     ];
     let page = Column::with_children(sections).spacing(24).padding(24).width(900);

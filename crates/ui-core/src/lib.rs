@@ -42,6 +42,7 @@ pub mod browser;
 pub mod chart_words;
 pub mod commands;
 pub mod crash;
+pub mod cube;
 pub mod dialogs;
 pub mod files;
 pub mod geom;

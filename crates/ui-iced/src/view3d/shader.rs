@@ -88,6 +88,10 @@ pub struct Viewer {
     /// The grips a plain left press takes (points from the view's corner): the selected body's,
     /// the selected port's reference plane's.
     pub grips: Vec<Point>,
+    /// What an orbit turns about (the preference).
+    pub around: emcraft_ui_core::navigation::OrbitAround,
+    /// The scene, while the field's plane in it may be dragged (the field overlay).
+    pub plane: Option<Arc<emcraft_ui_core::scene3d::Built>>,
 }
 
 /// The pointer between events: the drag in progress (its mode and where it was last), where the
@@ -96,6 +100,13 @@ pub struct Viewer {
 #[derive(Default)]
 pub struct Grip {
     drag: Option<(NavMode, Point)>,
+    /// The drag's orbit snaps with Shift (Shift was not needed to start it, and the mapping
+    /// snaps).
+    snaps: bool,
+    /// The field's plane dragged: where the pointer was last.
+    planed: Option<Point>,
+    /// The touchpad mapping's move with no button down: where the pointer was last.
+    motion: Option<Point>,
     /// A selection box: where it began, whether it adds to the selection, whether it has left
     /// the click's slop.
     boxing: Option<(Point, bool, bool)>,
@@ -132,6 +143,16 @@ fn held(m: keyboard::Modifiers) -> NavKeys {
 /// orbits.
 fn left_mode(nav: &NavPreset, k: NavKeys) -> Option<NavMode> {
     nav.mode(NavButton::Left, k).or_else(|| (k.ctrl && !k.shift && !k.alt).then_some(NavMode::Orbit))
+}
+
+impl Viewer {
+    /// Whether the field's plane is under `at` (the field overlay).
+    fn on_plane(&self, at: Point, bounds: Rectangle) -> bool {
+        self.plane.as_ref().is_some_and(|built| {
+            let pixel = emcraft_render::view3d::Pixel::new(f64::from(at.x), f64::from(at.y), f64::from(bounds.width), f64::from(bounds.height));
+            built.pick(&self.shot.camera, pixel).and_then(emcraft_ui_core::scene3d::Pick::from_tag) == Some(emcraft_ui_core::scene3d::Pick::Plane(0))
+        })
+    }
 }
 
 /// What a drag by `d` (points) in `mode` does to the camera.
@@ -179,15 +200,37 @@ impl shader::Program<Message> for Viewer {
                     grip.gripped = Some(at);
                     return Some(Action::publish(Message::Grip(GripMove::Start(crate::geom::shared(at)))).and_capture());
                 }
-                grip.pressed = left.then_some(at);
-                grip.drag = match button(*b) {
-                    Some(NavButton::Left) => left_mode(self.nav, grip.keys),
-                    Some(other) => self.nav.mode(other, grip.keys),
-                    None => None,
+                if left && plain && self.on_plane(at, bounds) {
+                    grip.planed = Some(at);
+                    return Some(Action::capture());
                 }
-                .map(|mode| (mode, at));
+                grip.pressed = left.then_some(at);
+                let mode_with = |k: NavKeys| match button(*b) {
+                    Some(NavButton::Left) => left_mode(self.nav, k),
+                    Some(other) => self.nav.mode(other, k),
+                    None => None,
+                };
+                let mode = mode_with(grip.keys);
+                grip.snaps = mode_with(NavKeys { shift: false, ..grip.keys }) == mode && self.nav.id != emcraft_ui_core::navigation::OPENSCAD;
+                grip.drag = mode.map(|mode| (mode, at));
                 grip.boxing = (left && grip.drag.is_none() && !self.tool).then_some((at, grip.keys.shift, false));
-                Some(Action::capture())
+                match mode {
+                    // The orbit's pivot is chosen where it begins.
+                    Some(NavMode::Orbit) => {
+                        Some(Action::publish(Message::View3d(Nav::OrbitFrom(crate::geom::shared(at), self.around))).and_capture())
+                    }
+                    _ => Some(Action::capture()),
+                }
+            }
+            iced::Event::Mouse(mouse::Event::CursorMoved { position }) if grip.planed.is_some() => {
+                let last = grip.planed?;
+                let at = *position - iced::Vector::new(bounds.x, bounds.y);
+                grip.planed = Some(at);
+                Some(Action::publish(Message::View3d(Nav::DragPlane(at.x - last.x, at.y - last.y))).and_capture())
+            }
+            iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) if grip.planed.is_some() => {
+                grip.planed = None;
+                Some(Action::request_redraw().and_capture())
             }
             iced::Event::Mouse(mouse::Event::CursorMoved { position }) if grip.gripped.is_some() => {
                 let last = grip.gripped?;
@@ -206,7 +249,15 @@ impl shader::Program<Message> for Viewer {
                 grip.boxing = Some((start, add, out));
                 out.then(|| Action::publish(Message::View3d(Nav::Box(Some(BoxSel::from_drag(crate::geom::shared(start), crate::geom::shared(at)))))))
             }
+            iced::Event::Mouse(mouse::Event::CursorMoved { .. }) if grip.drag.is_none() && self.nav.motion_mode(grip.keys).is_some() => {
+                // The touchpad mapping: Shift or Alt held, the pointer's move pans or orbits.
+                let (mode, at) = self.nav.motion_mode(grip.keys).zip(cursor.position_in(bounds))?;
+                let last = grip.motion.replace(at);
+                let d = last.map_or(iced::Vector::ZERO, |l| at - l);
+                (d != iced::Vector::ZERO && d.x.hypot(d.y) <= 1e4).then(|| Action::publish(Message::View3d(dragged(mode, d))))
+            }
             iced::Event::Mouse(mouse::Event::CursorMoved { .. }) if grip.drag.is_none() => {
+                grip.motion = None;
                 // Not dragging: where the pointer is, while asked and inside; once that it left.
                 let at = cursor.position_in(bounds).filter(|_| self.hover);
                 let was = std::mem::replace(&mut grip.over, at.is_some());
@@ -216,7 +267,11 @@ impl shader::Program<Message> for Viewer {
                 let (mode, last) = grip.drag?;
                 let at = *position - iced::Vector::new(bounds.x, bounds.y);
                 grip.drag = Some((mode, at));
-                publish(dragged(mode, at - last))
+                let d = at - last;
+                match mode {
+                    NavMode::Orbit if grip.snaps && grip.keys.shift => publish(Nav::OrbitSnapped(d.x, d.y)),
+                    _ => publish(dragged(mode, d)),
+                }
             }
             iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) if grip.boxing.is_some_and(|(_, _, out)| out) => {
                 let (_, add, _) = grip.boxing.take()?;
@@ -235,11 +290,16 @@ impl shader::Program<Message> for Viewer {
             }
             iced::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                 let at = cursor.position_in(bounds)?;
-                let steps = match delta {
-                    mouse::ScrollDelta::Lines { y, .. } => *y,
-                    mouse::ScrollDelta::Pixels { y, .. } => y * PIXEL_ZOOM,
-                };
-                publish(Nav::ZoomAt(if self.nav.reverse_zoom { -steps } else { steps }, crate::geom::shared(at)))
+                let zoom = |steps: f32| publish(Nav::ZoomAt(if self.nav.reverse_zoom { -steps } else { steps }, crate::geom::shared(at)));
+                let k = grip.keys;
+                match delta {
+                    mouse::ScrollDelta::Lines { y, .. } => zoom(*y),
+                    // A trackpad's two-finger scroll pans (with Shift orbits, where the mapping
+                    // says so); with Ctrl, or in the touchpad mapping, it zooms.
+                    mouse::ScrollDelta::Pixels { y, .. } if k.ctrl || !self.nav.scroll_pans() => zoom(y * PIXEL_ZOOM),
+                    mouse::ScrollDelta::Pixels { x, y } if k.shift && self.nav.shift_scroll_orbits() => publish(Nav::Orbit(*x, *y)),
+                    mouse::ScrollDelta::Pixels { x, y } => publish(Nav::Pan(*x, *y)),
+                }
             }
             _ => None,
         }
@@ -251,7 +311,7 @@ impl shader::Program<Message> for Viewer {
 
     fn mouse_interaction(&self, grip: &Grip, _bounds: Rectangle, _cursor: mouse::Cursor) -> mouse::Interaction {
         match grip.drag {
-            None if grip.gripped.is_some() => mouse::Interaction::Grabbing,
+            None if grip.gripped.is_some() || grip.planed.is_some() => mouse::Interaction::Grabbing,
             None if grip.boxing.is_some() => mouse::Interaction::Crosshair,
             Some((NavMode::Pan, _)) => mouse::Interaction::Grabbing,
             Some(_) => mouse::Interaction::Move,
@@ -341,5 +401,53 @@ pub fn keys(event: iced::Event, status: iced::event::Status, _: iced::window::Id
             _ => None,
         },
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use iced::mouse::Cursor;
+    use iced::widget::shader::Program;
+
+    fn viewer(nav: &'static NavPreset) -> Viewer {
+        let packed = Arc::new(Packed::new(&emcraft_render::view3d::Scene::default(), 1));
+        let shot = Shot {
+            packed,
+            camera: Camera::default(),
+            ground: Default::default(),
+            look: Default::default(),
+            field: None,
+            cut: None,
+            selected: Vec::new(),
+            outline: [0.0; 4],
+            moving: false,
+        };
+        Viewer { shot, nav, hover: false, tool: false, grips: Vec::new(), around: Default::default(), plane: None }
+    }
+
+    fn moved(x: f32, y: f32) -> iced::Event {
+        iced::Event::Mouse(mouse::Event::CursorMoved { position: Point::new(x, y) })
+    }
+
+    /// The touchpad mapping orbits with Alt held and no button down; a trackpad's two-finger
+    /// scroll pans in the default mapping and zooms in the touchpad's.
+    #[test]
+    fn the_touchpad_and_the_trackpad() {
+        use emcraft_ui_core::navigation::{FUSION, TOUCHPAD, preset};
+        let bounds = Rectangle::new(Point::ORIGIN, Size::new(800.0, 600.0));
+        let mut grip = Grip { size: Some(bounds.size()), ..Grip::default() };
+        let touch = viewer(preset(TOUCHPAD));
+        let alt = iced::Event::Keyboard(keyboard::Event::ModifiersChanged(keyboard::Modifiers::ALT));
+        touch.update(&mut grip, &alt, bounds, Cursor::Available(Point::new(100.0, 100.0)));
+        assert!(
+            touch.update(&mut grip, &moved(100.0, 100.0), bounds, Cursor::Available(Point::new(100.0, 100.0))).is_none(),
+            "the first move only marks where"
+        );
+        assert!(touch.update(&mut grip, &moved(110.0, 100.0), bounds, Cursor::Available(Point::new(110.0, 100.0))).is_some(), "the next orbits");
+        let scroll = iced::Event::Mouse(mouse::Event::WheelScrolled { delta: mouse::ScrollDelta::Pixels { x: 3.0, y: 4.0 } });
+        let mut plain = Grip { size: Some(bounds.size()), ..Grip::default() };
+        assert!(viewer(preset(FUSION)).update(&mut plain, &scroll, bounds, Cursor::Available(Point::new(10.0, 10.0))).is_some());
+        assert!(touch.update(&mut plain, &scroll, bounds, Cursor::Available(Point::new(10.0, 10.0))).is_some());
     }
 }

@@ -1024,3 +1024,56 @@ fn the_section_shows_its_dimensions_and_looks_at_the_cut() {
     app.update(Message::View3d(Nav::Dims(false)));
     assert!(app.section_notes().is_none(), "dimensions off");
 }
+
+/// What the egui window did alone, now here too. Analytic evidence: an orbit about the origin
+/// keeps the origin where it was on screen; the field's plane dragged by its whole extent on
+/// screen moves by the model's whole extent along its normal (clamped there); facing the plane
+/// looks along its normal; the reference plane typed as 2.5 mm is 2.5 mm, and 0 puts it back.
+#[test]
+fn the_pivot_the_plane_the_projection_and_the_reference_number() {
+    use crate::view3d::Nav;
+    use emcraft_render::view3d::Projection;
+    use emcraft_ui_core::geom::Point;
+    use emcraft_ui_core::navigation::OrbitAround;
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::View3d(Nav::Size(800.0, 600.0)));
+    settle(&mut app);
+    let size = emcraft_ui_core::geom::Vector::new(800.0, 600.0);
+    let origin = |app: &App| emcraft_ui_core::tools::screen(&app.view3d.camera, size, [0.0; 3]).unwrap_or_else(|| panic!("in view"));
+    let before = origin(&app);
+    app.update(Message::View3d(Nav::OrbitFrom(Point::new(400.0, 300.0), OrbitAround::Origin)));
+    app.update(Message::View3d(Nav::Orbit(60.0, 25.0)));
+    let after = origin(&app);
+    assert!(before.distance(after) < 1e-2, "the pivot stays put: {before:?} → {after:?}");
+    // About the view's centre instead, the origin moves.
+    app.update(Message::View3d(Nav::OrbitFrom(Point::new(400.0, 300.0), OrbitAround::ViewCentre)));
+    app.update(Message::View3d(Nav::Orbit(60.0, 25.0)));
+    assert!(after.distance(origin(&app)) > 1.0);
+    // The projection.
+    app.update(Message::View3d(Nav::Projection(Projection::Orthographic)));
+    assert_eq!(app.view3d.camera.projection, Projection::Orthographic);
+    // The field's plane (H: across y) dragged by its whole extent on screen.
+    let (lo, hi) = app.view3d.bounds().unwrap_or_else(|| panic!("a model"));
+    let mid = [0, 1, 2].map(|i| 0.5 * (lo[i] + hi[i]));
+    let (mut a, mut b) = (mid, mid);
+    (a[1], b[1]) = (lo[1], hi[1]);
+    let (pa, pb) = (emcraft_ui_core::tools::screen(&app.view3d.camera, size, a), emcraft_ui_core::tools::screen(&app.view3d.camera, size, b));
+    let (Some(pa), Some(pb)) = (pa, pb) else { panic!("the plane's line in view") };
+    app.update(Message::View3d(Nav::At(0.0)));
+    app.update(Message::View3d(Nav::DragPlane(pb.x - pa.x, pb.y - pa.y)));
+    assert!((app.view3d.field.at.unwrap_or(0.0) - (hi[1] - lo[1])).abs() < 1e-9, "{:?}", app.view3d.field.at);
+    app.update(Message::View3d(Nav::FacePlane));
+    settle(&mut app);
+    assert!((app.view3d.camera.pitch.abs().to_degrees() - 90.0).abs() < 1e-6, "facing the H-plane: {:?}", app.view3d.camera);
+    // The selected port's reference plane by its number.
+    app.update(Message::Row("port:1".into()));
+    app.update(Message::Page(emcraft_ui_core::view::View::Model));
+    assert!(app.ref_text.as_ref().is_some_and(|(_, t, _)| t == "0"), "{:?}", app.ref_text);
+    app.update(Message::RefText("2.5".into()));
+    app.update(Message::RefSet);
+    let deembed = |app: &App| app.session.model().ports.first().map_or(f64::NAN, |p| p.deembed * 1e3);
+    assert!((deembed(&app) - 2.5).abs() < 1e-12, "{:?}", app.error);
+    assert!(app.ref_text.as_ref().is_some_and(|(_, t, _)| t == "2.5"));
+    app.update(Message::RefZero);
+    assert_eq!(deembed(&app), 0.0);
+}

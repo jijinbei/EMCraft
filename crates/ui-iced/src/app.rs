@@ -97,6 +97,10 @@ pub enum Message {
     Grip(crate::view3d::GripMove),
     /// A key typed while a body's grip is held: a digit (Enter as '\n'), or Backspace.
     GripKey(Option<char>),
+    /// The selected port's reference plane typed, set (Enter), or put back on its face.
+    RefText(String),
+    RefSet,
+    RefZero,
     /// A key of the 3D view's (an arrow, Ctrl+1…7), taken while the view is shown and nothing
     /// else has the keys.
     Key3d(Nav),
@@ -173,6 +177,9 @@ pub struct App {
     pub(crate) tools: emcraft_ui_core::tools::Tools,
     /// A selected body's grip being dragged.
     pub(crate) body_drag: Option<emcraft_ui_core::tools::grips::BodyDrag>,
+    /// The reference plane's number as typed: the port, the text, and the value (display
+    /// units) it was typed over (the text follows the port and a drag until it is edited).
+    pub(crate) ref_text: Option<(usize, String, f64)>,
     /// What is selected (in the 3D view or the browser), and the browser's tree for the
     /// generation it was read for.
     pub(crate) selection: Selection,
@@ -244,6 +251,7 @@ impl App {
             tool: None,
             tools: Default::default(),
             body_drag: None,
+            ref_text: None,
             selection: Selection::default(),
             tree: None,
             replies: Replies::default(),
@@ -371,6 +379,12 @@ impl App {
             let overlay = if board { Overlay::Board } else { Overlay::Plain };
             self.view3d = std::mem::take(&mut self.view3d).navigated(Nav::Overlay(overlay));
         }
+        // The reference plane's number follows the port and a drag until it is edited.
+        self.ref_text = match (self.reference_now(), self.ref_text.take()) {
+            (Some((port, now)), Some(kept)) if kept.0 == port && kept.2 == now => Some(kept),
+            (Some((port, now)), _) => Some((port, emcraft_ui_core::tools::trimmed(now, 3), now)),
+            (None, _) => None,
+        };
         let (dirty, busy) = (self.session.is_dirty(), self.job.is_some());
         if self.autosave.due(self.began.elapsed().as_secs_f64(), dirty, busy) {
             let (r, new_failure) = self.autosave.write(&mut self.session);
@@ -776,6 +790,20 @@ impl App {
             }
             Message::Escape if self.body_drag.is_some() => {
                 self.body_drag = None;
+                None
+            }
+            Message::RefText(s) => {
+                self.ref_text = self.reference_now().map(|(port, now)| (port, emcraft_ui_core::dialogs::bounded(&s), now));
+                None
+            }
+            Message::RefSet => {
+                let typed = self.ref_text.take().and_then(|(_, s, _)| s.trim().parse::<f64>().ok());
+                self.set_reference(typed);
+                None
+            }
+            Message::RefZero => {
+                self.ref_text = None;
+                self.set_reference(Some(0.0));
                 None
             }
             Message::GripKey(key) => {

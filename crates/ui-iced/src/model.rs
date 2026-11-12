@@ -14,6 +14,7 @@ use iced::{Alignment, Element, Fill, Widget};
 
 use crate::app::{App, Message};
 use crate::look::{self, Tokens};
+use crate::view3d::cube::ViewCube;
 use crate::view3d::labels::Labels;
 use crate::view3d::marks::Marks;
 use crate::view3d::navigator::Navigator;
@@ -51,7 +52,16 @@ fn bar(app: &App) -> Element<'_, Message> {
     let section = app.view3d.section;
     let cut = app.view3d.bounds().map(|b| Cut::middle(0, b));
     let sectioning = tool(t, tr(t!("Section view")), section.is_some(), Some(Message::View3d(Nav::Section(section.map_or(cut, |_| None)))));
+    use emcraft_render::view3d::Projection;
+    let ortho = app.view3d.camera.projection == Projection::Orthographic;
+    let projection = tool(
+        t,
+        tr(if ortho { t!("Orthographic") } else { t!("Perspective") }),
+        ortho,
+        Some(Message::View3d(Nav::Projection(if ortho { Projection::Perspective } else { Projection::Orthographic }))),
+    );
     let views = std::iter::once(tool(t, tr(t!("Fit")), false, Some(Message::View3d(Nav::Goal(Goal::Fit)))))
+        .chain(std::iter::once(projection))
         .chain(std::iter::once(sectioning))
         .chain(VIEWS.iter().map(|(v, label)| tool(t, tr(*label), false, Some(Message::View3d(Nav::Goal(Goal::standard(*v)))))));
     let idle = app.job.is_none();
@@ -107,6 +117,7 @@ fn field_bar(app: &App) -> Element<'_, Message> {
     // The phase ωt in degrees, and its playing.
     let playing = app.playing.is_some();
     let play = tool(t, tr(if playing { t!("Pause") } else { t!("Play") }), playing, Some(Message::Play(!playing)));
+    let face = tool(t, tr(t!("Face the field's plane")), false, Some(nav(Nav::FacePlane)));
     let degrees = v.phase.to_degrees();
     let phase = slider(0.0..=360.0, degrees, move |d: f64| nav(Nav::Phase(d.to_radians()))).step(1.0).width(160);
     let shown_phase = text(format!("ωt {degrees:.0}°")).size(t.font_body).color(t.text_dim);
@@ -122,6 +133,7 @@ fn field_bar(app: &App) -> Element<'_, Message> {
         frequencies,
         place,
         shown_at,
+        face,
         Space::new().width(16),
         play,
         phase,
@@ -227,7 +239,35 @@ fn card(app: &App) -> Element<'_, Message> {
     let line =
         row(std::iter::once(text(line).size(t.font_body).color(t.text).boxed()).chain(edit).chain(delete)).spacing(10).align_y(Alignment::Center);
     let card = container(line).padding([6, 12]).style(look::ground(t));
-    container(card).padding(12).center_x(Fill).boxed()
+    let reference = reference_field(app).map(|r| container(r).padding([4, 12]).style(look::ground(t)));
+    container(column(std::iter::once(card.boxed()).chain(reference.map(iced::Widget::boxed))).spacing(6).align_x(Alignment::Center))
+        .padding(12)
+        .center_x(Fill)
+        .boxed()
+}
+
+/// The selected port's reference plane as a number under the card: Enter sets it, 0 puts it
+/// back on the port's face (`model.port.edit {deembed}`).
+fn reference_field(app: &App) -> Option<Element<'_, Message>> {
+    let t = app.look.tokens;
+    let (_, now) = app.reference_now()?;
+    let (_, shown, _) = app.ref_text.as_ref()?;
+    let l = app.session.display().length;
+    let idle = app.job.is_none();
+    let field = iced::widget::text_input("", shown)
+        .size(t.font_body)
+        .width(80)
+        .padding([2, 6])
+        .style(look::field(t))
+        .on_input_maybe(idle.then_some(Message::RefText as fn(String) -> Message))
+        .on_submit_maybe(idle.then_some(Message::RefSet));
+    let zero = tool(t, "0", false, (idle && now != 0.0).then_some(Message::RefZero));
+    Some(
+        row![text(tr(t!("Ref. plane"))).size(t.font_small).color(t.text_dim), field, text(l.symbol()).size(t.font_small).color(t.text_dim), zero]
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .boxed(),
+    )
 }
 
 /// The field's values under the pointer on a card beside it (the field overlay).
@@ -249,7 +289,9 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Some(s) => {
             let hover = app.view3d.overlay == Overlay::Field || app.tool.is_some();
             let grips = app.grip_points().into_iter().map(crate::geom::point).collect();
-            let viewer = Viewer { shot: app.shot(s), nav: app.nav, hover, tool: app.tool.is_some(), grips };
+            let plane = (app.view3d.overlay == Overlay::Field).then(|| s.built.clone());
+            let around = app.prefs.orbit_around();
+            let viewer = Viewer { shot: app.shot(s), nav: app.nav, hover, tool: app.tool.is_some(), grips, around, plane };
             let labels = Labels { labels: &s.labels, camera: app.view3d.camera, boxsel: app.view3d.boxsel, tokens: t };
             let marks = Marks {
                 tools: &app.tools,
@@ -268,7 +310,15 @@ pub fn view(app: &App) -> Element<'_, Message> {
             // the pointer comes over the view).
             let size = |s: iced::Size| Message::View3d(Nav::Size(s.width, s.height));
             let view = iced::widget::sensor(shader(viewer).width(Fill).height(Fill)).on_show(size).on_resize(size);
-            let navigator = canvas(Navigator { camera: app.view3d.camera, tokens: t }).width(Fill).height(Fill);
+            // The orientation control the preferences choose: the view cube, or the axes.
+            let navigator = match app.prefs.navigator() {
+                emcraft_ui_core::navigation::Navigator::Cube => {
+                    canvas(ViewCube { camera: app.view3d.camera, tokens: t }).width(Fill).height(Fill).boxed()
+                }
+                emcraft_ui_core::navigation::Navigator::Axes => {
+                    canvas(Navigator { camera: app.view3d.camera, tokens: t }).width(Fill).height(Fill).boxed()
+                }
+            };
             stack![
                 view,
                 canvas(labels).width(Fill).height(Fill),

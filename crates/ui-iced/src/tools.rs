@@ -61,6 +61,19 @@ impl App {
         reference::ref_plane(self.session.model(), &self.selection, self.tools.drag.as_ref())
     }
 
+    /// The selected port and its reference plane's distance (display units, to a thousandth).
+    pub(crate) fn reference_now(&self) -> Option<(usize, f64)> {
+        self.reference().map(|r| (r.port, reference::rounded(self.session.display().length, r.deembed)))
+    }
+
+    /// The reference plane set to `value` (display units), when it is a number that moves it.
+    pub(crate) fn set_reference(&mut self, value: Option<f64>) {
+        let (Some(r), Some(x)) = (self.reference(), value.filter(|x| x.is_finite())) else { return };
+        if reference::rounded(self.session.display().length, r.deembed) != x {
+            self.run_now("model.port.edit", &serde_json::json!({"name": r.name, "deembed": x}));
+        }
+    }
+
     /// The reference plane's grip on the view.
     pub(crate) fn grip_at(&self) -> Option<emcraft_ui_core::geom::Point> {
         self.reference().and_then(|r| reference::grip(&r, &self.view3d.camera, self.view_size()))

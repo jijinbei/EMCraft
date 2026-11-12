@@ -7,6 +7,7 @@
 //! the egui window's; a held arrow turns the view steadily. On the field overlay the field view's
 //! plane is drawn in it, coloured by the field ([`field`]).
 
+pub mod cube;
 pub mod field;
 pub mod labels;
 pub mod marks;
@@ -20,7 +21,7 @@ use emcraft_engine::view::{Component, FieldView, Plane};
 use emcraft_gpu3d::{FieldGrid, Packed};
 use emcraft_render::Rgb;
 use emcraft_render::colormap::ColourScale;
-use emcraft_render::view3d::{Camera, CameraAnim};
+use emcraft_render::view3d::{Camera, CameraAnim, StandardView};
 use emcraft_ui_core::navigation::{Goal, HOLD_DEGREES_PER_SECOND, KEY_PAN_SHARE, KEY_STEP_DEGREES, TAP_SECONDS, zoom_limits};
 use emcraft_ui_core::scene3d::{self, Colours, Cut, Overlay, Pick};
 use emcraft_ui_core::selection::BoxSel;
@@ -36,8 +37,19 @@ pub use emcraft_ui_core::navigation::Bounds;
 /// What changes the view's camera or what it shows.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Nav {
-    /// Turned by points dragged across and down.
+    /// An orbit begun with the pointer at a point (from the view's corner): what it turns
+    /// about chosen there, as the preference says.
+    OrbitFrom(emcraft_ui_core::geom::Point, emcraft_ui_core::navigation::OrbitAround),
+    /// Turned by points dragged across and down (about the orbit's pivot), and so snapped to
+    /// the nearest of the cube's views when it comes near one.
     Orbit(f32, f32),
+    OrbitSnapped(f32, f32),
+    /// Perspective, or orthographic.
+    Projection(emcraft_render::view3d::Projection),
+    /// The field's plane dragged along its normal by points.
+    DragPlane(f32, f32),
+    /// The camera turned to face the field's plane, framing it.
+    FacePlane,
     /// Moved with the picture by points dragged.
     Pan(f32, f32),
     /// Closer by steps (each 10 %).
@@ -167,6 +179,8 @@ pub struct View3d {
     pub camera: Camera,
     /// The view change asked for (begun with the next frame) and the one under way.
     goal: Option<Goal>,
+    /// The orbit in progress: the camera it began with, the pointer's whole move and its pivot.
+    orbit: Option<emcraft_render::view3d::Drag>,
     anim: Option<CameraAnim>,
     /// The clock's start: view changes are timed in seconds from it.
     epoch: std::time::Instant,
@@ -196,6 +210,7 @@ impl Default for View3d {
             overlay: Overlay::Plain,
             camera: Camera::default(),
             goal: None,
+            orbit: None,
             anim: None,
             epoch: std::time::Instant::now(),
             hold: None,
@@ -401,6 +416,55 @@ impl View3d {
         }
     }
 
+    /// What an orbit beginning with the pointer at `at` turns about: the target (none), the
+    /// origin, or the model point under the pointer (over empty space, the middle of the model).
+    fn pivot(&self, at: emcraft_ui_core::geom::Point, around: emcraft_ui_core::navigation::OrbitAround) -> Option<[f64; 3]> {
+        use emcraft_ui_core::navigation::OrbitAround;
+        match around {
+            OrbitAround::ViewCentre => None,
+            OrbitAround::Origin => Some([0.0; 3]),
+            OrbitAround::Cursor => {
+                let pixel = emcraft_render::view3d::Pixel::new(f64::from(at.x), f64::from(at.y), f64::from(self.size.0), f64::from(self.size.1));
+                let surface = self.shown.as_ref().and_then(|s| emcraft_render::view3d::surface_at(&s.built.scene, &self.camera, pixel));
+                surface.or_else(|| self.bounds().map(|(lo, hi)| [0, 1, 2].map(|k| 0.5 * (lo[k] + hi[k]))))
+            }
+        }
+    }
+
+    /// The camera turned by an orbit's move (`snap`: to the nearest cube view when near one),
+    /// about the pivot it began with; the whole move counted from where it began, so the view
+    /// depends on where the pointer is, not on the path it took.
+    fn orbited(self, dx: f32, dy: f32, snap: bool) -> View3d {
+        if !(dx.is_finite() && dy.is_finite()) {
+            return self;
+        }
+        let mut drag = self.orbit.unwrap_or_else(|| emcraft_render::view3d::Drag::new(self.camera, None));
+        let mut camera = self.camera;
+        drag.orbit(&mut camera, f64::from(dx), f64::from(dy), snap);
+        View3d { camera, orbit: Some(drag), goal: None, anim: None, ..self }
+    }
+
+    /// The field's plane moved along its normal by the pointer's move: its share of the model's
+    /// extent along the normal on screen.
+    fn plane_dragged(self, dx: f32, dy: f32) -> View3d {
+        let Some((lo, hi)) = self.bounds() else { return self };
+        let k = field::normal(self.field.plane);
+        let span = hi[k] - lo[k];
+        let mid = [0, 1, 2].map(|i| 0.5 * (lo[i] + hi[i]));
+        let (mut a, mut b) = (mid, mid);
+        (a[k], b[k]) = (lo[k], hi[k]);
+        let (w, h) = (f64::from(self.size.0), f64::from(self.size.1));
+        let (Some(pa), Some(pb)) = (self.camera.project(a, w, h), self.camera.project(b, w, h)) else { return self };
+        let (ax, ay) = (pb[0] - pa[0], pb[1] - pa[1]);
+        let len2 = ax * ax + ay * ay;
+        if len2 < 4.0 || !(dx.is_finite() && dy.is_finite()) {
+            return self;
+        }
+        let at = self.field.at.unwrap_or(span / 2.0);
+        let moved = (at + (f64::from(dx) * ax + f64::from(dy) * ay) / len2 * span).clamp(0.0, span);
+        self.navigated(Nav::At(moved))
+    }
+
     /// The model point under `at` (points from the view's corner): the surface there, else where
     /// its ray meets the plane through the target facing the camera.
     fn anchor(&self, at: emcraft_ui_core::geom::Point) -> Option<[f64; 3]> {
@@ -431,7 +495,25 @@ impl View3d {
     pub fn navigated(self, nav: Nav) -> View3d {
         let height = f64::from(self.size.1);
         match nav {
-            Nav::Orbit(dx, dy) => self.moved(|c| c.orbit(f64::from(dx), f64::from(dy))),
+            Nav::OrbitFrom(at, around) => {
+                let pivot = self.pivot(at, around);
+                View3d { orbit: Some(emcraft_render::view3d::Drag::new(self.camera, pivot)), ..self }
+            }
+            Nav::Orbit(dx, dy) => self.orbited(dx, dy, false),
+            Nav::OrbitSnapped(dx, dy) => self.orbited(dx, dy, true),
+            Nav::Projection(projection) => View3d { camera: Camera { projection, ..self.camera }, ..self },
+            Nav::DragPlane(dx, dy) => self.plane_dragged(dx, dy),
+            Nav::FacePlane => {
+                let goal = self.bounds().map(|(lo, hi)| {
+                    let k = field::normal(self.field.plane);
+                    let at = lo[k] + self.field.at.unwrap_or(0.5 * (hi[k] - lo[k])).clamp(0.0, hi[k] - lo[k]);
+                    let (mut a, mut b) = (lo, hi);
+                    (a[k], b[k]) = (at, at);
+                    let view = [StandardView::Right, StandardView::Top, StandardView::Front][k.min(2)];
+                    Goal::Face(a, b, view)
+                });
+                View3d { goal: goal.or(self.goal), ..self }
+            }
             Nav::Pan(dx, dy) => self.moved(|c| c.pan(f64::from(dx), f64::from(dy), height)),
             Nav::Zoom(steps) => self.moved(|c| c.zoom(f64::from(steps))),
             Nav::ZoomAt(steps, at) => {
