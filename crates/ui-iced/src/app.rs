@@ -164,6 +164,8 @@ pub enum Message {
     Cancel,
     /// The earlier messages shown or folded.
     Log(bool),
+    /// The crash reports' card asks for something.
+    Reports(crate::record::ReportAct),
     /// A frame drawn (when): while a job runs (it is looked at), the field plays or a picture of
     /// the window is waited for.
     Tick(std::time::Instant),
@@ -271,6 +273,9 @@ pub struct App {
     pub(crate) log: emcraft_ui_core::messages::Log,
     /// Whether the message area shows the earlier messages.
     pub(crate) log_open: bool,
+    /// The recording being made or played, and the crash reports kept (crate::record).
+    pub(crate) recorder: crate::record::Recorder,
+    pub(crate) crashes: crate::record::Crashes,
     /// The 3D view's mouse mapping and drawing (the preferences').
     pub(crate) nav: &'static NavPreset,
     pub(crate) gpu_look: GpuLook,
@@ -349,6 +354,8 @@ impl App {
             job: None,
             log,
             log_open: false,
+            recorder: Default::default(),
+            crashes: Default::default(),
             nav: prefs.nav(),
             gpu_look: prefs.gpu_look,
             playing: None,
@@ -494,6 +501,10 @@ impl App {
         let (dirty, busy) = (self.session.is_dirty(), self.job.is_some());
         if self.autosave.due(self.began.elapsed().as_secs_f64(), dirty, busy) {
             let (r, new_failure) = self.autosave.write(&mut self.session);
+            // The crash journal begins again from the project the copy holds.
+            if r.is_ok() {
+                self.restart_journal();
+            }
             if let (Err(e), true) = (r, new_failure) {
                 self.fail(emcraft_ui_core::lang::trf(t!("Autosave failed: {error}"), emcraft_ui_core::args!(error = e)));
             }
@@ -626,6 +637,7 @@ impl App {
             }
             return;
         }
+        self.note_run(id, &params);
         match self.session.execute(id, &params) {
             Ok(reply) => {
                 self.error = None;
@@ -671,11 +683,12 @@ impl App {
     pub fn subscription(&self) -> Subscription<Message> {
         let closing =
             iced::window::close_requests().map(|_| Message::File(emcraft_ui_core::files::FileAction::Request(emcraft_ui_core::files::Then::Quit)));
-        let frames = if self.job.is_some() || self.shoot.is_some() || self.playing.is_some() || self.view3d.animating() {
-            iced::window::frames().map(Message::Tick)
-        } else {
-            Subscription::none()
-        };
+        let frames =
+            if self.job.is_some() || self.shoot.is_some() || self.playing.is_some() || self.recorder.playing.is_some() || self.view3d.animating() {
+                iced::window::frames().map(Message::Tick)
+            } else {
+                Subscription::none()
+            };
         let control = self.inbox.clone().map_or_else(Subscription::none, |inbox| Subscription::run_with(inbox, requests));
         Subscription::batch([
             frames,
@@ -724,6 +737,11 @@ impl App {
                 task
             }
             Message::FocusSearch => iced::widget::operation::focus(crate::ribbon::SEARCH),
+            Message::Reports(a) => {
+                let task = self.report_act(a);
+                self.settle();
+                task.discard()
+            }
             Message::Template(a) => {
                 let task = self.template_act(a);
                 self.settle();
@@ -830,6 +848,7 @@ impl App {
             .as_ref()
             .map(|d| crate::dialog::view(self, d))
             .or_else(|| crate::template_dialog::view(self))
+            .or_else(|| crate::reports::view(self))
             .or_else(|| crate::files::question(self));
         match over {
             Some(o) => iced::widget::stack![window, o].boxed(),
@@ -861,6 +880,7 @@ impl App {
                 None
             }
             Message::Page(v) => {
+                self.note(emcraft_ui_core::action::Action::SetView(v));
                 self.page = v;
                 self.settings = false;
                 self.home = false;
@@ -1051,6 +1071,11 @@ impl App {
                 self.start(&id, json!({}));
                 None
             }
+            // Without its clipboard: copying is the window's (App::react).
+            Message::Reports(a) => {
+                let _ = self.report_act(a);
+                None
+            }
             Message::Log(open) => {
                 self.log_open = open;
                 None
@@ -1141,6 +1166,7 @@ impl App {
 
     /// Runs `command` on the project; the chain read again after a change.
     fn run(&mut self, command: Command) {
+        self.note_run(command.id, &command.params);
         match self.session.execute(command.id, &command.params) {
             Ok(reply) => {
                 self.error = None;

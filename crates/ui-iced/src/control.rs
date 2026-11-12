@@ -113,6 +113,7 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
             .map(|a| (format!("ask:{}", format!("{a:?}").to_lowercase()), Message::File(FileAction::Confirm(a))))
     });
     let job = app.job.is_some().then(|| ("job:cancel".to_owned(), Message::Cancel));
+    let reports = crate::reports::handles(app);
     let log = (!app.log.lines().is_empty()).then(|| ("messages:toggle".to_owned(), Message::Log(!app.log_open)));
     pages
         .chain(bar)
@@ -132,6 +133,7 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         .chain(dialog.into_iter().flatten())
         .chain(asking.into_iter().flatten())
         .chain(job)
+        .chain(reports)
         .chain(log)
         .collect()
 }
@@ -148,6 +150,9 @@ pub fn inspect(app: &App) -> Value {
         "start": app.home,
         "tab": app.tab.id(),
         "error": app.error,
+        "recording": app.recorder.on.as_ref().map(|r| r.entries.len()),
+        "replaying": app.recorder.playing.as_ref().map(std::collections::VecDeque::len),
+        "reports": app.crashes.shown.as_ref().map(Vec::len),
         "messages": {
             "last": app.log.last().map(|l| json!({"text": l.text, "error": l.error, "count": l.count})),
             "count": app.log.lines().len(),
@@ -220,6 +225,9 @@ impl App {
             "ui.set" => Some(self.set(p)),
             "ui.point" => Some(self.point(p)),
             "ui.dialog" => Some(self.dialog_request(p)),
+            "ui.record" => Some(self.record_request(p)),
+            "ui.replay" => Some(self.replay_request(p)),
+            "ui.crashes" => Some(self.crashes_request(p)),
             "ui.drop" => match p.get("path").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()) {
                 Some(path) => {
                     let later = self.react(Message::File(FileAction::Dropped(emcraft_engine::text::clip(path, 4096))));
@@ -271,6 +279,7 @@ impl App {
                 (None, _) => Some(err(self.error.clone().unwrap_or_default())),
             };
         }
+        self.note_run(id, &params);
         Some(match self.session.execute(id, &params) {
             Ok(reply) => {
                 self.error = None;
@@ -289,6 +298,10 @@ impl App {
         if self.job.is_some() {
             return Some(err("a job is running: one at a time"));
         }
+        // Noted as the commands it runs.
+        let list =
+            steps.iter().map(|s| (s["command"].as_str().unwrap_or_default().to_owned(), s.get("params").cloned().unwrap_or_else(|| json!({}))));
+        self.note(emcraft_ui_core::action::Action::RunAll(list.collect()));
         let script = Value::Array(steps);
         let mut job =
             emcraft_ui_core::job::Job::spawn(&self.session, "engine.script", json!({}), None, move |s| s.run_script(&script).map(Value::Array));
@@ -376,6 +389,60 @@ impl App {
             self.update(Message::Click(crate::view3d::Click { at, add: flag("add"), double: flag("double") }));
         }
         ok(inspect(self))
+    }
+
+    /// `ui.record`: recording begun (`on`: true) or ended (written to `path` when given; the
+    /// recording replied).
+    fn record_request(&mut self, p: &Value) -> Value {
+        match p.get("on").and_then(Value::as_bool) {
+            Some(true) => {
+                self.start_recording();
+                ok(json!({"recording": true}))
+            }
+            Some(false) => {
+                let Some(r) = self.stop_recording() else { return err("nothing is being recorded") };
+                let written = p.get("path").and_then(Value::as_str).map(|path| {
+                    let text = serde_json::to_string_pretty(&r).map_err(|e| e.to_string())?;
+                    std::fs::write(path, text).map_err(|e| format!("cannot write {}: {e}", emcraft_engine::text::clip(path, 200)))
+                });
+                match written {
+                    Some(Err(e)) => err(e),
+                    _ => ok(json!({"actions": r.entries.len(), "dropped": r.dropped, "recording": r})),
+                }
+            }
+            None => err("`on` must be true or false"),
+        }
+    }
+
+    /// `ui.replay`: a recording played back, from `path` (a file or a crash report's folder) or
+    /// `recording` itself.
+    fn replay_request(&mut self, p: &Value) -> Value {
+        let read = match (p.get("path").and_then(Value::as_str), p.get("recording")) {
+            (Some(path), _) => emcraft_ui_core::record::Recording::read(std::path::Path::new(path)),
+            (None, Some(r)) => emcraft_ui_core::record::Recording::parse(&r.to_string()),
+            (None, None) => Err("give `path` or `recording`".into()),
+        };
+        match read.and_then(|r| self.play(r)) {
+            Ok(v) => ok(v),
+            Err(e) => err(e),
+        }
+    }
+
+    /// `ui.crashes`: where crash reports go (`dir`: a folder, the journal begun there), and the
+    /// reports there.
+    fn crashes_request(&mut self, p: &Value) -> Value {
+        if let Some(v) = p.get("dir") {
+            let Some(dir) = v.as_str().filter(|d| !d.trim().is_empty() && d.len() <= 4096) else {
+                return err("`dir` must be a folder's path (at most 4096 bytes)");
+            };
+            self.keep_crash_reports(dir.into(), false);
+        }
+        let reports = self.crashes.dir.as_deref().map(emcraft_ui_core::crash::list).unwrap_or_default();
+        ok(json!({
+            "dir": self.crashes.dir.as_ref().map(|d| d.display().to_string()),
+            "journal": self.crashes.journal.as_ref().map(|j| j.path().display().to_string()),
+            "reports": reports.iter().map(|r| json!({"id": r.id, "kind": r.kind, "message": r.message, "count": r.count, "seen": r.seen})).collect::<Vec<_>>(),
+        }))
     }
 
     /// `ui.dialog`: a command's dialog opened (`open`), its fields set as typing would (`set`),

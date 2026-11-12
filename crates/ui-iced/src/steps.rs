@@ -236,7 +236,9 @@ impl App {
         let error = if path.is_empty() {
             Some(tr(t!("give a file")).to_owned())
         } else {
-            self.session.execute("results.touchstone", &json!({"path": path, "format": format})).err().map(|e| e.to_string())
+            let params = json!({"path": path, "format": format});
+            self.note_run("results.touchstone", &params);
+            self.session.execute("results.touchstone", &params).err().map(|e| e.to_string())
         };
         self.workflow.fields = std::mem::take(&mut self.workflow.fields).with_error("touchstone", error);
     }

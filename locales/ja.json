@@ -728,6 +728,7 @@
     "Copy": "コピー",
     "Copied: paste it into an issue.": "コピーしました：issue に貼り付けてください。",
     "The recording is played.": "記録を再生し終えました。",
+    "The recording is played ({n} actions this window does not play left out).": "記録を再生し終えました（このウィンドウで再生しない操作 {n} 件を除く）。",
     "an NVIDIA GPU": "NVIDIA GPU",
     "an expression holds at most {n} characters": "式は最大 {n} 文字です",
     "as it was": "変更なし",

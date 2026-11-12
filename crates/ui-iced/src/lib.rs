@@ -52,6 +52,8 @@ pub mod messages;
 pub mod model;
 pub mod pcb;
 pub mod port_modes;
+pub mod record;
+pub mod reports;
 pub mod results;
 pub mod ribbon;
 pub mod run;
@@ -73,10 +75,13 @@ use emcraft_ui_core::{lang, prefs, theme};
 /// keeps: its language, its theme (the user's themes too), the font the language is shown with
 /// and the 3D view's mouse mapping and drawing. With `shoot`, a picture of the window is written
 /// there once it has drawn (a running job ended first) and the window closes. `picker`: the
-/// host's file dialog; `control`: the control channel's requests (docs/control-protocol.md).
+/// host's file dialog; `control`: the control channel's requests (docs/control-protocol.md);
+/// `replay`: a recording or a crash report's folder played back once the window is up. The
+/// desktop window keeps crash reports (crate::record) unless it takes a picture.
 pub fn run(
     sample: Option<String>,
     shoot: Option<std::path::PathBuf>,
+    replay: Option<std::path::PathBuf>,
     picker: Option<std::sync::Arc<dyn emcraft_ui_core::files::Picker>>,
     control: Option<std::sync::mpsc::Receiver<emcraft_control::ControlRequest>>,
 ) -> iced::Result {
@@ -89,6 +94,7 @@ pub fn run(
     let font = prefs.font_file.as_deref().and_then(|f| std::fs::read(f).ok());
     // A picture of the window is taken without copying or offering work.
     let autosave = emcraft_ui_core::autosave::default_dir().filter(|_| shoot.is_none());
+    let crashes = emcraft_ui_core::crash::default_dir().filter(|_| shoot.is_none());
     // On the start page the templates' pictures are drawn at once.
     let start = move || {
         let mut app = app::App::new(sample.as_deref())
@@ -98,7 +104,13 @@ pub fn run(
             .with_autosave(autosave.clone())
             .shooting(shoot.clone())
             .with_picker(picker.clone())
-            .serving(control.lock().ok().and_then(|mut c| c.take()));
+            .serving(control.lock().ok().and_then(|mut c| c.take()))
+            .with_crash_reports(crashes.clone(), true);
+        if let Some(path) = &replay
+            && let Err(e) = emcraft_ui_core::record::Recording::read(path).and_then(|r| app.play(r))
+        {
+            app.fail(e);
+        }
         let thumbs = if app.home { app.draw_thumbs() } else { iced::Task::none() };
         (app, thumbs)
     };

@@ -35,6 +35,7 @@ impl App {
         if !emcraft_ui_core::commands::is_long(id) {
             return self.run_now(id, &params);
         }
+        self.note_run(id, &params);
         let asked = if matches!(id, "solve.rerun" | "solve.run") { json!({}) } else { json!({"command": id, "params": params}) };
         let estimate = self.session.execute("project.estimate", &asked).ok().and_then(|e| e.get("seconds").and_then(Value::as_f64));
         let mut job = Job::start(&self.session, id, params, None);
@@ -45,6 +46,7 @@ impl App {
 
     /// Runs `id` at once on the project.
     pub(crate) fn run_now(&mut self, id: &str, params: &Value) {
+        self.note_run(id, params);
         match self.session.execute(id, params) {
             Ok(reply) => {
                 self.error = None;
@@ -103,6 +105,7 @@ impl App {
             self.playing = Some(Some(now));
         }
         self.poll();
+        self.play_next();
     }
 
     /// The running job looked at: its steps done once it ends.
@@ -130,15 +133,23 @@ impl App {
                 self.workflow.failure = Some((command, error));
             }
             Then::Answer(waiting, answer) => waiting.into_iter().for_each(|w| drop(w.send(answer.clone()))),
-            Then::Run(list) => self.queue(list),
+            // What was queued after it, noted with it.
+            Then::Run(list) => self.quietly(|app| app.queue(list)),
             Then::Reopen(d) => self.dialog = Some(*d),
             // The window opens no projects yet.
             Then::Land => {}
         }
     }
 
-    /// Runs `list` in order: quick commands at once, the rest after the job before them ends.
-    fn queue(&mut self, list: Vec<(String, Value)>) {
+    /// Runs `list` in order: quick commands at once, the rest after the job before them ends;
+    /// noted as one entry ([`crate::record`]).
+    pub(crate) fn queue(&mut self, list: Vec<(String, Value)>) {
+        self.note(emcraft_ui_core::action::Action::RunAll(list.clone()));
+        self.quietly(|app| app.queue_quietly(list));
+    }
+
+    /// [`App::queue`] without noting it.
+    fn queue_quietly(&mut self, list: Vec<(String, Value)>) {
         let mut rest = list.into_iter();
         while let Some((id, params)) = rest.next() {
             self.start(&id, params);

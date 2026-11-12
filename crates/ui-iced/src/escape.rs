@@ -19,9 +19,10 @@ pub fn stack(app: &App) -> Vec<Layer> {
         Layer::Settings => app.settings,
         Layer::Tool => app.tool.is_some(),
         Layer::Selection => !app.selection.is_clear(),
-        // The crash reports' card, the pen and the box being dragged are not the iced window's
-        // (the box is the 3D view's own, let go there).
-        Layer::Reports | Layer::Pen | Layer::Box => false,
+        Layer::Reports => app.crashes.shown.is_some(),
+        // The pen and the box being dragged are not the iced window's (the box is the 3D view's
+        // own, let go there).
+        Layer::Pen | Layer::Box => false,
     };
     Layer::ALL.into_iter().filter(|l| open(*l)).collect()
 }
@@ -31,7 +32,7 @@ pub fn stack(app: &App) -> Vec<Layer> {
 /// the window: what is under them takes no keys).
 pub fn target(app: &App, captured: bool) -> Option<Layer> {
     let top = *stack(app).first()?;
-    let owned = matches!(top, Layer::Ask | Layer::Search | Layer::Template | Layer::Dialog);
+    let owned = matches!(top, Layer::Ask | Layer::Search | Layer::Template | Layer::Reports | Layer::Dialog);
     (!captured || owned).then_some(top)
 }
 
@@ -43,6 +44,7 @@ pub fn close(l: Layer) -> Option<Message> {
         Layer::Search => Some(Message::Search(String::new())),
         Layer::Dialog => Some(Message::Dialog(crate::dialog::Edit::Cancel)),
         Layer::Settings => Some(Message::Settings(false)),
-        Layer::Tool | Layer::Selection | Layer::Reports | Layer::Pen | Layer::Box => None,
+        Layer::Reports => Some(Message::Reports(crate::record::ReportAct::Show(false))),
+        Layer::Tool | Layer::Selection | Layer::Pen | Layer::Box => None,
     }
 }

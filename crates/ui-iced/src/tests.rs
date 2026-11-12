@@ -1469,3 +1469,83 @@ fn escape_closes_the_top_layer_first() {
     app.update(Message::Escape(false));
     assert_eq!(app.error, None);
 }
+
+/// Frames until `app` has played its recording and its jobs are done (bounded).
+fn played(app: &mut App) {
+    let began = std::time::Instant::now();
+    while (app.job.is_some() || app.recorder.playing.is_some()) && began.elapsed().as_secs() < 120 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        app.update(Message::Tick(std::time::Instant::now()));
+    }
+    assert!(app.recorder.playing.is_none() && app.job.is_none(), "played to the end");
+}
+
+/// A session recorded — a sample opened (a job), a material made through its dialog, a mesh
+/// generated, another page — and played back in another window gives the same project (its
+/// history, command for command) on the same page; a recording that is none is refused.
+#[test]
+fn a_recorded_session_plays_back_to_the_same_project() {
+    let mut app = App::new(None);
+    app.start_recording();
+    app.start("file.sample", json!({"name": "highpass"}));
+    finish(&mut app);
+    app.update(Message::Command("model.material.create".into()));
+    if let Some(d) = app.dialog.as_mut() {
+        let _ = d.set("name", &json!("ceramic"));
+        let _ = d.set("eps_r", &json!(9.8));
+    }
+    app.update(Message::Dialog(crate::dialog::Edit::Ok));
+    app.start("mesh.generate", json!({"size": 6}));
+    finish(&mut app);
+    app.update(Message::Page(emcraft_ui_core::view::View::Model));
+    let r = app.stop_recording().unwrap_or_else(|| panic!("recorded"));
+    assert_eq!(r.entries.len(), 4, "{:?}", r.entries.iter().map(|e| &e.action).collect::<Vec<_>>());
+    let text = serde_json::to_string(&r).unwrap_or_default();
+    let mut again = App::new(None);
+    let started = emcraft_ui_core::record::Recording::parse(&text).and_then(|r| again.play(r));
+    assert!(started.is_ok(), "{started:?}");
+    played(&mut again);
+    let history = |a: &App| serde_json::to_value(a.session.history()).unwrap_or_default();
+    assert_eq!(history(&again), history(&app));
+    assert_eq!(again.page, app.page);
+    assert!(again.log.last().is_some_and(|l| l.text == "The recording is played."), "{:?}", again.log.last());
+    for bad in ["", "[]", r#"{"format":"emcraft-recording","version":2,"history":[],"entries":[]}"#] {
+        assert!(emcraft_ui_core::record::Recording::parse(bad).and_then(|r| again.play(r)).is_err(), "{bad}");
+    }
+}
+
+/// Crash reports kept in a folder: the journal begun there notes what runs; a report asked for
+/// shows on the card, Escape closes it, Delete takes it away; without a folder the buttons say
+/// so.
+#[test]
+fn crash_reports_are_kept_shown_and_deleted() {
+    use crate::record::ReportAct;
+    let base = std::env::var_os("EMCRAFT_SCRATCH").map_or_else(std::env::temp_dir, std::path::PathBuf::from);
+    let dir = base.join(format!("iced-crashes-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut app = App::new(Some("highpass")).with_crash_reports(Some(dir.clone()), false);
+    let journal = app.crashes.journal.as_ref().map(|j| j.path().to_path_buf()).unwrap_or_default();
+    app.run_now("model.material.create", &json!({"name": "ceramic", "eps_r": 9.8}));
+    let noted = emcraft_ui_core::crash::read_journal(&journal).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(noted.entries.len(), 1);
+    app.update(Message::Reports(ReportAct::Bug));
+    app.update(Message::Reports(ReportAct::Show(true)));
+    assert_eq!(app.crashes.shown.as_ref().map(Vec::len), Some(1));
+    // The report plays the session back: the sample's history, then the material.
+    let report = app.crashes.shown.as_ref().and_then(|r| r.first()).map(|r| r.folder.clone()).unwrap_or_default();
+    let recording = emcraft_ui_core::record::Recording::read(&report).unwrap_or_else(|e| panic!("{e}"));
+    assert!(recording.history.as_array().is_some_and(|h| !h.is_empty()) && recording.entries.len() == 1);
+    assert_eq!(crate::escape::stack(&app).first(), Some(&emcraft_ui_core::layer::Layer::Reports));
+    let id = app.crashes.shown.as_ref().and_then(|r| r.first()).map(|r| r.id.clone()).unwrap_or_default();
+    app.update(Message::Reports(ReportAct::Delete(id)));
+    assert_eq!(app.crashes.shown.as_ref().map(Vec::len), Some(0));
+    app.update(Message::Escape(false));
+    assert!(app.crashes.shown.is_none());
+    // A clean close leaves no journal behind.
+    drop(app);
+    assert!(!journal.exists());
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut off = App::new(None);
+    off.update(Message::Reports(ReportAct::Bug));
+    assert!(off.error.as_deref().is_some_and(|e| e.contains("no folder")), "{:?}", off.error);
+}

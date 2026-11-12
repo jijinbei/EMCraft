@@ -38,6 +38,17 @@ fn theme_label(name: &str) -> String {
 }
 
 /// The settings page.
+/// The crash reports' buttons: the card of them, and a report of the session as it is.
+fn reports(app: &App) -> Element<'_, Message> {
+    use crate::record::ReportAct;
+    let t = app.look.tokens;
+    let on = app.crashes.dir.is_some();
+    let b = |label, a| {
+        button(text(tr(label)).size(t.font_button)).style(look::button(t, false)).on_press_maybe(on.then_some(Message::Reports(a))).boxed()
+    };
+    row([b(t!("Crash reports…"), ReportAct::Show(true)), b(t!("Report a bug…"), ReportAct::Bug)]).spacing(8).boxed()
+}
+
 pub fn view(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
     let p = &app.prefs;
@@ -99,6 +110,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         ),
         section(t, t!("Mouse"), tr(nav.help), mouse.boxed()),
         section(t, t!("Drawing"), tr(t!("What the 3D view adds to the plain picture, each its own switch.")), drawing.boxed()),
+        section(t, t!("Crash reports"), tr(t!("Kept on this computer only. Copy one to report it; nothing is sent.")), reports(app)),
     ];
     let page = Column::with_children(sections).spacing(24).padding(24).width(900);
     container(scrollable(page)).width(Fill).height(Fill).boxed()
