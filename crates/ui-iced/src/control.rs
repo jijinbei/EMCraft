@@ -77,6 +77,7 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         .then(|| emcraft_engine::workflow::Step::ALL.into_iter().map(|s| (format!("step:{}", s.id()), Message::Step(Some(s)))).collect::<Vec<_>>());
     let panel = crate::step_panel::handles(app);
     let spar = crate::sparameters::handles(app);
+    let result_views = crate::results::handles(app);
     let card = (!app.selection.is_clear()).then(|| [("card:edit".to_owned(), Message::Edit), ("card:delete".to_owned(), Message::Delete)]);
     let dialog = app.dialog.is_some().then(|| {
         [
@@ -98,6 +99,7 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         .chain(steps.into_iter().flatten())
         .chain(panel)
         .chain(spar)
+        .chain(result_views)
         .chain(card.into_iter().flatten())
         .chain(dialog.into_iter().flatten())
         .chain(asking.into_iter().flatten())
@@ -129,6 +131,7 @@ pub fn inspect(app: &App) -> Value {
         "tools": app.tools.inspect(app.tool, app.session.display().length),
         "workflow": crate::steps::inspect(app),
         "sparameters": crate::sparameters::inspect(app),
+        "result_views": crate::results::inspect(app),
         "view3d": {
             "overlay": v.overlay.id(),
             "yaw": c.yaw.to_degrees(),

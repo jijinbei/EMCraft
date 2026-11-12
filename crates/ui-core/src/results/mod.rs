@@ -4,6 +4,7 @@
 
 pub mod fields;
 pub mod sparameters;
+pub mod views;
 
 /// A table as text: its caption, its headers, its rows (as many cells as headers), and which
 /// rows are marked (a fast sweep's rows solved in full), when any are.

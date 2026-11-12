@@ -1238,3 +1238,39 @@ fn the_field_column_reads_power_probes_and_a_pinned_point() {
     app.update(Message::Open("view.field", params));
     assert_eq!(app.dialog.as_ref().map(|d| d.command.id), Some("view.field"));
 }
+
+/// The TDR, pulse and far-field pages' choices make their charts. Evidence: the high-pass
+/// filter's TDR in band pass is |h(t)| (no negative value); low pass, which needs a harmonic sweep
+/// of a line without a cut-off, is refused with why;
+/// a pulse sent through is charted as its power, then its instantaneous frequency; a θ cut starts
+/// at θ = 90°.
+#[test]
+fn the_result_pages_choices_make_their_charts() {
+    use crate::results::RAct;
+    use emcraft_ui_core::view::View;
+    let mut app = App::new(Some("highpass"));
+    app.run_now("solve.frequency", &json!({"start": 6, "stop": 9, "points": 31}));
+    finish(&mut app);
+    let chart = |app: &App| app.charts.page.as_ref().and_then(|p| p.shown.as_ref().ok()).cloned();
+    app.update(Message::Page(View::Tdr));
+    app.update(Message::R(RAct::TdrMode(Some(emcraft_engine::tdr::Mode::BandPass))));
+    let band = chart(&app).unwrap_or_else(|| panic!("a band-pass TDR: {:?}", app.charts.page.as_ref().map(|p| p.shown.clone().err())));
+    assert!(band.series.iter().flat_map(|s| s.points.iter()).all(|p| p[1] >= -1e-12), "|h(t)| is not negative");
+    app.update(Message::R(RAct::TdrMode(Some(emcraft_engine::tdr::Mode::LowPass))));
+    // Low pass needs a harmonic sweep (f = kΔf) from a line without a cut-off: refused, why shown.
+    let refused = app.charts.page.as_ref().and_then(|p| p.shown.as_ref().err().cloned());
+    assert!(refused.is_some(), "a guide's sweep from 6 GHz has no low-pass TDR");
+    // The pulse.
+    app.update(Message::Page(View::Pulse));
+    app.update(Message::R(RAct::PulseRun));
+    finish(&mut app);
+    let power = chart(&app).unwrap_or_else(|| panic!("the pulse: {:?}", app.error));
+    app.update(Message::R(RAct::PulseShow(true)));
+    let frequency = chart(&app).unwrap_or_else(|| panic!("its frequency"));
+    assert_ne!(power.y.label, frequency.y.label, "power, then frequency");
+    // The far field: a θ cut at 90°.
+    app.update(Message::Page(View::FarField));
+    app.update(Message::R(RAct::Cut(emcraft_engine::view::Cut::Theta)));
+    assert_eq!(app.pattern.angle, 90.0);
+    let _ = app.view();
+}

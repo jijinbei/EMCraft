@@ -99,6 +99,8 @@ pub enum Message {
     StepAct(crate::step_panel::Act),
     /// What a control of the S-parameters page asks for.
     S(crate::sparameters::SAct),
+    /// What a result page's choice asks for.
+    R(crate::results::RAct),
     /// A command's dialog opened with these values over the model's.
     Open(&'static str, serde_json::Value),
     /// A grip dragged: a selected body's, or the selected port's reference plane's.
@@ -194,6 +196,10 @@ pub struct App {
     /// port's text and the value it was typed over).
     pub(crate) sview: emcraft_ui_core::results::sparameters::SView,
     pub(crate) planes: std::collections::BTreeMap<String, (String, f64)>,
+    /// The TDR's, the far field's and the pulse's choices.
+    pub(crate) tdr: emcraft_ui_core::results::views::TdrView,
+    pub(crate) pattern: emcraft_ui_core::results::views::PatternCut,
+    pub(crate) pulse: emcraft_ui_core::results::views::PulseForm,
     /// The point pinned on the field's plane (its coordinates, display units).
     pub(crate) pinned: Option<[f64; 2]>,
     /// What is selected (in the 3D view or the browser), and the browser's tree for the
@@ -271,6 +277,9 @@ impl App {
             workflow: Default::default(),
             sview: Default::default(),
             planes: Default::default(),
+            tdr: Default::default(),
+            pattern: Default::default(),
+            pulse: Default::default(),
             pinned: None,
             selection: Selection::default(),
             tree: None,
@@ -406,6 +415,7 @@ impl App {
         }
         self.refresh_steps();
         self.sync_planes();
+        self.own_pulse();
         self.sview = std::mem::take(&mut self.sview).kept(&self.session);
         // The reference plane's number follows the port and a drag until it is edited.
         self.ref_text = match (self.reference_now(), self.ref_text.take()) {
@@ -441,6 +451,9 @@ impl App {
             which: self.chart,
             page: self.page,
             sview: &self.sview,
+            tdr: &self.tdr,
+            pattern: &self.pattern,
+            pulse: &self.pulse,
         };
         self.charts = std::mem::take(&mut self.charts).refreshed(&charts);
     }
@@ -840,6 +853,10 @@ impl App {
             }
             Message::S(a) => {
                 self.s_act(a);
+                None
+            }
+            Message::R(a) => {
+                self.r_act(a);
                 None
             }
             Message::Open(id, values) => {

@@ -1,0 +1,18 @@
+[
+  {"note": "The TDR, pulse and far-field pages: the high-pass filter's TDR in band pass charted and low pass refused with why (a guide's sweep is not harmonic), a pulse sent through charted as its power then its frequency, a θ cut of the far field starting at θ = 90°"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 6, "stop": 9, "points": 31}}},
+  {"call": "ui.set", "params": {"page": "tdr"}},
+  {"click": "tdr:mode:bandpass"},
+  {"expect": {"inspect": {"result_views.tdr.mode": "bandpass", "result_views.chart.title": "*"}}},
+  {"click": "tdr:mode:lowpass"},
+  {"expect": {"inspect": {"result_views.chart.error": "*"}}},
+  {"call": "ui.set", "params": {"page": "pulse"}},
+  {"click": "pulse:run"},
+  {"until": {"inspect": {"job": null, "result_views.chart.title": "*"}}, "timeout": 60},
+  {"click": "pulse:show:frequency"},
+  {"expect": {"inspect": {"result_views.pulse.show_frequency": true, "result_views.chart.title": "*"}}},
+  {"call": "ui.set", "params": {"page": "far_field"}},
+  {"click": "pattern:cut:theta"},
+  {"expect": {"inspect": {"result_views.pattern.cut": "theta", "result_views.pattern.angle": 90.0}}}
+]

@@ -75,6 +75,7 @@ impl App {
             self.workflow = std::mem::take(&mut self.workflow).for_another_project();
             self.selection = Default::default();
             self.pinned = None;
+            self.pulse = Default::default();
             self.dialog = None;
             (self.home, self.settings) = (false, false);
             self.page = crate::app::first_page(&self.session);
