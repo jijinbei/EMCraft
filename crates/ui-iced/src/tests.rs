@@ -231,8 +231,8 @@ fn a_click_picks_the_part_under_it() {
     let click = |at, add, double| Message::Click(Click { at, add, double });
     app.update(click(Point::new(400.0, 300.0), false, false));
     assert_eq!(app.selection.len(), 1, "the part in the middle picked");
-    let rows = app.picked.as_ref().map(|(_, r)| r.clone()).unwrap_or_default();
-    assert!(rows.first().is_some_and(|r| !r.shown.is_empty()), "its row names it: {rows:?}");
+    let rows: Vec<String> = app.picked().iter().map(|r| r.shown.clone()).collect();
+    assert!(rows.first().is_some_and(|r| !r.is_empty()), "its row names it: {rows:?}");
     // The GPU rings it (the preferences' outline): the scene stays, the frame carries its tag.
     assert_eq!(app.view3d.shown.as_ref().map(|s| s.packed.id), packed, "ringed by the GPU: the scene stays");
     let shot = app.view3d.shown.as_ref().map_or_else(|| panic!("no scene"), |s| app.shot(s));
@@ -366,4 +366,24 @@ fn the_section_view_clips_on_the_gpu() {
     assert_eq!(app.selection.len(), 1, "a part on the side kept picked");
     app.update(Message::View3d(Nav::Section(None)));
     assert!(app.view3d.section.is_none());
+}
+
+/// The browser beside the 3D view: a port's row selects the port (lit in the view, named on the
+/// card); once solved, the sweep's row shows the S-parameters page.
+#[test]
+fn a_browser_row_selects_its_part_and_shows_its_page() {
+    use emcraft_ui_core::scene3d::Pick;
+    use emcraft_ui_core::view::View;
+    let mut app = App::new(Some("highpass"));
+    let port = app.rows().find(|r| r.pick == Some(Pick::Port(0))).map(|r| r.id.clone());
+    let Some(port) = port else { panic!("no row for port 1") };
+    app.update(Message::Row(port.clone()));
+    assert_eq!(&app.selection[..], [Pick::Port(0)]);
+    assert!(app.picked().first().is_some_and(|r| r.id == port));
+    app.update(Message::Start("solve.run".into()));
+    finish(&mut app);
+    app.update(Message::Page(View::Model));
+    assert!(app.rows().any(|r| r.id == "result:sweep"), "the sweep's row once solved");
+    app.update(Message::Row("result:sweep".into()));
+    assert_eq!(app.page, View::SParameters);
 }

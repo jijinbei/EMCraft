@@ -14,7 +14,7 @@ use emcraft_ui_core::system::gesture::{Canvas, Command, Input};
 use emcraft_ui_core::system::layout::Layout;
 use std::rc::Rc;
 
-use emcraft_ui_core::browser::{self, Row};
+use emcraft_ui_core::browser::{self, Act, Row};
 use emcraft_ui_core::job::Job;
 use emcraft_ui_core::navigation::NavPreset;
 use emcraft_ui_core::prefs::{GpuLook, Prefs};
@@ -30,6 +30,9 @@ use crate::run::{PAGES, cancel_label, page_label};
 use crate::view3d::shader::Shot;
 use crate::view3d::{Click, Nav, Shown, View3d};
 use serde_json::json;
+
+/// The browser's sections (their English names) and rows.
+pub type Tree = Vec<(&'static str, Vec<Row>)>;
 
 /// The band's fields' node, in a [`Field`].
 pub const BAND: &str = "@band";
@@ -74,6 +77,8 @@ pub enum Message {
     View3d(Nav),
     /// A click on the 3D view: what is under it picked.
     Click(Click),
+    /// A browser row clicked (by its id): what it names selected, what it shows or runs.
+    Row(String),
     /// A command started from a button: a long one on the worker.
     Start(String),
     /// The running job stopped.
@@ -107,10 +112,10 @@ pub struct App {
     /// The page shown.
     pub(crate) page: View,
     pub(crate) view3d: View3d,
-    /// What is selected in the 3D view, and its rows (the browser's) for the generation and
-    /// selection they were read for.
+    /// What is selected (in the 3D view or the browser), and the browser's tree for the
+    /// generation it was read for.
     pub(crate) selection: Selection,
-    pub(crate) picked: Option<((u64, Selection), Vec<Row>)>,
+    pub(crate) tree: Option<(u64, Tree)>,
     /// The charts as drawn.
     pub(crate) charts: crate::charts::Charts,
     /// Raised by every command that ends well (the model's revision does not follow a solve's
@@ -149,7 +154,7 @@ impl App {
             page,
             view3d: View3d::default(),
             selection: Selection::default(),
-            picked: None,
+            tree: None,
             charts: crate::charts::Charts::default(),
             generation: 0,
             job: None,
@@ -194,12 +199,41 @@ impl App {
             lit: !self.gpu_look.outline,
         };
         self.view3d = std::mem::take(&mut self.view3d).refreshed(&src);
-        let key = (self.generation, self.selection.clone());
-        if self.picked.as_ref().is_none_or(|(k, _)| *k != key) {
-            let rows = browser::rows_of(&self.session, &Replies::default(), &self.selection).into_iter().map(|(_, r)| r).collect();
-            self.picked = Some((key, rows));
+        if self.tree.as_ref().is_none_or(|(g, _)| *g != self.generation) {
+            self.tree = Some((self.generation, browser::tree(&self.session, &Replies::default())));
         }
         self.charts = std::mem::take(&mut self.charts).refreshed(&self.session, self.generation, &self.look, self.chart);
+    }
+
+    /// The browser's rows, in their sections.
+    pub fn rows(&self) -> impl Iterator<Item = &Row> {
+        self.tree.iter().flat_map(|(_, t)| t.iter().flat_map(|(_, rows)| rows))
+    }
+
+    /// The rows of what is selected, in its order.
+    pub fn picked(&self) -> Vec<&Row> {
+        self.selection.iter().filter_map(|p| self.rows().find(|r| r.pick == Some(*p))).collect()
+    }
+
+    /// Whether row `r` shows selected: its part is, or (a row without one) it was clicked.
+    pub fn row_selected(&self, r: &Row) -> bool {
+        match r.pick {
+            Some(p) => self.selection.contains(&p),
+            None => self.selection.row() == Some(r.id.as_str()),
+        }
+    }
+
+    /// Row `id` clicked: what it names selected alone (its part, else the row), then what it
+    /// shows (a page) or runs; the command it runs.
+    fn row(&mut self, id: &str) -> Option<Command> {
+        let r = self.rows().find(|r| r.id == id)?.clone();
+        self.selection = Selection::of(r.pick.into_iter().collect(), Some(r.id.clone()));
+        match r.act {
+            Act::Show(v) if crate::run::PAGES.contains(&v) => self.page = v,
+            Act::Run(id, params) => self.start(id, params),
+            _ => {}
+        }
+        None
     }
 
     /// What the 3D view draws of `shown`: through its camera, on the theme's ground, with the
@@ -352,6 +386,7 @@ impl App {
                 self.view3d = std::mem::take(&mut self.view3d).navigated(nav);
                 None
             }
+            Message::Row(id) => self.row(&id),
             Message::Click(c) => {
                 let pick = self.view3d.pick(c.at);
                 let click = if c.double { selection::Click::Double { pick } } else { selection::Click::Single { pick, add: c.add } };

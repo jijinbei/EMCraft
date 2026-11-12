@@ -56,6 +56,8 @@ fn bar(app: &App) -> Element<'_, Message> {
     row(overlays.chain(std::iter::once(gap())).chain(views).chain(std::iter::once(gap())).chain(commands))
         .spacing(6)
         .align_y(Alignment::Center)
+        .wrap()
+        .vertical_spacing(6)
         .boxed()
 }
 
@@ -109,6 +111,8 @@ fn field_bar(app: &App) -> Element<'_, Message> {
     ]
     .spacing(8)
     .align_y(Alignment::Center)
+    .wrap()
+    .vertical_spacing(6)
     .boxed()
 }
 
@@ -127,7 +131,7 @@ fn section_bar(app: &App, cut: Cut) -> Element<'_, Message> {
     let l = app.session.display().length;
     let shown = text(format!("{:.3} {}", l.from_si(cut.at), l.symbol())).size(t.font_body).color(t.text_dim);
     let flip = tool(t, tr(t!("Keep the other side")), false, Some(set(Cut { keep: cut.keep.flipped(), ..cut })));
-    row(axes.chain([place.boxed(), shown.boxed(), flip])).spacing(8).align_y(Alignment::Center).boxed()
+    row(axes.chain([place.boxed(), shown.boxed(), flip])).spacing(8).align_y(Alignment::Center).wrap().vertical_spacing(6).boxed()
 }
 
 /// The field's colour bar: its quantity, its gradient and its ticks.
@@ -169,8 +173,8 @@ fn legend(app: &App) -> Element<'_, Message> {
 /// What is selected, on a card at the top of the view: its name and detail, or how many parts.
 fn card(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
-    let rows = app.picked.as_ref().map_or(&[][..], |(_, rows)| rows.as_slice());
-    let line = match (rows, app.selection.len()) {
+    let rows = app.picked();
+    let line = match (rows.as_slice(), app.selection.len()) {
         (_, 0) if app.view3d.overlay == Overlay::Field => match &app.view3d.field_error {
             Some(e) => e.clone(),
             None => return Space::new().boxed(),
@@ -199,5 +203,6 @@ pub fn view(app: &App) -> Element<'_, Message> {
     };
     let field = (app.view3d.overlay == Overlay::Field).then(|| field_bar(app));
     let section = app.view3d.section.map(|c| section_bar(app, c));
-    column(std::iter::once(bar(app)).chain(section).chain(field).chain(std::iter::once(picture))).spacing(8).padding(12).height(Fill).boxed()
+    let main = column(std::iter::once(bar(app)).chain(section).chain(field).chain(std::iter::once(picture))).spacing(8).height(Fill);
+    row![crate::browser::view(app), main].spacing(12).padding(12).height(Fill).boxed()
 }

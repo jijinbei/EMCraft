@@ -85,6 +85,25 @@ pub fn quiet(t: Tokens) -> impl Fn(&iced::Theme, b::Status) -> b::Style {
     }
 }
 
+/// A browser row: its text on nothing, the hover's fill under the pointer, the selection's when
+/// `selected`.
+pub fn row(t: Tokens, selected: bool) -> impl Fn(&iced::Theme, b::Status) -> b::Style {
+    move |_, status| {
+        let fill = match (selected, status) {
+            (true, _) => Some(t.selected_bg),
+            (false, b::Status::Hovered | b::Status::Pressed) => Some(t.hover),
+            _ => None,
+        };
+        b::Style {
+            background: fill.map(Background::Color),
+            text_color: if selected { t.selected_ink } else { t.text },
+            border: Border { radius: 4.0.into(), ..Border::default() },
+            shadow: Shadow::default(),
+            snap: true,
+        }
+    }
+}
+
 /// A text field: the controls' fill and edge, the accent's edge while typed in.
 pub fn field(t: Tokens) -> impl Fn(&iced::Theme, text_input::Status) -> text_input::Style {
     move |_, status| {
