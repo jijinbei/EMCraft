@@ -161,6 +161,14 @@ impl Selection {
         }
     }
 
+    /// What a box let go took: added to the selection (`add`, Shift held) or instead of it.
+    pub fn boxed(&mut self, picks: &[Pick], add: bool) {
+        if !add {
+            self.clear();
+        }
+        self.add(picks);
+    }
+
     /// `pick` taken out when it is in, else added at the end.
     pub fn toggle(&mut self, pick: Pick) {
         if self.parts.contains(&pick) {

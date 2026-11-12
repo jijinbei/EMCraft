@@ -3,12 +3,7 @@
 
 use super::*;
 
-/// The distances (m) a zoom keeps within, for a model of box `bounds`.
-pub(super) fn zoom_limits((lo, hi): ([f64; 3], [f64; 3])) -> [f64; 2] {
-    let size = (0..3).map(|i| (hi[i] - lo[i]).powi(2)).sum::<f64>().sqrt();
-    let size = if size.is_finite() && size > 0.0 { size } else { 1.0 };
-    [size * 1e-4, size * 1e3]
-}
+pub(super) use emcraft_ui_core::navigation::zoom_limits;
 
 /// The model point under `pos` on the view drawn into `rect`: the surface there, else where the
 /// pointer's ray meets the plane through the target facing the camera.
@@ -411,7 +406,7 @@ pub(super) fn keys_free(app: &EmcraftApp, ui: &egui::Ui) -> bool {
 /// animated, and held past a tap keep turning it at a steady rate; Ctrl+arrows pan a tenth of the
 /// view; Ctrl+1…7 turn to Front, Back, Left, Right, Top, Bottom and the isometric view.
 pub(super) fn keys(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, rect: Rect, now: f64) {
-    use crate::navigation::{ARROWS, DIGIT_VIEWS, HOLD_DEGREES_PER_SECOND, KEY_PAN_SHARE, KEY_STEP_DEGREES, TAP_SECONDS};
+    use crate::navigation::{ARROWS, DIGIT_VIEWS, DIGITS, HOLD_DEGREES_PER_SECOND, KEY_PAN_SHARE, KEY_STEP_DEGREES, TAP_SECONDS};
     if !keys_free(app, ui) {
         v.key_hold = None;
         return;
@@ -442,7 +437,7 @@ pub(super) fn keys(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, rect: Rect, 
             }
         } else if ctrl
             && !m.shift
-            && let Some(&(_, view)) = DIGIT_VIEWS.iter().find(|(k, _)| *k == key)
+            && let Some(view) = DIGITS.iter().position(|k| *k == key).and_then(|i| DIGIT_VIEWS.get(i).copied())
         {
             v.goal = Some(Goal::View(view));
         }

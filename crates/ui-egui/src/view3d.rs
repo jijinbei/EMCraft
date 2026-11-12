@@ -313,7 +313,7 @@ impl View3d {
 
     /// Turns to a standard view (animated); the home (isometric) view also frames the model.
     pub fn standard(&mut self, v: StandardView) {
-        self.goal = Some(if v == StandardView::Iso { Goal::Home } else { Goal::View(v) });
+        self.goal = Some(Goal::standard(v));
     }
 
     /// Whether a view change is under way or asked for.
@@ -343,22 +343,7 @@ impl View3d {
 
     /// Begins the view change `goal` in a picture of `aspect`, framing `frame` where it frames.
     fn begin(&mut self, goal: Goal, frame: ([f64; 3], [f64; 3]), aspect: f64, now: f64) {
-        let mut to = self.heading();
-        match goal {
-            Goal::View(view) => to.standard(view),
-            Goal::Home => {
-                to.standard(StandardView::Iso);
-                to.fit(frame.0, frame.1, aspect);
-            }
-            Goal::Fit => to.fit(frame.0, frame.1, aspect),
-            Goal::Face(lo, hi, view) => {
-                to.standard(view);
-                to.fit(lo, hi, aspect);
-            }
-            Goal::Turn { right, up, degrees } => to = to.stepped(right, up, degrees),
-            Goal::From(dir) => to = to.looking_from(dir),
-        }
-        let to = to.sanitized();
+        let to = goal.camera(self.heading(), frame, aspect);
         self.orbit = None;
         self.anim = (to != self.camera).then(|| CameraAnim::new(self.camera, to, now));
     }
@@ -761,22 +746,7 @@ fn tools(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, rect: Rect, edit: &Ges
     }
 }
 
-/// A view change asked of the 3D view.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Goal {
-    /// A standard view's direction, keeping the framing.
-    View(StandardView),
-    /// The isometric view, framing the model.
-    Home,
-    /// The model framed, keeping the direction.
-    Fit,
-    /// A box (m) seen from a standard view, framed (facing the field's plane).
-    Face([f64; 3], [f64; 3], StandardView),
-    /// Turned toward the screen's right and up by degrees (arrow keys, the cube's arrows).
-    Turn { right: f64, up: f64, degrees: f64 },
-    /// Looking from a direction (the view cube's faces and corners), keeping the framing.
-    From([f64; 3]),
-}
+pub use emcraft_ui_core::navigation::Goal;
 
 /// What the left button's drag does.
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -2,8 +2,10 @@
 //! theme's colours) drawn by the GPU in iced's shader widget ([`shader`]), navigated by the mouse
 //! mapping (orbit, pan, zoom), fitted to the model and turned to the standard views. Its state is
 //! a value: each [`Nav`] gives the next ([`View3d::navigated`]), each change to the project the
-//! scene built again when what it shows changed ([`View3d::refreshed`]). On the field overlay
-//! the field view's plane is drawn in it, coloured by the field ([`field`]).
+//! scene built again when what it shows changed ([`View3d::refreshed`]). View changes (fit, the
+//! standard views, the arrow keys' turns) are animated by the frames' clock ([`Nav::Tick`]), as
+//! the egui window's; a held arrow turns the view steadily. On the field overlay the field view's
+//! plane is drawn in it, coloured by the field ([`field`]).
 
 pub mod field;
 pub mod labels;
@@ -16,15 +18,18 @@ use emcraft_engine::view::{Component, FieldView, Plane};
 use emcraft_gpu3d::{FieldGrid, Packed};
 use emcraft_render::Rgb;
 use emcraft_render::colormap::ColourScale;
-use emcraft_render::view3d::{Camera, StandardView};
+use emcraft_render::view3d::{Camera, CameraAnim};
+use emcraft_ui_core::navigation::{Goal, HOLD_DEGREES_PER_SECOND, KEY_PAN_SHARE, KEY_STEP_DEGREES, TAP_SECONDS, zoom_limits};
 use emcraft_ui_core::scene3d::{self, Colours, Cut, Overlay, Pick};
+use emcraft_ui_core::selection::BoxSel;
 use emcraft_ui_core::theme::Theme;
 
 /// Most triangles a click under a section looks through for one on the side kept.
 const MOST_HITS: usize = 256;
+/// A zoom step's share of the camera's distance, in e's power (as [`Camera::zoom`]'s).
+const ZOOM_STEP: f64 = -0.1;
 
-/// A box (m): its low and high corners.
-pub type Bounds = ([f64; 3], [f64; 3]);
+pub use emcraft_ui_core::navigation::Bounds;
 
 /// What changes the view's camera or what it shows.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -35,10 +40,25 @@ pub enum Nav {
     Pan(f32, f32),
     /// Closer by steps (each 10 %).
     Zoom(f32),
-    /// The model fitted in the view.
-    Fit,
-    /// Turned to a standard view, the model fitted.
-    Standard(StandardView),
+    /// Closer by steps toward the model's point under the pointer (points from the view's
+    /// corner), within the model's limits.
+    ZoomAt(f32, emcraft_ui_core::geom::Point),
+    /// A view change, animated from where one under way is going.
+    Goal(Goal),
+    /// An arrow pressed: the view turned toward the screen's right and up (Shift: a quarter
+    /// turn), and turning steadily while held; with Ctrl the picture moved a tenth of the view.
+    Arrow {
+        right: f64,
+        up: f64,
+        shift: bool,
+        ctrl: bool,
+    },
+    /// The arrows let go.
+    Released,
+    /// A frame's time: the view change under way and the held arrow go on.
+    Tick(std::time::Instant),
+    /// The selection box being dragged, or none.
+    Box(Option<BoxSel>),
     /// What the view puts forward.
     Overlay(Overlay),
     /// The view's size (points), as laid out.
@@ -114,11 +134,30 @@ pub struct Source<'a> {
     pub lit: bool,
 }
 
+/// An arrow held: its turn, whether Shift doubled it, when it was pressed and the frame last
+/// turned at (seconds on the view's clock).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hold {
+    right: f64,
+    up: f64,
+    shift: bool,
+    since: f64,
+    last: f64,
+}
+
 /// The 3D view's state.
 #[derive(Clone, Debug)]
 pub struct View3d {
     pub overlay: Overlay,
     pub camera: Camera,
+    /// The view change asked for (begun with the next frame) and the one under way.
+    goal: Option<Goal>,
+    anim: Option<CameraAnim>,
+    /// The clock's start: view changes are timed in seconds from it.
+    epoch: std::time::Instant,
+    hold: Option<Hold>,
+    /// The selection box while it is dragged.
+    pub boxsel: Option<BoxSel>,
     /// The box last fitted and the camera the fit left: a camera not moved since is fitted again
     /// when the view's shape changes.
     fitted: Option<(Bounds, Camera)>,
@@ -140,6 +179,11 @@ impl Default for View3d {
         View3d {
             overlay: Overlay::Plain,
             camera: Camera::default(),
+            goal: None,
+            anim: None,
+            epoch: std::time::Instant::now(),
+            hold: None,
+            boxsel: None,
             fitted: None,
             size: (800.0, 600.0),
             shown: None,
@@ -261,6 +305,12 @@ impl View3d {
         tag.and_then(Pick::from_tag)
     }
 
+    /// The parts the box `b` (points over the view) takes.
+    pub fn boxed(&self, b: BoxSel) -> Vec<Pick> {
+        let (w, h) = (f64::from(self.size.0), f64::from(self.size.1));
+        self.shown.as_ref().map(|s| emcraft_ui_core::selection::boxed(&s.built.scene, &self.camera, w, h, b)).unwrap_or_default()
+    }
+
     /// The model's box, once there is one.
     pub fn bounds(&self) -> Option<Bounds> {
         self.shown.as_ref()?.bounds
@@ -276,15 +326,71 @@ impl View3d {
         let Some(b) = self.bounds() else { return self };
         let mut camera = self.camera;
         camera.fit(b.0, b.1, self.aspect());
-        View3d { camera, fitted: Some((b, camera)), ..self }
+        View3d { camera, fitted: Some((b, camera)), goal: None, anim: None, ..self }
     }
 
-    /// The camera changed by `change`; the fit forgotten (a moved camera keeps its place when
-    /// the view changes shape).
+    /// Whether the view changes by itself: a change asked for or under way, an arrow held (the
+    /// window then draws every frame).
+    pub fn animating(&self) -> bool {
+        self.goal.is_some() || self.anim.is_some() || self.hold.is_some()
+    }
+
+    /// Seconds on the view's clock at `now`.
+    fn seconds(&self, now: std::time::Instant) -> f64 {
+        now.saturating_duration_since(self.epoch).as_secs_f64()
+    }
+
+    /// The camera a view change starts from: where one under way is going, so quick clicks and
+    /// key taps add up.
+    fn heading(&self) -> Camera {
+        self.anim.map_or(self.camera, |a| a.to)
+    }
+
+    /// The view at `now`: the change asked for begun (a fit remembered as the fit), the one
+    /// under way followed, a held arrow turning past a tap.
+    fn ticked(self, now: f64) -> View3d {
+        let aspect = self.aspect();
+        let view = match (self.goal, self.bounds()) {
+            (Some(goal), Some(b)) => {
+                let to = goal.camera(self.heading(), b, aspect);
+                let fitted = matches!(goal, Goal::Fit | Goal::Home).then_some((b, to)).or(self.fitted);
+                let anim = (to != self.camera).then(|| CameraAnim::new(self.camera, to, now));
+                View3d { goal: None, anim, fitted, ..self }
+            }
+            (Some(_), None) => View3d { goal: None, ..self },
+            (None, _) => self,
+        };
+        let view = match view.anim.map(|a| a.sample(now)) {
+            Some((camera, done)) => View3d { camera, anim: (!done).then_some(view.anim).flatten(), ..view },
+            None => view,
+        };
+        match view.hold {
+            Some(h) if now - h.since >= TAP_SECONDS => {
+                let rate = if h.shift { 2.0 * HOLD_DEGREES_PER_SECOND } else { HOLD_DEGREES_PER_SECOND };
+                let degrees = rate * (now - h.last).clamp(0.0, 0.1);
+                let camera = view.camera.stepped(h.right, h.up, degrees);
+                View3d { camera, anim: None, hold: Some(Hold { last: now, ..h }), ..view }
+            }
+            _ => view,
+        }
+    }
+
+    /// The model point under `at` (points from the view's corner): the surface there, else where
+    /// its ray meets the plane through the target facing the camera.
+    fn anchor(&self, at: emcraft_ui_core::geom::Point) -> Option<[f64; 3]> {
+        let pixel = emcraft_render::view3d::Pixel::new(f64::from(at.x), f64::from(at.y), f64::from(self.size.0), f64::from(self.size.1));
+        self.shown
+            .as_ref()
+            .and_then(|s| emcraft_render::view3d::surface_at(&s.built.scene, &self.camera, pixel))
+            .or_else(|| self.camera.on_target_plane(pixel))
+    }
+
+    /// The camera changed by `change`, a view change under way stopped where it is; the fit
+    /// forgotten (a moved camera keeps its place when the view changes shape).
     fn moved(self, change: impl FnOnce(&mut Camera)) -> View3d {
         let mut camera = self.camera;
         change(&mut camera);
-        View3d { camera, ..self }
+        View3d { camera, goal: None, anim: None, ..self }
     }
 
     /// The view after `nav`.
@@ -302,8 +408,27 @@ impl View3d {
             Nav::Orbit(dx, dy) => self.moved(|c| c.orbit(f64::from(dx), f64::from(dy))),
             Nav::Pan(dx, dy) => self.moved(|c| c.pan(f64::from(dx), f64::from(dy), height)),
             Nav::Zoom(steps) => self.moved(|c| c.zoom(f64::from(steps))),
-            Nav::Fit => self.fit(),
-            Nav::Standard(v) => self.moved(|c| c.standard(v)).fit(),
+            Nav::ZoomAt(steps, at) => {
+                let (anchor, limits) = (self.anchor(at), self.bounds().map_or([1e-4, 1e3], zoom_limits));
+                self.moved(|c| c.zoom_at(anchor, (ZOOM_STEP * f64::from(steps).clamp(-100.0, 100.0)).exp(), limits))
+            }
+            Nav::Goal(goal) => View3d { goal: Some(goal), ..self },
+            Nav::Arrow { right, up, ctrl: true, .. } => {
+                let step = height * f64::from(KEY_PAN_SHARE);
+                self.moved(|c| c.pan(right * step, -up * step, height))
+            }
+            Nav::Arrow { right, up, shift, ctrl: false } => {
+                let goal = Goal::Turn { right, up, degrees: KEY_STEP_DEGREES[usize::from(shift)] };
+                // The press's time is the next frame's: a hold counts from then.
+                View3d { goal: Some(goal), hold: Some(Hold { right, up, shift, since: f64::INFINITY, last: f64::INFINITY }), ..self }
+            }
+            Nav::Released => View3d { hold: None, ..self },
+            Nav::Tick(now) => {
+                let now = self.seconds(now);
+                let hold = self.hold.map(|h| if h.since.is_finite() { h } else { Hold { since: now, last: now, ..h } });
+                View3d { hold, ..self }.ticked(now)
+            }
+            Nav::Box(b) => View3d { boxsel: b.filter(|b| b.rect.is_finite()), ..self },
             Nav::Overlay(overlay) => View3d { overlay, ..self },
             Nav::Plane(plane) => View3d { field: FieldView { plane, at: None, ..self.field.clone() }, ..self },
             // The arrows follow the field coloured: E's for an electric component, H's for a

@@ -55,11 +55,12 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         .map(|id| (format!("command:{id}"), Message::Command((*id).to_owned())));
     let model = (app.page == View::Model).then(|| {
         let overlays = Overlay::ALL.into_iter().map(|o| (format!("overlay:{}", o.id()), Message::View3d(Nav::Overlay(o))));
-        let views =
-            emcraft_render::view3d::StandardView::ALL.into_iter().map(|v| (format!("view3d:std:{}", v.id()), Message::View3d(Nav::Standard(v))));
+        let views = emcraft_render::view3d::StandardView::ALL
+            .into_iter()
+            .map(|v| (format!("view3d:std:{}", v.id()), Message::View3d(Nav::Goal(emcraft_ui_core::navigation::Goal::standard(v)))));
         let section = app.view3d.bounds().map(|b| emcraft_ui_core::scene3d::Cut::middle(0, b));
         let fixed = [
-            ("view3d:fit".to_owned(), Message::View3d(Nav::Fit)),
+            ("view3d:fit".to_owned(), Message::View3d(Nav::Goal(emcraft_ui_core::navigation::Goal::Fit))),
             ("view3d:section".to_owned(), Message::View3d(Nav::Section(app.view3d.section.map_or(section, |_| None)))),
             ("toolbar:mesh.generate".to_owned(), Message::Start("mesh.generate".into())),
             ("toolbar:solve.run".to_owned(), Message::Start("solve.run".into())),
@@ -118,6 +119,7 @@ pub fn inspect(app: &App) -> Value {
             "yaw": c.yaw.to_degrees(),
             "pitch": c.pitch.to_degrees(),
             "distance": c.distance,
+            "animating": v.animating(),
             "section": v.section.map(|s| s.inspect(app.session.display().length)),
             "field": {"plane": f.plane.id(), "component": f.component.id(), "frequency": f.frequency, "phase": f.phase.to_degrees(), "mode": f.mode, "error": v.field_error},
         },

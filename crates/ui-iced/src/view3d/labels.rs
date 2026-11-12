@@ -1,10 +1,12 @@
 //! The scene's labels over the 3D view: each where the shared rules place it
 //! ([`scene3d::placed`]), on a ground of the panel's colour, dimmed when the face it names looks
-//! away, with a leader line to the point it stands off from. A canvas laid over the shader
-//! widget; it lets every event through to the view under it.
+//! away, with a leader line to the point it stands off from; and the selection box while it is
+//! dragged (by window a solid outline, by crossing a dashed one in another colour). A canvas laid
+//! over the shader widget; it lets every event through to the view under it.
 
 use emcraft_render::view3d::Camera;
 use emcraft_ui_core::scene3d::{self, Label};
+use emcraft_ui_core::selection::BoxSel;
 use iced::mouse::Cursor;
 use iced::widget::canvas::{self, Frame, Geometry, Path, Stroke};
 use iced::{Color, Pixels, Rectangle, Renderer, Size, Theme, alignment};
@@ -17,11 +19,26 @@ use crate::look::{self, Tokens};
 /// does not measure text).
 const CHAR_W: f32 = 0.56;
 
-/// The labels seen through `camera`, in the theme's tokens.
+/// The labels seen through `camera` and the selection box, in the theme's tokens.
 pub struct Labels<'a> {
     pub labels: &'a [Label],
     pub camera: Camera,
+    pub boxsel: Option<BoxSel>,
     pub tokens: Tokens,
+}
+
+/// The selection box `b` on `frame`.
+fn boxed(frame: &mut Frame, t: Tokens, b: BoxSel) {
+    let ink = if b.crossing { t.success } else { t.accent };
+    let path = Path::rectangle(point(b.rect.min), size_of_rect(b));
+    frame.fill(&path, Color { a: 0.12, ..ink });
+    let dash = if b.crossing { &[6.0, 4.0][..] } else { &[][..] };
+    let stroke = Stroke { line_dash: canvas::LineDash { segments: dash, offset: 0 }, ..Stroke::default().with_width(1.2).with_color(ink) };
+    frame.stroke(&path, stroke);
+}
+
+fn size_of_rect(b: BoxSel) -> Size {
+    Size::new(b.rect.width(), b.rect.height())
 }
 
 impl canvas::Program<Message> for Labels<'_> {
@@ -52,6 +69,9 @@ impl canvas::Program<Message> for Labels<'_> {
                 align_y: alignment::Vertical::Center,
                 ..canvas::Text::default()
             });
+        }
+        if let Some(b) = self.boxsel {
+            boxed(&mut frame, t, b);
         }
         vec![frame.into_geometry()]
     }

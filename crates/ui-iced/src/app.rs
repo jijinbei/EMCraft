@@ -87,6 +87,11 @@ pub enum Message {
     View3d(Nav),
     /// A click on the 3D view: what is under it picked.
     Click(Click),
+    /// The selection box let go: what it took selected (added to the selection with Shift).
+    Boxed(bool),
+    /// A key of the 3D view's (an arrow, Ctrl+1…7), taken while the view is shown and nothing
+    /// else has the keys.
+    Key3d(Nav),
     /// Eigenmode `i`'s field shown in the 3D view.
     Mode(usize),
     /// Where the pointer is over the 3D view (points from its corner), or that it left.
@@ -273,6 +278,12 @@ impl App {
     }
 
     /// On the PCB page, a net picked in 3D: the command that makes it the route.
+    /// Whether the 3D view's keys are its: the view shown, no dialog, question, start or
+    /// settings page over it.
+    fn keys_free(&self) -> bool {
+        matches!(self.page, View::Model | View::Pcb) && self.dialog.is_none() && self.asking.is_none() && !self.home && !self.settings
+    }
+
     fn picked_route(&mut self) -> Option<Command> {
         let Some(emcraft_ui_core::scene3d::Pick::Net(i)) = self.selection.single().filter(|_| self.page == View::Pcb) else { return None };
         let board = self.session.model().pcb()?;
@@ -510,13 +521,19 @@ impl App {
     pub fn subscription(&self) -> Subscription<Message> {
         let closing =
             iced::window::close_requests().map(|_| Message::File(emcraft_ui_core::files::FileAction::Request(emcraft_ui_core::files::Then::Quit)));
-        let frames = if self.job.is_some() || self.shoot.is_some() || self.playing.is_some() {
+        let frames = if self.job.is_some() || self.shoot.is_some() || self.playing.is_some() || self.view3d.animating() {
             iced::window::frames().map(Message::Tick)
         } else {
             Subscription::none()
         };
         let control = self.inbox.clone().map_or_else(Subscription::none, |inbox| Subscription::run_with(inbox, requests));
-        Subscription::batch([frames, closing, iced::event::listen_with(crate::files::shortcut), control])
+        Subscription::batch([
+            frames,
+            closing,
+            iced::event::listen_with(crate::files::shortcut),
+            iced::event::listen_with(crate::view3d::shader::keys),
+            control,
+        ])
     }
 
     /// The window after `message`, and what iced does next: the picture of the window taken
@@ -733,10 +750,21 @@ impl App {
                 let pick = self.view3d.pick(c.at);
                 let click = if c.double { selection::Click::Double { pick } } else { selection::Click::Single { pick, add: c.add } };
                 if selection::step(&mut self.selection, click) == selection::Then::Fit {
-                    self.view3d = std::mem::take(&mut self.view3d).navigated(Nav::Fit);
+                    self.view3d = std::mem::take(&mut self.view3d).navigated(Nav::Goal(emcraft_ui_core::navigation::Goal::Fit));
                 }
                 self.picked_route()
             }
+            Message::Boxed(add) => {
+                let view = std::mem::take(&mut self.view3d);
+                self.selection.boxed(&view.boxsel.map(|b| view.boxed(b)).unwrap_or_default(), add);
+                self.view3d = view.navigated(Nav::Box(None));
+                None
+            }
+            Message::Key3d(nav) if self.keys_free() || nav == Nav::Released => {
+                self.view3d = std::mem::take(&mut self.view3d).navigated(nav);
+                None
+            }
+            Message::Key3d(_) => None,
             Message::Start(id) => {
                 self.start(&id, json!({}));
                 None

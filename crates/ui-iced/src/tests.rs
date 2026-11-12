@@ -120,6 +120,7 @@ fn finish(app: &mut App) {
 #[test]
 fn the_model_page_shows_the_scene_and_navigates() {
     use crate::view3d::Nav;
+    use emcraft_ui_core::navigation::Goal;
     use emcraft_ui_core::view::View;
     let mut app = App::new(Some("highpass"));
     assert_eq!(app.page, View::Model);
@@ -136,8 +137,11 @@ fn the_model_page_shows_the_scene_and_navigates() {
     app.update(Message::View3d(Nav::Size(900.0, 300.0)));
     assert_eq!(app.view3d.camera, moved, "a moved camera stays");
     app.update(Message::View3d(Nav::Size(300.0, 600.0)));
-    app.update(Message::View3d(Nav::Fit));
-    assert_eq!(app.view3d.camera.distance, fitted.distance, "fitted again as at first");
+    app.update(Message::View3d(Nav::Goal(Goal::Fit)));
+    assert!(app.view3d.animating() && app.view3d.camera == moved, "a fit is animated from the next frame");
+    settle(&mut app);
+    assert!(!app.view3d.animating());
+    assert!((app.view3d.camera.distance - fitted.distance).abs() < 1e-12, "fitted again as at first");
     // Another overlay builds the scene again; the theme's colours change it too.
     let packed = app.view3d.shown.as_ref().map(|s| s.packed.id);
     app.update(Message::View3d(Nav::Overlay(emcraft_ui_core::scene3d::Overlay::Materials)));
@@ -256,7 +260,7 @@ fn a_click_picks_the_part_under_it() {
     assert_eq!(shot.selected, app.selection.iter().map(|p| p.tag()).collect::<Vec<_>>());
     // Without the outline the scene lights it.
     app.gpu_look.outline = false;
-    app.update(Message::View3d(Nav::Fit));
+    app.update(Message::View3d(Nav::Goal(emcraft_ui_core::navigation::Goal::Fit)));
     assert_ne!(app.view3d.shown.as_ref().map(|s| s.packed.id), packed, "lit: the scene built again");
     app.gpu_look.outline = true;
     app.update(click(Point::new(2.0, 2.0), true, false));
@@ -264,6 +268,7 @@ fn a_click_picks_the_part_under_it() {
     app.update(Message::View3d(Nav::Zoom(3.0)));
     let zoomed = app.view3d.camera.distance;
     app.update(click(Point::new(2.0, 2.0), false, true));
+    settle(&mut app);
     assert!(app.selection.is_clear(), "a double click on empty space clears");
     assert!(app.view3d.camera.distance > zoomed, "and fits the view again");
 }
@@ -343,7 +348,7 @@ fn the_gpu_colours_the_field_and_a_phase_moves_only_the_frame() {
     }
     // Off: the CPU colours the cells, and the scene carries them.
     app.gpu_look.field = false;
-    app.update(Message::View3d(Nav::Fit));
+    app.update(Message::View3d(Nav::Goal(emcraft_ui_core::navigation::Goal::Fit)));
     let cpu = shown(&app);
     assert!(cpu.field.is_none());
     assert!(cpu.built.scene.tris.len() > gpu.built.scene.tris.len(), "the plane's cells in the scene");
@@ -764,4 +769,98 @@ fn scenarios() {
         })
         .collect();
     assert!(failed.is_empty(), "{}", failed.join("\n"));
+}
+
+/// The frames a view change takes, one a second later than the last: what is under way ends.
+fn settle(app: &mut App) {
+    let now = std::time::Instant::now();
+    for k in 0..3 {
+        app.update(Message::View3d(crate::view3d::Nav::Tick(now + std::time::Duration::from_secs(k))));
+    }
+}
+
+/// The 3D view's keys and box, as the egui window's. Analytic evidence: an arrow tap turns the
+/// level front view's yaw by exactly 15° (Shift 90°), Ctrl+5 looks down (pitch 90°), a held arrow turns at 90°/s
+/// for the frames' time past the tap (capped at 0.1 s a frame), and a box dragged round the
+/// whole view by window takes every part that is drawn.
+#[test]
+fn keys_turn_the_view_and_a_box_selects() {
+    use crate::view3d::Nav;
+    use emcraft_ui_core::geom::Point;
+    use emcraft_ui_core::selection::BoxSel;
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::View3d(Nav::Size(600.0, 400.0)));
+    // Ctrl+1: the front view, level, where a turn right is a turn in yaw alone.
+    let front = crate::view3d::shader::keys(ctrl_key("1"), iced::event::Status::Ignored, iced::window::Id::unique());
+    app.update(front.unwrap_or(Message::Key3d(Nav::Released)));
+    settle(&mut app);
+    assert!(app.view3d.camera.pitch.abs() < 1e-9 && app.view3d.camera.yaw.abs() < 1e-9, "Ctrl+1 looks from the front");
+    let yaw = app.view3d.camera.yaw;
+    let arrow = |shift| Message::Key3d(Nav::Arrow { right: 1.0, up: 0.0, shift, ctrl: false });
+    app.update(arrow(false));
+    app.update(Message::Key3d(Nav::Released));
+    settle(&mut app);
+    let turned = (app.view3d.camera.yaw - yaw).to_degrees();
+    assert!((turned - 15.0).abs() < 1e-9, "a tap turns 15°: {turned}");
+    app.update(arrow(true));
+    app.update(Message::Key3d(Nav::Released));
+    settle(&mut app);
+    assert!(((app.view3d.camera.yaw - yaw).to_degrees() - 105.0).abs() < 1e-9, "with Shift a quarter turn more");
+    // Ctrl+5: the top view.
+    let top = crate::view3d::shader::keys(ctrl_key("5"), iced::event::Status::Ignored, iced::window::Id::unique());
+    assert!(matches!(top, Some(Message::Key3d(Nav::Goal(_)))));
+    app.update(top.unwrap_or(Message::Key3d(Nav::Released)));
+    settle(&mut app);
+    assert!((app.view3d.camera.pitch.to_degrees() - 90.0).abs() < 1e-6, "Ctrl+5 looks down");
+    // Held: after the tap the view turns steadily, 90°/s at most 0.1 s a frame.
+    let at = app.view3d.camera;
+    app.update(arrow(false));
+    let t0 = std::time::Instant::now();
+    app.update(Message::View3d(Nav::Tick(t0)));
+    app.update(Message::View3d(Nav::Tick(t0 + std::time::Duration::from_millis(1000))));
+    app.update(Message::View3d(Nav::Tick(t0 + std::time::Duration::from_millis(1050))));
+    let turned = app.view3d.camera;
+    app.update(Message::Key3d(Nav::Released));
+    assert_ne!(turned, at, "a held arrow turns");
+    assert!(!app.view3d.animating(), "let go, it stops");
+    // A dialog over the view takes the keys.
+    app.update(Message::Command("model.material.create".into()));
+    assert!(app.dialog.is_some());
+    let before = app.view3d.camera;
+    app.update(arrow(false));
+    settle(&mut app);
+    assert_eq!(app.view3d.camera, before, "the dialog has the keys");
+    app.update(Message::Dialog(crate::dialog::Edit::Cancel));
+    // A box round the whole view takes what is drawn; one with Shift adds, one on nothing clears.
+    app.update(Message::View3d(Nav::Box(Some(BoxSel::from_drag(Point::new(0.0, 0.0), Point::new(600.0, 400.0))))));
+    app.update(Message::Boxed(false));
+    assert!(app.selection.len() > 2, "a box round the view takes the parts: {:?}", app.selection.iter().collect::<Vec<_>>());
+    assert!(app.view3d.boxsel.is_none(), "let go, the box goes");
+    app.update(Message::View3d(Nav::Box(Some(BoxSel::from_drag(Point::new(1.0, 1.0), Point::new(3.0, 3.0))))));
+    let many = app.selection.len();
+    app.update(Message::Boxed(true));
+    assert_eq!(app.selection.len(), many, "Shift on nothing keeps it");
+    app.update(Message::View3d(Nav::Box(Some(BoxSel::from_drag(Point::new(1.0, 1.0), Point::new(3.0, 3.0))))));
+    app.update(Message::Boxed(false));
+    assert_eq!(app.selection.len(), 0, "a box on nothing clears it");
+    // The wheel zooms toward the point under the pointer, within the model's limits.
+    let d = app.view3d.camera.distance;
+    app.update(Message::View3d(Nav::ZoomAt(1e6, Point::new(300.0, 200.0))));
+    assert!(app.view3d.camera.distance < d && app.view3d.camera.distance > 0.0);
+    app.update(Message::View3d(Nav::ZoomAt(f32::NAN, Point::new(300.0, 200.0))));
+    assert!(app.view3d.camera.distance.is_finite());
+}
+
+/// A key pressed with Ctrl (Cmd on macOS).
+fn ctrl_key(c: &str) -> iced::Event {
+    use iced::keyboard::{Event, Key, Location, Modifiers, key};
+    iced::Event::Keyboard(Event::KeyPressed {
+        key: Key::Character(c.into()),
+        modified_key: Key::Character(c.into()),
+        physical_key: key::Physical::Unidentified(key::NativeCode::Unidentified),
+        location: Location::Standard,
+        modifiers: Modifiers::COMMAND,
+        text: None,
+        repeat: false,
+    })
 }

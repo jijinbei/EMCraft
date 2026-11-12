@@ -281,10 +281,7 @@ impl UiState {
             }
             // A box let go: what it took, added to the selection or instead of it.
             Action::SelectBox { picks, add } => {
-                if !add {
-                    self.selection.clear();
-                }
-                self.selection.add(picks);
+                self.selection.boxed(picks, *add);
                 None
             }
             Action::DialogCancel => {

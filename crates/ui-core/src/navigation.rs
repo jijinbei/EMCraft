@@ -107,6 +107,7 @@ pub const FUSION: &str = "fusion";
 
 use NavButton::{Left, Middle, Right};
 use NavMode::{Orbit, Pan, Zoom};
+use emcraft_render::view3d::{Camera, StandardView};
 
 /// The mouse mappings, SolidCraft's. The first is the default.
 pub const NAV_PRESETS: &[NavPreset] = &[
@@ -263,6 +264,86 @@ pub const TAP_SECONDS: f64 = 0.15;
 pub const HOLD_DEGREES_PER_SECOND: f64 = 90.0;
 /// Ctrl+arrows pan this share of the view's height.
 pub const KEY_PAN_SHARE: f32 = 0.1;
+
+/// The standard views on Ctrl+1…7, in their digits' order (as SolidCraft's).
+pub const DIGIT_VIEWS: [StandardView; 7] =
+    [StandardView::Front, StandardView::Back, StandardView::Left, StandardView::Right, StandardView::Top, StandardView::Bottom, StandardView::Iso];
+
+/// A box (m): its low and high corners.
+pub type Bounds = ([f64; 3], [f64; 3]);
+
+/// A view change asked of the 3D view, animated from the camera it starts from to
+/// [`Goal::camera`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Goal {
+    /// A standard view's direction, keeping the framing.
+    View(StandardView),
+    /// The isometric view, framing the model.
+    Home,
+    /// The model framed, keeping the direction.
+    Fit,
+    /// A box (m) seen from a standard view, framed (facing the field's plane).
+    Face([f64; 3], [f64; 3], StandardView),
+    /// Turned toward the screen's right and up by degrees (arrow keys, the cube's arrows).
+    Turn { right: f64, up: f64, degrees: f64 },
+    /// Looking from a direction (the view cube's faces and corners), keeping the framing.
+    From([f64; 3]),
+}
+
+impl Goal {
+    /// The goal a standard view's button asks for: the isometric view also frames the model.
+    pub fn standard(v: StandardView) -> Goal {
+        if v == StandardView::Iso { Goal::Home } else { Goal::View(v) }
+    }
+
+    /// Where the change ends, starting from `from`, framing `frame` in a picture of `aspect`
+    /// (width over height) where it frames.
+    ///
+    /// ```
+    /// use emcraft_render::view3d::{Camera, StandardView};
+    /// use emcraft_ui_core::navigation::Goal;
+    /// let frame = ([0.0; 3], [0.02, 0.01, 0.05]);
+    /// let fitted = Goal::Fit.camera(Camera::default(), frame, 1.5);
+    /// assert_eq!(fitted.yaw, Camera::default().yaw);
+    /// let top = Goal::View(StandardView::Top).camera(fitted, frame, 1.5);
+    /// assert_eq!(top.distance, fitted.distance);
+    /// // A turn by no number of degrees leaves the camera as it was.
+    /// let c = Goal::Turn { right: 1.0, up: 0.0, degrees: f64::NAN }.camera(fitted, frame, 1.5);
+    /// assert_eq!(c, fitted);
+    /// ```
+    pub fn camera(self, from: Camera, frame: Bounds, aspect: f64) -> Camera {
+        let mut to = from;
+        match self {
+            Goal::View(view) => to.standard(view),
+            Goal::Home => {
+                to.standard(StandardView::Iso);
+                to.fit(frame.0, frame.1, aspect);
+            }
+            Goal::Fit => to.fit(frame.0, frame.1, aspect),
+            Goal::Face(lo, hi, view) => {
+                to.standard(view);
+                to.fit(lo, hi, aspect);
+            }
+            Goal::Turn { right, up, degrees } => to = to.stepped(right, up, degrees),
+            Goal::From(dir) => to = to.looking_from(dir),
+        }
+        to.sanitized()
+    }
+}
+
+/// The distances (m) a zoom keeps within, for a model of box `bounds`.
+///
+/// ```
+/// let [near, far] = emcraft_ui_core::navigation::zoom_limits(([0.0; 3], [3.0, 4.0, 0.0]));
+/// assert!((near - 5e-4).abs() < 1e-12 && (far - 5e3).abs() < 1e-9);
+/// // A box of no size (or not a number) zooms as one of 1 m.
+/// assert_eq!(emcraft_ui_core::navigation::zoom_limits(([f64::NAN; 3], [0.0; 3])), [1e-4, 1e3]);
+/// ```
+pub fn zoom_limits((lo, hi): Bounds) -> [f64; 2] {
+    let size = (0..3).map(|i| (hi[i] - lo[i]).powi(2)).sum::<f64>().sqrt();
+    let size = if size.is_finite() && size > 0.0 { size } else { 1.0 };
+    [size * 1e-4, size * 1e3]
+}
 
 #[cfg(test)]
 mod tests {

@@ -81,6 +81,9 @@ impl App {
 
     /// A frame at `now`: the field's phase moved on while it plays, the running job looked at.
     pub(crate) fn tick(&mut self, now: std::time::Instant) {
+        if self.view3d.animating() {
+            self.view3d = std::mem::take(&mut self.view3d).navigated(crate::view3d::Nav::Tick(now));
+        }
         if let Some(last) = self.playing {
             let dt = last.map_or(0.0, |l| now.saturating_duration_since(l).as_secs_f64());
             let phase = self.view3d.field.phase + std::f64::consts::TAU * dt / crate::view3d::field::PERIOD;

@@ -1,7 +1,9 @@
 //! The 3D view in iced's shader widget: the scene's frame drawn by [`emcraft_gpu3d`] on the
 //! window's own device (offscreen in `prepare`, shown in the widget's place in `draw`), and the
 //! pointer's drags and the wheel read as the mouse mapping says ([`NavPreset`]), each reported as
-//! a [`Nav`] for the window to apply.
+//! a [`Nav`] for the window to apply: Ctrl+left drag orbits in every mapping, a left drag the
+//! mapping leaves free draws a selection box (Shift adds to the selection), the wheel zooms
+//! toward the pointer.
 
 use std::sync::Arc;
 
@@ -9,6 +11,7 @@ use emcraft_gpu3d::{Caps, Frame, Gpu3dError, Packed, Renderer, Uniforms};
 use emcraft_render::Rgb;
 use emcraft_render::view3d::Camera;
 use emcraft_ui_core::navigation::{NavButton, NavKeys, NavMode, NavPreset};
+use emcraft_ui_core::selection::BoxSel;
 use iced::widget::shader::{self, Action, Viewport};
 use iced::{Point, Rectangle, Size, keyboard, mouse};
 
@@ -88,6 +91,9 @@ pub struct Viewer {
 #[derive(Default)]
 pub struct Grip {
     drag: Option<(NavMode, Point)>,
+    /// A selection box: where it began, whether it adds to the selection, whether it has left
+    /// the click's slop.
+    boxing: Option<(Point, bool, bool)>,
     pressed: Option<Point>,
     clicked: Option<(std::time::Instant, Point)>,
     keys: NavKeys,
@@ -111,8 +117,14 @@ fn button(b: mouse::Button) -> Option<NavButton> {
     }
 }
 
-fn keys(m: keyboard::Modifiers) -> NavKeys {
+fn held(m: keyboard::Modifiers) -> NavKeys {
     NavKeys { shift: m.shift(), ctrl: m.command(), alt: m.alt() }
+}
+
+/// What a left drag pressed with `k` held does in `nav`: the mapping's navigation, else Ctrl
+/// orbits.
+fn left_mode(nav: &NavPreset, k: NavKeys) -> Option<NavMode> {
+    nav.mode(NavButton::Left, k).or_else(|| (k.ctrl && !k.shift && !k.alt).then_some(NavMode::Orbit))
 }
 
 /// What a drag by `d` (points) in `mode` does to the camera.
@@ -149,14 +161,28 @@ impl shader::Program<Message> for Viewer {
         }
         match event {
             iced::Event::Keyboard(keyboard::Event::ModifiersChanged(m)) => {
-                grip.keys = keys(*m);
+                grip.keys = held(*m);
                 None
             }
             iced::Event::Mouse(mouse::Event::ButtonPressed(b)) => {
                 let at = cursor.position_in(bounds)?;
-                grip.pressed = (*b == mouse::Button::Left).then_some(at);
-                grip.drag = button(*b).and_then(|b| self.nav.mode(b, grip.keys)).map(|mode| (mode, at));
+                let left = *b == mouse::Button::Left;
+                grip.pressed = left.then_some(at);
+                grip.drag = match button(*b) {
+                    Some(NavButton::Left) => left_mode(self.nav, grip.keys),
+                    Some(other) => self.nav.mode(other, grip.keys),
+                    None => None,
+                }
+                .map(|mode| (mode, at));
+                grip.boxing = (left && grip.drag.is_none()).then_some((at, grip.keys.shift, false));
                 Some(Action::capture())
+            }
+            iced::Event::Mouse(mouse::Event::CursorMoved { position }) if grip.boxing.is_some() => {
+                let (start, add, out) = grip.boxing?;
+                let at = *position - iced::Vector::new(bounds.x, bounds.y);
+                let out = out || start.distance(at) > CLICK_SLOP;
+                grip.boxing = Some((start, add, out));
+                out.then(|| Action::publish(Message::View3d(Nav::Box(Some(BoxSel::from_drag(crate::geom::shared(start), crate::geom::shared(at)))))))
             }
             iced::Event::Mouse(mouse::Event::CursorMoved { .. }) if grip.drag.is_none() => {
                 // Not dragging: where the pointer is, while asked and inside; once that it left.
@@ -170,8 +196,14 @@ impl shader::Program<Message> for Viewer {
                 grip.drag = Some((mode, at));
                 publish(dragged(mode, at - last))
             }
+            iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) if grip.boxing.is_some_and(|(_, _, out)| out) => {
+                let (_, add, _) = grip.boxing.take()?;
+                grip.pressed = None;
+                Some(Action::publish(Message::Boxed(add)).and_capture())
+            }
             iced::Event::Mouse(mouse::Event::ButtonReleased(b)) => {
                 grip.drag = None;
+                grip.boxing = None;
                 let at = cursor.position_in(bounds);
                 let pressed = grip.pressed.take().filter(|_| *b == mouse::Button::Left);
                 match (pressed, at) {
@@ -180,12 +212,12 @@ impl shader::Program<Message> for Viewer {
                 }
             }
             iced::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
-                cursor.position_in(bounds)?;
+                let at = cursor.position_in(bounds)?;
                 let steps = match delta {
                     mouse::ScrollDelta::Lines { y, .. } => *y,
                     mouse::ScrollDelta::Pixels { y, .. } => y * PIXEL_ZOOM,
                 };
-                publish(Nav::Zoom(if self.nav.reverse_zoom { -steps } else { steps }))
+                publish(Nav::ZoomAt(if self.nav.reverse_zoom { -steps } else { steps }, crate::geom::shared(at)))
             }
             _ => None,
         }
@@ -197,6 +229,7 @@ impl shader::Program<Message> for Viewer {
 
     fn mouse_interaction(&self, grip: &Grip, _bounds: Rectangle, _cursor: mouse::Cursor) -> mouse::Interaction {
         match grip.drag {
+            None if grip.boxing.is_some() => mouse::Interaction::Crosshair,
             Some((NavMode::Pan, _)) => mouse::Interaction::Grabbing,
             Some(_) => mouse::Interaction::Move,
             None => mouse::Interaction::default(),
@@ -246,5 +279,37 @@ impl shader::Primitive for Shot {
             r.show(pass);
         }
         true
+    }
+}
+
+/// The view's keys (when no field takes them), as the egui window's: the arrows turn the view
+/// 15° (Shift: a quarter turn) and keep turning while held, Ctrl+arrows move the picture, and
+/// Ctrl+1…7 turn to Front, Back, Left, Right, Top, Bottom and the isometric view.
+pub fn keys(event: iced::Event, status: iced::event::Status, _: iced::window::Id) -> Option<Message> {
+    use emcraft_ui_core::navigation::{DIGIT_VIEWS, Goal};
+    use keyboard::key::Named;
+    use keyboard::{Event, Key};
+    let arrow = |k: &Key| match k {
+        Key::Named(Named::ArrowLeft) => Some((-1.0, 0.0)),
+        Key::Named(Named::ArrowRight) => Some((1.0, 0.0)),
+        Key::Named(Named::ArrowUp) => Some((0.0, 1.0)),
+        Key::Named(Named::ArrowDown) => Some((0.0, -1.0)),
+        _ => None,
+    };
+    let iced::Event::Keyboard(event) = event else { return None };
+    match event {
+        Event::KeyReleased { key, .. } if arrow(&key).is_some() => Some(Message::Key3d(Nav::Released)),
+        _ if status == iced::event::Status::Captured => None,
+        Event::KeyPressed { key, modifiers, repeat, .. } if !modifiers.alt() => match (arrow(&key), &key) {
+            (Some((right, up)), _) if !repeat || modifiers.command() => {
+                Some(Message::Key3d(Nav::Arrow { right, up, shift: modifiers.shift(), ctrl: modifiers.command() }))
+            }
+            (None, Key::Character(c)) if modifiers.command() && !modifiers.shift() => {
+                let digit = c.parse::<usize>().ok().filter(|d| *d >= 1)?;
+                DIGIT_VIEWS.get(digit - 1).map(|v| Message::Key3d(Nav::Goal(Goal::standard(*v))))
+            }
+            _ => None,
+        },
+        _ => None,
     }
 }

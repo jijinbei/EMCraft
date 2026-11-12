@@ -6,6 +6,7 @@ use emcraft_engine::view::{Component, Plane};
 use emcraft_render::view3d::StandardView;
 use emcraft_ui_core::handle::AXES;
 use emcraft_ui_core::lang::{args, lookup, tr, trf};
+use emcraft_ui_core::navigation::Goal;
 use emcraft_ui_core::scene3d::{Cut, Overlay};
 use iced::widget::{Space, canvas, column, container, image, pick_list, row, shader, slider, stack, text};
 use iced::{Alignment, Element, Fill, Widget};
@@ -47,9 +48,9 @@ fn bar(app: &App) -> Element<'_, Message> {
     let section = app.view3d.section;
     let cut = app.view3d.bounds().map(|b| Cut::middle(0, b));
     let sectioning = tool(t, tr(t!("Section view")), section.is_some(), Some(Message::View3d(Nav::Section(section.map_or(cut, |_| None)))));
-    let views = std::iter::once(tool(t, tr(t!("Fit")), false, Some(Message::View3d(Nav::Fit))))
+    let views = std::iter::once(tool(t, tr(t!("Fit")), false, Some(Message::View3d(Nav::Goal(Goal::Fit)))))
         .chain(std::iter::once(sectioning))
-        .chain(VIEWS.iter().map(|(v, label)| tool(t, tr(*label), false, Some(Message::View3d(Nav::Standard(*v))))));
+        .chain(VIEWS.iter().map(|(v, label)| tool(t, tr(*label), false, Some(Message::View3d(Nav::Goal(Goal::standard(*v)))))));
     let idle = app.job.is_none();
     let commands = COMMANDS.iter().map(|(id, label)| tool(t, tr(*label), *id == "solve.run", idle.then(|| Message::Start((*id).to_owned()))));
     let gap = || Space::new().width(16).boxed();
@@ -226,7 +227,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let picture: Element<Message> = match app.view3d.shown.as_ref().filter(|s| s.bounds.is_some()) {
         Some(s) => {
             let viewer = Viewer { shot: app.shot(s), nav: app.nav, hover: app.view3d.overlay == Overlay::Field };
-            let labels = Labels { labels: &s.labels, camera: app.view3d.camera, tokens: t };
+            let labels = Labels { labels: &s.labels, camera: app.view3d.camera, boxsel: app.view3d.boxsel, tokens: t };
             stack![shader(viewer).width(Fill).height(Fill), canvas(labels).width(Fill).height(Fill), legend(app), card(app), probe_card(app)].boxed()
         }
         None => container(text(tr(t!("No geometry yet: open a sample or start at step 1, Geometry."))).size(t.font_heading).color(t.text_dim))
