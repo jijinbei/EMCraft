@@ -273,18 +273,19 @@ fn si_charts<'a>(app: &'a App, t: Tokens, si: &emcraft_engine::pcb::Line) -> Vec
 pub fn view(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
     let picture: Element<Message> = match app.view3d.shown.as_ref().filter(|s| s.bounds.is_some()) {
-        Some(s) => shader(Viewer {
-            shot: app.shot(s),
-            nav: app.nav,
-            hover: false,
-            tool: false,
-            grips: Vec::new(),
-            around: app.prefs.orbit_around(),
-            plane: None,
-        })
-        .width(Fill)
-        .height(Fill)
-        .boxed(),
+        Some(s) => {
+            let viewer = Viewer {
+                shot: app.shot(s),
+                nav: app.nav,
+                hover: false,
+                tool: false,
+                grips: Vec::new(),
+                around: app.prefs.orbit_around(),
+                plane: None,
+            };
+            // Drawn without a window, the board is a picture of it (crate::headless).
+            if app.headless { crate::view3d::shader::picture(viewer.shot, t) } else { shader(viewer).width(Fill).height(Fill).boxed() }
+        }
         None => container(text(tr(t!("Prepare board"))).size(t.font_heading).color(t.text_dim)).center(Fill).boxed(),
     };
     column![pills(app), row![panel(app), picture].spacing(12).height(Fill)].spacing(10).padding(12).height(Fill).boxed()

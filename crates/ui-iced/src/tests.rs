@@ -1562,3 +1562,31 @@ fn a_missing_font_is_said_once() {
     let fine = App::new(None).with_font(State::Found("Noto Sans CJK JP".into()));
     assert!(fine.log.lines().is_empty() && fine.font.text() == "Noto Sans CJK JP");
 }
+
+/// `ui.render` draws the window without one: on the CPU at the size asked, the 3D view drawn
+/// offscreen into its place (more than the ground's two colours there); a size out of bounds is
+/// refused.
+#[test]
+fn the_window_renders_without_a_window() {
+    let _gpu = gpu();
+    let mut app = App::new(Some("highpass"));
+    let dir = std::env::var_os("EMCRAFT_SCRATCH").map_or_else(std::env::temp_dir, std::path::PathBuf::from);
+    let path = dir.join(format!("iced-render-{}.png", std::process::id()));
+    let reply = crate::scenario::call(&mut app, "ui.render", json!({"path": path.display().to_string(), "size": [1000, 700]}))
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!((reply["ok"].clone(), reply["result"]["width"].clone(), reply["result"]["height"].clone()), (json!(true), json!(1000), json!(700)));
+    let (w, h, rgba) = crate::headless::render(&mut app, (1000.0, 700.0)).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!((w, h, rgba.len()), (1000, 700, 1000 * 700 * 4));
+    // The middle of the 3D view: the guide drawn, not only the ground.
+    let colours: std::collections::BTreeSet<[u8; 4]> = (300..500)
+        .flat_map(|y| (500..800).map(move |x| (y * 1000 + x) * 4))
+        .filter_map(|i| rgba.get(i..i + 4).and_then(|p| <[u8; 4]>::try_from(p).ok()))
+        .collect();
+    assert!(colours.len() > 50, "the 3D view drawn: {} colours", colours.len());
+    assert!(!app.headless);
+    let bad = crate::scenario::call(&mut app, "ui.render", json!({"size": [0, 10]})).unwrap_or_default();
+    assert_eq!(bad["ok"], json!(false));
+    if std::env::var_os("KEEP_RENDER").is_none() {
+        let _ = std::fs::remove_file(path);
+    }
+}

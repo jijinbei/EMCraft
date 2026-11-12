@@ -309,7 +309,12 @@ pub fn view(app: &App) -> Element<'_, Message> {
             // The view's size as laid out, from the first frame on (picks and fits need it before
             // the pointer comes over the view).
             let size = |s: iced::Size| Message::View3d(Nav::Size(s.width, s.height));
-            let view = iced::widget::sensor(shader(viewer).width(Fill).height(Fill)).on_show(size).on_resize(size);
+            // Drawn without a window, the view is a picture of it (crate::headless).
+            let view = if app.headless {
+                crate::view3d::shader::picture(viewer.shot, t)
+            } else {
+                iced::widget::sensor(shader(viewer).width(Fill).height(Fill)).on_show(size).on_resize(size).boxed()
+            };
             // The orientation control the preferences choose: the view cube, or the axes.
             let navigator = match app.prefs.navigator() {
                 emcraft_ui_core::navigation::Navigator::Cube => {

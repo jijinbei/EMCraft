@@ -408,6 +408,25 @@ pub fn keys(event: iced::Event, status: iced::event::Status, _: iced::window::Id
     }
 }
 
+/// The 3D view `shot` drawn offscreen on the process's own device into a picture of the size it
+/// is laid out at (the window drawn headless), or why not, in its place.
+pub fn picture<'a>(shot: Shot, tokens: crate::look::Tokens) -> iced::Element<'a, Message> {
+    use iced::Widget;
+    iced::widget::responsive(move |size| {
+        let out = [size.width, size.height].map(|s| (s * crate::headless::SCALE).round().clamp(1.0, 4096.0) as u32);
+        match emcraft_gpu3d::picture(0, &frame(&shot, out, crate::headless::SCALE)) {
+            Ok(c) => iced::widget::image(iced::widget::image::Handle::from_rgba(c.w as u32, c.h as u32, c.rgba))
+                .width(iced::Fill)
+                .height(iced::Fill)
+                .boxed(),
+            Err(e) => {
+                iced::widget::container(iced::widget::text(e.to_string()).size(tokens.font_small).color(tokens.text_dim)).center(iced::Fill).boxed()
+            }
+        }
+    })
+    .boxed()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

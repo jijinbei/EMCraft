@@ -245,7 +245,17 @@ impl App {
                 "error": self.error,
                 "messages": self.log.lines().iter().map(|l| json!({"text": l.text, "error": l.error, "count": l.count})).collect::<Vec<_>>(),
             }))),
-            "ui.screenshot" | "ui.render" => {
+            // The window drawn without it: on the CPU, the 3D view offscreen (crate::headless).
+            "ui.render" => {
+                let path = p.get("path").and_then(Value::as_str);
+                let size = p.get("size").and_then(Value::as_array).and_then(|s| Some((s.first()?.as_f64()? as f32, s.get(1)?.as_f64()? as f32)));
+                Some(match crate::headless::render(self, size.unwrap_or(self.window)) {
+                    Ok((w, h, rgba)) => crate::app::save_picture(emcraft_render::Canvas { w: w as usize, h: h as usize, rgba }, path),
+                    Err(e) => err(e),
+                })
+            }
+            // The window as presented.
+            "ui.screenshot" => {
                 let path = p.get("path").and_then(Value::as_str).map(str::to_owned);
                 let r = req.clone();
                 return iced::window::latest()

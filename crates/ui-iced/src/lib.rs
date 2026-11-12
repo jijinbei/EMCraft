@@ -45,6 +45,7 @@ pub mod escape;
 pub mod field_panel;
 pub mod files;
 pub mod geom;
+pub mod headless;
 pub mod icons;
 pub mod import;
 pub mod language;

@@ -2559,6 +2559,7 @@ dependencies = [
  "emcraft-render",
  "emcraft-ui-core",
  "iced",
+ "iced_runtime",
  "iced_test",
  "serde_json",
 ]

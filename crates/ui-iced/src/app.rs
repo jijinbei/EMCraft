@@ -164,6 +164,8 @@ pub enum Message {
     Cancel,
     /// The earlier messages shown or folded.
     Log(bool),
+    /// The window resized (points).
+    WindowSize(f32, f32),
     /// The font file typed in the settings (committed as a preference on Enter).
     FontFile(String),
     /// The crash reports' card asks for something.
@@ -285,6 +287,10 @@ pub struct App {
     /// A face read from a chosen font file, still to give iced; the font file as typed.
     pub(crate) font_load: Option<Vec<u8>>,
     pub(crate) drafts_font: Option<String>,
+    /// The window is being drawn without one (crate::headless): the 3D view as a picture.
+    pub(crate) headless: bool,
+    /// The window's size (points), as `ui.render` draws it.
+    pub(crate) window: (f32, f32),
     /// The 3D view's mouse mapping and drawing (the preferences').
     pub(crate) nav: &'static NavPreset,
     pub(crate) gpu_look: GpuLook,
@@ -369,6 +375,8 @@ impl App {
             font_said: None,
             font_load: None,
             drafts_font: None,
+            headless: false,
+            window: (1400.0, 900.0),
             nav: prefs.nav(),
             gpu_look: prefs.gpu_look,
             playing: None,
@@ -714,6 +722,7 @@ impl App {
             closing,
             iced::event::listen_with(crate::files::shortcut),
             iced::event::listen_with(crate::files::dropped),
+            iced::window::resize_events().map(|(_, s)| Message::WindowSize(s.width, s.height)),
             iced::event::listen_with(crate::view3d::shader::keys),
             control,
         ])
@@ -1097,6 +1106,10 @@ impl App {
                 let _ = self.report_act(a);
                 None
             }
+            Message::WindowSize(w, h) => {
+                self.window = (w, h);
+                None
+            }
             Message::FontFile(s) => {
                 self.drafts_font = Some(emcraft_ui_core::dialogs::bounded(&s));
                 None
@@ -1240,7 +1253,11 @@ fn requests(inbox: &Inbox) -> iced::futures::channel::mpsc::UnboundedReceiver<Me
 /// A picture of the window written as a PNG at `path` (none: nowhere): what was written, or why
 /// not.
 pub(crate) fn save_screenshot(shot: &iced::window::Screenshot, path: Option<&str>) -> serde_json::Value {
-    let canvas = emcraft_render::Canvas { w: shot.size.width as usize, h: shot.size.height as usize, rgba: shot.rgba.to_vec() };
+    save_picture(emcraft_render::Canvas { w: shot.size.width as usize, h: shot.size.height as usize, rgba: shot.rgba.to_vec() }, path)
+}
+
+/// `canvas` written as a PNG to `path` (none: its size only), as the control channel replies.
+pub(crate) fn save_picture(canvas: emcraft_render::Canvas, path: Option<&str>) -> serde_json::Value {
     let Some(png) = canvas.png() else { return serde_json::json!({"ok": false, "error": "the picture could not be encoded"}) };
     match path {
         Some(p) => match std::fs::write(p, png) {

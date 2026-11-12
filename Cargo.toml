@@ -71,6 +71,8 @@ eframe = { version = "0.36", default-features = false, features = ["wgpu", "glow
 # ui, the second window (crates/ui-iced, docs/adr/0007-iced-window.md): iced's main line, pinned,
 # for the wgpu the rest of the build has (iced 0.14 is on wgpu 27).
 iced = { git = "https://github.com/iced-rs/iced", rev = "c3d2cfd0a8503fd4b13754467953b427be259c55", default-features = false, features = ["wgpu", "tiny-skia", "canvas", "image-without-codecs", "x11", "wayland", "wayland-dlopen", "thread-pool"] }
+# The window drawn without one (ui.render): iced's user interface run headless.
+iced_runtime = { git = "https://github.com/iced-rs/iced", rev = "c3d2cfd0a8503fd4b13754467953b427be259c55" }
 iced_test = { git = "https://github.com/iced-rs/iced", rev = "c3d2cfd0a8503fd4b13754467953b427be259c55" }
 
 [workspace.lints.rust]
