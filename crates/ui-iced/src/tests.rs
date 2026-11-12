@@ -216,7 +216,7 @@ fn a_click_picks_the_part_under_it() {
     assert!(rows.first().is_some_and(|r| !r.shown.is_empty()), "its row names it: {rows:?}");
     // The GPU rings it (the preferences' outline): the scene stays, the frame carries its tag.
     assert_eq!(app.view3d.shown.as_ref().map(|s| s.packed.id), packed, "ringed by the GPU: the scene stays");
-    let shot = app.view3d.shown.as_ref().map(|s| app.shot(s)).unwrap_or_else(|| panic!("no scene"));
+    let shot = app.view3d.shown.as_ref().map_or_else(|| panic!("no scene"), |s| app.shot(s));
     assert_eq!(shot.selected, app.selection.iter().map(|p| p.tag()).collect::<Vec<_>>());
     // Without the outline the scene lights it.
     app.gpu_look.outline = false;
