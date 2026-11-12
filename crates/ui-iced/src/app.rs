@@ -27,7 +27,6 @@ use iced::widget::{button, container, row, text};
 use iced::{Alignment, Element, Fill, Subscription, Task, Widget};
 
 use crate::look::{self, Look};
-use crate::run::{PAGES, page_label};
 use crate::view3d::shader::Shot;
 use crate::view3d::{Click, Nav, Shown, View3d};
 use serde_json::json;
@@ -602,6 +601,13 @@ impl App {
         self.selection = Selection::of(r.pick.into_iter().collect(), Some(r.id.clone()));
         match r.act {
             Act::Show(v) if crate::run::PAGES.contains(&v) => self.page = v,
+            // The fields: the model, its field put forward.
+            Act::Show(View::Field) if self.session.results().sweep.is_some() || self.session.results().eigen.is_some() => {
+                self.page = View::Model;
+                self.view3d = std::mem::take(&mut self.view3d).navigated(Nav::Overlay(emcraft_ui_core::scene3d::Overlay::Field));
+            }
+            // A row of the model shows the model (from a result's page).
+            Act::None | Act::Edit(_) | Act::EditWith(..) => self.page = first_page(&self.session),
             Act::Run(id, params) => self.start(id, params),
             _ => {}
         }
@@ -862,15 +868,10 @@ impl App {
         self.settle();
     }
 
-    /// The window: the application bar — the project, its pages, the running job — over the page.
+    /// The window: the application bar — the project, its files, the search — over the tree, the
+    /// page and the properties panel.
     pub fn view(&self) -> Element<'_, Message> {
         let t = self.look.tokens;
-        let tabs = PAGES.into_iter().filter(|v| *v == self.page || v.available(&self.session, &self.replies)).map(|v| {
-            button(text(page_label(v)).size(t.font_button))
-                .style(look::button(t, v == self.page && !self.settings && !self.home))
-                .on_press(Message::Page(v))
-                .boxed()
-        });
         // The project's name, marked while it has unsaved changes.
         let name = format!("{}{}", self.session.name(), if self.session.is_dirty() { " •" } else { "" });
         let head = [text("EMCraft").size(t.font_body).boxed(), text(name).size(t.font_body).color(t.app_bar_text).boxed()];
@@ -890,8 +891,7 @@ impl App {
                     .style(look::button(t, self.settings))
                     .on_press(Message::Settings(!self.settings))
                     .boxed(),
-            ))
-            .chain(tabs))
+            )))
         .spacing(12)
         .align_y(Alignment::Center)
         // A narrow window (or a longer language) wraps the bar instead of squeezing its pages.

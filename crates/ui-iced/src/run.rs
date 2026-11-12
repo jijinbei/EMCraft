@@ -186,11 +186,6 @@ impl App {
     }
 }
 
-/// A page's name in the bar.
-pub fn page_label(v: View) -> &'static str {
-    emcraft_ui_core::lang::lookup(v.label())
-}
-
 /// "Cancel", for the bar.
 pub fn cancel_label() -> &'static str {
     tr(t!("Cancel"))

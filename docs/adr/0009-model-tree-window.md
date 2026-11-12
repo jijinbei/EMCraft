@@ -1,6 +1,6 @@
 # ADR 0009: One model tree, a properties panel and the 3D view
 
-Status: accepted (2026-11-13); G1–G3 done.
+Status: accepted (2026-11-13); G1–G4 done.
 
 ## Context
 
@@ -50,7 +50,9 @@ later, an agent are shortcuts over the same commands.
   (the ribbon's `TABS` folded in; `RibbonTab` kept for old recordings and themes), the search in
   the app bar, the 3D view's bar without the mesh and run buttons and the port tools (Excitation's
   ＋ turns them on).
-- **G4 Results in the tree; the page tabs go.**
+- **G4 Results in the tree; the page tabs go** (done): a result's row opens its page (the time
+  response, the pulse and the analyses under the sweep, the fields on the model), a row of the
+  model goes back to the model; `page:<id>` stays as a handle.
 - **G5 Direct manipulation:** the port tool from Excitation's ＋, grips on a waveguide's
   sections and box with the panel following.
 - **G6 Docs and tests:** docs/ux/workflow.md §2–3, docs/control-protocol.md's handles, the

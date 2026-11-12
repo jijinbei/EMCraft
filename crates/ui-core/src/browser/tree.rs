@@ -323,6 +323,11 @@ fn variables(s: &emcraft_engine::Session) -> Vec<Row> {
         .collect()
 }
 
+/// A page's name, as its row says it.
+fn view_name(v: View) -> Both {
+    Both { en: v.label().to_owned(), shown: lang::lookup(v.label()).to_owned() }
+}
+
 /// Lengths in the session's display unit, trailing zeros trimmed.
 struct Fmt {
     length: emcraft_model::units::Length,
@@ -742,6 +747,16 @@ fn results(session: &Session, replies: &Replies) -> Vec<Row> {
         let detail = words(t!("{n} frequencies · {unknowns} unknowns"), args!(n = sw.results.len(), unknowns = sw.driven.dofs.unknowns));
         rows.push(node("result:sweep", name(t!("Sweep")), Some(detail), Glyph::Chart, Act::Show(View::SParameters)));
         rows.push(node("result:fields", name(t!("Fields")), None, Glyph::FieldLines, Act::Show(View::Field)).under());
+    }
+    // What else a sweep is read as, each its page: the time response and the analyses.
+    if r.sweep.is_some() || r.time_domain.is_some() {
+        rows.extend(
+            [("result:tdr", View::Tdr, Glyph::Time), ("result:response", View::Pulse, Glyph::KindPulse)]
+                .map(|(id, v, glyph)| node(id, view_name(v), None, glyph, Act::Show(v)).under()),
+        );
+    }
+    if r.sweep.is_some() || replies.analysis.is_some() {
+        rows.push(node("result:analyses", view_name(View::Analyses), None, Glyph::Table, Act::Show(View::Analyses)).under());
     }
     if let Some(e) = &r.eigen {
         let detail = words(t!("{n} modes"), args!(n = e.modes.len()));
