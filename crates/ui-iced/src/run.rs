@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use crate::app::App;
 
 /// The pages the window has, in its bar's order (those with something to show are offered).
-pub const PAGES: [View; 10] = [
+pub const PAGES: [View; 11] = [
     View::Model,
     View::PortModes,
     View::SParameters,
@@ -21,6 +21,7 @@ pub const PAGES: [View; 10] = [
     View::FarField,
     View::Dispersion,
     View::Study,
+    View::Analyses,
     View::System,
 ];
 

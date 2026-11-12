@@ -36,6 +36,7 @@ macro_rules! t {
 
 pub mod action;
 pub mod after;
+pub mod analyses;
 pub mod autosave;
 pub mod browser;
 pub mod chart_words;

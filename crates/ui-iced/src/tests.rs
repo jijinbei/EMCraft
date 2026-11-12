@@ -167,6 +167,13 @@ fn run_solves_on_the_worker_and_shows_the_sweep() {
     // The project's chart style (view.chart.style) is the window's chart's.
     app.update(Message::Run(Command { id: "view.chart.style", params: json!({"chart": "sparameters", "title": "Filter response"}) }));
     assert!(app.charts.page.as_ref().is_some_and(|p| p.shown.as_ref().is_ok_and(|c| c.title == "Filter response")));
+    // An analysis read from the sweep: its dialog, its reply kept, its chart.
+    app.update(Message::Page(View::Analyses));
+    app.update(Message::Command("results.noise".into()));
+    app.update(Message::Dialog(crate::dialog::Edit::Ok));
+    finish(&mut app);
+    assert!(app.replies.analysis.as_ref().is_some_and(|a| a.command == "results.noise"), "{:?}", app.error);
+    assert!(app.charts.page.as_ref().is_some_and(|p| p.shown.is_ok()), "the noise figure's chart");
     // The sweep's other pages: TDR and the pulse, each its chart.
     for page in [View::Tdr, View::Pulse] {
         app.update(Message::Page(page));

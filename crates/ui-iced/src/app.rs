@@ -326,7 +326,15 @@ impl App {
         if self.tree.as_ref().is_none_or(|(g, _)| *g != self.generation) {
             self.tree = Some((self.generation, browser::tree(&self.session, &self.replies)));
         }
-        self.charts = std::mem::take(&mut self.charts).refreshed(&self.session, self.generation, &self.look, self.chart, self.page);
+        let charts = crate::charts::Source {
+            session: &self.session,
+            replies: &self.replies,
+            generation: self.generation,
+            look: &self.look,
+            which: self.chart,
+            page: self.page,
+        };
+        self.charts = std::mem::take(&mut self.charts).refreshed(&charts);
     }
 
     /// The browser's rows, in their sections.

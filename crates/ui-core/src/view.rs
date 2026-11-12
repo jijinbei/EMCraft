@@ -217,6 +217,7 @@ impl View {
             View::FarField => C::Pattern,
             View::Dispersion => C::Dispersion,
             View::Study => C::Study,
+            View::Analyses => C::Analyses,
             _ => return None,
         })
     }
