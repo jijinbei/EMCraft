@@ -147,6 +147,10 @@ pub struct View3d {
     field_grid: Option<std::sync::Arc<crate::gpu3d::FieldGrid>>,
     /// The tools: face and gap ports, the ruler, the reference plane's drag.
     pub tools: crate::tools3d::Tools,
+    /// A body's grip being dragged ([`crate::grips`]).
+    pub body_drag: Option<crate::grips::BodyDrag>,
+    /// The reference plane's field under the selection card, as typed.
+    pub ref_text: Option<crate::tools3d::RefText>,
     /// Bumped whenever the scene picked from is built or cut again.
     generation: u64,
 }
@@ -189,6 +193,8 @@ impl Default for View3d {
             field_frame: None,
             field_grid: None,
             tools: crate::tools3d::Tools::default(),
+            body_drag: None,
+            ref_text: None,
             generation: 0,
         }
     }
@@ -329,6 +335,13 @@ impl View3d {
         self.orbit = None;
     }
 
+    /// The tools' state for `ui.inspect`, with a body's grip being dragged.
+    fn tools_inspect(&self, tool: Option<crate::tools3d::Tool>, l: emcraft_model::units::Length) -> serde_json::Value {
+        let mut t = self.tools.inspect(tool, l);
+        t["grip"] = self.body_drag.as_ref().map_or(serde_json::Value::Null, |d| d.inspect(l));
+        t
+    }
+
     /// Stops a view change where it is (the person moves the camera).
     fn stop_animation(&mut self) {
         self.anim = None;
@@ -387,7 +400,7 @@ impl View3d {
             "gpu_field": self.field_frame.is_some(),
             "section": self.section.map(|s| s.inspect(l)),
             "section_dims": self.section_dims,
-            "tools": self.tools.inspect(ui.tool(), l),
+            "tools": self.tools_inspect(ui.tool(), l),
         })
     }
 }

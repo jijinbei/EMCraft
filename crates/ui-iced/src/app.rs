@@ -89,6 +89,12 @@ pub enum Message {
     Click(Click),
     /// The selection box let go: what it took selected (added to the selection with Shift).
     Boxed(bool),
+    /// The 3D view's tool turned on, or off.
+    Tool(Option<emcraft_ui_core::tools::Tool>),
+    /// Escape: what the tool picked dropped; with nothing picked, the tool off.
+    Escape,
+    /// The selected port's reference plane's grip dragged.
+    Grip(crate::view3d::GripMove),
     /// A key of the 3D view's (an arrow, Ctrl+1…7), taken while the view is shown and nothing
     /// else has the keys.
     Key3d(Nav),
@@ -156,8 +162,13 @@ pub struct App {
     /// The page shown.
     pub(crate) page: View,
     pub(crate) view3d: View3d,
-    /// Where the pointer is over the 3D view, while the field's values are read there.
+    /// Where the pointer is over the 3D view, while the field's values are read there or a
+    /// tool is on.
     pub(crate) hover: Option<Point>,
+    /// The 3D view's tool on, and the tools' state (what the pointer is over, the points
+    /// picked, the measurement, the reference plane's drag).
+    pub(crate) tool: Option<emcraft_ui_core::tools::Tool>,
+    pub(crate) tools: emcraft_ui_core::tools::Tools,
     /// What is selected (in the 3D view or the browser), and the browser's tree for the
     /// generation it was read for.
     pub(crate) selection: Selection,
@@ -226,6 +237,8 @@ impl App {
             page,
             view3d: View3d::default(),
             hover: None,
+            tool: None,
+            tools: Default::default(),
             selection: Selection::default(),
             tree: None,
             replies: Replies::default(),
@@ -447,7 +460,7 @@ impl App {
     }
 
     /// Command `id`'s dialog on the model's values, `values` over them.
-    fn open(&mut self, id: &str, values: &serde_json::Value) -> Result<Dialog, String> {
+    pub(crate) fn open(&mut self, id: &str, values: &serde_json::Value) -> Result<Dialog, String> {
         let spec = emcraft_engine::find_command(id).ok_or_else(|| format!("no command `{id}`"))?;
         Ok(dialogs::open(spec, &mut self.session, values, false))
     }
@@ -716,6 +729,7 @@ impl App {
             }
             Message::Hover(at) => {
                 self.hover = at;
+                self.tool_hover();
                 None
             }
             Message::Edit => {
@@ -744,6 +758,26 @@ impl App {
             }
             Message::Dialog(edit) => {
                 self.dialog = self.dialog.take().map(|d| crate::dialog::edited(d, &edit));
+                None
+            }
+            Message::Click(_) if self.tool.is_some() => {
+                self.tool_click();
+                None
+            }
+            Message::Tool(tool) => {
+                self.tool = tool;
+                self.tools.reset(tool);
+                None
+            }
+            Message::Escape => {
+                if self.tools.escape() {
+                    self.tool = None;
+                    self.tools.reset(None);
+                }
+                None
+            }
+            Message::Grip(m) => {
+                self.grip(m);
                 None
             }
             Message::Click(c) => {

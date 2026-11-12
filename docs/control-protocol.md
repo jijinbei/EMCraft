@@ -102,10 +102,14 @@ click or a key would be. It answers `engine.execute` (a long command runs on the
 answered when its job ends), `engine.script`, `engine.commands`, `ui.inspect` (the project, the
 page, the dialog's fields, the selection, the 3D view, the results kept), `ui.handles` and
 `ui.click` (`page:<id>`, `tab:<id>`, `command:<id>`, `overlay:<id>`, `view3d:std:<id>`,
-`view3d:fit`, `row:<id>`, `card:edit`, `dialog:ok`, `file:save`, `edit:undo`, …), `ui.set`
-(`page`, `overlay`, `tab`, `settings`, `start`), `ui.dialog` (`open`, `set`, `ok`, `cancel`),
-`ui.cancel`, `ui.messages` and `ui.screenshot` / `ui.render` (the window's own picture). Pointer
-events are the egui window's only.
+`view3d:fit`, `tool:<id>`, `row:<id>`, `card:edit`, `dialog:ok`, `file:save`, `edit:undo`, …),
+`ui.set` (`page`, `overlay`, `tab`, `settings`, `start`), `ui.point` (`at`: `[x, y]` in points
+from the 3D view's corner, `view3d.size` in `ui.inspect`; `click?`, `double?`, `add?`: the
+pointer there, what is under it found — a tool's face and snap, the field's values — and a
+click), `ui.dialog` (`open`, `set`, `ok`, `cancel`), `ui.cancel`, `ui.messages` and
+`ui.screenshot` / `ui.render` (the window's own picture). `ui.inspect`'s `tools` gives the tool
+on, what the pointer snaps to, the points picked, the measurement and the reference plane's
+drag.
 
 Its scenarios, `crates/ui-iced/tests/scenarios/*.json`, run headless by `cargo test -p
 emcraft-ui-iced` (`crate::scenario`): steps `call`, `click` (a handle), `frames`, `until`,

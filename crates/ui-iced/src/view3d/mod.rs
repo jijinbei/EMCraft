@@ -9,6 +9,7 @@
 
 pub mod field;
 pub mod labels;
+pub mod marks;
 pub mod shader;
 
 use std::sync::Arc;
@@ -77,6 +78,14 @@ pub enum Nav {
     Arrows(bool, bool),
     /// An eigenmode's field (by its index) instead of the sweep's, or the sweep's.
     Mode(Option<usize>),
+}
+
+/// The reference plane's grip dragged: pressed, moved by points, let go.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum GripMove {
+    Start,
+    By(f32, f32),
+    End,
 }
 
 /// A click on the view: where (points from its corner), whether Shift or Ctrl was held, whether

@@ -15,7 +15,7 @@ use emcraft_ui_core::selection::BoxSel;
 use iced::widget::shader::{self, Action, Viewport};
 use iced::{Point, Rectangle, Size, keyboard, mouse};
 
-use super::{Click, Nav};
+use super::{Click, GripMove, Nav};
 use crate::app::Message;
 
 /// Supersampled at rest up to this many output pixels (as the egui window's).
@@ -83,6 +83,10 @@ pub struct Viewer {
     pub shot: Shot,
     pub nav: &'static NavPreset,
     pub hover: bool,
+    /// A tool is on: a free left drag draws no box.
+    pub tool: bool,
+    /// The selected port's reference plane's grip (points from the view's corner).
+    pub grip: Option<Point>,
 }
 
 /// The pointer between events: the drag in progress (its mode and where it was last), where the
@@ -94,6 +98,8 @@ pub struct Grip {
     /// A selection box: where it began, whether it adds to the selection, whether it has left
     /// the click's slop.
     boxing: Option<(Point, bool, bool)>,
+    /// The reference plane's grip dragged: where the pointer was last.
+    gripped: Option<Point>,
     pressed: Option<Point>,
     clicked: Option<(std::time::Instant, Point)>,
     keys: NavKeys,
@@ -167,6 +173,11 @@ impl shader::Program<Message> for Viewer {
             iced::Event::Mouse(mouse::Event::ButtonPressed(b)) => {
                 let at = cursor.position_in(bounds)?;
                 let left = *b == mouse::Button::Left;
+                let plain = !grip.keys.shift && !grip.keys.ctrl && !grip.keys.alt;
+                if left && plain && self.grip.is_some_and(|g| g.distance(at) <= emcraft_ui_core::tools::GRIP_PX) {
+                    grip.gripped = Some(at);
+                    return Some(Action::publish(Message::Grip(GripMove::Start)).and_capture());
+                }
                 grip.pressed = left.then_some(at);
                 grip.drag = match button(*b) {
                     Some(NavButton::Left) => left_mode(self.nav, grip.keys),
@@ -174,8 +185,18 @@ impl shader::Program<Message> for Viewer {
                     None => None,
                 }
                 .map(|mode| (mode, at));
-                grip.boxing = (left && grip.drag.is_none()).then_some((at, grip.keys.shift, false));
+                grip.boxing = (left && grip.drag.is_none() && !self.tool).then_some((at, grip.keys.shift, false));
                 Some(Action::capture())
+            }
+            iced::Event::Mouse(mouse::Event::CursorMoved { position }) if grip.gripped.is_some() => {
+                let last = grip.gripped?;
+                let at = *position - iced::Vector::new(bounds.x, bounds.y);
+                grip.gripped = Some(at);
+                Some(Action::publish(Message::Grip(GripMove::By(at.x - last.x, at.y - last.y))).and_capture())
+            }
+            iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) if grip.gripped.is_some() => {
+                grip.gripped = None;
+                Some(Action::publish(Message::Grip(GripMove::End)).and_capture())
             }
             iced::Event::Mouse(mouse::Event::CursorMoved { position }) if grip.boxing.is_some() => {
                 let (start, add, out) = grip.boxing?;
@@ -229,6 +250,7 @@ impl shader::Program<Message> for Viewer {
 
     fn mouse_interaction(&self, grip: &Grip, _bounds: Rectangle, _cursor: mouse::Cursor) -> mouse::Interaction {
         match grip.drag {
+            None if grip.gripped.is_some() => mouse::Interaction::Grabbing,
             None if grip.boxing.is_some() => mouse::Interaction::Crosshair,
             Some((NavMode::Pan, _)) => mouse::Interaction::Grabbing,
             Some(_) => mouse::Interaction::Move,
@@ -300,6 +322,7 @@ pub fn keys(event: iced::Event, status: iced::event::Status, _: iced::window::Id
     match event {
         Event::KeyReleased { key, .. } if arrow(&key).is_some() => Some(Message::Key3d(Nav::Released)),
         _ if status == iced::event::Status::Captured => None,
+        Event::KeyPressed { key: Key::Named(Named::Escape), .. } => Some(Message::Escape),
         Event::KeyPressed { key, modifiers, repeat, .. } if !modifiers.alt() => match (arrow(&key), &key) {
             (Some((right, up)), _) if !repeat || modifiers.command() => {
                 Some(Message::Key3d(Nav::Arrow { right, up, shift: modifiers.shift(), ctrl: modifiers.command() }))

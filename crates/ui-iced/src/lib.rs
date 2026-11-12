@@ -52,6 +52,7 @@ pub mod run;
 pub mod settings;
 pub mod start;
 pub mod system;
+pub mod tools;
 pub mod view3d;
 
 use emcraft_ui_core::{lang, prefs, theme};

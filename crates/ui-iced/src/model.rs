@@ -8,12 +8,14 @@ use emcraft_ui_core::handle::AXES;
 use emcraft_ui_core::lang::{args, lookup, tr, trf};
 use emcraft_ui_core::navigation::Goal;
 use emcraft_ui_core::scene3d::{Cut, Overlay};
+use emcraft_ui_core::tools::Tool;
 use iced::widget::{Space, canvas, column, container, image, pick_list, row, shader, slider, stack, text};
 use iced::{Alignment, Element, Fill, Widget};
 
 use crate::app::{App, Message};
 use crate::look::{self, Tokens};
 use crate::view3d::labels::Labels;
+use crate::view3d::marks::Marks;
 use crate::view3d::{Nav, field, shader::Viewer};
 
 /// What the view can put forward, and each one's name.
@@ -52,9 +54,14 @@ fn bar(app: &App) -> Element<'_, Message> {
         .chain(std::iter::once(sectioning))
         .chain(VIEWS.iter().map(|(v, label)| tool(t, tr(*label), false, Some(Message::View3d(Nav::Goal(Goal::standard(*v)))))));
     let idle = app.job.is_none();
+    // The tools: each lit while on, a second press turns it off.
+    let tools = Tool::ALL.into_iter().map(|k| {
+        let on = app.tool == Some(k);
+        tool(t, lookup(k.label()), on, idle.then_some(Message::Tool((!on).then_some(k))))
+    });
     let commands = COMMANDS.iter().map(|(id, label)| tool(t, tr(*label), *id == "solve.run", idle.then(|| Message::Start((*id).to_owned()))));
     let gap = || Space::new().width(16).boxed();
-    row(overlays.chain(std::iter::once(gap())).chain(views).chain(std::iter::once(gap())).chain(commands))
+    row(overlays.chain(std::iter::once(gap())).chain(views).chain(std::iter::once(gap())).chain(tools).chain(std::iter::once(gap())).chain(commands))
         .spacing(6)
         .align_y(Alignment::Center)
         .wrap()
@@ -226,9 +233,26 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
     let picture: Element<Message> = match app.view3d.shown.as_ref().filter(|s| s.bounds.is_some()) {
         Some(s) => {
-            let viewer = Viewer { shot: app.shot(s), nav: app.nav, hover: app.view3d.overlay == Overlay::Field };
+            let hover = app.view3d.overlay == Overlay::Field || app.tool.is_some();
+            let grip = app.grip_at().map(crate::geom::point);
+            let viewer = Viewer { shot: app.shot(s), nav: app.nav, hover, tool: app.tool.is_some(), grip };
             let labels = Labels { labels: &s.labels, camera: app.view3d.camera, boxsel: app.view3d.boxsel, tokens: t };
-            stack![shader(viewer).width(Fill).height(Fill), canvas(labels).width(Fill).height(Fill), legend(app), card(app), probe_card(app)].boxed()
+            let marks = Marks {
+                tools: &app.tools,
+                tool: app.tool,
+                camera: app.view3d.camera,
+                scene: Some(&s.built.scene),
+                model: app.session.model(),
+                reference: app.reference(),
+                length: app.session.display().length,
+                tokens: t,
+            };
+            // The view's size as laid out, from the first frame on (picks and fits need it before
+            // the pointer comes over the view).
+            let size = |s: iced::Size| Message::View3d(Nav::Size(s.width, s.height));
+            let view = iced::widget::sensor(shader(viewer).width(Fill).height(Fill)).on_show(size).on_resize(size);
+            stack![view, canvas(labels).width(Fill).height(Fill), canvas(marks).width(Fill).height(Fill), legend(app), card(app), probe_card(app)]
+                .boxed()
         }
         None => container(text(tr(t!("No geometry yet: open a sample or start at step 1, Geometry."))).size(t.font_heading).color(t.text_dim))
             .center(Fill)

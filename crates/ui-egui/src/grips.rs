@@ -281,7 +281,7 @@ pub fn under(app: &EmcraftApp, v: &View3d, rect: Rect, at: Pos2) -> Option<(Grip
 pub fn start(app: &EmcraftApp, v: &mut View3d, rect: Rect, at: Pos2) -> bool {
     let Some((grip, _)) = under(app, v, rect, at) else { return false };
     let Some(held) = held(app) else { return false };
-    v.tools.body_drag = Some(BodyDrag { held, grip, raw: 0.0, snapped: 0.0, plane: None, typed: String::new() });
+    v.body_drag = Some(BodyDrag { held, grip, raw: 0.0, snapped: 0.0, plane: None, typed: String::new() });
     true
 }
 
@@ -291,9 +291,9 @@ pub fn start(app: &EmcraftApp, v: &mut View3d, rect: Rect, at: Pos2) -> bool {
 /// twentieth of what it was.
 pub fn drag(app: &EmcraftApp, v: &mut View3d, rect: Rect, d: egui::Vec2) {
     let step = step(app);
-    let Some(bd) = v.tools.body_drag.as_ref() else { return };
+    let Some(bd) = v.body_drag.as_ref() else { return };
     if bd.grip == Grip::Turn {
-        if let Some(bd) = v.tools.body_drag.as_mut() {
+        if let Some(bd) = v.body_drag.as_mut() {
             bd.raw += f64::from(d.length());
             bd.snapped = bd.raw;
         }
@@ -314,7 +314,7 @@ pub fn drag(app: &EmcraftApp, v: &mut View3d, rect: Rect, d: egui::Vec2) {
     let px = f64::from(along.length()) / span;
     let carried = carried(&bd.held, bd.grip, q, dir);
     let candidates = carried.first().map(|c| planes(app, &bd.held, c.0)).unwrap_or_default();
-    let Some(bd) = v.tools.body_drag.as_mut() else { return };
+    let Some(bd) = v.body_drag.as_mut() else { return };
     bd.raw += f64::from(d.dot(along) / along.length_sq()) * span;
     let was = value(&bd.held, bd.grip, 0.0);
     // The nearest plane a carried face reaches within the snap's reach: the move that puts it there.
@@ -343,7 +343,7 @@ const TURN_PX: f64 = 24.0;
 /// The drag let go: one `geometry.body.edit` with the dimension (and a box's near face its
 /// origin), the origin moved, or the axis turned, where it was left.
 pub fn end(app: &EmcraftApp, v: &mut View3d, out: &mut Actions) {
-    let Some(bd) = v.tools.body_drag.take() else { return };
+    let Some(bd) = v.body_drag.take() else { return };
     let l = app.session.display().length;
     let moved = bd.moved(l);
     if moved == 0.0 || (bd.grip == Grip::Turn && moved < TURN_PX) {
@@ -387,7 +387,7 @@ pub fn end(app: &EmcraftApp, v: &mut View3d, out: &mut Actions) {
 /// distance, signed). Enter lets go with it, Escape drops the drag, Backspace takes a digit back.
 /// The keys are taken from the frame, so nothing else reads them.
 pub fn keys(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, out: &mut Actions) {
-    if v.tools.body_drag.is_none() {
+    if v.body_drag.is_none() {
         return;
     }
     let (mut enter, mut escape) = (false, false);
@@ -413,7 +413,7 @@ pub fn keys(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, out: &mut Actions) 
             _ => true,
         });
     });
-    let Some(bd) = v.tools.body_drag.as_mut() else { return };
+    let Some(bd) = v.body_drag.as_mut() else { return };
     for c in typed {
         match c {
             Some(c) if bd.typed.len() < 24 => bd.typed.push(c),
@@ -424,7 +424,7 @@ pub fn keys(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, out: &mut Actions) 
         }
     }
     if escape {
-        v.tools.body_drag = None;
+        v.body_drag = None;
     } else if enter {
         end(app, v, out);
     }
@@ -436,7 +436,7 @@ pub fn draw(app: &EmcraftApp, v: &View3d, p: &egui::Painter, rect: Rect) {
     let Some(h) = held(app) else { return };
     let t = &Tokens::get();
     let l = app.session.display().length;
-    let dragging = v.tools.body_drag.as_ref().filter(|d| d.held.name == h.name);
+    let dragging = v.body_drag.as_ref().filter(|d| d.held.name == h.name);
     let middle = h.at + h.axis.turn(h.middle_local());
     let axis_colour = |k: usize| [t.axis_x, t.axis_y, t.axis_z][k.min(2)];
     for (g, q, dir) in grips_of(&h) {
@@ -499,7 +499,7 @@ pub fn nearest(app: &EmcraftApp, v: &View3d, rect: Rect, at: Option<Pos2>) -> Op
 
 /// Whether a body's grip is being dragged.
 pub fn dragging(v: &View3d) -> bool {
-    v.tools.body_drag.is_some()
+    v.body_drag.is_some()
 }
 
 /// The actions a body's drag ends in.

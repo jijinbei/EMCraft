@@ -1,426 +1,48 @@
-//! The 3D view's tools, worked by pointing at the model:
-//! - **Face port**: hovering lights the face under the pointer; a face across z at an end of the
-//!   model takes a waveguide port at a click (`model.port.create`, the next free name, the
-//!   default modes), any other flat face across x, y or z of a solid (a bend's or a tee's arm
-//!   ending on a side, a guide's end inside a body) opens the port dialog on that rectangle and
-//!   axis (the side the guide lies on to choose), a port's own face selects it.
-//! - **Gap port**: two clicks, each snapped to a corner, an edge's middle, a face's centre, an
-//!   edge or a face, give a lumped port's `from` and `to` (`model.port.lumped`).
-//! - **Measure**: two clicks, snapped the same way, measured by `geometry.measure` (a face
-//!   brings its normal, an edge its direction): the distance drawn as a dimension, with Δx,
-//!   Δy, Δz and the gap or angle the picks define on a card. Escape clears.
-//! - A selected port's **reference plane** (its de-embedding) is drawn inside the model and
-//!   dragged along the port's line by its grip; the drag ends in `model.port.edit {deembed}`.
-//!
-//! What the pointer is over is found on the drawn scene: the nearest tagged triangle under it
-//! ([`crate::scene3d::Built::hits`], through the scene's index) and its face ([`crate::scene3d::faces::Face`]). Every
-//! change goes through a command; a tool never edits the model itself.
+//! The 3D view's tools in the egui window: what the shared rules find and decide
+//! ([`emcraft_ui_core::tools`]: the face and snap under the pointer, where a port goes, what a
+//! click runs, the reference plane's drag) drawn over the picture — the face lit, the snap's
+//! marker, the points picked, the measurement's dimension and card, the reference plane and its
+//! grip — and the reference plane's field under the selection card.
 
 use egui::{FontId, Pos2, Rect, Stroke, pos2, vec2};
 use emcraft_model::End;
-use emcraft_model::geom::{Point3, Vec3};
-use emcraft_render::view3d::{self, Camera};
+use emcraft_render::view3d::Camera;
+use emcraft_ui_core::tools::{self, Ink, Outcome, Sight, reference};
 use serde_json::{Value, json};
 
 use crate::handle::{Fixed, Handle};
-use crate::lang::{Raw, args, tr, trf};
-use crate::scene3d::faces::Face;
-use crate::scene3d::{Pick, along, quad_centre};
+use crate::lang::{Raw, tr};
+use crate::scene3d::quad_centre;
 use crate::theme::Tokens;
 use crate::view3d::View3d;
 use crate::{Action, Actions, EmcraftApp, Hint, UiExt, scenario};
 
-pub use emcraft_ui_core::tools::{Snap, SnapKind, Tool};
-
-/// A snap as `ui.inspect` gives it, lengths in `l`.
-fn snap_inspect(s: &Snap, l: emcraft_model::units::Length) -> Value {
-    json!({"kind": s.kind.id(), "at": shown(l, s.at)})
-}
-
-/// What a click of the port tool does on the face under the pointer.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum PortTarget {
-    /// A port's own face: selects it.
-    Existing(usize),
-    /// A free end of the model: a port there at once.
-    End(End),
-    /// A face across `axis` of a solid, not a free end: the port dialog on its rectangle (m:
-    /// `face` as `model.port.create` takes it), the guide's side guessed from where the body
-    /// lies.
-    Inside { axis: emcraft_model::Axis, face: [f64; 5], end: End },
-    /// An imported cavity's opening across x or y: a port there at once (m: `face`).
-    Opening { axis: emcraft_model::Axis, face: [f64; 5], end: End },
-    /// No port goes here: why.
-    No(crate::lang::Text),
-}
-
-impl PortTarget {
-    /// Its name for `ui.inspect`.
-    fn id(self) -> &'static str {
-        match self {
-            PortTarget::Existing(_) => "existing",
-            PortTarget::End(End::Start) => "start",
-            PortTarget::End(End::End) => "end",
-            PortTarget::Inside { .. } => "inside",
-            PortTarget::Opening { .. } => "opening",
-            PortTarget::No(_) => "none",
-        }
-    }
-}
-
-/// What the pointer is over while a tool is on.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Hover {
-    pub face: Face,
-    pub snap: Snap,
-    pub port: Option<PortTarget>,
-}
-
-/// A port's reference plane while its grip is dragged.
-#[derive(Clone, Debug, PartialEq)]
-pub struct RefDrag {
-    pub port: usize,
-    pub name: String,
-    /// The de-embedding (m) it shows now: where the pointer put it, at 0 when that is near.
-    pub deembed: f64,
-    /// Where the pointer put it (m).
-    pub raw: f64,
-}
-
-/// A measurement: its picks and `geometry.measure`'s reply.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Measured {
-    pub picks: [Snap; 2],
-    pub reply: Value,
-}
+pub use emcraft_ui_core::tools::reference::rounded;
+pub use emcraft_ui_core::tools::{GRIP_PX, Hover, Measured, PortTarget, RefPlane, Snap, SnapKind, Tool, Tools, measure_params, trimmed};
 
 /// The reference plane's field under the selection card.
 #[derive(Clone, Debug, PartialEq)]
-struct RefText {
+pub struct RefText {
     port: usize,
     text: String,
     /// The value (display units) it was filled from.
     seen: f64,
 }
 
-/// Most faces [`FaceCache`] keeps.
-const CACHED_FACES: usize = 4;
-
-/// The faces last found (the latest last), by the scene generation and triangle each was found
-/// from: finding a face floods the scene's triangles, so the pointer moving over one face finds
-/// it here again.
-#[derive(Clone, Debug, Default)]
-struct FaceCache(Vec<((u64, usize), Face)>);
-
-impl FaceCache {
-    /// The face of `scene`'s triangle `index` in generation `now`, looked up or found.
-    fn find(&mut self, built: &crate::scene3d::Built, now: u64, index: usize) -> Option<Face> {
-        let key = (now, index);
-        if let Some(i) = self.0.iter().position(|(k, _)| *k == key) {
-            // The latest last.
-            let found = self.0.remove(i);
-            let f = found.1.clone();
-            self.0.push(found);
-            return Some(f);
-        }
-        let f = Face::of_indexed(&built.scene, built.cache.index(&built.scene), index)?;
-        self.0.push((key, f.clone()));
-        if self.0.len() > CACHED_FACES {
-            self.0.remove(0);
-        }
-        Some(f)
-    }
-
-    /// The face last found, if in generation `now`.
-    fn last(&self, now: u64) -> Option<&Face> {
-        self.0.last().filter(|((g, _), _)| *g == now).map(|(_, f)| f)
-    }
-}
-
-/// The tools' state.
-#[derive(Clone, Debug, Default)]
-pub struct Tools {
-    pub hover: Option<Hover>,
-    faces: FaceCache,
-    /// The points clicked so far (a gap's first end, a measurement's first pick).
-    pub picks: Vec<Snap>,
-    /// The last measurement.
-    pub measured: Option<Measured>,
-    pub drag: Option<RefDrag>,
-    /// A body's grip being dragged ([`crate::grips`]).
-    pub body_drag: Option<crate::grips::BodyDrag>,
-    ref_text: Option<RefText>,
-}
-
-impl Tools {
-    /// What the tool had picked dropped, `tool` on next (or none; the mode is the window's,
-    /// crate::ui_state).
-    pub fn reset(&mut self, tool: Option<Tool>) {
-        self.picks.clear();
-        self.hover = None;
-        if tool != Some(Tool::Measure) {
-            self.measured = None;
-        }
-    }
-
-    /// Escape: what was picked goes; with nothing picked, the tool goes off.
-    /// Whether nothing was picked (the tool goes off then).
-    pub fn escape(&mut self) -> bool {
-        let nothing = self.picks.is_empty() && self.measured.is_none();
-        self.picks.clear();
-        self.measured = None;
-        nothing
-    }
-
-    /// The state for `ui.inspect`.
-    pub fn inspect(&self, tool: Option<Tool>, l: emcraft_model::units::Length) -> Value {
-        json!({
-            "tool": tool.map(Tool::id),
-            "pointer": self.hover.as_ref().map(|h| {
-                let mut v = snap_inspect(&h.snap, l);
-                v["port"] = h.port.map_or(Value::Null, |p| json!(p.id()));
-                v
-            }),
-            "picks": self.picks.iter().map(|p| snap_inspect(p, l)).collect::<Vec<_>>(),
-            "measure": self.measured.as_ref().map(|m| m.reply.clone()),
-            "drag": self.drag.as_ref().map(|d| json!({"port": d.name, "deembed": l.from_si(d.deembed)})),
-            "grip": self.body_drag.as_ref().map(|d| d.inspect(l)),
-        })
-    }
-}
-
-/// `v` with up to `digits` decimals, trailing zeros dropped.
-pub fn trimmed(v: f64, digits: usize) -> String {
-    let s = format!("{v:.digits$}");
-    if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_owned() } else { s }
-}
-
-/// Pixels from a snap point within which the pointer snaps to it.
-const SNAP_PX: f32 = 10.0;
-/// Pixels from an edge within which the pointer picks it.
-const EDGE_PX: f32 = 5.0;
-/// Pixels from the reference plane's grip a drag takes it.
-pub const GRIP_PX: f32 = 12.0;
-
 /// Where `p` lands on screen in `rect`.
 pub fn screen(cam: &Camera, rect: Rect, p: [f64; 3]) -> Option<Pos2> {
-    let q = cam.project(p, f64::from(rect.width()), f64::from(rect.height()))?;
-    q.iter().all(|c| c.is_finite()).then(|| rect.min + vec2(q[0] as f32, q[1] as f32))
-}
-
-/// The distance from `p` to the segment `a`–`b` on screen, and how far along it.
-fn to_segment(p: Pos2, a: Pos2, b: Pos2) -> (f32, f32) {
-    let d = b - a;
-    let t = if d.length_sq() > 0.0 { ((p - a).dot(d) / d.length_sq()).clamp(0.0, 1.0) } else { 0.0 };
-    ((a + d * t).distance(p), t)
-}
-
-/// The point of segment `a`–`b` nearest the ray through the pointer (`t` on screen when the
-/// ray runs along it).
-fn on_segment(ray: Option<([f64; 3], [f64; 3])>, a: [f64; 3], b: [f64; 3], t: f32) -> [f64; 3] {
-    let (a, b) = (Point3::from(a), Point3::from(b));
-    let Some((o, d)) = ray else { return a.lerp(b, f64::from(t)).to_array() };
-    let (u, w, d) = (b - a, a - Point3::from(o), Vec3::from(d));
-    let (uu, ud, dd) = (u.dot(u), u.dot(d), d.dot(d));
-    let den = uu * dd - ud * ud;
-    if den.abs() <= 1e-12 * uu * dd {
-        return a.lerp(b, f64::from(t)).to_array();
-    }
-    let s = ((ud * w.dot(d) - dd * w.dot(u)) / den).clamp(0.0, 1.0);
-    a.lerp(b, s).to_array()
-}
-
-/// The point halfway along `a`–`b`.
-fn halfway(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    Point3::from(a).lerp(Point3::from(b), 0.5).to_array()
-}
-
-/// The unit vector from `a` to `b`, if they differ.
-fn direction(a: [f64; 3], b: [f64; 3]) -> Option<[f64; 3]> {
-    (Point3::from(b) - Point3::from(a)).normalized().map(Vec3::to_array)
-}
-
-/// What the pointer at `at` snaps to on `face`, hit at `hit`: a corner, an edge's middle or the
-/// face's centre within [`SNAP_PX`], else an edge within [`EDGE_PX`], else the face where it
-/// was hit (just off the face, past its outline, only its corners and edges).
-fn snap(face: &Face, hit: Option<[f64; 3]>, cam: &Camera, rect: Rect, at: Pos2) -> Option<Snap> {
-    let mut best: Option<(f32, Snap)> = None;
-    let mut consider = |p: [f64; 3], kind: SnapKind, dir: Option<[f64; 3]>| {
-        if let Some(s) = screen(cam, rect, p) {
-            let d = s.distance(at);
-            if d <= SNAP_PX && best.as_ref().is_none_or(|(b, _)| d < *b) {
-                best = Some((d, Snap { at: p, kind, dir }));
-            }
-        }
-    };
-    for c in &face.corners {
-        consider(*c, SnapKind::Vertex, None);
-    }
-    for (a, b) in &face.edges {
-        consider(halfway(*a, *b), SnapKind::Midpoint, None);
-    }
-    consider(face.centre, SnapKind::Centre, Some(face.normal));
-    if let Some((_, s)) = best {
-        return Some(s);
-    }
-    let ray = cam.ray(emcraft_render::view3d::Pixel::new(
-        f64::from(at.x - rect.left()),
-        f64::from(at.y - rect.top()),
-        f64::from(rect.width()),
-        f64::from(rect.height()),
-    ));
-    let mut edge: Option<(f32, Snap)> = None;
-    for (a, b) in &face.edges {
-        let (Some(sa), Some(sb)) = (screen(cam, rect, *a), screen(cam, rect, *b)) else { continue };
-        let (d, t) = to_segment(at, sa, sb);
-        if d <= EDGE_PX && edge.as_ref().is_none_or(|(e, _)| d < *e) {
-            edge = Some((d, Snap { at: on_segment(ray, *a, *b, t), kind: SnapKind::Edge, dir: direction(*a, *b) }));
-        }
-    }
-    edge.map(|(_, s)| s).or_else(|| hit.map(|at| Snap { at, kind: SnapKind::Face, dir: Some(face.normal) }))
-}
-
-/// Why no port goes on a face that is not flat across an axis.
-const FLAT_ONLY: crate::lang::Text = t!("Ports lie on flat faces across x, y or z");
-
-/// Why no port goes on an imported cavity's wall.
-const OPENINGS_ONLY: crate::lang::Text = t!("Ports go on the channel's openings, not on its walls");
-
-/// What a port goes on at `face`.
-fn port_target(m: &emcraft_model::Model, face: &Face) -> PortTarget {
-    if let Some(Pick::Port(i)) = Pick::from_tag(face.tag) {
-        return PortTarget::Existing(i);
-    }
-    let (Some(axis), Some(b)) = (face.axis(), m.bounds()) else { return PortTarget::No(FLAT_ONLY) };
-    // An imported cavity: ports go on its openings only, never on its walls.
-    let openings = m.openings();
-    if !openings.is_empty() {
-        let near = 1e-6 * (0..3).map(|d| (b.max[d] - b.min[d]).abs()).fold(1e-9, f64::max);
-        let centre = Point3::from(face.centre);
-        let Some((end, f)) = openings.iter().find(|(_, f)| f.axis == axis && f.holds(centre, near)) else {
-            return PortTarget::No(OPENINGS_ONLY);
-        };
-        let existing = m.ports.iter().position(|p| match p.face {
-            Some(q) => q.axis == f.axis && q.holds(centre, near),
-            None => axis == emcraft_model::Axis::Z && p.end == *end,
-        });
-        return match existing {
-            Some(i) => PortTarget::Existing(i),
-            None if axis == emcraft_model::Axis::Z => PortTarget::End(*end),
-            None => PortTarget::Opening { axis, face: f.values(), end: *end },
-        };
-    }
-    let z = face.centre[2];
-    let tol = 1e-6 * (b.max.z - b.min.z).abs().max(1e-9);
-    if m.domain.open.is_none() && axis == emcraft_model::Axis::Z {
-        let end = if (z - b.min.z.min(0.0)).abs() <= tol {
-            Some(End::Start)
-        } else if (z - b.max.z).abs() <= tol {
-            Some(End::End)
-        } else {
-            None
-        };
-        if let Some(end) = end {
-            return match m.ports.iter().position(|p| p.face.is_none() && p.end == end) {
-                Some(i) => PortTarget::Existing(i),
-                None => PortTarget::End(end),
-            };
-        }
-    }
-    if m.domain.solid.is_none() {
-        return PortTarget::No(t!("A port inside the model needs a solid"));
-    }
-    // A port's own face, where the body's face is found in front of the port's.
-    let k = axis.index();
-    let centre = Point3::from(face.centre);
-    let near = 1e-6 * (0..3).map(|d| (b.max[d] - b.min[d]).abs()).fold(1e-9, f64::max);
-    if let Some(i) = m.ports.iter().position(|p| p.face.is_some_and(|f| f.axis == axis && f.holds(centre, near))) {
-        return PortTarget::Existing(i);
-    }
-    // The guide lies where the body is: above the face along its axis, or below it.
-    let emcraft_model::port::FrameAxes { u, v, .. } = emcraft_model::Frame::new(axis).axes();
-    let h = 1e-4 * (b.max[k] - b.min[k]).abs().max(1e-9);
-    let ahead = centre.with(k, centre[k] + h);
-    let end = if m.material_at(ahead).is_some() { End::Start } else { End::End };
-    let face = [face.centre[k], face.lo[u], face.lo[v], face.hi[u] - face.lo[u], face.hi[v] - face.lo[v]];
-    PortTarget::Inside { axis, face, end }
+    tools::screen(cam, crate::geom::vector(rect.size()), p).map(|q| rect.min + vec2(q.x, q.y))
 }
 
 /// Finds what the pointer (`at`, in `rect`) is over while a tool is on.
 pub fn hover(app: &EmcraftApp, v: &mut View3d, rect: Rect, at: Option<Pos2>) {
-    let mut faces = std::mem::take(&mut v.tools.faces);
-    v.tools.hover = app.ui_state.tool().and_then(|tool| over(app, v, tool, rect, at, &mut faces));
-    v.tools.faces = faces;
-}
-
-/// What the pointer is over for `tool`, the faces found kept in `faces`.
-fn over(app: &EmcraftApp, v: &View3d, tool: Tool, rect: Rect, at: Option<Pos2>, faces: &mut FaceCache) -> Option<Hover> {
-    let p = at.filter(|p| rect.contains(*p)).filter(|_| !v.dragging)?;
-    let scene = v.shown()?;
-    let (w, h) = (f64::from(rect.width()), f64::from(rect.height()));
-    let m = app.session.model();
-    let now = v.scene_gen();
-    // Near a corner, an edge's middle or the centre of the face last under the pointer, the
-    // snap holds (on a body's outline the pointer may as well hit what lies behind).
-    if tool != Tool::Port
-        && let Some(last) = faces.last(now)
-        && let Some(s) = snap(last, None, &v.camera, rect, p).filter(|s| !matches!(s.kind, SnapKind::Edge | SnapKind::Face))
-    {
-        return Some(Hover { face: last.clone(), snap: s, port: None });
-    }
-    let hits = scene.hits(&v.camera, emcraft_render::view3d::Pixel::new(f64::from(p.x - rect.left()), f64::from(p.y - rect.top()), w, h));
-    let mut face_of = |hit: &view3d::Hit| faces.find(scene, now, hit.index);
-    // Points are picked through see-through walls, on what they show inside, as a click selects.
-    // A port goes on the face in front when one may go there (a free end, a port's face), else
-    // on what shows through it (a body's face inside an open box).
-    let hit = match hits {
-        None => None,
-        Some(emcraft_render::view3d::Hits { nearest: near, solid }) if tool == Tool::Port => {
-            let air = |h: &view3d::Hit| m.domain.open.is_some() && Pick::from_tag(h.tag) == Some(Pick::Solid);
-            let mut usable = |h: &view3d::Hit| !air(h) && face_of(h).is_some_and(|f| !matches!(port_target(m, &f), PortTarget::No(_)));
-            if usable(&near) {
-                Some(near)
-            } else {
-                // Behind see-through faces (a guide's sides in front of its far end): the first
-                // face along the ray a port may go on, else what shows through.
-                let ray = v.camera.ray(emcraft_render::view3d::Pixel::new(f64::from(p.x - rect.left()), f64::from(p.y - rect.top()), w, h));
-                let behind = ray.map(|r| emcraft_render::view3d::hits_in_order(&scene.scene, r, 32)).unwrap_or_default();
-                Some(behind.into_iter().find(|h| usable(h)).unwrap_or_else(|| solid.unwrap_or(near)))
-            }
-        }
-        Some(h) => Some(h.picked()),
-    };
-    let face = match hit {
-        Some(hit) => face_of(&hit)?,
-        // Just off the face last under the pointer, its corners and edges still snap.
-        None if tool != Tool::Port => faces.last(now)?.clone(),
-        None => return None,
-    };
-    let s = snap(&face, hit.map(|h| h.at), &v.camera, rect, p)?;
-    let port = (tool == Tool::Port).then(|| port_target(m, &face));
-    Some(Hover { face, snap: s, port })
-}
-
-/// The smallest free port name: 1, 2, …
-fn next_name(m: &emcraft_model::Model) -> String {
-    (1..=10_000usize).map(|n| n.to_string()).find(|n| !m.has_port_named(n)).unwrap_or_else(|| "new".to_owned())
-}
-
-/// A length (m) in display units, to ten significant digits: what a pick's rounding leaves
-/// (23.000000000000004 mm) reads as it was meant (23).
-fn neat(l: emcraft_model::units::Length, x: f64) -> f64 {
-    let v = l.from_si(x);
-    format!("{v:.9e}").parse().unwrap_or(v)
-}
-
-/// A length (m) in display units, to a thousandth: a reference plane as set and shown.
-fn rounded(l: emcraft_model::units::Length, x: f64) -> f64 {
-    (l.from_si(x) * 1e3).round() / 1e3
-}
-
-/// A point (m) as `[x, y, z]` in display units.
-fn shown(l: emcraft_model::units::Length, p: [f64; 3]) -> Value {
-    json!(p.map(|c| neat(l, c)))
+    let at = at.filter(|p| rect.contains(*p)).filter(|_| !v.dragging).map(|p| crate::geom::point(p - rect.min.to_vec2()));
+    let generation = v.scene_gen();
+    let camera = v.camera;
+    let mut tools = std::mem::take(&mut v.tools);
+    let sight = v.shown().map(|built| Sight { built, generation, camera: &camera, size: crate::geom::vector(rect.size()) });
+    tools.hovered(app.session.model(), sight.as_ref(), app.ui_state.tool(), at);
+    v.tools = tools;
 }
 
 /// While a tool is on, a band over the 3D view says so: what it does and how to leave it.
@@ -438,88 +60,21 @@ pub fn banner(app: &EmcraftApp, ui: &egui::Ui, rect: Rect) {
 
 /// A click with a tool on: what it asks for.
 pub fn click(app: &EmcraftApp, v: &mut View3d, out: &mut Actions) {
-    let (Some(tool), Some(hover)) = (app.ui_state.tool(), v.tools.hover.clone()) else { return };
-    let m = app.session.model();
-    let l = app.session.display().length;
-    match tool {
-        Tool::Port => match hover.port {
-            Some(PortTarget::Existing(i)) => {
-                let row = crate::browser::row_of(app, Pick::Port(i)).map(|(k, _)| k);
-                out.push(Action::Select { row, picks: vec![Pick::Port(i)] });
-            }
-            Some(PortTarget::End(end)) => out.push(Action::run("model.port.create", json!({"name": next_name(m), "end": end.id()}))),
-            Some(PortTarget::Inside { axis, face, end }) => {
-                let face = face.map(|c| neat(l, c));
-                out.push(Action::dialog_with("model.port.create", json!({"name": next_name(m), "end": end.id(), "face": face, "axis": axis.id()})));
-            }
-            Some(PortTarget::Opening { axis, face, end }) => {
-                let face = face.map(|c| neat(l, c));
-                out.push(Action::run("model.port.create", json!({"name": next_name(m), "end": end.id(), "face": face, "axis": axis.id()})));
-            }
-            Some(PortTarget::No(why)) => out.push(Action::error(tr(why))),
-            None => {}
-        },
-        Tool::Lumped => {
-            v.tools.picks.push(hover.snap);
-            if let [a, b] = v.tools.picks[..] {
-                v.tools.picks.clear();
-                out.push(Action::run("model.port.lumped", json!({"name": next_name(m), "from": shown(l, a.at), "to": shown(l, b.at)})));
-            }
-        }
-        Tool::Measure => {
-            v.tools.measured = None;
-            v.tools.picks.push(hover.snap);
-            if let [a, b] = v.tools.picks[..] {
-                v.tools.picks.clear();
-                out.push(Action::Measure([a, b]));
-            }
-        }
-    }
-}
-
-/// `geometry.measure`'s parameters for two picks, lengths in `l`.
-pub fn measure_params(l: emcraft_model::units::Length, [a, b]: [Snap; 2]) -> Value {
-    let mut p = json!({"from": shown(l, a.at), "to": shown(l, b.at)});
-    for (s, name) in [(a, "from"), (b, "to")] {
-        match (s.kind, s.dir) {
-            (SnapKind::Face, Some(n)) => p[format!("{name}_normal")] = json!(n),
-            (SnapKind::Edge, Some(d)) => p[format!("{name}_along")] = json!(d),
-            _ => {}
-        }
-    }
-    p
-}
-
-/// A selected port's reference plane: the port, its face moved by its de-embedding along its
-/// line, and the line's direction (a unit vector into the model along the port's axis).
-pub struct RefPlane {
-    pub port: usize,
-    pub name: String,
-    pub deembed: f64,
-    pub face: [[f64; 3]; 4],
-    pub inward: [f64; 3],
-}
-
-impl RefPlane {
-    /// Its corners: the port's face's, moved by the de-embedding.
-    fn at(&self) -> [[f64; 3]; 4] {
-        self.face.map(|p| along(p, self.inward, self.deembed))
-    }
-
-    /// Where its grip is.
-    fn centre(&self) -> [f64; 3] {
-        quad_centre(&self.at())
-    }
+    let Some(tool) = app.ui_state.tool() else { return };
+    let action = match v.tools.clicked(tool, app.session.model(), app.session.display().length) {
+        Some(Outcome::Select(pick)) => Action::Select { row: crate::browser::row_of(app, pick).map(|(k, _)| k), picks: vec![pick] },
+        Some(Outcome::Run(id, params)) => Action::run(id, params),
+        Some(Outcome::Dialog(id, params)) => Action::dialog_with(id, params),
+        Some(Outcome::Refused(why)) => Action::error(tr(why)),
+        Some(Outcome::Measure(picks)) => Action::Measure(picks),
+        None => return,
+    };
+    out.push(action);
 }
 
 /// The reference plane of the selected port (as dragged, while it is).
 pub fn ref_plane(app: &EmcraftApp, v: &View3d) -> Option<RefPlane> {
-    let [Pick::Port(i)] = app.ui_state.selection()[..] else { return None };
-    let m = app.session.model();
-    let p = m.ports.get(i)?;
-    let face = crate::scene3d::port_quad(m, p)?;
-    let deembed = v.tools.drag.as_ref().filter(|d| d.port == i).map_or(p.deembed, |d| d.deembed);
-    Some(RefPlane { port: i, name: p.name.clone(), deembed, face, inward: crate::scene3d::port_normal(p) })
+    reference::ref_plane(app.session.model(), app.ui_state.selection(), v.tools.drag.as_ref())
 }
 
 /// The reference plane's grip on screen.
@@ -529,36 +84,21 @@ pub fn grip(app: &EmcraftApp, v: &View3d, rect: Rect) -> Option<Pos2> {
 
 /// Starts dragging the reference plane.
 pub fn start_drag(app: &EmcraftApp, v: &mut View3d) {
-    v.tools.drag = ref_plane(app, v).map(|r| RefDrag { port: r.port, name: r.name, deembed: r.deembed, raw: r.deembed });
+    v.tools.drag = ref_plane(app, v).map(reference::start);
 }
 
-/// Moves the dragged reference plane by the pointer's move `d`: the move's share of the port's
-/// line on screen, over the model's length.
+/// Moves the dragged reference plane by the pointer's move `d`.
 pub fn drag(app: &EmcraftApp, v: &mut View3d, rect: Rect, d: egui::Vec2) {
-    let (Some(r), Some(b)) = (ref_plane(app, v), app.session.model().bounds()) else { return };
-    let span = (0..3).map(|k| (b.max[k] - b.min[k]).abs() * r.inward[k].abs()).sum::<f64>().max(1e-9);
-    let c = r.centre();
-    let (Some(a), Some(e)) = (screen(&v.camera, rect, c), screen(&v.camera, rect, along(c, r.inward, span))) else { return };
-    let along = e - a;
-    if along.length_sq() < 4.0 {
-        return;
-    }
-    if let Some(drag) = v.tools.drag.as_mut() {
-        drag.raw = (drag.raw + f64::from(d.dot(along) / along.length_sq()) * span).clamp(-span, span);
-        // The port's face holds it within a snap's pixels.
-        let near = f64::from(SNAP_PX / along.length()) * span;
-        drag.deembed = if drag.raw.abs() < near { 0.0 } else { drag.raw };
-    }
+    let Some(r) = ref_plane(app, v) else { return };
+    let size = crate::geom::vector(rect.size());
+    v.tools.drag = v.tools.drag.take().map(|drag| reference::dragged(drag, &r, app.session.model(), &v.camera, size, crate::geom::vector(d)));
 }
 
 /// The drag let go: the port's de-embedding set where it was left (rounded in display units).
 pub fn end_drag(app: &EmcraftApp, v: &mut View3d, out: &mut Actions) {
     let Some(d) = v.tools.drag.take() else { return };
-    let l = app.session.display().length;
-    let at = rounded(l, d.deembed);
-    let now = app.session.model().ports.get(d.port).map(|p| l.from_si(p.deembed));
-    if now.is_some_and(|n| (n - at).abs() > 0.0) {
-        out.push(Action::run("model.port.edit", json!({"name": d.name, "deembed": at})));
+    if let Some(params) = reference::let_go(&d, app.session.model(), app.session.display().length) {
+        out.push(Action::run("model.port.edit", params));
     }
 }
 
@@ -642,23 +182,11 @@ fn hovered(app: &EmcraftApp, v: &View3d, tool: Tool, h: &Hover, p: &egui::Painte
     }
     if tool == Tool::Port {
         if let Some(q) = at(h.face.centre) {
-            tip(p, q, &port_text(app, h.port), ok);
+            tip(p, q, &tools::port_text(app.session.model(), h.port), ok);
         }
     } else if let Some(q) = at(h.snap.at) {
         marker(p, q, h.snap.kind);
         scenario::publish_handle(Fixed::View3dSnap, q);
-    }
-}
-
-/// What a port-tool click does here, in a few words.
-fn port_text(app: &EmcraftApp, target: Option<PortTarget>) -> String {
-    let m = app.session.model();
-    match target {
-        Some(PortTarget::Existing(i)) => m.ports.get(i).map_or_else(String::new, |p| trf(t!("Port {name}"), args!(name = p.name))),
-        Some(PortTarget::End(_) | PortTarget::Opening { .. }) => format!("+ {}", trf(t!("Port {name}"), args!(name = next_name(m)))),
-        Some(PortTarget::Inside { .. }) => format!("+ {}…", trf(t!("Port {name}"), args!(name = next_name(m)))),
-        Some(PortTarget::No(why)) => tr(why).to_owned(),
-        None => String::new(),
     }
 }
 
@@ -713,8 +241,6 @@ fn dashed(p: &egui::Painter, a: Pos2, b: Pos2, s: Stroke) {
 fn dimension(p: &egui::Painter, cam: &Camera, rect: Rect, [a, b]: &[Snap; 2], reply: &Value) {
     let t = &Tokens::get();
     let at = |q: [f64; 3]| screen(cam, rect, q);
-    let unit = reply.get("unit").and_then(Value::as_str).unwrap_or("");
-    let num = |k: &str| reply.get(k).and_then(Value::as_f64);
     // The legs: x, then y, then z.
     let mut q = a.at;
     for (k, ink) in [t.axis_x, t.axis_y, t.axis_z].into_iter().enumerate() {
@@ -739,21 +265,16 @@ fn dimension(p: &egui::Painter, cam: &Camera, rect: Rect, [a, b]: &[Snap; 2], re
     for s in [sa, sb] {
         p.circle_filled(s, 3.0, t.accent);
     }
-    let distance = num("distance").map_or_else(|| "—".to_owned(), |x| format!("{} {unit}", trimmed(x, 4)));
+    let distance = tools::measure_distance(reply);
     tip(p, sa + d * 0.5 + vec2(0.0, -14.0), &distance, true);
     // The card: the distance, its components, the gap and the angle.
-    let delta = reply.get("delta").and_then(Value::as_array);
-    let comp = |k: usize| delta.and_then(|v| v.get(k)).and_then(Value::as_f64).map_or_else(|| "—".to_owned(), |x| trimmed(x, 4));
-    let mut lines =
-        vec![(distance, t.text), (format!("Δx {}", comp(0)), t.axis_x), (format!("Δy {}", comp(1)), t.axis_y), (format!("Δz {}", comp(2)), t.axis_z)];
-    if let Some(g) = num("gap") {
-        lines.push((trf(t!("gap {gap} {unit}"), args!(gap = trimmed(g, 4), unit = unit)), t.text));
-    }
-    if let Some(angle) = num("angle") {
-        lines.push((format!("∠ {}°", trimmed(angle, 2)), t.text));
-    }
+    let axes = [t.axis_x, t.axis_y, t.axis_z];
+    let lines = tools::measure_card(reply).into_iter().map(|(s, ink)| match ink {
+        Ink::Axis(k) => (s, axes.get(k).copied().unwrap_or(t.text)),
+        Ink::Text => (s, t.text),
+    });
     let font = FontId::proportional(t.font_small);
-    let galleys: Vec<_> = lines.into_iter().map(|(s, c)| p.layout_no_wrap(s, font.clone(), c)).collect();
+    let galleys: Vec<_> = lines.map(|(s, c)| p.layout_no_wrap(s, font.clone(), c)).collect();
     let w = galleys.iter().map(|g| g.size().x).fold(0.0, f32::max) + 20.0;
     let h: f32 = galleys.iter().map(|g| g.size().y + 2.0).sum::<f32>() + 12.0;
     let card = Rect::from_min_size(pos2(rect.right() - w - 12.0, rect.top() + 12.0), vec2(w, h));
@@ -787,7 +308,7 @@ fn reference(p: &egui::Painter, r: &RefPlane, cam: &Camera, rect: Rect, l: emcra
     p.circle_stroke(g, 6.0, Stroke::new(2.0, t.accent));
     p.circle_filled(g, 2.5, t.accent);
     scenario::publish_handle(Fixed::View3dRefPlane, g);
-    let text = format!("{} {}", trimmed(l.from_si(r.deembed), 3), l.symbol());
+    let text = r.label(l);
     let gal = p.layout_no_wrap(text, FontId::proportional(t.font_small), t.text);
     let box_ = Rect::from_min_size(g + vec2(10.0, -gal.size().y - 8.0), gal.size() + vec2(10.0, 4.0));
     p.rect_filled(box_, 4.0, t.panel.gamma_multiply(0.9));
@@ -798,17 +319,17 @@ fn reference(p: &egui::Painter, r: &RefPlane, cam: &Camera, rect: Rect, l: emcra
 /// sets it, 0 puts it back on the port's face (`model.port.edit {deembed}`).
 pub fn ref_field(app: &EmcraftApp, v: &mut View3d, ui: &mut egui::Ui, at: Pos2, out: &mut Actions) {
     let Some(r) = ref_plane(app, v) else {
-        v.tools.ref_text = None;
+        v.ref_text = None;
         return;
     };
     let t = &Tokens::get();
     let l = app.session.display().length;
     let now = rounded(l, r.deembed);
     // The text follows the port (and a drag) until it is edited.
-    if v.tools.ref_text.as_ref().is_none_or(|f| f.port != r.port || f.seen != now) {
-        v.tools.ref_text = Some(RefText { port: r.port, text: trimmed(now, 3), seen: now });
+    if v.ref_text.as_ref().is_none_or(|f| f.port != r.port || f.seen != now) {
+        v.ref_text = Some(RefText { port: r.port, text: trimmed(now, 3), seen: now });
     }
-    let Some(RefText { text, .. }) = v.tools.ref_text.as_mut() else { return };
+    let Some(RefText { text, .. }) = v.ref_text.as_mut() else { return };
     let busy = app.busy();
     let area = Rect::from_center_size(at + vec2(0.0, 14.0), vec2(220.0, 26.0));
     ui.painter().rect_filled(area, 6.0, t.panel.gamma_multiply(0.92));
@@ -829,39 +350,5 @@ pub fn ref_field(app: &EmcraftApp, v: &mut View3d, ui: &mut egui::Ui, at: Pos2, 
     let zero = child.add_enabled_ui(!busy && now != 0.0, |ui| ui.named(egui::Button::new("0").small(), Fixed::View3dRefZero.into())).inner;
     if zero.hint(t!("Back to the port's face")).clicked() {
         set(0.0, out);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A flat face across `axis` (0 x, 1 y, 2 z) with its centre at `c`.
-    fn face(axis: usize, c: [f64; 3]) -> Face {
-        let mut normal = [0.0; 3];
-        normal[axis] = 1.0;
-        Face { tag: 0, normal, tris: Vec::new(), outline: Vec::new(), corners: Vec::new(), edges: Vec::new(), centre: c, lo: c, hi: c }
-    }
-
-    /// An imported cavity along y (a 10 × 100 × 10 mm block, a 5 × 5 mm channel through it):
-    /// its ends take ports at once, its walls none — the side wall and the wall at the highest
-    /// z, which a z port took before.
-    #[test]
-    fn a_cavity_takes_ports_on_its_openings_only() {
-        let mut m = emcraft_model::Model::new();
-        let (lo, hi) = ([0.0025, 0.0, 0.0025], [0.0075, 0.1, 0.0075]);
-        let positions = (0..8).map(|i| Point3::new([lo[0], hi[0]][i & 1], [lo[1], hi[1]][(i >> 1) & 1], [lo[2], hi[2]][(i >> 2) & 1])).collect();
-        let quads = [[0, 4, 6, 2], [1, 3, 7, 5], [0, 1, 5, 4], [2, 6, 7, 3], [0, 2, 3, 1], [4, 5, 7, 6]];
-        let triangles = quads.iter().flat_map(|q| [[q[0], q[1], q[2]], [q[0], q[2], q[3]]]).collect();
-        let tags = vec![6, 6, 7, 7, 2, 2, 3, 3, 8, 8, 9, 9];
-        let shape = emcraft_model::Shape::Surface { name: emcraft_model::CAVITY.into(), positions, triangles, tags, surfaces: Vec::new() };
-        m.set_solid(emcraft_model::Solid { shape, material: "vacuum".into() }).unwrap();
-        let end = port_target(&m, &face(1, [0.005, 0.1, 0.005]));
-        let PortTarget::Opening { axis, face: f, end: End::End } = end else { panic!("{end:?}") };
-        assert_eq!(axis, emcraft_model::Axis::Y);
-        assert!((f[0] - 0.1).abs() < 1e-12 && (f[3] - 0.005).abs() < 1e-12, "{f:?}");
-        for wall in [face(0, [0.0075, 0.05, 0.005]), face(2, [0.005, 0.05, 0.0075])] {
-            assert_eq!(port_target(&m, &wall), PortTarget::No(OPENINGS_ONLY));
-        }
     }
 }

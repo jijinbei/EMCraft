@@ -1,0 +1,19 @@
+[
+  {"note": "The 3D view's tools by the pointer: the measure tool snaps on the face under the middle, two clicks measure, a click on empty space turns it off; the port tool on a port's end selects that port"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"click": "tool:measure"},
+  {"expect": {"inspect": {"tools.tool": "measure"}}},
+  {"call": "ui.point", "params": {"at": [400, 300]}},
+  {"expect": {"inspect": {"tools.pointer.kind": "*"}}},
+  {"call": "ui.point", "params": {"at": [400, 300], "click": true}},
+  {"expect": {"inspect": {"tools.picks.0.kind": "*"}}},
+  {"call": "ui.point", "params": {"at": [460, 330], "click": true}},
+  {"expect": {"inspect": {"tools.measure.distance": {"min": 0.001}, "tools.picks": []}}},
+  {"call": "ui.point", "params": {"at": [2, 2], "click": true}},
+  {"expect": {"inspect": {"tools.tool": null}}},
+  {"call": "ui.point", "params": {"at": [-5, 2]}, "fail": true},
+  {"click": "tool:port"},
+  {"expect": {"inspect": {"tools.tool": "port"}}},
+  {"click": "tool:port"},
+  {"expect": {"inspect": {"tools.tool": null}}}
+]

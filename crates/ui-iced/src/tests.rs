@@ -864,3 +864,79 @@ fn ctrl_key(c: &str) -> iced::Event {
         repeat: false,
     })
 }
+
+/// The 3D view's tools, as the egui window's. Analytic evidence: the measure tool snapped to two
+/// corners of the face under the pointer measures exactly their coordinates' difference (the
+/// engine's `geometry.measure`, compared with the corners themselves, in mm); the port tool on a
+/// guide's end that has a port selects that port; its reference plane dragged off the face lands
+/// on a whole thousandth of a millimetre (`model.port.edit`).
+#[test]
+fn the_tools_measure_select_ports_and_move_the_reference_plane() {
+    use crate::view3d::{Click, GripMove, Nav};
+    use emcraft_ui_core::geom::Point;
+    use emcraft_ui_core::navigation::Goal;
+    use emcraft_ui_core::tools::{SnapKind, Tool, screen};
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::View3d(Nav::Size(800.0, 600.0)));
+    app.update(Message::View3d(Nav::Goal(Goal::Home)));
+    settle(&mut app);
+    let size = emcraft_ui_core::geom::Vector::new(800.0, 600.0);
+    let middle = Point::new(400.0, 300.0);
+    // Measure: the face under the middle, then two of its corners.
+    app.update(Message::Tool(Some(Tool::Measure)));
+    app.update(Message::Hover(Some(middle)));
+    let face = app.tools.hover.as_ref().map_or_else(|| panic!("a face under the middle"), |h| h.face.clone());
+    let corners: Vec<[f64; 3]> = face.corners.clone();
+    let (a, b) = (corners[0], corners.iter().copied().find(|c| c[0] != corners[0][0]).unwrap_or(corners[1]));
+    let camera = app.view3d.camera;
+    for c in [a, b] {
+        let at = screen(&camera, size, c).unwrap_or_else(|| panic!("the corner in view"));
+        app.update(Message::Hover(Some(at)));
+        assert_eq!(app.tools.hover.as_ref().map(|h| h.snap.kind), Some(SnapKind::Vertex), "snapped to the corner");
+        app.update(Message::Click(Click { at, add: false, double: false }));
+    }
+    let reply = app.tools.measured.as_ref().map_or_else(|| panic!("measured: {:?}", app.error), |m| m.reply.clone());
+    let mm = (0..3).map(|k| ((b[k] - a[k]) * 1e3).powi(2)).sum::<f64>().sqrt();
+    let got = reply["distance"].as_f64().unwrap_or(f64::NAN);
+    assert!((got - mm).abs() < 1e-6 * mm.max(1.0), "{got} mm against the corners' {mm} mm");
+    // Escape drops the measurement, again turns the tool off.
+    app.update(Message::Escape);
+    assert!(app.tools.measured.is_none() && app.tool == Some(Tool::Measure));
+    app.update(Message::Escape);
+    assert_eq!(app.tool, None);
+    // The port tool on an end with a port selects it.
+    app.update(Message::Tool(Some(Tool::Port)));
+    let ends: Vec<[f64; 3]> = app
+        .session
+        .model()
+        .ports
+        .iter()
+        .filter_map(|p| emcraft_ui_core::scene3d::port_quad(app.session.model(), p))
+        .map(|q| emcraft_ui_core::scene3d::quad_centre(&q))
+        .collect();
+    let seen = ends.iter().filter_map(|c| screen(&camera, size, *c)).find_map(|at| {
+        app.update(Message::Hover(Some(at)));
+        app.tools.hover.as_ref().and_then(|h| h.port).filter(|p| matches!(p, emcraft_ui_core::tools::PortTarget::Existing(_))).map(|_| at)
+    });
+    let at = seen.unwrap_or_else(|| panic!("a port's face under the pointer"));
+    app.update(Message::Click(Click { at, add: false, double: false }));
+    assert!(matches!(app.selection.single(), Some(emcraft_ui_core::scene3d::Pick::Port(_))), "{:?}", app.selection.iter().collect::<Vec<_>>());
+    // A click on empty space turns the tool off.
+    app.update(Message::Hover(Some(Point::new(2.0, 2.0))));
+    app.update(Message::Click(Click { at: Point::new(2.0, 2.0), add: false, double: false }));
+    assert_eq!(app.tool, None);
+    // The selected port's reference plane dragged by its grip.
+    let Some(emcraft_ui_core::scene3d::Pick::Port(i)) = app.selection.single() else { panic!("a port") };
+    assert!(app.grip_at().is_some(), "its grip in view");
+    app.update(Message::Grip(GripMove::Start));
+    app.update(Message::Grip(GripMove::By(40.0, 0.0)));
+    app.update(Message::Grip(GripMove::By(0.0, 40.0)));
+    assert!(app.tools.drag.is_some());
+    app.update(Message::Grip(GripMove::End));
+    let deembed = app.session.model().ports.get(i).map_or(0.0, |p| p.deembed * 1e3);
+    assert!(deembed != 0.0, "moved off the port's face: {:?}", app.error);
+    assert!(((deembed * 1e3).round() - deembed * 1e3).abs() < 1e-6, "a whole thousandth of a mm: {deembed}");
+    // `ui.inspect` names the tools' state.
+    let seen = crate::control::inspect(&app);
+    assert!(seen["tools"]["drag"].is_null() && seen["tools"]["tool"].is_null());
+}

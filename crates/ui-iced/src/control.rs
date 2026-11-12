@@ -65,7 +65,10 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
             ("toolbar:mesh.generate".to_owned(), Message::Start("mesh.generate".into())),
             ("toolbar:solve.run".to_owned(), Message::Start("solve.run".into())),
         ];
-        overlays.chain(views).chain(fixed).collect::<Vec<_>>()
+        // Each tool turned on, or off when on.
+        let tools =
+            emcraft_ui_core::tools::Tool::ALL.into_iter().map(|k| (format!("tool:{}", k.id()), Message::Tool((app.tool != Some(k)).then_some(k))));
+        overlays.chain(views).chain(fixed).chain(tools).collect::<Vec<_>>()
     });
     let rows = app.rows().map(|r| (format!("row:{}", r.id), Message::Row(r.id.clone())));
     let card = (!app.selection.is_clear()).then(|| [("card:edit".to_owned(), Message::Edit), ("card:delete".to_owned(), Message::Delete)]);
@@ -114,12 +117,14 @@ pub fn inspect(app: &App) -> Value {
         })),
         "asking": app.asking.as_ref().map(|t| format!("{t:?}")),
         "selection": app.selection.iter().map(|p| format!("{p:?}")).collect::<Vec<_>>(),
+        "tools": app.tools.inspect(app.tool, app.session.display().length),
         "view3d": {
             "overlay": v.overlay.id(),
             "yaw": c.yaw.to_degrees(),
             "pitch": c.pitch.to_degrees(),
             "distance": c.distance,
             "animating": v.animating(),
+            "size": [v.size.0, v.size.1],
             "section": v.section.map(|s| s.inspect(app.session.display().length)),
             "field": {"plane": f.plane.id(), "component": f.component.id(), "frequency": f.frequency, "phase": f.phase.to_degrees(), "mode": f.mode, "error": v.field_error},
         },
@@ -157,6 +162,7 @@ impl App {
                 None => err("give `handle`: a name ui.handles lists"),
             }),
             "ui.set" => Some(self.set(p)),
+            "ui.point" => Some(self.point(p)),
             "ui.dialog" => Some(self.dialog_request(p)),
             "ui.cancel" => {
                 self.cancel();
@@ -249,6 +255,25 @@ impl App {
             if let Some(on) = p.get(k).and_then(Value::as_bool) {
                 self.update(m(on));
             }
+        }
+        ok(inspect(self))
+    }
+
+    /// `ui.point`: the pointer at `at` (`[x, y]`, points from the 3D view's corner), what is
+    /// under it found (a tool's face and snap, the field's values); with `click` it clicks there
+    /// (`double`, `add` as Shift).
+    fn point(&mut self, p: &Value) -> Value {
+        let (w, h) = self.view3d.size;
+        let at = p
+            .get("at")
+            .and_then(Value::as_array)
+            .and_then(|a| Some(emcraft_ui_core::geom::Point::new(a.first()?.as_f64()? as f32, a.get(1)?.as_f64()? as f32)))
+            .filter(|q| q.is_finite() && (0.0..=w).contains(&q.x) && (0.0..=h).contains(&q.y));
+        let Some(at) = at else { return err(format!("give `at`: [x, y] in points from the 3D view's corner, within {w} × {h}")) };
+        let flag = |k: &str| p.get(k).and_then(Value::as_bool).unwrap_or(false);
+        self.update(Message::Hover(Some(at)));
+        if flag("click") {
+            self.update(Message::Click(crate::view3d::Click { at, add: flag("add"), double: flag("double") }));
         }
         ok(inspect(self))
     }
