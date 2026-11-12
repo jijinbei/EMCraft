@@ -39,6 +39,7 @@ pub fn view(app: &App, page: View) -> Element<'_, Message> {
         View::FarField => (Some(pattern(app)), None),
         View::Pulse => (Some(pulse(app)), None),
         View::Dispersion => (None, emcraft_ui_core::results::views::dispersion(&app.session).map(|tb| crate::table::view(t, &tb))),
+        View::Study => (study_choices(app), emcraft_ui_core::results::study::points(&app.session, &app.study).map(|tb| crate::table::view(t, &tb))),
         _ => (None, None),
     };
     scrollable(Column::with_children(above.into_iter().chain(std::iter::once(picture)).chain(below)).spacing(10).padding(16)).boxed()
@@ -75,6 +76,11 @@ pub enum RAct {
     Wave(usize),
     PulseShow(bool),
     PulseRun,
+    /// The S-parameter a study's chart shows; a grid's variable charted along, and the value
+    /// one is held at.
+    StudyParameter(String),
+    Along(usize),
+    Held(usize, usize),
 }
 
 fn send(a: RAct) -> Message {
@@ -108,6 +114,9 @@ impl App {
             RAct::Wave(w) => self.pulse.wave = Some(w),
             RAct::PulseShow(on) => self.pulse.show_frequency = on,
             RAct::PulseRun => self.start("results.pulse", self.pulse.params()),
+            RAct::StudyParameter(p) => self.study.parameter = Some(p),
+            RAct::Along(k) => self.study = std::mem::take(&mut self.study).along(k),
+            RAct::Held(k, i) => self.study = std::mem::take(&mut self.study).held(k, i),
         }
     }
 
@@ -131,6 +140,45 @@ fn chip<'a>(t: crate::look::Tokens, label: &str, on: bool, choose: Message) -> E
 fn note<'a>(app: &App, s: emcraft_ui_core::lang::Text) -> Element<'a, Message> {
     let t = app.look.tokens;
     text(tr(s)).size(t.font_small).color(t.text_dim).boxed()
+}
+
+/// The study in a line, the S-parameter a sweep shows, and a grid's slice: the variable charted
+/// along, and the value each other is held at.
+fn study_choices(app: &App) -> Option<Element<'_, Message>> {
+    use emcraft_ui_core::results::study;
+    let t = app.look.tokens;
+    let s = app.session.results().study.as_ref()?;
+    let line = text(study::summary(s)).size(t.font_body).color(t.text).boxed();
+    let shown = app.study.shown(s);
+    let list = study::parameters(s);
+    let parameters = (list.len() > 1).then(|| {
+        let chips =
+            list.iter().map(|p| chip(t, &format!("|{}|", p.to_uppercase()), shown.as_ref() == Some(p), send(RAct::StudyParameter(p.clone()))));
+        row(std::iter::once(text(tr(t!("Show"))).size(t.font_small).color(t.text_dim).boxed()).chain(chips))
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .wrap()
+            .boxed()
+    });
+    let grid = s.is_grid().then(|| {
+        let along = s.variables.iter().enumerate().map(|(k, n)| chip(t, n, app.study.slice.free == k, send(RAct::Along(k))));
+        let along = row(std::iter::once(text(tr(t!("Along"))).size(t.font_small).color(t.text_dim).boxed()).chain(along))
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .wrap()
+            .boxed();
+        let held = study::held(s, &app.study.slice).into_iter().map(|(k, name, values, now)| {
+            let label = emcraft_ui_core::lang::trf(t!("{name} at"), emcraft_ui_core::lang::args!(name = name));
+            let chips = values.into_iter().enumerate().map(move |(i, v)| chip(t, &v, now == i, send(RAct::Held(k, i))));
+            row(std::iter::once(text(label).size(t.font_small).color(t.text_dim).boxed()).chain(chips))
+                .spacing(6)
+                .align_y(Alignment::Center)
+                .wrap()
+                .boxed()
+        });
+        Column::with_children(std::iter::once(along).chain(held)).spacing(4).boxed()
+    });
+    Some(Column::with_children(std::iter::once(line).chain(parameters).chain(grid)).spacing(6).boxed())
 }
 
 /// The TDR's port and transform.
@@ -236,6 +284,15 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
             .chain([("pulse:show:power".to_owned(), send(RAct::PulseShow(false))), ("pulse:show:frequency".to_owned(), send(RAct::PulseShow(true)))])
             .chain(std::iter::once(("pulse:run".to_owned(), send(RAct::PulseRun))))
             .collect(),
+        View::Study => app.session.results().study.as_ref().map_or_else(Vec::new, |s| {
+            use emcraft_ui_core::results::study;
+            let parameters = study::parameters(s).into_iter().map(|p| (format!("study:parameter:{p}"), send(RAct::StudyParameter(p))));
+            let along = s.variables.iter().enumerate().map(|(k, n)| (format!("study:along:{n}"), send(RAct::Along(k))));
+            let held = study::held(s, &app.study.slice)
+                .into_iter()
+                .flat_map(|(k, n, values, _)| (0..values.len()).map(move |i| (format!("study:at:{n}:{i}"), send(RAct::Held(k, i)))));
+            parameters.chain(along).chain(held).collect()
+        }),
         _ => Vec::new(),
     }
 }
@@ -248,6 +305,12 @@ pub fn inspect(app: &App) -> serde_json::Value {
         "tdr": app.tdr.params(),
         "pattern": {"cut": p.cut.id(), "angle": p.angle, "quantity": p.quantity.id(), "component": p.component.id()},
         "pulse": {"params": app.pulse.params(), "show_frequency": app.pulse.show_frequency},
+        "study": {
+            "parameter": app.session.results().study.as_ref().and_then(|s| app.study.shown(s)),
+            "along": app.study.slice.free,
+            "at": app.study.slice.at,
+            "points": emcraft_ui_core::results::study::points(&app.session, &app.study).map(|t| t.rows.len()),
+        },
         "chart": app.charts.page.as_ref().map(|c| match &c.shown { Ok(chart) => serde_json::json!({"title": chart.title}), Err(e) => serde_json::json!({"error": e}) }),
     })
 }

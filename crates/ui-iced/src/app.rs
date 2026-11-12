@@ -200,6 +200,7 @@ pub struct App {
     pub(crate) tdr: emcraft_ui_core::results::views::TdrView,
     pub(crate) pattern: emcraft_ui_core::results::views::PatternCut,
     pub(crate) pulse: emcraft_ui_core::results::views::PulseForm,
+    pub(crate) study: emcraft_ui_core::results::study::StudyView,
     /// The point pinned on the field's plane (its coordinates, display units).
     pub(crate) pinned: Option<[f64; 2]>,
     /// What is selected (in the 3D view or the browser), and the browser's tree for the
@@ -280,6 +281,7 @@ impl App {
             tdr: Default::default(),
             pattern: Default::default(),
             pulse: Default::default(),
+            study: Default::default(),
             pinned: None,
             selection: Selection::default(),
             tree: None,
@@ -454,6 +456,7 @@ impl App {
             tdr: &self.tdr,
             pattern: &self.pattern,
             pulse: &self.pulse,
+            study: &self.study,
         };
         self.charts = std::mem::take(&mut self.charts).refreshed(&charts);
     }

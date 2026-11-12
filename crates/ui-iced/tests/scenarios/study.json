@@ -1,0 +1,12 @@
+[
+  {"note": "The study page: a grid sweep of two variables over two values each (2 × 2 = 4 points) listed and charted, |S11| shown instead of the first, the grid charted along the second variable with the first held at its second value"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"call": "engine.execute", "params": {"command": "study.sweep", "params": {"variables": [{"name": "er", "values": [2.0, 2.2]}, {"name": "l_gap", "values": [18, 22]}], "solve": {"command": "solve.frequency", "params": {"start": 6, "stop": 9, "points": 3, "order": 1}}}}},
+  {"call": "ui.set", "params": {"page": "study"}},
+  {"expect": {"inspect": {"result_views.study.points": 4, "result_views.chart.title": "*"}, "handles": ["study:along:l_gap", "study:parameter:s11"]}},
+  {"click": "study:parameter:s11"},
+  {"expect": {"inspect": {"result_views.study.parameter": "s11"}}},
+  {"click": "study:along:l_gap"},
+  {"click": "study:at:er:1"},
+  {"expect": {"inspect": {"result_views.study.along": 1, "result_views.study.at.0": 1, "result_views.chart.title": "*"}}}
+]

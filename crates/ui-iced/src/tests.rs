@@ -1274,3 +1274,28 @@ fn the_result_pages_choices_make_their_charts() {
     assert_eq!(app.pattern.angle, 90.0);
     let _ = app.view();
 }
+
+/// The study page. Analytic evidence: a grid sweep of two variables over two values each has
+/// 2 × 2 = 4 points, and its table a row per point; charted along one variable the other is held
+/// at one of its two values, and the chart is made again when another is chosen.
+#[test]
+fn the_study_page_slices_a_grid() {
+    use crate::results::RAct;
+    use emcraft_ui_core::view::View;
+    let mut app = App::new(Some("highpass"));
+    let sweep = json!({"variables": [{"name": "er", "values": [2.0, 2.2]}, {"name": "l_gap", "values": [18, 22]}], "solve": {"command": "solve.frequency", "params": {"start": 6, "stop": 9, "points": 3, "order": 1}}});
+    app.run_now("study.sweep", &sweep);
+    finish(&mut app);
+    let study = app.session.results().study.as_ref().unwrap_or_else(|| panic!("a study: {:?}", app.error));
+    assert!(study.is_grid() && study.rows.len() == 4, "{} points", study.rows.len());
+    app.update(Message::Page(View::Study));
+    let table = emcraft_ui_core::results::study::points(&app.session, &app.study).unwrap_or_else(|| panic!("its table"));
+    assert_eq!(table.rows.len(), 4);
+    let chart = |app: &App| app.charts.page.as_ref().and_then(|p| p.shown.as_ref().ok()).map(|c| c.series.len());
+    assert!(chart(&app).is_some(), "{:?}", app.charts.page.as_ref().map(|p| p.shown.clone().err()));
+    app.update(Message::R(RAct::Along(1)));
+    app.update(Message::R(RAct::Held(0, 1)));
+    assert_eq!((app.study.slice.free, app.study.slice.at.first().copied()), (1, Some(1)));
+    assert!(chart(&app).is_some());
+    let _ = app.view();
+}

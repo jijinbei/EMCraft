@@ -8,6 +8,7 @@ use emcraft_engine::views::ChartId;
 use emcraft_render::chart::Chart;
 use emcraft_ui_core::replies::Replies;
 use emcraft_ui_core::results::sparameters::{self, SView};
+use emcraft_ui_core::results::study::StudyView;
 use emcraft_ui_core::results::views::{PatternCut, PulseForm, TdrView};
 use emcraft_ui_core::view::View;
 
@@ -32,6 +33,7 @@ enum Chosen {
     Tdr(TdrView),
     Pattern(PatternCut),
     Pulse(bool),
+    Study(StudyView),
 }
 
 /// A chart as made, or why it could not be.
@@ -78,6 +80,7 @@ pub struct Source<'a> {
     pub tdr: &'a TdrView,
     pub pattern: &'a PatternCut,
     pub pulse: &'a PulseForm,
+    pub study: &'a StudyView,
 }
 
 impl Charts {
@@ -85,12 +88,13 @@ impl Charts {
     /// `page` (the system's `which`), made again where what they show changed; only the page shown
     /// is made.
     pub fn refreshed(self, src: &Source) -> Charts {
-        let Source { session, replies, generation, look, which, page, sview, tdr, pattern, pulse } = *src;
+        let Source { session, replies, generation, look, which, page, sview, tdr, pattern, pulse, study } = *src;
         let chosen = match page {
             View::SParameters => Some(Chosen::S(sview.clone())),
             View::Tdr => Some(Chosen::Tdr(tdr.clone())),
             View::FarField => Some(Chosen::Pattern(*pattern)),
             View::Pulse => Some(Chosen::Pulse(pulse.show_frequency)),
+            View::Study => Some(Chosen::Study(study.clone())),
             _ => None,
         };
         let key = |which, page| Key {
@@ -106,6 +110,7 @@ impl Charts {
             (ChartId::SParameters, _) => sparameters::chart(session, sview),
             (ChartId::Tdr, _) => tdr.chart(session),
             (ChartId::Pattern, _) => pattern.chart(session),
+            (ChartId::Study, _) => study.chart(session).map_err(emcraft_engine::EngineError::failed),
             // The pulse sent last, else the engine's default one through the sweep.
             (ChartId::Pulse, _) => match replies.pulse.as_ref() {
                 Some(r) => Ok(emcraft_engine::view::pulse::chart(r, pulse.show_frequency, session.display().frequency.symbol())),
