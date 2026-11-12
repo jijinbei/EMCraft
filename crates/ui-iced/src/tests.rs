@@ -177,8 +177,16 @@ fn the_3d_frame_draws_the_model() {
         let mut app = App::new(Some("highpass"));
         app.update(Message::Start("solve.run".into()));
         finish(&mut app);
-        for (name, page) in [("sparameters", emcraft_ui_core::view::View::SParameters), ("model", emcraft_ui_core::view::View::Model)] {
+        let ports = Message::View3d(crate::view3d::Nav::Overlay(emcraft_ui_core::scene3d::Overlay::Ports));
+        for (name, page, then) in [
+            ("sparameters", emcraft_ui_core::view::View::SParameters, None),
+            ("model", emcraft_ui_core::view::View::Model, None),
+            ("model-ports", emcraft_ui_core::view::View::Model, Some(ports)),
+        ] {
             app.update(Message::Page(page));
+            if let Some(m) = then {
+                app.update(m);
+            }
             let mut ui = iced_test::Simulator::with_size(iced::Settings::default(), (1400.0, 900.0), app.view());
             let shot = ui.snapshot(&app.theme()).unwrap_or_else(|e| panic!("{e}"));
             let _ = std::fs::remove_file(std::path::Path::new(&dir).join(format!("{name}-wgpu.png")));

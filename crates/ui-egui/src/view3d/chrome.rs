@@ -219,23 +219,17 @@ pub(super) fn pointer_tag(v: &mut View3d, ui: &egui::Ui, rect: Rect, on: bool) {
 pub(super) fn labels(p: &egui::Painter, rect: Rect, cam: &Camera, labels: &[scene3d::Label]) {
     let t = &Tokens::get();
     let font = FontId::proportional(t.font_small);
-    let b = cam.basis();
-    for l in labels {
-        let Some(q) = cam.project(l.at, rect.width() as f64, rect.height() as f64) else { continue };
-        let at = rect.min + vec2(q[0] as f32, q[1] as f32);
-        if !rect.contains(at) {
-            continue;
-        }
-        let away = l.facing.is_some_and(|n| n[0] * (b.eye[0] - l.at[0]) + n[1] * (b.eye[1] - l.at[1]) + n[2] * (b.eye[2] - l.at[2]) < 0.0);
-        let ink = if away { t.text_dim } else { color(l.color) };
-        if let Some(q) = l.anchor.and_then(|a| cam.project(a, rect.width() as f64, rect.height() as f64)) {
-            let to = rect.min + vec2(q[0] as f32, q[1] as f32);
+    for l in scene3d::placed(labels, cam, crate::geom::vector(rect.size())) {
+        let at = rect.min + crate::geom::pos(l.at).to_vec2();
+        let ink = if l.away { t.text_dim } else { color(l.label.color) };
+        if let Some(a) = l.anchor {
+            let to = rect.min + crate::geom::pos(a).to_vec2();
             p.line_segment([at, to], Stroke::new(1.0, ink));
             p.circle_filled(to, 2.5, ink);
         }
-        let g = p.layout_no_wrap(l.text.clone(), font.clone(), ink);
+        let g = p.layout_no_wrap(l.label.text.clone(), font.clone(), ink);
         let r = Rect::from_center_size(at, g.size() + vec2(8.0, 4.0));
-        if !away {
+        if !l.away {
             p.rect_filled(r, 3.0, t.panel.gamma_multiply(0.85));
         }
         p.galley(r.min + vec2(4.0, 2.0), g, ink);

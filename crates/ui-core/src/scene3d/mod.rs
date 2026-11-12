@@ -86,6 +86,48 @@ pub struct Label {
     pub anchor: Option<[f64; 3]>,
 }
 
+/// A label as it falls on a view `size` points big: where its text centres and where its leader
+/// line ends (points from the view's corner), and whether the face it names looks away (it is
+/// then dimmed and drawn without its ground).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Placed<'a> {
+    pub label: &'a Label,
+    pub at: crate::geom::Point,
+    pub anchor: Option<crate::geom::Point>,
+    pub away: bool,
+}
+
+/// The labels seen through `camera` on a view `size` points big: those whose point falls inside
+/// it, in their order.
+///
+/// ```
+/// use emcraft_render::view3d::Camera;
+/// use emcraft_ui_core::geom::Vector;
+/// use emcraft_ui_core::scene3d::{Label, placed};
+/// let mut camera = Camera::default();
+/// camera.fit([-1.0; 3], [1.0; 3], 1.0);
+/// let label = |at| Label { at, text: "port 1".into(), color: emcraft_render::Rgb(0, 0, 0), facing: None, anchor: None };
+/// let shown = [label([0.0; 3]), label([1e9, 0.0, 0.0])];
+/// let p = placed(&shown, &camera, Vector::new(400.0, 400.0));
+/// // The far one falls outside the view; the middle one at its centre.
+/// assert_eq!(p.len(), 1);
+/// assert!((p[0].at.x - 200.0).abs() < 1.0 && (p[0].at.y - 200.0).abs() < 1.0);
+/// ```
+pub fn placed<'a>(labels: &'a [Label], camera: &Camera, size: crate::geom::Vector) -> Vec<Placed<'a>> {
+    let (w, h) = (f64::from(size.x), f64::from(size.y));
+    let on_view = |p: [f64; 3]| camera.project(p, w, h).map(|q| crate::geom::Point::new(q[0] as f32, q[1] as f32));
+    let inside = |p: crate::geom::Point| (0.0..=size.x).contains(&p.x) && (0.0..=size.y).contains(&p.y);
+    let eye = camera.basis().eye;
+    labels
+        .iter()
+        .filter_map(|l| {
+            let at = on_view(l.at).filter(|p| inside(*p))?;
+            let away = l.facing.is_some_and(|n| (0..3).map(|k| n[k] * (eye[k] - l.at[k])).sum::<f64>() < 0.0);
+            Some(Placed { label: l, at, anchor: l.anchor.and_then(on_view), away })
+        })
+        .collect()
+}
+
 /// A colour bar: the quantity coloured (TeX, with its unit) and its scale.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ColourBar {

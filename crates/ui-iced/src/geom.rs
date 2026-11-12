@@ -17,3 +17,8 @@ pub fn shared(p: iced::Point) -> Point {
 pub fn vector(v: Vector) -> iced::Vector {
     iced::Vector::new(v.x, v.y)
 }
+
+/// An iced size as the shared offset across it.
+pub fn size(s: iced::Size) -> Vector {
+    Vector::new(s.width, s.height)
+}

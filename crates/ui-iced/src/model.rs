@@ -1,15 +1,16 @@
 //! The model page: a bar of what the 3D view puts forward, its fit and standard views, and the
 //! commands that mesh and solve the model; under it the 3D view ([`crate::view3d`]) and its
-//! legend. A solve runs on the worker ([`crate::run`]); its progress shows in the window's bar.
+//! labels and legend. A solve runs on the worker ([`crate::run`]); its progress shows in the window's bar.
 
 use emcraft_render::view3d::StandardView;
 use emcraft_ui_core::lang::tr;
 use emcraft_ui_core::scene3d::Overlay;
-use iced::widget::{Space, column, container, row, shader, stack, text};
+use iced::widget::{Space, canvas, column, container, row, shader, stack, text};
 use iced::{Alignment, Element, Fill, Widget};
 
 use crate::app::{App, Message};
 use crate::look::{self, Tokens};
+use crate::view3d::labels::Labels;
 use crate::view3d::{Nav, shader::Viewer};
 
 /// What the view can put forward, and each one's name.
@@ -52,6 +53,9 @@ fn bar(app: &App) -> Element<'_, Message> {
 /// The legend over the view's corner: a swatch and a name each.
 fn legend(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
+    if app.view3d.shown.as_ref().is_none_or(|s| s.legend.is_empty()) {
+        return Space::new().boxed();
+    }
     let entries = app.view3d.shown.iter().flat_map(|s| &s.legend).map(|(name, c)| {
         let swatch = container(Space::new().width(12).height(12))
             .style(move |_: &iced::Theme| container::Style { background: Some(look::rgb(*c).into()), ..container::Style::default() });
@@ -67,8 +71,8 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let picture: Element<Message> = match app.view3d.shown.as_ref().filter(|s| s.bounds.is_some()) {
         Some(s) => {
             let viewer = Viewer { shot: app.shot(s), nav: app.nav };
-            let view = shader(viewer).width(Fill).height(Fill);
-            if s.legend.is_empty() { view.boxed() } else { stack![view, legend(app)].boxed() }
+            let labels = Labels { labels: &s.labels, camera: app.view3d.camera, tokens: t };
+            stack![shader(viewer).width(Fill).height(Fill), canvas(labels).width(Fill).height(Fill), legend(app)].boxed()
         }
         None => container(text(tr(t!("No geometry yet: open a sample or start at step 1, Geometry."))).size(t.font_heading).color(t.text_dim))
             .center(Fill)

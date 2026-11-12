@@ -4,6 +4,7 @@
 //! a value: each [`Nav`] gives the next ([`View3d::navigated`]), each change to the project the
 //! scene built again when what it shows changed ([`View3d::refreshed`]).
 
+pub mod labels;
 pub mod shader;
 
 use std::sync::Arc;
@@ -47,12 +48,13 @@ struct Key {
     language: &'static str,
 }
 
-/// The scene as built: packed for the GPU, the model's box and the legend.
+/// The scene as built: packed for the GPU, the model's box, the labels and the legend.
 #[derive(Clone, Debug)]
 pub struct Shown {
     key: Key,
     pub packed: Arc<Packed>,
     pub bounds: Option<Bounds>,
+    pub labels: Vec<scene3d::Label>,
     pub legend: Vec<(String, Rgb)>,
 }
 
@@ -80,7 +82,7 @@ fn built(session: &Session, overlay: Overlay, theme: &Theme, key: Key) -> Shown 
     let b = scene3d::build(session, overlay, &Colours::of(theme));
     let packed = Packed::with_arrows(b.gpu_scene.as_ref().unwrap_or(&b.scene), emcraft_gpu3d::next_id(), None, &b.arrows);
     let bounds = b.bounds.or_else(|| b.scene.bounds());
-    Shown { key, packed: Arc::new(packed), bounds, legend: b.legend }
+    Shown { key, packed: Arc::new(packed), bounds, labels: b.labels, legend: b.legend }
 }
 
 impl View3d {
