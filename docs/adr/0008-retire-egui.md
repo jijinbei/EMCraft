@@ -1,6 +1,6 @@
 # ADR 0008: Retiring the egui window
 
-Status: accepted (2026-11-12); stage A done.
+Status: accepted (2026-11-12); stages A and B done.
 
 ## Context
 
@@ -22,7 +22,7 @@ lines against 7 000). Keeping two windows doubles every UI change.
   - **A Workflow** (done): the step bar and the kind of analysis, each step's panel (checks and
     fixes, the Setup form over the band's diagram, the device, Run's preflight, the results'
     checks and export) — `emcraft_ui_core::steps`, `crates/ui-iced/src/{steps,step_panel,band}.rs`.
-  - **B Results in depth**: the S-parameters page (curves, table, a band dragged to solve more
+  - **B Results in depth** (done): the S-parameters page (curves, table, a band dragged to solve more
     finely, runs kept and compared, Touchstone), the field's side panel (probes, power), TDR,
     pulse, far-field cuts, dispersion and the study's table, grid and optimisation, chart styles.
   - **C Model input**: import (files and dropped files), the templates' dialog with its
@@ -48,11 +48,13 @@ lines against 7 000). Keeping two windows doubles every UI change.
 | `navigation`, `tools` (done) | navigation, view3d_orbit, box_select, view3d_picking, view3d_measure, view3d_port_tool, view3d_lumped_tool, view3d_tools_ja, tool_mode, view3d_side_ports, view3d_ports_before_mesh |
 | `view3d_section_symmetry` | section_view, symmetry_eye, symmetry_plane, rotation_sector |
 | `purpose_and_kind` | purpose_first, home_analysis_setup, analysis_kind, setup_device |
-| `study` | study_grid, study_optimize, study_surrogate, study_sweep |
 | `pcb` (two) | pcb_board, pcb_edit, pcb_fem, pcb_fem_model, pcb_region, pcb_route, pcb_templates, pcb_workflow |
 | `fields` | field_view, field_probes, field_context, field_plot_zoom, dipole_fields, view3d_field_arrows |
 | `import` | import_bodies, import_cavity, import_design |
 | `hostile_input` | hostile_dialog_input, hostile_step_input (a unit test today), errors_in_place |
+| `sparameters` (B, done) | sparameter_display, refine_and_planes, run_history, network_views, chart_style |
+| `result_views` (B, done) | tdr_view, pulse_view, far_field_cuts, dispersion_diagram |
+| `study` (B, done) | study_grid, study_optimize, study_surrogate, study_sweep |
 | dropped (egui only) | chart_packing, small_window, view3d_gpu, wgsl_port_directions, escape_layers |
 
   The rest (results views, templates, the shell's) are mapped as their stages land.
