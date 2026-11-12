@@ -4,6 +4,7 @@
 
 use emcraft_engine::Session;
 use emcraft_engine::view::SystemChart;
+use emcraft_engine::views::ChartId;
 use emcraft_render::chart::Chart;
 use emcraft_ui_core::view::View;
 
@@ -34,9 +35,10 @@ pub struct Charts {
     pub system: Option<Picture>,
 }
 
-/// `chart` with its words in the window's language.
-fn translated(chart: emcraft_engine::Result<Chart>) -> Result<Chart, String> {
-    let mut c = chart.map_err(|e| e.to_string())?;
+/// `chart` (the engine's `id`) in the style the project keeps for it (`view.chart_style`), its
+/// words in the window's language.
+fn translated(session: &Session, id: ChartId, chart: emcraft_engine::Result<Chart>) -> Result<Chart, String> {
+    let mut c = emcraft_engine::views::style_chart(session, id, chart.map_err(|e| e.to_string())?);
     emcraft_ui_core::chart_words::translate_chart(&mut c);
     Ok(c)
 }
@@ -55,12 +57,11 @@ impl Charts {
     /// is made.
     pub fn refreshed(self, session: &Session, generation: u64, look: &Look, which: SystemChart, page: View) -> Charts {
         let key = |which, page| Key { generation, theme: look.theme.name.clone(), language: emcraft_ui_core::lang::current(), which, page };
-        let shown = page.chart().map(|id| kept(self.page, key(None, Some(page)), || translated(emcraft_engine::views::chart_of(session, id))));
-        let system = session
-            .results()
-            .system
-            .as_ref()
-            .map(|_| kept(self.system, key(Some(which), None), || translated(emcraft_engine::view::system_chart(session, which))));
+        let shown =
+            page.chart().map(|id| kept(self.page, key(None, Some(page)), || translated(session, id, emcraft_engine::views::chart_of(session, id))));
+        let system = session.results().system.as_ref().map(|_| {
+            kept(self.system, key(Some(which), None), || translated(session, ChartId::System, emcraft_engine::view::system_chart(session, which)))
+        });
         Charts { page: shown, system }
     }
 }

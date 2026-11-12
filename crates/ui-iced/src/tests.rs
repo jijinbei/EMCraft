@@ -164,6 +164,9 @@ fn run_solves_on_the_worker_and_shows_the_sweep() {
     assert!(app.session.results().sweep.is_some(), "the sweep came back");
     assert_eq!(app.page, View::SParameters);
     assert!(app.charts.page.as_ref().is_some_and(|p| p.shown.is_ok()), "its chart drawn again with the sweep");
+    // The project's chart style (view.chart.style) is the window's chart's.
+    app.update(Message::Run(Command { id: "view.chart.style", params: json!({"chart": "sparameters", "title": "Filter response"}) }));
+    assert!(app.charts.page.as_ref().is_some_and(|p| p.shown.as_ref().is_ok_and(|c| c.title == "Filter response")));
     // The sweep's other pages: TDR and the pulse, each its chart.
     for page in [View::Tdr, View::Pulse] {
         app.update(Message::Page(page));
