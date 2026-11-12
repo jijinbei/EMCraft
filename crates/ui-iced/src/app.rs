@@ -98,6 +98,10 @@ pub enum Message {
     File(emcraft_ui_core::files::FileAction),
     /// An autosaved copy found on start let go (deleted).
     Dismiss(usize),
+    /// The settings page shown, or left.
+    Settings(bool),
+    /// A preference changed.
+    Pref(emcraft_ui_core::action::Pref),
     /// A command started from a button: a long one on the worker.
     Start(String),
     /// The running job stopped.
@@ -151,6 +155,9 @@ pub struct App {
     pub(crate) prefs_path: Option<std::path::PathBuf>,
     /// Copies of unsaved work, and the clock they are due by.
     pub(crate) autosave: emcraft_ui_core::autosave::Autosave,
+    /// The themes there are (the user's too), and whether the settings page is shown.
+    pub(crate) themes: Themes,
+    pub(crate) settings: bool,
     began: std::time::Instant,
     /// The charts as drawn.
     pub(crate) charts: crate::charts::Charts,
@@ -200,6 +207,8 @@ impl App {
             prefs: Prefs::default(),
             prefs_path: None,
             autosave: Default::default(),
+            themes: Themes::load(None),
+            settings: false,
             began: std::time::Instant::now(),
             charts: crate::charts::Charts::default(),
             generation: 0,
@@ -243,6 +252,32 @@ impl App {
         let pixel = emcraft_render::view3d::Pixel::new(f64::from(at.x), f64::from(at.y), f64::from(w), f64::from(h));
         let lo = self.view3d.bounds()?.0;
         emcraft_ui_core::scene3d::plane_probe(&samples, &self.view3d.camera, pixel, lo, self.session.display().length)
+    }
+
+    /// The window choosing among `themes` (the user's too).
+    pub fn with_themes(self, themes: Themes) -> App {
+        App { themes, ..self }
+    }
+
+    /// The window after preference `p`: kept (and written where the preferences live), the
+    /// theme, language, mouse mapping and drawing it changes in effect at once.
+    fn prefer(&mut self, p: emcraft_ui_core::action::Pref) {
+        let reload = p == emcraft_ui_core::action::Pref::ReloadThemes;
+        match self.prefs.clone().changed(p, &self.themes) {
+            Ok(prefs) => {
+                if reload {
+                    self.themes = Themes::load(self.themes.dir.as_deref());
+                }
+                emcraft_ui_core::lang::set(prefs.language());
+                (self.nav, self.gpu_look) = (prefs.nav(), prefs.gpu_look);
+                self.look = Look::of(self.themes.get(&prefs.theme));
+                self.prefs = prefs;
+                if let Some(path) = &self.prefs_path {
+                    let _ = self.prefs.save(path);
+                }
+            }
+            Err(e) => self.error = Some(e),
+        }
     }
 
     /// The window with the host's file dialog.
@@ -490,10 +525,12 @@ impl App {
     /// The window: the application bar — the project, its pages, the running job — over the page.
     pub fn view(&self) -> Element<'_, Message> {
         let t = self.look.tokens;
-        let tabs = PAGES
-            .into_iter()
-            .filter(|v| *v == self.page || v.available(&self.session, &Replies::default()))
-            .map(|v| button(text(page_label(v)).size(t.font_button)).style(look::button(t, v == self.page)).on_press(Message::Page(v)).boxed());
+        let tabs = PAGES.into_iter().filter(|v| *v == self.page || v.available(&self.session, &Replies::default())).map(|v| {
+            button(text(page_label(v)).size(t.font_button))
+                .style(look::button(t, v == self.page && !self.settings))
+                .on_press(Message::Page(v))
+                .boxed()
+        });
         let status: Vec<Element<Message>> = match (self.progress(), &self.note) {
             (Some(p), _) => vec![
                 text(p).size(t.font_body).color(t.app_bar_text).boxed(),
@@ -510,6 +547,12 @@ impl App {
             .chain(crate::files::buttons(self))
             .chain(crate::files::recent(self))
             .chain(crate::files::edits(self))
+            .chain(std::iter::once(
+                button(text(emcraft_ui_core::lang::tr(t!("Settings"))).size(t.font_button))
+                    .style(look::button(t, self.settings))
+                    .on_press(Message::Settings(!self.settings))
+                    .boxed(),
+            ))
             .chain(tabs)
             .chain(std::iter::once(Space::new().width(Fill).boxed()))
             .chain(status))
@@ -517,12 +560,15 @@ impl App {
         .align_y(Alignment::Center);
         let bar = container(bar).padding([6, 14]).width(Fill).style(look::app_bar(t));
         let page = match self.page {
+            _ if self.settings => crate::settings::view(self),
             View::Model => crate::model::view(self),
             View::Eigenmodes => crate::eigenmodes::view(self),
             v if v.chart().is_some() => crate::results::view(self, v),
             _ => crate::system::view(self),
         };
-        let parts = [bar.boxed(), crate::ribbon::view(self)].into_iter().chain(crate::files::recoveries(self)).chain(std::iter::once(page));
+        // The ribbon's commands are the project's: not over the settings.
+        let ribbon = (!self.settings).then(|| crate::ribbon::view(self));
+        let parts = std::iter::once(bar.boxed()).chain(ribbon).chain(crate::files::recoveries(self)).chain(std::iter::once(page));
         let window = container(iced::widget::Column::with_children(parts)).width(Fill).height(Fill).style(look::window(t));
         let over = self.dialog.as_ref().map(|d| crate::dialog::view(self, d)).or_else(|| crate::files::question(self));
         match over {
@@ -556,6 +602,7 @@ impl App {
             }
             Message::Page(v) => {
                 self.page = v;
+                self.settings = false;
                 None
             }
             Message::View3d(nav) => {
@@ -626,6 +673,14 @@ impl App {
                 None
             }
             Message::Shot(_) => None,
+            Message::Settings(on) => {
+                self.settings = on;
+                None
+            }
+            Message::Pref(p) => {
+                self.prefer(p);
+                None
+            }
             Message::Dismiss(i) => {
                 self.autosave.dismiss(i);
                 None

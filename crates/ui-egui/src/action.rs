@@ -277,21 +277,17 @@ impl EmcraftApp {
             }
             Pref::SearchFonts => self.fonts.search_again(),
             Pref::ReloadThemes => self.load_themes(self.themes.dir.clone()),
-            Pref::Navigation(id) => match crate::navigation::NAV_PRESETS.iter().find(|p| p.id == id) {
-                Some(p) => self.prefs.navigation = p.id.into(),
-                None => self.error(format!("no mouse mapping `{}`", id.chars().take(32).collect::<String>())),
+            p @ (Pref::Navigation(_)
+            | Pref::OrbitAround(_)
+            | Pref::Navigator(_)
+            | Pref::GpuLook(_)
+            | Pref::Length(_)
+            | Pref::Frequency(_)
+            | Pref::ForgetRecent(_)
+            | Pref::ClearRecent) => match self.prefs.clone().changed(p, &self.themes) {
+                Ok(prefs) => self.prefs = prefs,
+                Err(e) => self.error(e),
             },
-            Pref::OrbitAround(o) => self.prefs.orbit_around = o.id().into(),
-            Pref::Navigator(n) => self.prefs.navigator = n.id().into(),
-            Pref::GpuLook(l) => self.prefs.gpu_look = l,
-            Pref::Length(u) => self.prefs.length = u,
-            Pref::Frequency(u) => self.prefs.frequency = u,
-            Pref::ForgetRecent(i) => {
-                if i < self.prefs.recent.len() {
-                    self.prefs.recent.remove(i);
-                }
-            }
-            Pref::ClearRecent => self.prefs.recent.clear(),
         }
     }
 

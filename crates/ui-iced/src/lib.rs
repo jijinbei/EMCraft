@@ -17,6 +17,7 @@
 //! - [`system`]: a system's node editor — the band, the canvas, the chart and the budget;
 //! - [`charts`]: the engine's charts, made again only when they change; [`chart`]: one drawn
 //!   as vectors by the GPU;
+//! - [`settings`]: the preferences both windows share;
 //! - [`look`]: the theme's tokens as iced's styles;
 //! - [`geom`]: the shared points on iced's screen and back.
 
@@ -43,6 +44,7 @@ pub mod model;
 pub mod results;
 pub mod ribbon;
 pub mod run;
+pub mod settings;
 pub mod system;
 pub mod view3d;
 
@@ -60,7 +62,8 @@ pub fn run(
 ) -> iced::Result {
     let prefs = prefs::default_path().map(|p| prefs::Prefs::load(&p)).unwrap_or_default();
     lang::set(prefs.language());
-    let theme = theme::Themes::load(theme::default_dir().as_deref()).get(&prefs.theme);
+    let themes = theme::Themes::load(theme::default_dir().as_deref());
+    let theme = themes.get(&prefs.theme);
     let font = prefs.font_file.as_deref().and_then(|f| std::fs::read(f).ok());
     // A picture of the window is taken without copying or offering work.
     let autosave = emcraft_ui_core::autosave::default_dir().filter(|_| shoot.is_none());

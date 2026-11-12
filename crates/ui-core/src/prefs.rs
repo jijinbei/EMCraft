@@ -67,6 +67,50 @@ impl Default for Prefs {
 }
 
 impl Prefs {
+    /// The preferences after `pref` (a theme among `themes`), or why it is refused (an unknown
+    /// theme, language or mouse mapping). Looking for fonts and reading the themes again are the
+    /// window's: they change nothing here.
+    ///
+    /// ```
+    /// use emcraft_ui_core::action::Pref;
+    /// use emcraft_ui_core::prefs::Prefs;
+    /// use emcraft_ui_core::theme::Themes;
+    /// let themes = Themes::load(None);
+    /// let p = Prefs::default().changed(Pref::Theme("dark".into()), &themes).unwrap_or_default();
+    /// assert_eq!(p.theme, "dark");
+    /// assert!(Prefs::default().changed(Pref::Language("xx".into()), &themes).is_err());
+    /// ```
+    pub fn changed(self, pref: crate::action::Pref, themes: &crate::theme::Themes) -> Result<Prefs, String> {
+        use crate::action::Pref;
+        let clip = |s: &str, n: usize| s.chars().take(n).collect::<String>();
+        Ok(match pref {
+            Pref::Theme(name) => match themes.find(&name) {
+                Some(_) => Prefs { theme: name, ..self },
+                None => return Err(emcraft_engine::text::clip(&format!("no theme `{name}` (there are {})", themes.names().join(", ")), 400)),
+            },
+            Pref::Language(id) => match crate::lang::find(&id) {
+                Some(l) => Prefs { language: l.id.to_owned(), ..self },
+                None => return Err(format!("no language `{}` (there are {})", crate::lang::clip_id(&id), crate::lang::ids().join(", "))),
+            },
+            Pref::FontFile(file) => Prefs { font_file: file.map(|f| clip(&f, 4096)), ..self },
+            Pref::Navigation(id) => match crate::navigation::NAV_PRESETS.iter().find(|p| p.id == id) {
+                Some(p) => Prefs { navigation: p.id.into(), ..self },
+                None => return Err(format!("no mouse mapping `{}`", clip(&id, 32))),
+            },
+            Pref::OrbitAround(o) => Prefs { orbit_around: o.id().into(), ..self },
+            Pref::Navigator(n) => Prefs { navigator: n.id().into(), ..self },
+            Pref::GpuLook(gpu_look) => Prefs { gpu_look, ..self },
+            Pref::Length(length) => Prefs { length, ..self },
+            Pref::Frequency(frequency) => Prefs { frequency, ..self },
+            Pref::ForgetRecent(i) => {
+                let recent = self.recent.iter().enumerate().filter(|(k, _)| *k != i).map(|(_, p)| p.clone()).collect();
+                Prefs { recent, ..self }
+            }
+            Pref::ClearRecent => Prefs { recent: Vec::new(), ..self },
+            Pref::SearchFonts | Pref::ReloadThemes => self,
+        })
+    }
+
     /// Puts `path` first in the recent list.
     pub fn add_recent(&mut self, path: &str) {
         self.recent.retain(|p| p != path);

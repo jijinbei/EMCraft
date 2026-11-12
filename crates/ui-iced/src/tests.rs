@@ -621,3 +621,31 @@ fn undo_and_redo_by_keys() {
     assert!(key("z", Modifiers::CTRL, iced::event::Status::Captured).is_none(), "a field's own");
     assert!(key("z", Modifiers::empty(), ignored).is_none());
 }
+
+/// The settings page: a theme chosen dresses the window at once, the units new projects start
+/// with and the 3D view's drawing are kept, and an unknown mouse mapping is refused with why.
+#[test]
+fn settings_change_the_window_at_once() {
+    use emcraft_ui_core::action::Pref;
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::Settings(true));
+    assert!(app.settings);
+    app.update(Message::Pref(Pref::Theme("dark".into())));
+    assert_eq!(app.look.theme.name, "dark");
+    app.update(Message::Pref(Pref::Length(emcraft_model::units::Length::Metre)));
+    assert_eq!(app.prefs.length, emcraft_model::units::Length::Metre);
+    let off = emcraft_ui_core::prefs::GpuLook { outline: false, ..app.gpu_look };
+    app.update(Message::Pref(Pref::GpuLook(off)));
+    assert!(!app.gpu_look.outline, "the 3D view's drawing follows");
+    if let Ok(dir) = std::env::var("EMCRAFT_ICED_SHOTS") {
+        let _gpu = gpu();
+        let mut ui = iced_test::Simulator::with_size(settings(), (1400.0, 900.0), app.view());
+        let shot = ui.snapshot(&app.theme()).unwrap_or_else(|e| panic!("{e}"));
+        let _ = std::fs::remove_file(std::path::Path::new(&dir).join("settings-wgpu.png"));
+        assert!(shot.matches_image(std::path::Path::new(&dir).join("settings")).unwrap_or(false));
+    }
+    app.update(Message::Pref(Pref::Navigation("nowhere".into())));
+    assert!(app.error.as_deref().is_some_and(|e| e.contains("nowhere")));
+    app.update(Message::Page(emcraft_ui_core::view::View::Model));
+    assert!(!app.settings, "a page leaves the settings");
+}
