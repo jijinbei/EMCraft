@@ -293,7 +293,6 @@
     "Perspective": "透視投影",
     "Orthographic": "平行投影",
     "Nearby parallel signal: check coupling": "近くに平行な信号：結合を確認",
-    "New project": "新規プロジェクト",
     "New project.": "新規プロジェクト。",
     "New projects": "新規プロジェクト",
     "No file dialog here: open a project from the command line.": "ここではファイルダイアログを使えません：コマンドラインからプロジェクトを開いてください。",
@@ -1139,8 +1138,10 @@
     },
     "file.new": {
       "label": "新規プロジェクト",
-      "doc": "セッションを空のプロジェクト（真空のみ）に置き換える。表示単位はそのまま。元に戻すで戻せる。",
-      "params": {}
+      "doc": "セッションを空のプロジェクト（真空のみ）に置き換える。表示単位はそのまま。`analysis` を与えるとその解析の種類にする。元に戻すで戻せる。",
+      "params": {
+        "analysis": "プロジェクトの解析の種類（`project.analysis`）：`frequency`、`eigenmodes`、`radiation`、`time_domain`、`pcb`、`system`。省略時は選ばない"
+      }
     },
     "file.open": {
       "label": "プロジェクトを開く",

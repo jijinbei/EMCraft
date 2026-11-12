@@ -66,6 +66,19 @@ fn undoing_new_or_a_sample_brings_the_file_back() {
     assert_eq!(t.undo().len(), 1);
 }
 
+/// A new project for a kind of analysis starts with it chosen and nothing to save; a kind that is
+/// none is refused and the project stays.
+#[test]
+fn a_new_project_starts_with_its_analysis_chosen() {
+    let mut s = Session::new();
+    s.execute("file.new", &json!({"analysis": "eigenmodes"})).unwrap();
+    assert_eq!((s.model.job.chosen(), s.is_dirty()), (Some(crate::workflow::Analysis::Eigenmodes), false));
+    assert!(s.execute("file.new", &json!({"analysis": "nonsense"})).is_err());
+    assert_eq!(s.model.job.chosen(), Some(crate::workflow::Analysis::Eigenmodes));
+    s.execute("file.new", &json!({})).unwrap();
+    assert_eq!(s.model.job.chosen(), None);
+}
+
 /// The results that belonged to a project come back with it, current if they were.
 #[test]
 fn undoing_an_open_brings_back_the_projects_results() {

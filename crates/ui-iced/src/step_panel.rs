@@ -136,7 +136,8 @@ fn geometry(app: &App) -> Vec<Element<'_, Message>> {
         .spacing(6)
         .boxed()
     });
-    let bodies = app.tree.iter().flat_map(|(_, tree)| tree.iter()).filter(|(s, _)| *s == "Bodies").flat_map(|(_, rows)| rows.iter());
+    let groups = app.tree.iter().flat_map(|(_, tree)| tree.iter().flat_map(|p| p.groups.iter()));
+    let bodies = groups.filter(|(s, _)| *s == "Bodies").flat_map(|(_, rows)| rows.iter());
     let bodies = bodies.map(|r| small(t, r.tip(), t.text));
     let l = app.session.display().length;
     let extent = m.bounds().map(|b| {
@@ -546,7 +547,7 @@ fn results<'a>(app: &'a App, states: &[StepState]) -> Vec<Element<'a, Message>> 
 /// The open panel's controls by their handles, for scenarios and agents: each check's Fix
 /// (`step:fix:<i>`), Setup's Confirm, Run, the port-mode preview, the results' check and export.
 pub fn handles(app: &App) -> Vec<(String, Message)> {
-    let Some(step) = app.workflow.step.filter(|_| crate::steps::shown_bar(app)) else { return Vec::new() };
+    let Some(step) = app.workflow.step.filter(|_| crate::steps::stepped(app)) else { return Vec::new() };
     let states = app.statuses();
     let fixes = states.get(step.index()).into_iter().flat_map(|s| {
         s.messages.iter().enumerate().filter_map(move |(i, m)| {

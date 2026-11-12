@@ -352,5 +352,5 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let section = app.view3d.section.map(|c| section_bar(app, c));
     let main = column(std::iter::once(bar(app)).chain(section).chain(field).chain(std::iter::once(picture))).spacing(8).height(Fill);
     let side = crate::field_panel::view(app);
-    row(std::iter::once(crate::browser::view(app)).chain(std::iter::once(main.boxed())).chain(side)).spacing(12).padding(12).height(Fill).boxed()
+    row(std::iter::once(main.boxed()).chain(side)).spacing(12).padding(12).height(Fill).boxed()
 }

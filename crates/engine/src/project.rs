@@ -466,12 +466,16 @@ pub fn pretty(doc: &Value) -> Result<String> {
 }
 
 /// An empty project with the session's display units.
-pub fn new(s: &mut Session, _: &Params) -> Result<Value> {
+pub fn new(s: &mut Session, p: &Params) -> Result<Value> {
     let mut fresh = s.fresh();
     if s.display != fresh.display {
         fresh.execute("units.set", &crate::reply::units(s.display))?;
-        fresh.mark_saved();
     }
+    // The kind of analysis the project is for (the start page's purpose).
+    if let Some(kind) = p.string("analysis").optional()? {
+        fresh.execute("project.analysis", &json!({"kind": kind})).map_err(|e| p.error("analysis", e))?;
+    }
+    fresh.mark_saved();
     s.replace_with(fresh);
     Ok(s.summary())
 }

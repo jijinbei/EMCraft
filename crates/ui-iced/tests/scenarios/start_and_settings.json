@@ -1,10 +1,15 @@
 [
-  {"note": "A window opened on nothing shows the start page; the settings and a page leave it"},
+  {"note": "A window opened on nothing shows the start page; the settings and a page leave it; a blank project starts with the purpose chosen"},
   {"expect": {"inspect": {"start": true, "settings": false}, "handles": ["start", "settings", "file:new"]}},
   {"click": "settings"},
   {"expect": {"inspect": {"start": false, "settings": true}}},
   {"call": "ui.set", "params": {"settings": false, "start": true}},
   {"expect": {"inspect": {"start": true}}},
+  {"shot": "start"},
+  {"click": "purpose:eigenmodes"},
+  {"click": "home:blank"},
+  {"expect": {"inspect": {"start": false, "workflow.solver": "eigenmodes", "project.dirty": false}}},
+  {"shot": "blank-eigenmodes"},
   {"call": "engine.commands"},
   {"call": "ui.nowhere", "fail": true}
 ]

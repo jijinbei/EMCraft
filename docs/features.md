@@ -219,9 +219,11 @@ Saves the project as an `.emcraft` file (version 0.1, docs/project-file.md: a pa
 
 ## `file.new` — New project
 
-Replaces the session with an empty project (vacuum only), keeping the display units; undo goes back.
+Replaces the session with an empty project (vacuum only), keeping the display units, for the kind of analysis `analysis` when given; undo goes back.
 
-No parameters.
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `analysis` | string |  | no | the kind of analysis the project is for (`project.analysis`): `frequency`, `eigenmodes`, `radiation`, `time_domain`, `pcb` or `system`; none chosen when left out |
 
 ## `file.open` — Open project
 

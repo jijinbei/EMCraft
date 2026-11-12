@@ -1,26 +1,23 @@
 //! The workflow in the iced window (docs/ux/workflow.md §2–3), as the shared rules decide it
-//! ([`emcraft_ui_core::steps`]): under the ribbon, the kind of analysis (a choice that runs
-//! `project.analysis`) and the steps from the geometry to the results, each a pill with its
-//! status's mark — ✔ done, ○ to do, ⋯ waiting on an earlier step, ! a warning, ✕ needs
-//! attention, ↻ out of date, ◌ while a run goes on, ⊖ not needed for the kind chosen — from
-//! `project.status`, with what the window knows on top (settings not confirmed, a refused Run,
-//! a failed run). A pill opens its step: its panel at the right, the ribbon's tab and the 3D
+//! ([`emcraft_ui_core::steps`]): the steps' statuses from `project.status` with what the window
+//! knows on top (settings not confirmed, a refused Run, a failed run), each status's mark — ✔
+//! done, ○ to do, ⋯ waiting on an earlier step, ! a warning, ✕ needs attention, ↻ out of date,
+//! ◌ while a run goes on, ⊖ not needed for the kind chosen — drawn on its node in the tree
+//! ([`crate::browser`]). A step opened shows its panel at the right, the ribbon's tab and the 3D
 //! view's overlay for it.
 
 use emcraft_engine::workflow::{Status, Step, StepState};
-use emcraft_ui_core::lang::{shown, tr};
+use emcraft_ui_core::lang::tr;
+use emcraft_ui_core::steps::Solver;
 use emcraft_ui_core::steps::devices::DeviceSelection;
 use emcraft_ui_core::steps::form::Fields;
 use emcraft_ui_core::steps::run::Window;
-use emcraft_ui_core::steps::{Solver, kinds};
 use emcraft_ui_core::view::View;
-use iced::widget::{button, container, pick_list, row, text};
-use iced::{Alignment, Color, Element, Fill, Widget};
+use iced::Color;
 use serde_json::{Value, json};
 
-use crate::app::{App, Message};
-use crate::look::{self, Tokens};
-use emcraft_ui_core::system::gesture::Command;
+use crate::app::App;
+use crate::look::Tokens;
 
 /// The workflow's state in the window: the step open, the session's statuses (for the window's
 /// generation of the project), the Setup form, why Run was last refused, the last run that
@@ -54,15 +51,6 @@ pub fn mark(t: Tokens, status: Status) -> (&'static str, Color) {
         Status::Missing => ("✕", t.error),
         Status::Stale => ("↻", t.info),
     }
-}
-
-/// How a pill looks: the run under way, a step not needed (skipped once done), or its status.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Look {
-    Running,
-    Skipped,
-    Unneeded(Status),
-    Plain(Status),
 }
 
 impl Workflow {
@@ -313,61 +301,10 @@ impl App {
     }
 }
 
-/// Whether the bar shows: a project with steps (not a board's nor a system's), outside the start
-/// and settings pages.
-pub fn shown_bar(app: &App) -> bool {
+/// Whether the project is worked in steps: not a board's nor a system's, outside the start and
+/// settings pages.
+pub fn stepped(app: &App) -> bool {
     !app.home && !app.settings && !matches!(app.solver(), Solver::Pcb | Solver::System)
-}
-
-/// The kind of analysis: the job's, marked "auto" while it is inferred; another chosen runs
-/// `project.analysis`.
-fn kind(app: &App) -> Element<'_, Message> {
-    let t = app.look.tokens;
-    let m = app.session.model();
-    let (current, chosen) = (m.analysis(), m.job.chosen());
-    let name = move |k: Solver| {
-        let n = tr(kinds::card(k).name);
-        if chosen.is_none() && k == current { format!("{n} ({})", tr(t!("auto"))) } else { n.to_owned() }
-    };
-    let idle = app.job.is_none();
-    let list = pick_list(Some(current), Solver::ALL, move |k: &Solver| name(*k)).text_size(t.font_button).style(look::choice(t));
-    let choose = move |k: Solver| Message::Run(Command { id: "project.analysis", params: json!({"kind": k.id()}) });
-    let list = if idle { list.on_select(choose) } else { list };
-    list.boxed()
-}
-
-/// The step bar: the kind of analysis, then a pill a step from the geometry on.
-pub fn bar(app: &App) -> Element<'_, Message> {
-    let t = app.look.tokens;
-    let states = app.statuses();
-    let running = app.running();
-    let m = app.session.model();
-    let pills = states.iter().filter(|s| s.step != Step::Intent).map(|s| {
-        let unneeded = emcraft_ui_core::steps::not_needed(m, s.step).is_some();
-        let look = match (running && s.step == Step::Run, unneeded, s.status) {
-            (true, _, _) => Look::Running,
-            (false, true, Status::Done) => Look::Skipped,
-            (false, true, status) => Look::Unneeded(status),
-            (false, false, status) => Look::Plain(status),
-        };
-        let (symbol, ink) = match look {
-            Look::Running => ("◌", t.accent),
-            Look::Skipped => ("⊖", t.text_dim),
-            Look::Unneeded(status) | Look::Plain(status) => mark(t, status),
-        };
-        let open = app.workflow.step == Some(s.step);
-        let dim = matches!(look, Look::Skipped | Look::Unneeded(_) | Look::Plain(Status::Waiting));
-        let (ink, name_ink) = match (open, dim) {
-            (true, _) => (t.on_accent, t.on_accent),
-            (false, true) => (ink, t.text_dim),
-            (false, false) => (ink, t.text),
-        };
-        let name = text(format!("{} {}", s.step.index(), shown(s.step))).size(t.font_button).color(name_ink);
-        let content = row![text(symbol).size(t.font_button).color(ink), name].spacing(6).align_y(Alignment::Center);
-        button(content).style(look::button(t, open)).on_press(Message::Step(if open { None } else { Some(s.step) })).boxed()
-    });
-    let line = row(std::iter::once(kind(app)).chain(pills)).spacing(6).align_y(Alignment::Center).wrap().vertical_spacing(6);
-    container(line).padding([4, 14]).width(Fill).boxed()
 }
 
 /// The workflow's state for `ui.inspect`: the step open, each step's status and checks, the

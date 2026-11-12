@@ -31,6 +31,8 @@ pub enum Purpose {
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Then {
     New,
+    /// A blank project for a kind of analysis (the start page's Blank, a purpose chosen).
+    Blank(emcraft_engine::workflow::Analysis),
     Open,
     OpenPath(String),
     /// A template, its parameters changed to `values`, for `purpose` (the kind of analysis).

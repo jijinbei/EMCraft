@@ -43,6 +43,7 @@ impl App {
     fn go(&mut self, then: Then) -> Task<Message> {
         match then {
             Then::New => self.opened("file.new", &json!({})),
+            Then::Blank(kind) => self.opened("file.new", &json!({ "analysis": kind.id() })),
             Then::Open => return self.pick(Purpose::Open),
             Then::OpenPath(path) => self.opened("file.open", &json!({ "path": path })),
             Then::Sample { name, values, purpose } => {

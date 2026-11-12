@@ -73,7 +73,7 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         overlays.chain(views).chain(fixed).chain(tools).collect::<Vec<_>>()
     });
     let rows = app.rows().map(|r| (format!("row:{}", r.id), Message::Row(r.id.clone())));
-    let steps = crate::steps::shown_bar(app)
+    let steps = crate::steps::stepped(app)
         .then(|| emcraft_engine::workflow::Step::ALL.into_iter().map(|s| (format!("step:{}", s.id()), Message::Step(Some(s)))).collect::<Vec<_>>());
     let panel = crate::step_panel::handles(app);
     let spar = crate::sparameters::handles(app);
@@ -86,7 +86,8 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         let purposes = emcraft_ui_core::steps::Solver::ALL.into_iter().map(|k| (format!("purpose:{}", k.id()), Message::Purpose(Some(k))));
         let templates =
             emcraft_engine::templates::TEMPLATES.iter().map(|s| (format!("template:{}", s.name), Message::Template(TemplateAct::Open(Some(s.name)))));
-        std::iter::once(import).chain(purposes).chain(templates).collect::<Vec<_>>()
+        let blank = app.purpose.map(|k| ("home:blank".to_owned(), Message::File(FileAction::Request(Then::Blank(k)))));
+        std::iter::once(import).chain(blank).chain(purposes).chain(templates).collect::<Vec<_>>()
     });
     let card_buttons = app.template.card.is_some().then(|| {
         [

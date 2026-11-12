@@ -1,6 +1,7 @@
-//! The start page: New project and Open, the recent projects, and the templates by group, each a
-//! card with its model drawn from the corner ([`emcraft_ui_core::start`]) — drawn off the window's
-//! thread, one task a template, again in a new theme. A card opens its template.
+//! The start page: Open and Import, the recent projects, the purposes (a blank project for the one
+//! chosen), and the templates by group, each a card with its model drawn from the corner
+//! ([`emcraft_ui_core::start`]) — drawn off the window's thread, one task a template, again in a
+//! new theme. A card opens its template.
 
 use std::collections::BTreeMap;
 
@@ -89,7 +90,6 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let head = column![
         row![text("EMCraft").size(30), text(tr(t!("Start"))).size(30).color(t.text_dim)].spacing(12),
         row![
-            big(t!("New project"), FileAction::Request(Then::New)),
             big(t!("Open…"), FileAction::Request(Then::Open)),
             big(
                 if app.purpose == Some(emcraft_ui_core::steps::Solver::Pcb) { t!("Import PCB…") } else { t!("Import a SolidCraft design…") },
@@ -134,15 +134,19 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 .boxed()
         })
     });
-    let blank = app.purpose.map(|_| {
+    let blank = app.purpose.map(|k| {
         button(text(tr(t!("Blank"))).size(t.font_button))
             .style(look::button(t, false))
-            .on_press(Message::File(FileAction::Request(Then::New)))
+            .on_press(Message::File(FileAction::Request(Then::Blank(k))))
             .boxed()
     });
     let heading =
         row(std::iter::once(text(tr(t!("Templates"))).size(t.font_heading).boxed()).chain(blank)).spacing(12).align_y(iced::Alignment::Center);
     let templates = column![heading, Column::with_children(groups).spacing(18)].spacing(10);
-    let page = Column::with_children([head.boxed()].into_iter().chain(recent).chain([purposes.boxed(), templates.boxed()])).spacing(24).padding(28);
-    container(scrollable(page)).width(Fill).height(Fill).boxed()
+    let page = Column::with_children([head.boxed()].into_iter().chain(recent).chain([purposes.boxed(), templates.boxed()]))
+        .spacing(24)
+        .padding(28)
+        .width(Fill);
+    // The scroll bar at the window's edge.
+    container(scrollable(page).width(Fill).height(Fill)).width(Fill).height(Fill).boxed()
 }

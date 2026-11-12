@@ -436,8 +436,8 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "file.new",
         label: "New project",
-        doc: "Replaces the session with an empty project (vacuum only), keeping the display units; undo goes back.",
-        params: &[],
+        doc: "Replaces the session with an empty project (vacuum only), keeping the display units, for the kind of analysis `analysis` when given; undo goes back.",
+        params: &[opt("analysis", K::String, "the kind of analysis the project is for (`project.analysis`): `frequency`, `eigenmodes`, `radiation`, `time_domain`, `pcb` or `system`; none chosen when left out").one_of(&Analysis::IDS)],
         effect: Effect::Replace,
         invalidates: None,
         run: crate::project::new,

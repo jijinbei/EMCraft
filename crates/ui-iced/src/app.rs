@@ -42,7 +42,8 @@ pub fn first_page(s: &Session) -> View {
 }
 
 /// The browser's sections (their English names) and rows.
-pub type Tree = Vec<(&'static str, Vec<Row>)>;
+/// The browser's tree: its rows under the workflow's steps ([`emcraft_ui_core::outline`]).
+pub type Tree = Vec<emcraft_ui_core::outline::Part>;
 
 /// The band's fields' node, in a [`Field`].
 pub const BAND: &str = "@band";
@@ -547,7 +548,8 @@ impl App {
         };
         self.view3d = std::mem::take(&mut self.view3d).refreshed(&src);
         if self.tree.as_ref().is_none_or(|(g, _)| *g != self.generation) {
-            self.tree = Some((self.generation, browser::tree(&self.session, &self.replies)));
+            let sections = browser::tree(&self.session, &self.replies);
+            self.tree = Some((self.generation, emcraft_ui_core::outline::outline(sections, self.solver())));
         }
         let charts = crate::charts::Source {
             session: &self.session,
@@ -565,9 +567,9 @@ impl App {
         self.charts = std::mem::take(&mut self.charts).refreshed(&charts);
     }
 
-    /// The browser's rows, in their sections.
+    /// The browser's rows, in their order.
     pub fn rows(&self) -> impl Iterator<Item = &Row> {
-        self.tree.iter().flat_map(|(_, t)| t.iter().flat_map(|(_, rows)| rows))
+        self.tree.iter().flat_map(|(_, t)| t.iter().flat_map(emcraft_ui_core::outline::Part::rows))
     }
 
     /// The rows of what is selected, in its order.
@@ -590,7 +592,7 @@ impl App {
         self.selection = Selection::of(r.pick.into_iter().collect(), Some(r.id.clone()));
         // A row of the model takes the workflow to its step (the mesh's to Mesh, a port's to
         // Excitation), whose panel shows it.
-        if let Some(step) = crate::browser::step_of(&r).filter(|s| self.workflow.step != Some(*s) && crate::steps::shown_bar(self)) {
+        if let Some(step) = crate::browser::step_of(&r).filter(|s| self.workflow.step != Some(*s) && crate::steps::stepped(self)) {
             self.open_step(Some(step));
         }
         match r.act {
@@ -863,15 +865,15 @@ impl App {
             _ => crate::system::view(self),
         };
         // The ribbon's commands are the project's: not over the settings or the start page.
-        let ribbon = (!self.settings && !self.home).then(|| crate::ribbon::view(self));
-        let steps = crate::steps::shown_bar(self).then(|| crate::steps::bar(self));
-        // The open step's panel at the page's right.
-        let page = match crate::step_panel::view(self).filter(|_| crate::steps::shown_bar(self)) {
-            Some(panel) => iced::widget::row![page, panel].spacing(8).height(Fill).boxed(),
-            None => page,
+        let project = !self.settings && !self.home;
+        let ribbon = project.then(|| crate::ribbon::view(self));
+        // The tree at the page's left, the open step's panel at its right.
+        let panel = crate::step_panel::view(self).filter(|_| crate::steps::stepped(self));
+        let page = match project {
+            true => row(std::iter::once(crate::browser::view(self)).chain(std::iter::once(page)).chain(panel)).spacing(8).height(Fill).boxed(),
+            false => page,
         };
-        let parts =
-            std::iter::once(bar.boxed()).chain(ribbon).chain(steps).chain(crate::files::recoveries(self)).chain([page, crate::messages::view(self)]);
+        let parts = std::iter::once(bar.boxed()).chain(ribbon).chain(crate::files::recoveries(self)).chain([page, crate::messages::view(self)]);
         let window = container(iced::widget::Column::with_children(parts)).width(Fill).height(Fill).style(look::window(t));
         let over = self
             .dialog

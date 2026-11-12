@@ -9,6 +9,7 @@
   {"expect": {"inspect": {"workflow.steps.run": "todo", "workflow.refused": null, "workflow.step": null}}},
   {"click": "step:setup"},
   {"expect": {"inspect": {"workflow.step": "setup", "workflow.confirmed": true}}},
+  {"shot": "tree-setup"},
   {"call": "ui.set", "params": {"setup": {"stop": "five"}}},
   {"expect": {"inspect": {"workflow.confirmed": false, "workflow.steps.run": "waiting"}}},
   {"click": "setup:confirm"},
