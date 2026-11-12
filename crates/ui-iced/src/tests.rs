@@ -589,3 +589,35 @@ fn a_cavitys_modes_are_listed_and_one_is_shown() {
         }
     }
 }
+
+/// Undo and Redo, by their keys too: a material's εr changed is taken back and done again; the
+/// keys go to the window only when no field takes them.
+#[test]
+fn undo_and_redo_by_keys() {
+    use iced::keyboard::{Event, Key, Modifiers};
+    let key = |c: &str, modifiers: Modifiers, status| {
+        let event = iced::Event::Keyboard(Event::KeyPressed {
+            key: Key::Character(c.into()),
+            modified_key: Key::Character(c.into()),
+            physical_key: iced::keyboard::key::Physical::Unidentified(iced::keyboard::key::NativeCode::Unidentified),
+            location: iced::keyboard::Location::Standard,
+            modifiers,
+            text: None,
+            repeat: false,
+        });
+        crate::files::shortcut(event, status, iced::window::Id::unique())
+    };
+    let mut app = App::new(Some("highpass"));
+    let eps = |app: &App| app.session.model().materials.iter().find(|m| m.name == "ptfe-like").map(|m| m.eps_r.get());
+    app.update(Message::Run(Command { id: "model.material.edit", params: json!({"name": "ptfe-like", "eps_r": 3.0}) }));
+    assert_eq!(eps(&app), Some(3.0));
+    let ignored = iced::event::Status::Ignored;
+    let Some(undo) = key("z", Modifiers::CTRL, ignored) else { panic!("Ctrl+Z") };
+    app.update(undo);
+    assert_eq!(eps(&app), Some(2.0), "taken back");
+    let Some(redo) = key("z", Modifiers::CTRL | Modifiers::SHIFT, ignored) else { panic!("Ctrl+Shift+Z") };
+    app.update(redo);
+    assert_eq!(eps(&app), Some(3.0), "done again");
+    assert!(key("z", Modifiers::CTRL, iced::event::Status::Captured).is_none(), "a field's own");
+    assert!(key("z", Modifiers::empty(), ignored).is_none());
+}

@@ -186,6 +186,39 @@ async fn asked(picker: Arc<dyn Picker>, purpose: Purpose, suggested: String) -> 
     rx.await.ok().flatten()
 }
 
+/// The window's keys (when no field takes them): Ctrl+N new, Ctrl+O open, Ctrl+S save
+/// (Shift: save as), Ctrl+Z undo, Ctrl+Shift+Z or Ctrl+Y redo (Cmd on macOS).
+pub fn shortcut(event: iced::Event, status: iced::event::Status, _: iced::window::Id) -> Option<Message> {
+    use iced::keyboard::{Event, Key};
+    let iced::Event::Keyboard(Event::KeyPressed { key: Key::Character(c), modifiers, .. }) = event else { return None };
+    if status == iced::event::Status::Captured || !modifiers.command() {
+        return None;
+    }
+    let shift = modifiers.shift();
+    Some(match (c.as_str(), shift) {
+        ("n", false) => Message::File(FileAction::Request(Then::New)),
+        ("o", false) => Message::File(FileAction::Request(Then::Open)),
+        ("s", false) => Message::File(FileAction::Save),
+        ("s", true) => Message::File(FileAction::SaveAs),
+        ("z", false) => Message::Start("edit.undo".into()),
+        ("z", true) | ("y", false) => Message::Start("edit.redo".into()),
+        _ => return None,
+    })
+}
+
+/// Undo and Redo in the window's bar, each while there is something to take back or do again.
+pub fn edits(app: &App) -> impl Iterator<Item = Element<'_, Message>> {
+    let t = app.look.tokens;
+    let idle = app.job.is_none();
+    [("edit.undo", !app.session.undo().is_empty()), ("edit.redo", !app.session.redo().is_empty())].into_iter().map(move |(id, can)| {
+        let label = emcraft_ui_core::lang::command_label(id).to_owned();
+        button(text(label).size(t.font_button))
+            .style(look::bar_button(t))
+            .on_press_maybe((idle && can).then(|| Message::Start(id.to_owned())))
+            .boxed()
+    })
+}
+
 /// The File buttons in the window's bar: New, Open, Save, Save As.
 pub fn buttons(app: &App) -> impl Iterator<Item = Element<'_, Message>> {
     let t = app.look.tokens;

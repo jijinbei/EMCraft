@@ -423,7 +423,7 @@ impl App {
         } else {
             Subscription::none()
         };
-        Subscription::batch([frames, closing])
+        Subscription::batch([frames, closing, iced::event::listen_with(crate::files::shortcut)])
     }
 
     /// The window after `message`, and what iced does next: the picture of the window taken
@@ -509,6 +509,7 @@ impl App {
             .into_iter()
             .chain(crate::files::buttons(self))
             .chain(crate::files::recent(self))
+            .chain(crate::files::edits(self))
             .chain(tabs)
             .chain(std::iter::once(Space::new().width(Fill).boxed()))
             .chain(status))
