@@ -15,6 +15,7 @@ use emcraft_ui_core::system::layout::Layout;
 use std::rc::Rc;
 
 use emcraft_ui_core::browser::{self, Act, Row};
+use emcraft_ui_core::dialogs::{self, Dialog};
 use emcraft_ui_core::job::Job;
 use emcraft_ui_core::navigation::NavPreset;
 use emcraft_ui_core::prefs::{GpuLook, Prefs};
@@ -79,6 +80,12 @@ pub enum Message {
     Click(Click),
     /// A browser row clicked (by its id): what it names selected, what it shows or runs.
     Row(String),
+    /// The selection's edit dialog opened.
+    Edit,
+    /// The items selected deleted.
+    Delete,
+    /// The open dialog changed, confirmed or cancelled.
+    Dialog(crate::dialog::Edit),
     /// A command started from a button: a long one on the worker.
     Start(String),
     /// The running job stopped.
@@ -116,6 +123,8 @@ pub struct App {
     /// generation it was read for.
     pub(crate) selection: Selection,
     pub(crate) tree: Option<(u64, Tree)>,
+    /// The command's dialog open over the window.
+    pub(crate) dialog: Option<Dialog>,
     /// The charts as drawn.
     pub(crate) charts: crate::charts::Charts,
     /// Raised by every command that ends well (the model's revision does not follow a solve's
@@ -155,6 +164,7 @@ impl App {
             view3d: View3d::default(),
             selection: Selection::default(),
             tree: None,
+            dialog: None,
             charts: crate::charts::Charts::default(),
             generation: 0,
             job: None,
@@ -234,6 +244,69 @@ impl App {
             _ => {}
         }
         None
+    }
+
+    /// The one row selected: its item's edit dialog, else the dialog its command edits with.
+    fn edit(&mut self) {
+        let Some(r) =
+            self.picked().first().map(|r| (*r).clone()).or_else(|| self.rows().find(|r| self.selection.row() == Some(r.id.as_str())).cloned())
+        else {
+            return;
+        };
+        let opened = match (&r.item, &r.act) {
+            (Some(item), _) => dialogs::edit(item, &mut self.session, false).map_err(|e| e.to_string()),
+            (None, Act::Edit(id)) => self.open(id, &serde_json::json!({})),
+            (None, Act::EditWith(id, values)) => self.open(id, values),
+            _ => return,
+        };
+        match opened {
+            Ok(d) => self.dialog = Some(d),
+            Err(e) => self.error = Some(e),
+        }
+    }
+
+    /// Command `id`'s dialog on the model's values, `values` over them.
+    fn open(&mut self, id: &str, values: &serde_json::Value) -> Result<Dialog, String> {
+        let spec = emcraft_engine::find_command(id).ok_or_else(|| format!("no command `{id}`"))?;
+        Ok(dialogs::open(spec, &mut self.session, values, false))
+    }
+
+    /// The items selected deleted (their rows' delete commands), the selection cleared.
+    fn delete(&mut self) {
+        let items: Vec<browser::Item> = self.picked().into_iter().filter_map(|r| r.item.clone()).filter(|i| !i.delete.is_empty()).collect();
+        self.selection = Selection::default();
+        for item in items {
+            self.run_now(item.delete, &item.params());
+        }
+    }
+
+    /// OK on the open dialog: its command run (a long one on the worker, the dialog coming back
+    /// with the error if it fails); a refusal shown under the field it names, the dialog kept.
+    fn dialog_ok(&mut self) {
+        let Some(mut d) = self.dialog.take() else { return };
+        let params = match d.ok() {
+            Ok(dialogs::Outcome::Run(p)) => p,
+            Ok(dialogs::Outcome::Unchanged) => return,
+            Err(_) => return self.dialog = Some(d),
+        };
+        let id = d.command.id;
+        if emcraft_ui_core::commands::is_long(id) {
+            self.start(id, params);
+            if let Some(job) = self.job.as_mut() {
+                job.dialog = Some(d);
+            }
+            return;
+        }
+        match self.session.execute(id, &params) {
+            Ok(_) => {
+                self.error = None;
+                self.after(id);
+            }
+            Err(e) => {
+                d.refused(&e.to_string());
+                self.dialog = Some(d);
+            }
+        }
     }
 
     /// What the 3D view draws of `shown`: through its camera, on the theme's ground, with the
@@ -352,7 +425,11 @@ impl App {
             View::SParameters => crate::sparameters::view(self),
             _ => crate::system::view(self),
         };
-        container(column![bar, page]).width(Fill).height(Fill).style(look::window(t)).boxed()
+        let window = container(column![bar, page]).width(Fill).height(Fill).style(look::window(t));
+        match &self.dialog {
+            Some(d) => iced::widget::stack![window, crate::dialog::view(self, d)].boxed(),
+            None => window.boxed(),
+        }
     }
 
     /// The window after `message`, and the command it ends in.
@@ -387,6 +464,26 @@ impl App {
                 None
             }
             Message::Row(id) => self.row(&id),
+            Message::Edit => {
+                self.edit();
+                None
+            }
+            Message::Delete => {
+                self.delete();
+                None
+            }
+            Message::Dialog(crate::dialog::Edit::Ok) => {
+                self.dialog_ok();
+                None
+            }
+            Message::Dialog(crate::dialog::Edit::Cancel) => {
+                self.dialog = None;
+                None
+            }
+            Message::Dialog(edit) => {
+                self.dialog = self.dialog.take().map(|d| crate::dialog::edited(d, &edit));
+                None
+            }
             Message::Click(c) => {
                 let pick = self.view3d.pick(c.at);
                 let click = if c.double { selection::Click::Double { pick } } else { selection::Click::Single { pick, add: c.add } };

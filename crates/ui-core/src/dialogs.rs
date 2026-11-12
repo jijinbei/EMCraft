@@ -371,6 +371,75 @@ impl Dialog {
     }
 }
 
+/// The primary button's label: what a long command does (Mesh, Solve, Sweep…), OK for the
+/// rest — never Run, which is the workflow's step 6.
+pub fn ok_label(id: &str) -> crate::lang::Text {
+    match id {
+        _ if id.starts_with("mesh.") => t!("Mesh"),
+        "solve.device" => t!("OK"),
+        _ if id.starts_with("solve.") => t!("Solve"),
+        "study.sweep" => t!("Sweep"),
+        "study.optimize" => t!("Optimize"),
+        "geometry.import" => t!("Import"),
+        "file.open" | "file.sample" => t!("Open"),
+        "results.compare" | "results.field_error" => t!("Compare"),
+        _ => t!("OK"),
+    }
+}
+
+/// What OK on a dialog asks for: its command run with these parameters, or nothing (the model's
+/// own values, unchanged).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Outcome {
+    Run(Value),
+    Unchanged,
+}
+
+impl Dialog {
+    /// What OK asks for as the fields stand, or the first field that does not parse (each
+    /// field's error marked).
+    pub fn ok(&mut self) -> Result<Outcome, String> {
+        let params = self.params().inspect_err(|e| self.error = Some(e.clone()))?;
+        Ok(if self.unchanged.as_ref() == Some(&params) { Outcome::Unchanged } else { Outcome::Run(params) })
+    }
+}
+
+/// What command `id`'s dialog opens on: the model's current state (`project.values`, asked with
+/// `select`'s parameters — a symmetry plane's `axis`, say) for the commands that have one
+/// ([`ON_VALUES`]; perfect walls are the empty one), else the examples of [`initial`]; and
+/// whether it is the model's.
+pub fn opening(id: &str, session: &mut Session, select: &Value) -> (Value, bool) {
+    let mut ask = select.as_object().cloned().unwrap_or_default();
+    ask.insert("command".into(), json!(id));
+    match session.execute("project.values", &Value::Object(ask)) {
+        Ok(v) if ON_VALUES.contains(&id) && (v.as_object().is_some_and(|o| !o.is_empty()) || id == "model.walls") => (v, true),
+        _ => (initial(id, session), false),
+    }
+}
+
+/// Command `command`'s dialog, opened on [`opening`]'s values with `values` over them (a view's
+/// settings for an export, say); OK on the model's own values unchanged runs nothing.
+pub fn open(command: &'static CommandSpec, session: &mut Session, values: &Value, docked: bool) -> Dialog {
+    let (mut init, current) = opening(command.id, session, values);
+    match (init.as_object_mut(), values.as_object()) {
+        (Some(o), Some(v)) => o.extend(v.clone()),
+        _ if !values.is_null() => init = values.clone(),
+        _ => {}
+    }
+    let d = Dialog::new(command, session, &init, docked);
+    if current && skips_unchanged(command.id) { d.on_model() } else { d }
+}
+
+/// The edit dialog of `item` on its current values (`project.values`): OK unchanged runs
+/// nothing.
+pub fn edit(item: &crate::browser::Item, session: &mut Session, docked: bool) -> emcraft_engine::Result<Dialog> {
+    let spec = emcraft_engine::find_command(item.edit).ok_or_else(|| emcraft_engine::EngineError::UnknownCommand(clip(item.edit, 100)))?;
+    let mut ask = item.params();
+    ask["command"] = json!(item.edit);
+    let values = session.execute("project.values", &ask)?;
+    Ok(Dialog::new(spec, session, &values, docked).on_model())
+}
+
 /// A number field's value: a finite number, or an expression of the variables (`=w/2`) passed
 /// on as written for the engine to evaluate.
 pub fn numeric(text: &str) -> Result<Value, String> {

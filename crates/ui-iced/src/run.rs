@@ -72,7 +72,7 @@ impl App {
             Some(Poll::Lost) => None,
         };
         let Some(job) = self.job.take() else { return };
-        for step in job::finished(job, done, self.page, false) {
+        for step in job::finished(job, done, self.page, self.dialog.is_some()) {
             self.follow(step);
         }
     }
@@ -93,8 +93,9 @@ impl App {
             }
             Then::Answer(waiting, answer) => waiting.into_iter().for_each(|w| drop(w.send(answer.clone()))),
             Then::Run(list) => self.queue(list),
-            // The window opens no dialogs and no projects yet.
-            Then::Land | Then::Reopen(_) => {}
+            Then::Reopen(d) => self.dialog = Some(*d),
+            // The window opens no projects yet.
+            Then::Land => {}
         }
     }
 

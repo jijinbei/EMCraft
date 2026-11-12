@@ -184,7 +184,15 @@ fn card(app: &App) -> Element<'_, Message> {
         ([r], 1) => format!("{}  ·  {}", r.shown, r.detail),
         (_, n) => trf(t!("{n} selected"), args!(n = n)),
     };
-    let card = container(text(line).size(t.font_body).color(t.text)).padding([6, 12]).style(look::ground(t));
+    // Edit for one row that edits; Delete for the items of the model selected.
+    let editable = matches!(rows.as_slice(), [r] if r.item.is_some() || r.act.edits());
+    let deletable = rows.iter().any(|r| r.item.as_ref().is_some_and(|i| !i.delete.is_empty()));
+    let idle = app.job.is_none();
+    let edit = editable.then(|| tool(t, tr(t!("Edit")), false, idle.then_some(Message::Edit)));
+    let delete = deletable.then(|| tool(t, tr(t!("Delete")), false, idle.then_some(Message::Delete)));
+    let line =
+        row(std::iter::once(text(line).size(t.font_body).color(t.text).boxed()).chain(edit).chain(delete)).spacing(10).align_y(Alignment::Center);
+    let card = container(line).padding([6, 12]).style(look::ground(t));
     container(card).padding(12).center_x(Fill).boxed()
 }
 

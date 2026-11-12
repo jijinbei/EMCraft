@@ -8,7 +8,8 @@
 //! the project is an engine command.
 //!
 //! - [`app`]: the window's state and messages; [`run`]: commands on the worker;
-//! - [`browser`]: the model and its results as a tree beside the 3D view;
+//! - [`browser`]: the model and its results as a tree beside the 3D view; [`dialog`]: a
+//!   command's parameters over the window;
 //! - [`model`]: the model in 3D ([`view3d`], drawn by the GPU in iced's shader widget), meshed
 //!   and solved from its bar; [`sparameters`]: the sweep's chart;
 //! - [`system`]: a system's node editor — the band, the canvas, the chart and the budget;
@@ -31,6 +32,7 @@ pub mod app;
 pub mod browser;
 pub mod chart;
 pub mod charts;
+pub mod dialog;
 pub mod geom;
 pub mod look;
 pub mod model;

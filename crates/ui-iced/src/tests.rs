@@ -387,3 +387,48 @@ fn a_browser_row_selects_its_part_and_shows_its_page() {
     app.update(Message::Row("result:sweep".into()));
     assert_eq!(app.page, View::SParameters);
 }
+
+/// A dialog over the window: a material's row edited opens on its values (εr 2), OK unchanged
+/// runs nothing, a value the engine refuses comes back under its field with the dialog open, a
+/// good one is set; a port selected and deleted is gone. Analytic evidence: the PTFE-like
+/// sections' εr is the sample's own 2; the edit's value is read back from the model.
+#[test]
+fn a_dialog_edits_an_item_and_delete_takes_one_away() {
+    use crate::dialog::Edit;
+    let mut app = App::new(Some("highpass"));
+    let eps = |app: &App| app.session.model().materials.iter().find(|m| m.name == "ptfe-like").map(|m| m.eps_r.get());
+    assert_eq!(eps(&app), Some(2.0));
+    app.update(Message::Row("material:ptfe-like".into()));
+    app.update(Message::Edit);
+    let field = |app: &App| app.dialog.as_ref().and_then(|d| d.fields.iter().position(|f| f.name == "eps_r"));
+    let Some(k) = field(&app) else { panic!("the material's dialog with its εr") };
+    assert_eq!(app.dialog.as_ref().map(|d| d.fields[k].text.clone()), Some("2".into()));
+    let revision = app.session.revision();
+    app.update(Message::Dialog(Edit::Ok));
+    assert!(app.dialog.is_none() && app.session.revision() == revision, "unchanged: nothing ran");
+    app.update(Message::Edit);
+    app.update(Message::Dialog(Edit::Text(k, "-3".into())));
+    app.update(Message::Dialog(Edit::Ok));
+    let refused = app.dialog.as_ref().map(|d| d.fields[k].error.is_some() || d.error.is_some());
+    assert_eq!(refused, Some(true), "refused, the dialog kept with why");
+    app.update(Message::Dialog(Edit::Text(k, "2.5".into())));
+    app.update(Message::Dialog(Edit::Ok));
+    assert!(app.dialog.is_none());
+    assert_eq!(eps(&app), Some(2.5));
+    // A port deleted from the card.
+    let ports = app.session.model().ports.len();
+    let port = app.rows().find(|r| r.pick == Some(emcraft_ui_core::scene3d::Pick::Port(1))).map(|r| r.id.clone()).unwrap_or_default();
+    app.update(Message::Row(port));
+    app.update(Message::Delete);
+    assert_eq!(app.session.model().ports.len(), ports - 1);
+    assert!(app.selection.is_clear());
+    if let Ok(dir) = std::env::var("EMCRAFT_ICED_SHOTS") {
+        let _gpu = gpu();
+        app.update(Message::Row("material:ptfe-like".into()));
+        app.update(Message::Edit);
+        let mut ui = iced_test::Simulator::with_size(settings(), (1400.0, 900.0), app.view());
+        let shot = ui.snapshot(&app.theme()).unwrap_or_else(|e| panic!("{e}"));
+        let _ = std::fs::remove_file(std::path::Path::new(&dir).join("dialog-wgpu.png"));
+        assert!(shot.matches_image(std::path::Path::new(&dir).join("dialog")).unwrap_or(false));
+    }
+}

@@ -214,21 +214,7 @@ fn keys(app: &EmcraftApp, d: &Dialog, ui: &mut egui::Ui, busy: bool, asked: &mut
     }
 }
 
-/// The primary button's label: what a long command does (Mesh, Solve, Sweep…), OK for the
-/// rest — never Run, which is the workflow's step 6.
-pub fn ok_label(id: &str) -> crate::lang::Text {
-    match id {
-        _ if id.starts_with("mesh.") => t!("Mesh"),
-        "solve.device" => t!("OK"),
-        _ if id.starts_with("solve.") => t!("Solve"),
-        "study.sweep" => t!("Sweep"),
-        "study.optimize" => t!("Optimize"),
-        "geometry.import" => t!("Import"),
-        "file.open" | "file.sample" => t!("Open"),
-        "results.compare" | "results.field_error" => t!("Compare"),
-        _ => t!("OK"),
-    }
-}
+pub use emcraft_ui_core::dialogs::ok_label;
 
 /// The fields `shown` picks, each labelled by `label` (its parameter's name — an id, as scripts
 /// write it — for most dialogs), its description on hover; the controls drawn, each with
