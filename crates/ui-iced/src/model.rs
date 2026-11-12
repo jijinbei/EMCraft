@@ -88,7 +88,16 @@ fn field_bar(app: &App) -> Element<'_, Message> {
     let nav = |n: Nav| Message::View3d(n);
     let fu = app.session.display().frequency;
     let label = |s: &str| text(s.to_owned()).size(t.font_body).color(t.form_dim);
-    let planes = pick_list(Some(v.plane), Plane::ALL, |p| lookup(p.label()).to_owned()).on_select(move |p| nav(Nav::Plane(p)));
+    // A plane by its whole name (E-plane, not E).
+    let plane_name = |p: &Plane| {
+        tr(match p {
+            Plane::E => t!("E-plane"),
+            Plane::H => t!("H-plane"),
+            Plane::Cross => t!("Cross-section"),
+        })
+        .to_owned()
+    };
+    let planes = pick_list(Some(v.plane), Plane::ALL, plane_name).on_select(move |p| nav(Nav::Plane(p)));
     let components = pick_list(Some(v.component), Component::ALL, |c| c.label().to_owned()).on_select(move |c| nav(Nav::Component(c)));
     let solved: Vec<f64> = app.session.results().sweep.iter().flat_map(|s| s.results.iter().map(|r| r.frequency)).collect();
     let nearest = solved.iter().copied().min_by(|a, b| (a - v.frequency).abs().total_cmp(&(b - v.frequency).abs()));

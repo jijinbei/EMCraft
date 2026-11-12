@@ -131,6 +131,8 @@ pub fn run(
 }
 
 #[cfg(test)]
+mod lang_tests;
+#[cfg(test)]
 mod scenario;
 #[cfg(test)]
 mod tests;

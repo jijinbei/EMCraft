@@ -79,3 +79,6 @@ pub mod theme;
 pub mod tools;
 pub mod ui_state;
 pub mod view;
+
+#[cfg(test)]
+mod lang_tests;

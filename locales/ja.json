@@ -80,6 +80,7 @@
     "Strips": "ストリップ",
     "Conducting strips of no thickness on the plane y.": "平面 y 上の厚さのない導体ストリップ。",
     "Vias": "ビア",
+    "Stack-up": "層構成",
     "Metal posts from y0 to y1 (floor to roof when left out).": "y0 から y1 までの金属ポスト（省略時は床から天井まで）。",
     "New material": "新しい材料",
     "Show the table": "表を表示",

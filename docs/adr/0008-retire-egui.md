@@ -34,9 +34,11 @@ lines against 7 000). Keeping two windows doubles every UI change.
     the pages looked at; an egui recording plays as far as its actions run commands), the
     Japanese fallback font (`emcraft_ui_core::fonts`), pictures written out (the field's Picture…
     and Animation…, landed with B).
-  - **E Tests and tools**: the iced scenarios' pointer, key, text and shot steps; the
-    translations' coverage over `ui-iced` and `ui-core`; `ui.render` without a GPU (iced's
-    tiny-skia renderer).
+  - **E Tests and tools** (done): the iced scenarios' pointer, key, text and shot steps
+    (`press`, `field`, `key`, `size`, `shot`, through iced_test's simulator); the translations'
+    coverage over `ui-iced` and `ui-core` (the static checks in `emcraft-ui-core`, a tour of the
+    iced window in Japanese); `ui.render` without a GPU (iced's tiny-skia renderer, the 3D view
+    drawn offscreen into its place).
   - **F Switch**: `apps/emcraft` on iced (`emcraft-iced` folded in), `crates/ui-egui` and egui,
     eframe and glow removed; AGENTS.md, docs/architecture.md, ADRs 0001, 0004, 0007 and
     docs/control-protocol.md brought up to date.
