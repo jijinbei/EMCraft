@@ -123,30 +123,46 @@ const SECTION_ADDS: &[(&str, &[&str])] = &[
     ("Measurements", &["results.import"]),
 ];
 
-/// What a part's ＋ offers: its commands that belong to a job of kind `kind`, then the 3D view's
-/// tools that add to it (the ports made by pointing at a face or a gap).
+/// An entry of a part's ＋ list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Add {
+    /// A command: its dialog opens, or it runs.
+    Command(&'static str),
+    /// A tool of the 3D view turned on.
+    Tool(crate::tools::Tool),
+    /// A new SolidCraft design, made there and imported once saved.
+    NewDesign,
+}
+
+/// What a part's ＋ offers: a new SolidCraft design (the geometry's), its commands that belong to
+/// a job of kind `kind`, then the 3D view's tools that add to it (the ports made by pointing at a
+/// face or a gap).
 ///
 /// ```
 /// use emcraft_engine::workflow::{Analysis, Step};
-/// use emcraft_ui_core::outline::{Head, adds};
+/// use emcraft_ui_core::outline::{Add, Head, adds};
 /// use emcraft_ui_core::tools::Tool;
-/// let (commands, tools) = adds(Head::Step(Step::Excitation), Analysis::Frequency);
-/// assert!(commands.contains(&"model.port.create") && !commands.contains(&"source.dipole"));
-/// assert_eq!(tools, [Tool::Port, Tool::Lumped]);
+/// let excitation = adds(Head::Step(Step::Excitation), Analysis::Frequency);
+/// assert!(excitation.contains(&Add::Command("model.port.create")) && !excitation.contains(&Add::Command("source.dipole")));
+/// assert!(excitation.ends_with(&[Add::Tool(Tool::Port), Add::Tool(Tool::Lumped)]));
+/// assert_eq!(adds(Head::Step(Step::Geometry), Analysis::Frequency)[0], Add::NewDesign);
 /// // Nothing drives a resonator.
-/// assert!(adds(Head::Step(Step::Excitation), Analysis::Eigenmodes).1.is_empty());
+/// assert!(adds(Head::Step(Step::Excitation), Analysis::Eigenmodes).is_empty());
 /// ```
-pub fn adds(head: Head, kind: Analysis) -> (Vec<&'static str>, Vec<crate::tools::Tool>) {
+pub fn adds(head: Head, kind: Analysis) -> Vec<Add> {
     let listed: &[&str] = match head {
         Head::Step(step) => STEP_ADDS.iter().find(|(s, _)| *s == step).map_or(&[], |(_, ids)| ids),
         Head::Section(name) => SECTION_ADDS.iter().find(|(n, _)| *n == name).map_or(&[], |(_, ids)| ids),
     };
-    let commands = listed.iter().copied().filter(|id| fits(kind, id)).collect();
+    let design = matches!(head, Head::Step(Step::Geometry)).then_some(Add::NewDesign);
+    let commands = listed.iter().copied().filter(|id| fits(kind, id)).map(Add::Command);
     let tools = match head {
-        Head::Step(Step::Excitation) if fits(kind, "model.port.create") => vec![crate::tools::Tool::Port, crate::tools::Tool::Lumped],
+        Head::Step(Step::Excitation) if fits(kind, "model.port.create") => {
+            vec![Add::Tool(crate::tools::Tool::Port), Add::Tool(crate::tools::Tool::Lumped)]
+        }
         _ => Vec::new(),
     };
-    (commands, tools)
+    design.into_iter().chain(commands).chain(tools).collect()
 }
 
 /// The commands that make shapes: the language of scripts, templates, the oracle and agents,
@@ -328,7 +344,7 @@ mod tests {
         assert!(all.iter().all(|id| offered(id)), "a shape command offered");
         for kind in Analysis::ALL {
             let heads = [Head::Step(Step::Geometry), Head::Section("PCB"), Head::Section("Source")];
-            assert!(heads.iter().any(|h| !adds(*h, kind).0.is_empty()), "{kind:?}");
+            assert!(heads.iter().any(|h| adds(*h, kind).iter().any(|a| matches!(a, Add::Command(_)))), "{kind:?}");
         }
     }
 

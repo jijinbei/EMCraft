@@ -989,6 +989,28 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::geometry::import_inspect,
     },
     CommandSpec {
+        id: "geometry.reload",
+        label: "Reload geometry",
+        doc: "Builds the model again from its history, reading every imported file again: a SolidCraft design saved since (opened in SolidCraft from EMCraft, docs/adr/0010-geometry-from-solidcraft.md) comes in as it is now, the ports, materials and settings after its import applied to it again. The history, the runs and the project's file stay; results are kept, marked out of date where the model changed.",
+        params: &[],
+        effect: Effect::Rebuild,
+        invalidates: Some(Change::Geometry),
+        run: crate::geometry::reload,
+    },
+    CommandSpec {
+        id: "geometry.design",
+        label: "Design parameter",
+        doc: "Sets a parameter of a SolidCraft design the project imports, where it is imported (geometry.import's `parameters`), and builds the model again with it: the design is evaluated by SolidCraft's kernel at the new value, the ports, materials and settings after the import applied again.",
+        params: &[
+            req("design", K::String, "the design's file as geometry.import names it"),
+            req("name", K::String, "the design's parameter"),
+            req("value", K::String, "a number in the unit the design shows the parameter in, an expression of the project's variables (`=a`), or an expression the design evaluates (`3 mm`)"),
+        ],
+        effect: Effect::Rebuild,
+        invalidates: Some(Change::Geometry),
+        run: crate::geometry::design,
+    },
+    CommandSpec {
         id: "geometry.body",
         label: "Body",
         doc: "A body in the region, by what it is made of: `interior` (the region itself — a housing's inside drawn as its air: inside it is solved, outside it is metal; the bodies placed stay, the region pinned and closed; a box anywhere, a prism or revolved profile anywhere, a cylinder or sphere on the origin), `metal` (a perfect conductor: the region loses its volume and its surface becomes wall; it may reach the region's boundary), the region's own material (giving back what metal took: the inside of a metal shell, an opening), or another material (a dielectric body inside the region, apart from other dielectric ones). Later bodies win where they overlap. The same shapes as geometry.solid, its origin at `at` and its z axis turned onto `axis` (dielectric bodies along z).",

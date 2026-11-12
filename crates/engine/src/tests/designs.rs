@@ -247,3 +247,48 @@ fn the_helical_compressor_runs_its_3d_bloch_waves_and_compresses_its_pulse() {
     let pulse = s.execute("results.pulse", &kept).unwrap();
     assert!(pulse["compression"].as_f64().unwrap() > 6.0 && pulse["output_width"].as_f64().unwrap() < 1.2, "{}", pulse["compression"]);
 }
+
+/// A design of the user's, saved again (in SolidCraft) and read again: the taper's file
+/// imported, its length changed in the file, `geometry.reload` brings the new length; set from
+/// EMCraft (`geometry.design`) it changes where it is imported; a parameter the design lacks, a
+/// design not imported, an empty value are refused, the model as it was. Analytic evidence: the
+/// taper's z extent is its parameter `l` (mm).
+#[test]
+fn a_design_saved_again_or_set_here_is_read_again() {
+    let bytes = emcraft_templates::design("template:taper.solidcraft").unwrap();
+    let path = super::scratch("reload-taper.solidcraft");
+    let write_l = |l: &str| {
+        let mut d: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        for p in d["params"].as_array_mut().unwrap() {
+            if p["name"] == "l" {
+                p["expr"] = json!(l);
+            }
+        }
+        std::fs::write(&path, serde_json::to_vec(&d).unwrap()).unwrap();
+    };
+    write_l("30");
+    let mut s = Session::new();
+    // Its air the region, as the taper template has it.
+    s.execute("geometry.import", &json!({"path": path, "materials": {"Body1": "interior"}})).unwrap();
+    approx::assert_abs_diff_eq!(bounds(&s)[2], 30.0, epsilon = 1e-6);
+    let found = crate::geometry::designs(&s);
+    assert_eq!(found.len(), 1);
+    assert!(found[0].parameters.as_ref().is_ok_and(|p| p.iter().any(|q| q.name == "l")));
+    let steps = s.history().len();
+    write_l("42");
+    s.execute("geometry.reload", &json!({})).unwrap();
+    approx::assert_abs_diff_eq!(bounds(&s)[2], 42.0, epsilon = 1e-6);
+    assert_eq!(s.history().len(), steps, "the history as it was");
+    s.execute("geometry.design", &json!({"design": path, "name": "l", "value": "25"})).unwrap();
+    approx::assert_abs_diff_eq!(bounds(&s)[2], 25.0, epsilon = 1e-6);
+    assert_eq!(crate::geometry::designs(&s)[0].set.get("l"), Some(&json!(25.0)));
+    for (params, what) in [
+        (json!({"design": path, "name": "nothing", "value": "3"}), "name"),
+        (json!({"design": "other.solidcraft", "name": "l", "value": "3"}), "design"),
+        (json!({"design": path, "name": "l", "value": " "}), "value"),
+    ] {
+        let e = s.execute("geometry.design", &params).unwrap_err();
+        assert!(matches!(&e, EngineError::Params(m) if m.contains(what)), "{e}");
+    }
+    approx::assert_abs_diff_eq!(bounds(&s)[2], 25.0, epsilon = 1e-6);
+}

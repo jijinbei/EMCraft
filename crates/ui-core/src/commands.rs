@@ -85,6 +85,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("geometry.solid", Some(t!("Region").en()), Some(Glyph::Box), false),
     ui("geometry.import", Some(t!("Import").en()), Some(Glyph::Import), true),
     ui("geometry.import.inspect", None, Some(Glyph::Import), false),
+    ui("geometry.reload", None, Some(Glyph::Import), true),
+    ui("geometry.design", None, Some(Glyph::Variable), true),
     ui("geometry.body", Some(t!("Body").en()), Some(Glyph::Feature), false),
     ui("geometry.body.material", Some(t!("Body material").en()), Some(Glyph::Feature), false),
     ui("geometry.body.edit", None, Some(Glyph::Feature), false),

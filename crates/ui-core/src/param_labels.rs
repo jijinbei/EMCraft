@@ -67,6 +67,7 @@ pub fn param_label(command: &str, name: &'static str) -> &'static str {
         (_, "data") => t!("Data").en(),
         (_, "debye") => t!("Debye poles").en(),
         (_, "deembed") => t!("De-embedding").en(),
+        (_, "design") => t!("Design").en(),
         (_, "device") => t!("Device").en(),
         (_, "diameter") => t!("Diameter").en(),
         (_, "direction") => t!("Direction").en(),

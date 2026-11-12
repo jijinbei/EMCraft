@@ -3,6 +3,16 @@
   "complete": true,
   "strings": {
     "Apply": "適用",
+    "SolidCraft design": "SolidCraft の設計",
+    "Design": "設計",
+    "SolidCraft": "SolidCraft",
+    "Shapes are made in SolidCraft: the program a design opens in (empty: solidcraft on the PATH).": "形状は SolidCraft で作ります。設計を開くプログラム（空欄なら PATH 上の solidcraft）。",
+    "{file} was saved in SolidCraft: importing it.": "{file} が SolidCraft で保存されました。取り込みます。",
+    "A design was saved in SolidCraft: reading the model again.": "設計が SolidCraft で保存されました。モデルを読み直します。",
+    "SolidCraft did not start ({program}): {error}. Set its program in Settings.": "SolidCraft を起動できませんでした（{program}）：{error}。設定でプログラムを指定してください。",
+    "New SolidCraft design": "SolidCraft で新しく作る",
+    "Open in SolidCraft": "SolidCraft で開く",
+    "SolidCraft program": "SolidCraft のプログラム",
     "Measured": "測定値",
     "Against measured": "測定と比較",
     "Z, Y, ABCD": "Z・Y・ABCD",
@@ -1412,6 +1422,20 @@
       "params": {
         "path": "ファイル（`.stl`、`.3mf`、SolidCraft の設計 `.sc` または `.solidcraft`）、または `template:<file>`",
         "unit": "STL ファイルの長さ単位（表示単位で。既定 1）"
+      }
+    },
+    "geometry.reload": {
+      "label": "形状を読み直す",
+      "doc": "履歴からモデルを組み直し、取り込んだファイルをすべて読み直す：EMCraft から SolidCraft で開いて保存した設計は今の形で入り、取り込みの後のポート・材料・設定がそれに付け直される（docs/adr/0010-geometry-from-solidcraft.md）。履歴、実行記録、プロジェクトのファイルはそのまま。結果は残り、モデルが変わったところは古いものとして印が付く。",
+      "params": {}
+    },
+    "geometry.design": {
+      "label": "設計のパラメータ",
+      "doc": "プロジェクトが取り込む SolidCraft の設計のパラメータを、取り込むところ（geometry.import の `parameters`）で設定し、モデルを組み直す：設計は新しい値で SolidCraft のカーネルが評価し、取り込みの後のポート・材料・設定が付け直される。",
+      "params": {
+        "design": "geometry.import が名指す設計のファイル",
+        "name": "設計のパラメータ",
+        "value": "設計が表示する単位での数値、プロジェクトの変数の式（`=a`）、または設計が評価する式（`3 mm`）"
       }
     },
     "geometry.body": {

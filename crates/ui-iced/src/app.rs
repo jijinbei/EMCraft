@@ -136,6 +136,10 @@ pub enum Message {
     Row(String),
     /// The selection's edit dialog opened.
     Edit,
+    /// A design of the user's opened in SolidCraft (its file).
+    OpenDesign(String),
+    /// A look at the designs watched (a second's tick while there are any).
+    Watch,
     /// A part's ＋ list shown (its key), or none.
     Add(Option<&'static str>),
     /// A command: its dialog opened, or (without parameters) run.
@@ -246,6 +250,8 @@ pub struct App {
     pub(crate) dialog: Option<Dialog>,
     /// The tree's part whose ＋ list is shown (its key).
     pub(crate) adding: Option<&'static str>,
+    /// The SolidCraft designs watched for a save there.
+    pub(crate) watch: crate::designs::Watch,
     /// The host's file dialog, when it has one.
     pub(crate) picker: Option<std::sync::Arc<dyn emcraft_ui_core::files::Picker>>,
     /// What "save the changes?" is asked before, and what waits for a save.
@@ -351,6 +357,7 @@ impl App {
             replies: Replies::default(),
             dialog: None,
             adding: None,
+            watch: Default::default(),
             picker: None,
             asking: None,
             after_save: None,
@@ -551,6 +558,7 @@ impl App {
             self.tree = Some((self.generation, emcraft_ui_core::outline::outline(sections, self.solver())));
         }
         self.follow_selection();
+        self.watch_designs();
         let charts = crate::charts::Source {
             session: &self.session,
             replies: &self.replies,
@@ -603,7 +611,7 @@ impl App {
                 self.view3d = std::mem::take(&mut self.view3d).navigated(Nav::Overlay(emcraft_ui_core::scene3d::Overlay::Field));
             }
             // A row of the model shows the model (from a result's page).
-            Act::None | Act::Edit(_) | Act::EditWith(..) => self.page = first_page(&self.session),
+            Act::None | Act::Edit(_) | Act::EditWith(..) | Act::Design(_) => self.page = first_page(&self.session),
             Act::Run(id, params) => self.start(id, params),
             _ => {}
         }
@@ -776,6 +784,7 @@ impl App {
             iced::event::listen_with(crate::files::dropped),
             iced::window::resize_events().map(|(_, s)| Message::WindowSize(s.width, s.height)),
             iced::event::listen_with(crate::view3d::shader::keys),
+            crate::designs::subscription(self),
             control,
         ])
     }
@@ -986,6 +995,14 @@ impl App {
             }
             Message::Edit => {
                 self.edit();
+                None
+            }
+            Message::OpenDesign(path) => {
+                self.open_design(&path);
+                None
+            }
+            Message::Watch => {
+                self.look_at_designs();
                 None
             }
             Message::Add(key) => {

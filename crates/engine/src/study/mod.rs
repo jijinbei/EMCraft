@@ -31,7 +31,7 @@ mod point;
 mod simplex;
 mod sweep;
 pub mod tolerance;
-mod variables;
+pub(crate) mod variables;
 
 use emcraft_model::units::decibels;
 use emcraft_solver::Complex64 as C;

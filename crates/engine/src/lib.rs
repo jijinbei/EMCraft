@@ -40,7 +40,7 @@ mod elements;
 mod estimate;
 pub mod expr;
 mod geometry;
-pub use geometry::{DesignParameter, ImportInspection, ImportedBody};
+pub use geometry::{DesignParameter, ImportInspection, ImportedBody, ImportedDesign, designs};
 pub mod circuit;
 pub mod filter;
 pub mod guides;

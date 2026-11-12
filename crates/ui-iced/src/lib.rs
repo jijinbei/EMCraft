@@ -39,6 +39,7 @@ pub mod browser;
 pub mod chart;
 pub mod charts;
 pub mod control;
+pub mod designs;
 pub mod dialog;
 pub mod eigenmodes;
 pub mod escape;

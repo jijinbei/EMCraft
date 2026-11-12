@@ -1565,3 +1565,74 @@ fn the_window_renders_without_a_window() {
         let _ = std::fs::remove_file(path);
     }
 }
+
+/// The round trip with SolidCraft (docs/adr/0010-geometry-from-solidcraft.md), SolidCraft itself
+/// stood in for by writing the file: a design of the user's imported is a row that opens it in
+/// SolidCraft (a program that is not there said so) and its parameters are rows of their own;
+/// saved again, the model is read again; a parameter set here is set where the design is
+/// imported; a new design is written empty and imported once something saves it. Analytic
+/// evidence: the taper's z extent is its parameter `l` (mm).
+#[test]
+fn a_design_goes_to_solidcraft_and_comes_back() {
+    use crate::dialog::Edit;
+    use emcraft_ui_core::files::{FileAction, Purpose};
+    let dir = std::env::var_os("EMCRAFT_SCRATCH")
+        .map_or_else(std::env::temp_dir, std::path::PathBuf::from)
+        .join(format!("iced-designs-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let taper: &[u8] = include_bytes!("../../templates/designs/taper.solidcraft");
+    let write = |path: &std::path::Path, l: &str| {
+        let mut d: serde_json::Value = serde_json::from_slice(taper).unwrap_or_default();
+        for p in d["params"].as_array_mut().into_iter().flatten() {
+            if p["name"] == "l" {
+                p["expr"] = json!(l);
+            }
+        }
+        let _ = std::fs::write(path, serde_json::to_vec(&d).unwrap_or_default());
+        // Written later than before, whatever the clock's grain.
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(2);
+        let _ = std::fs::File::options().write(true).open(path).and_then(|f| f.set_modified(later));
+    };
+    let path = dir.join("taper.solidcraft");
+    write(&path, "30");
+    let p = path.display().to_string();
+    let mut app = App::new(None);
+    app.prefs.solidcraft = "/nonexistent/solidcraft".into();
+    app.start("geometry.import", json!({"path": p, "materials": {"Body1": "interior"}}));
+    finish(&mut app);
+    let length = |app: &App| app.session.model().bounds().map(|b| (b.max.z - b.min.z) * 1e3);
+    assert!(length(&app).is_some_and(|l| (l - 30.0).abs() < 1e-6), "{:?} {:?}", length(&app), app.error);
+    let handles: Vec<String> = crate::control::handles(&app).into_iter().map(|(h, _)| h).collect();
+    assert!(handles.contains(&format!("solidcraft:{p}")) && handles.contains(&format!("row:design:{p}:l")), "{handles:?}");
+    app.update(Message::OpenDesign(p.clone()));
+    assert!(app.error.as_deref().is_some_and(|e| e.contains("/nonexistent/solidcraft")), "{:?}", app.error);
+    // Saved again in SolidCraft: read again.
+    write(&path, "40");
+    app.update(Message::Watch);
+    finish(&mut app);
+    assert!(length(&app).is_some_and(|l| (l - 40.0).abs() < 1e-6), "{:?}", length(&app));
+    // Set here.
+    app.update(Message::Row(format!("design:{p}:l")));
+    assert_eq!(app.dialog.as_ref().map(|d| d.command.id), Some("geometry.design"));
+    let value = app.dialog.as_ref().and_then(|d| d.fields.iter().position(|f| f.name == "value")).unwrap_or_else(|| panic!("its value"));
+    app.update(Message::Dialog(Edit::Text(value, "35".into())));
+    app.update(Message::Dialog(Edit::Ok));
+    finish(&mut app);
+    assert!(length(&app).is_some_and(|l| (l - 35.0).abs() < 1e-6), "{:?} {:?}", length(&app), app.error);
+    // A new design: written empty, imported once saved.
+    let mut blank = App::new(None);
+    blank.prefs.solidcraft = "/nonexistent/solidcraft".into();
+    let fresh = dir.join("new");
+    blank.update(Message::File(FileAction::Chosen(Purpose::NewDesign, Some(fresh.display().to_string()))));
+    let made = dir.join("new.solidcraft");
+    assert_eq!(std::fs::read_to_string(&made).ok().as_deref(), Some(crate::designs::EMPTY));
+    let inspected = blank.session.execute("geometry.import.inspect", &json!({"path": made.display().to_string()}));
+    assert!(inspected.is_ok(), "the empty design reads: {inspected:?}");
+    blank.update(Message::Watch);
+    assert!(blank.job.is_none() && blank.session.model().bounds().is_none(), "nothing saved yet");
+    write(&made, "20");
+    blank.update(Message::Watch);
+    finish(&mut blank);
+    assert!(blank.session.model().bounds().is_some(), "imported: {:?}", blank.error);
+    let _ = std::fs::remove_dir_all(&dir);
+}

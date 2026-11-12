@@ -30,6 +30,7 @@ impl App {
             FileAction::Chosen(purpose, path) => self.chosen(purpose, path),
             FileAction::Confirm(answer) => self.answered(answer),
             FileAction::PickPart => self.pick(Purpose::Import),
+            FileAction::NewDesign => self.pick(Purpose::NewDesign),
             // A part dropped is imported; anything else is opened as a project.
             FileAction::Dropped(path) if emcraft_ui_core::files::is_part(&path) => {
                 self.import_part(&path);
@@ -153,7 +154,10 @@ impl App {
             self.fail(tr(t!("No file dialog here: open a project from the command line.")).to_owned());
             return Task::none();
         };
-        let suggested = format!("{}.{}", self.session.name(), emcraft_engine::project::EXTENSION);
+        let suggested = match purpose {
+            Purpose::NewDesign => "design.solidcraft".to_owned(),
+            _ => format!("{}.{}", self.session.name(), emcraft_engine::project::EXTENSION),
+        };
         Task::perform(asked(picker, purpose, suggested), move |path| Message::File(FileAction::Chosen(purpose, path)))
     }
 
@@ -166,6 +170,10 @@ impl App {
             }
             (Purpose::Import, Some(p)) => {
                 self.import_part(&p);
+                Task::none()
+            }
+            (Purpose::NewDesign, Some(p)) => {
+                self.new_design(&p);
                 Task::none()
             }
             (Purpose::SaveAs, Some(p)) => {
@@ -207,7 +215,7 @@ async fn asked(picker: Arc<dyn Picker>, purpose: Purpose, suggested: String) -> 
     });
     match purpose {
         Purpose::Open => picker.open(done),
-        Purpose::SaveAs => picker.save(&suggested, done),
+        Purpose::SaveAs | Purpose::NewDesign => picker.save(&suggested, done),
         Purpose::Import => picker.import(done),
     }
     rx.await.ok().flatten()

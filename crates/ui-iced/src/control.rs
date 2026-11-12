@@ -54,20 +54,24 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         }),
         emcraft_ui_core::outline::Head::Section(_) => None,
     });
-    let offers = |p: &&&emcraft_ui_core::outline::Part| {
-        let (commands, tools) = emcraft_ui_core::outline::adds(p.head, kind);
-        !commands.is_empty() || !tools.is_empty()
-    };
+    let offers = |p: &&&emcraft_ui_core::outline::Part| !emcraft_ui_core::outline::adds(p.head, kind).is_empty();
     let adds = parts.iter().filter(offers).map(|p| {
         let open = app.adding == Some(p.key());
         (format!("add:{}", p.key()), Message::Add((!open).then_some(p.key())))
     });
-    let commands = parts
-        .iter()
-        .filter(|p| app.adding == Some(p.key()))
-        .flat_map(|p| emcraft_ui_core::outline::adds(p.head, kind).0)
-        .map(|id| (format!("command:{id}"), Message::Command(id.to_owned())));
-    let tabs = plays.chain(adds).collect::<Vec<_>>();
+    let commands =
+        parts.iter().filter(|p| app.adding == Some(p.key())).flat_map(|p| emcraft_ui_core::outline::adds(p.head, kind)).filter_map(|a| match a {
+            emcraft_ui_core::outline::Add::Command(id) => Some((format!("command:{id}"), Message::Command(id.to_owned()))),
+            emcraft_ui_core::outline::Add::NewDesign => Some(("new:design".to_owned(), Message::File(FileAction::NewDesign))),
+            // The tools' handles are the model page's (`tool:<id>`).
+            emcraft_ui_core::outline::Add::Tool(_) => None,
+        });
+    // A design of the user's opened in SolidCraft from its row.
+    let designs = app.rows().filter_map(|r| match &r.act {
+        emcraft_ui_core::browser::Act::Design(path) => Some((format!("solidcraft:{path}"), Message::OpenDesign(path.clone()))),
+        _ => None,
+    });
+    let tabs = plays.chain(adds).chain(designs).collect::<Vec<_>>();
     let model = (app.page == View::Model).then(|| {
         let overlays = Overlay::ALL.into_iter().map(|o| (format!("overlay:{}", o.id()), Message::View3d(Nav::Overlay(o))));
         let views = emcraft_render::view3d::StandardView::ALL

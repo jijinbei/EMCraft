@@ -540,6 +540,92 @@ pub fn import_inspect(s: &mut Session, p: &Params) -> Result<Value> {
     }))
 }
 
+/// A SolidCraft design the project imports (ADR 0010): its file as the import names it, the
+/// parameters the import sets (name → the number or expression given) and the design's own
+/// parameters (or why it cannot be read now).
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct ImportedDesign {
+    pub path: String,
+    /// A template's design (`template:<file>`), compiled in: set by the template's parameters.
+    pub template: bool,
+    pub set: serde_json::Map<String, Value>,
+    pub parameters: std::result::Result<Vec<DesignParameter>, String>,
+}
+
+/// The SolidCraft designs `s`'s history imports, each once, in the order first imported.
+pub fn designs(s: &Session) -> Vec<ImportedDesign> {
+    let mut out: Vec<ImportedDesign> = Vec::new();
+    for step in s.history().iter().filter(|st| st.command == "geometry.import") {
+        let Some(path) = step.param("path").and_then(Value::as_str).filter(|p| emcraft_io::solidcraft::is_design(p)) else { continue };
+        let set = step.param("parameters").and_then(Value::as_object).cloned().unwrap_or_default();
+        match out.iter_mut().find(|d| d.path == path) {
+            Some(d) => d.set = set,
+            None => {
+                let read = |p: &str| -> Result<Vec<DesignParameter>> {
+                    let bytes = match emcraft_templates::design(p) {
+                        Some(b) => std::borrow::Cow::Borrowed(b),
+                        None => std::borrow::Cow::Owned(read_capped(p, MAX_IMPORT_BYTES)?),
+                    };
+                    let found = emcraft_io::solidcraft::parameters(&bytes)?;
+                    Ok(found.into_iter().map(|q| DesignParameter { name: q.name, value: q.value, unit: q.unit }).collect())
+                };
+                let template = path.starts_with(emcraft_templates::DESIGN_SCHEME);
+                out.push(ImportedDesign { path: path.to_owned(), template, set, parameters: read(path).map_err(|e| e.to_string()) });
+            }
+        }
+    }
+    out
+}
+
+/// `geometry.reload`: the model built again from its history, every imported file read again (a
+/// design saved in SolidCraft since); the history, the runs and the file kept.
+pub fn reload(s: &mut Session, _: &Params) -> Result<Value> {
+    let history = s.history.to_vec();
+    let rebuilt = crate::study::variables::rebuild(s, &history)?;
+    crate::study::variables::adopt(s, rebuilt);
+    Ok(json!({"designs": designs(s).len()}))
+}
+
+/// `geometry.design`: sets parameter `name` of the imported design `design` to `value` where it
+/// is imported (a number in the unit the design shows it in, or an expression), the model built
+/// again with it.
+pub fn design(s: &mut Session, p: &Params) -> Result<Value> {
+    let path = p.string("design").required()?;
+    let name = p.string("name").required()?;
+    let given = p.string("value").required()?.trim();
+    if given.is_empty() || given.chars().count() > crate::expr::MAX_LEN + 1 {
+        return Err(p.error("value", format!("give a number or an expression of at most {} characters", crate::expr::MAX_LEN)));
+    }
+    let found = designs(s).into_iter().find(|d| d.path == path).ok_or_else(|| {
+        let known = designs(s).into_iter().map(|d| d.path);
+        p.error(
+            "design",
+            crate::text::unknown(format_args!("names no design the project imports: `{}`", crate::text::clip(path, 80)), "designs: ", known),
+        )
+    })?;
+    let parameters = found.parameters.map_err(|e| p.error("design", e))?;
+    if !parameters.iter().any(|q| q.name == name) {
+        let known = parameters.iter().map(|q| q.name.clone());
+        return Err(p.error(
+            "name",
+            crate::text::unknown(format_args!("names no parameter of the design: `{}`", crate::text::clip(name, 64)), "parameters: ", known),
+        ));
+    }
+    let value = given.parse::<f64>().ok().filter(|x| x.is_finite()).map_or_else(|| json!(given), |x| json!(x));
+    let mut history = s.history.to_vec();
+    for step in history.iter_mut().filter(|st| st.command == "geometry.import" && st.param("path").and_then(Value::as_str) == Some(path)) {
+        if let Some(map) = step.params.as_object_mut() {
+            let set = map.entry("parameters").or_insert_with(|| json!({}));
+            if let Some(set) = set.as_object_mut() {
+                set.insert(name.to_owned(), value.clone());
+            }
+        }
+    }
+    let rebuilt = crate::study::variables::rebuild(s, &history)?;
+    crate::study::variables::adopt(s, rebuilt);
+    Ok(json!({"design": path, "name": name, "value": value}))
+}
+
 /// The material `materials` (body name, material) give the body `name`: metal unless named.
 fn material_of<'m>(materials: &'m [(String, String)], name: &str) -> &'m str {
     materials.iter().find(|(n, _)| n == name).map_or(crate::bodies::METAL, |(_, m)| m.as_str())

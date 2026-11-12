@@ -45,6 +45,9 @@ pub enum Act {
     Edit(&'static str),
     /// Opens a command's dialog with these values over its usual ones (a body's material).
     EditWith(&'static str, serde_json::Value),
+    /// A SolidCraft design of the user's, by its file: the window opens it in SolidCraft and
+    /// reads it again when it is saved there (docs/adr/0010-geometry-from-solidcraft.md).
+    Design(String),
 }
 
 impl Act {
@@ -227,7 +230,7 @@ pub fn tree(session: &Session, replies: &Replies) -> Vec<(&'static str, Vec<Row>
         sections.push((t!("Parameters").en(), own_variables));
     }
     sections.extend([
-        (t!("Bodies").en(), bodies(m, &f)),
+        (t!("Bodies").en(), design_rows(session).into_iter().chain(bodies(m, &f)).collect()),
         (t!("Materials").en(), materials(m)),
         (t!("Domain").en(), domain(m, &f)),
         (t!("Excitation").en(), excitation(session, &f)),
@@ -317,6 +320,7 @@ fn variables(s: &emcraft_engine::Session) -> Vec<Row> {
         .iter()
         .map(|(name, value)| {
             let given = s.history().iter().rev().find(|st| st.defines(name)).and_then(|st| st.param("value").cloned());
+            // (A template's parameter says what it is.)
             let expression = given.as_ref().and_then(serde_json::Value::as_str).map(|e| format!(" ({e})")).unwrap_or_default();
             let edit = serde_json::json!({"name": name, "value": given.unwrap_or_else(|| serde_json::json!(value))});
             let label = template.iter().find(|p| p.name == *name).and_then(|p| p.label.clone());
@@ -326,6 +330,57 @@ fn variables(s: &emcraft_engine::Session) -> Vec<Row> {
             };
             let detail = Both { en: said(label.as_deref().unwrap_or("")), shown: said(label.as_deref().map_or("", crate::lang::parameter_label)) };
             node(format!("variable:{name}"), own(name), Some(detail), Glyph::Variable, Act::EditWith("project.variable", edit))
+        })
+        .chain(design_parameters(s))
+        .collect()
+}
+
+/// The parameters of the SolidCraft designs imported that no variable sets (the ones set by an
+/// expression `=a` are the variables'): each its value and unit and its design's file; a click
+/// sets it where the design is imported (`geometry.design`).
+fn design_parameters(s: &emcraft_engine::Session) -> Vec<Row> {
+    let mut rows = Vec::new();
+    for d in emcraft_engine::designs(s) {
+        let Ok(parameters) = &d.parameters else { continue };
+        let file = file_name(&d.path);
+        for q in parameters {
+            let set = d.set.get(&q.name);
+            if set.and_then(serde_json::Value::as_str).is_some_and(|e| e.trim_start().starts_with('=')) {
+                continue;
+            }
+            let value = match set {
+                Some(serde_json::Value::String(e)) => e.clone(),
+                Some(v) => v.to_string(),
+                None => q.value.map_or_else(String::new, |x| format!("{x}")),
+            };
+            let detail = Both { en: format!("= {value} {} · {file}", q.unit), shown: format!("= {value} {} · {file}", q.unit) };
+            let edit = serde_json::json!({"design": d.path, "name": q.name, "value": value});
+            rows.push(node(
+                format!("design:{}:{}", d.path, q.name),
+                own(&q.name),
+                Some(detail),
+                Glyph::Variable,
+                Act::EditWith("geometry.design", edit),
+            ));
+        }
+    }
+    rows
+}
+
+/// A file's name without its folders (a template's design: after `template:`).
+fn file_name(path: &str) -> &str {
+    path.rsplit(['/', '\\', ':']).next().unwrap_or(path)
+}
+
+/// The SolidCraft designs of the user's the project imports, each a row that opens it in
+/// SolidCraft (a template's design is set by the template's parameters).
+fn design_rows(s: &emcraft_engine::Session) -> Vec<Row> {
+    emcraft_engine::designs(s)
+        .into_iter()
+        .filter(|d| !d.template)
+        .map(|d| {
+            let detail = words(t!("SolidCraft design"), &[]);
+            node(format!("design:{}", d.path), own(file_name(&d.path)), Some(detail), Glyph::Import, Act::Design(d.path.clone()))
         })
         .collect()
 }

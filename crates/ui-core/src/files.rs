@@ -16,6 +16,9 @@ pub enum FileAction {
     PickPart,
     /// A file dropped on the window: a part to import, anything else a project to open.
     Dropped(String),
+    /// A new SolidCraft design: where to save it asked, then it opens in SolidCraft and is
+    /// imported once saved there (docs/adr/0010-geometry-from-solidcraft.md).
+    NewDesign,
 }
 
 /// What a path asked for is for.
@@ -25,6 +28,8 @@ pub enum Purpose {
     SaveAs,
     /// A part for the import dialog.
     Import,
+    /// Where a new SolidCraft design is saved.
+    NewDesign,
 }
 
 /// What to do once the unsaved changes are dealt with.
@@ -69,7 +74,7 @@ impl FileAction {
     pub fn waits_for_job(&self) -> bool {
         match self {
             FileAction::Request(then) => *then != Then::Quit,
-            FileAction::Save | FileAction::SaveAs | FileAction::PickPart | FileAction::Dropped(_) => true,
+            FileAction::Save | FileAction::SaveAs | FileAction::PickPart | FileAction::Dropped(_) | FileAction::NewDesign => true,
             FileAction::Chosen(..) | FileAction::Confirm(_) => false,
         }
     }

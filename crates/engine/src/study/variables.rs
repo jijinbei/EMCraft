@@ -63,7 +63,7 @@ pub(super) fn history_with(s: &Session, set: &[(String, Value)]) -> Result<Vec<S
 }
 
 /// A session of the model rebuilt by `history`.
-pub(super) fn rebuild(s: &Session, history: &[Step]) -> Result<Session> {
+pub(crate) fn rebuild(s: &Session, history: &[Step]) -> Result<Session> {
     let mut fresh = s.fresh();
     // How results are looked at belongs to the project, not to the model: the measurements
     // (a system's data stages read them), the charts' styles and the probes stay.
@@ -74,7 +74,7 @@ pub(super) fn rebuild(s: &Session, history: &[Step]) -> Result<Session> {
 
 /// Makes `rebuilt` the session, keeping what belongs to the job rather than the model: undo, the
 /// file, the saved state, the runs, the last study.
-pub(super) fn adopt(s: &mut Session, mut rebuilt: Session) {
+pub(crate) fn adopt(s: &mut Session, mut rebuilt: Session) {
     rebuilt.undo = std::mem::take(&mut s.undo);
     rebuilt.path = s.path.take();
     rebuilt.sample = s.sample.take();

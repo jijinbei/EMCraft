@@ -43,6 +43,9 @@ pub struct Prefs {
     /// The display units new projects start with.
     pub length: Length,
     pub frequency: Frequency,
+    /// The SolidCraft program a design opens in (empty: `solidcraft` on the PATH;
+    /// `EMCRAFT_SOLIDCRAFT` overrides it).
+    pub solidcraft: String,
 }
 
 /// New preferences: dialogs docked, so they do not cover what they edit; the rest empty, the
@@ -62,11 +65,27 @@ impl Default for Prefs {
             gpu_look: GpuLook::default(),
             length: Length::default(),
             frequency: Frequency::default(),
+            solidcraft: String::new(),
         }
     }
 }
 
 impl Prefs {
+    /// The SolidCraft program a design opens in: `EMCRAFT_SOLIDCRAFT`, else the one chosen, else
+    /// `solidcraft` (found on the PATH).
+    ///
+    /// ```
+    /// let p = emcraft_ui_core::prefs::Prefs { solidcraft: "/opt/solidcraft".into(), ..Default::default() };
+    /// assert!(std::env::var_os("EMCRAFT_SOLIDCRAFT").is_some() || p.solidcraft_program() == "/opt/solidcraft");
+    /// ```
+    pub fn solidcraft_program(&self) -> String {
+        match std::env::var("EMCRAFT_SOLIDCRAFT") {
+            Ok(p) if !p.trim().is_empty() => p,
+            _ if !self.solidcraft.is_empty() => self.solidcraft.clone(),
+            _ => "solidcraft".to_owned(),
+        }
+    }
+
     /// The preferences after `pref` (a theme among `themes`), or why it is refused (an unknown
     /// theme, language or mouse mapping). Looking for fonts and reading the themes again are the
     /// window's: they change nothing here.
@@ -93,6 +112,8 @@ impl Prefs {
                 None => return Err(format!("no language `{}` (there are {})", crate::lang::clip_id(&id), crate::lang::ids().join(", "))),
             },
             Pref::FontFile(file) => Prefs { font_file: file.map(|f| clip(&f, 4096)), ..self },
+            Pref::SolidCraft(program) if program.chars().any(char::is_control) => return Err("a program's path is one line".into()),
+            Pref::SolidCraft(program) => Prefs { solidcraft: clip(program.trim(), 4096), ..self },
             Pref::Navigation(id) => match crate::navigation::NAV_PRESETS.iter().find(|p| p.id == id) {
                 Some(p) => Prefs { navigation: p.id.into(), ..self },
                 None => return Err(format!("no mouse mapping `{}`", clip(&id, 32))),

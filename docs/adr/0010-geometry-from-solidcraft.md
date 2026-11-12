@@ -1,6 +1,6 @@
 # ADR 0010: Shapes are made in SolidCraft
 
-Status: accepted (2026-11-13); H1 done.
+Status: accepted (2026-11-13); H1 and H2 done.
 
 ## Context
 
@@ -45,8 +45,12 @@ copies what SolidCraft (the sibling CAD) does properly. The same commands also b
 - **H1** (done) The window makes no shapes: the ＋ lists and the search without the shape
   commands, the Parameters in the tree (a template's; a design's with H2), a body's form its
   material, the grips gone.
-- **H2** The round trip: Open in SolidCraft, read again when saved (`geometry.reload`), a new
-  design.
+- **H2** (done) The round trip: a design of the user's is a row in Geometry with ↗ (Open in
+  SolidCraft; the program in Settings ▸ SolidCraft, `EMCRAFT_SOLIDCRAFT`, else `solidcraft`), its
+  file watched a second at a time and the model read again when it is saved
+  (`geometry.reload`); its parameters are rows of the Parameters, set where it is imported
+  (`geometry.design`); Geometry's ＋ makes a new design (written empty, opened in SolidCraft,
+  imported once saved). A template's design is set by the template's parameters, not opened.
 - **H3** Ports by face name.
 - **H4** Designs from SolidCraft scripts: the six designs' Rust generators replaced,
   `cargo xtask designs`.

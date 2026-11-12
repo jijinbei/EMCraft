@@ -79,6 +79,18 @@ fn font(app: &App) -> Element<'_, Message> {
 }
 
 /// The crash reports' buttons: the card of them, and a report of the session as it is.
+/// The SolidCraft program designs open in, set as it is typed.
+fn solidcraft(app: &App) -> Element<'_, Message> {
+    let t = app.look.tokens;
+    let typed = text_input("solidcraft", &app.prefs.solidcraft)
+        .size(t.font_body)
+        .width(420)
+        .padding([3, 6])
+        .style(look::field(t))
+        .on_input(|s| Message::Pref(Pref::SolidCraft(s)));
+    row![text(tr(t!("SolidCraft program"))).size(t.font_small).color(t.text_dim), typed].spacing(8).align_y(Alignment::Center).boxed()
+}
+
 fn reports(app: &App) -> Element<'_, Message> {
     use crate::record::ReportAct;
     let t = app.look.tokens;
@@ -150,6 +162,12 @@ pub fn view(app: &App) -> Element<'_, Message> {
         ),
         section(t, t!("Mouse"), tr(nav.help), mouse.boxed()),
         section(t, t!("Drawing"), tr(t!("What the 3D view adds to the plain picture, each its own switch.")), drawing.boxed()),
+        section(
+            t,
+            t!("SolidCraft"),
+            tr(t!("Shapes are made in SolidCraft: the program a design opens in (empty: solidcraft on the PATH).")),
+            solidcraft(app),
+        ),
         section(t, t!("Crash reports"), tr(t!("Kept on this computer only. Copy one to report it; nothing is sent.")), reports(app)),
     ];
     let page = Column::with_children(sections).spacing(24).padding(24).width(900);

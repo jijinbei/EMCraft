@@ -12,8 +12,10 @@
 
 use emcraft_engine::workflow::Step;
 use emcraft_ui_core::browser::{Act, Row};
+use emcraft_ui_core::files::FileAction;
+use emcraft_ui_core::glyph::Glyph;
 use emcraft_ui_core::lang::{lookup, shown, tr};
-use emcraft_ui_core::outline::{Head, Mark, Part};
+use emcraft_ui_core::outline::{Add, Head, Mark, Part};
 use emcraft_ui_core::steps::{Solver, kinds};
 use emcraft_ui_core::system::gesture::Command;
 use iced::widget::{Column, Space, button, container, pick_list, row, scrollable, text};
@@ -80,9 +82,20 @@ fn line<'a>(app: &'a App, t: Tokens, r: &'a Row, stale: bool) -> Element<'a, Mes
             .boxed()
     });
     let stale_mark = stale.then(|| text("↻").size(t.font_body).color(t.info).boxed());
-    let content = row([container(mark).padding([0.0, 12.0 * f32::from(r.depth)]).boxed(), words.boxed()].into_iter().chain(pill).chain(stale_mark))
-        .spacing(6)
-        .align_y(Alignment::Center);
+    // A design of the user's opens in SolidCraft.
+    let open = match &r.act {
+        Act::Design(path) => {
+            let b =
+                button(text("↗").size(t.font_body).color(t.accent)).style(look::quiet(t)).padding([0, 4]).on_press(Message::OpenDesign(path.clone()));
+            let tip = container(text(tr(t!("Open in SolidCraft"))).size(t.font_small)).padding(6).style(look::ground(t));
+            Some(iced::widget::tooltip(b, tip, iced::widget::tooltip::Position::Bottom).boxed())
+        }
+        _ => None,
+    };
+    let content =
+        row([container(mark).padding([0.0, 12.0 * f32::from(r.depth)]).boxed(), words.boxed()].into_iter().chain(pill).chain(stale_mark).chain(open))
+            .spacing(6)
+            .align_y(Alignment::Center);
     let pick = button(content).width(Fill).padding([3, 6]).style(look::row(t, selected)).on_press(Message::Row(r.id.clone()));
     row(std::iter::once(pick.boxed()).chain(eye)).spacing(2).align_y(Alignment::Center).boxed()
 }
@@ -165,30 +178,34 @@ fn ends<'a>(app: &App, t: Tokens, part: &Part) -> Vec<Element<'a, Message>> {
         }),
         Head::Section(_) => None,
     };
-    let (commands, tools) = emcraft_ui_core::outline::adds(part.head, app.solver());
     let open = app.adding == Some(part.key());
-    let add = (!commands.is_empty() || !tools.is_empty()).then(|| small("＋", open, Some(Message::Add((!open).then_some(part.key())))));
+    let offers = !emcraft_ui_core::outline::adds(part.head, app.solver()).is_empty();
+    let add = offers.then(|| small("＋", open, Some(Message::Add((!open).then_some(part.key())))));
     play.into_iter().chain(add).collect()
 }
 
-/// A node's ＋ list, while it is shown: its commands (a click opens its dialog in the properties
-/// panel, or runs it) and the 3D view's tools that add to it.
+/// A node's ＋ list, while it is shown: a new SolidCraft design (the geometry's), its commands (a
+/// click opens its dialog in the properties panel, or runs it) and the 3D view's tools that add
+/// to it.
 fn add_list<'a>(app: &App, t: Tokens, part: &Part) -> Option<Element<'a, Message>> {
     if app.adding != Some(part.key()) {
         return None;
     }
     let idle = app.job.is_none();
-    let (commands, tools) = emcraft_ui_core::outline::adds(part.head, app.solver());
     let entry = |glyph, label: String, message: Message| {
         let face = row![crate::icons::view(glyph, 16.0, t.icon, t.accent), text(label).size(t.font_body)].spacing(8).align_y(Alignment::Center);
         button(face).width(Fill).padding([3, 8]).style(look::row(t, false)).on_press_maybe(idle.then_some(message))
     };
-    let commands = commands.into_iter().map(|id| {
-        let b = entry(emcraft_ui_core::commands::glyph(id), emcraft_ui_core::commands::button_label(id).to_owned(), Message::Command(id.to_owned()));
-        crate::search::tip(t, b.boxed(), id)
+    let entries = emcraft_ui_core::outline::adds(part.head, app.solver()).into_iter().map(|a| match a {
+        Add::Command(id) => {
+            let b =
+                entry(emcraft_ui_core::commands::glyph(id), emcraft_ui_core::commands::button_label(id).to_owned(), Message::Command(id.to_owned()));
+            crate::search::tip(t, b.boxed(), id)
+        }
+        Add::Tool(k) => entry(k.glyph(), lookup(k.label()).to_owned(), Message::Tool(Some(k))).boxed(),
+        Add::NewDesign => entry(Glyph::Import, tr(t!("New SolidCraft design")).to_owned(), Message::File(FileAction::NewDesign)).boxed(),
     });
-    let tools = tools.into_iter().map(|k| entry(k.glyph(), lookup(k.label()).to_owned(), Message::Tool(Some(k))).boxed());
-    let list = Column::with_children(commands.chain(tools)).spacing(1);
+    let list = Column::with_children(entries).spacing(1);
     Some(container(list).padding(iced::Padding { top: 2.0, right: 0.0, bottom: 4.0, left: 22.0 }).boxed())
 }
 

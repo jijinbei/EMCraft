@@ -168,6 +168,8 @@ pub enum Pref {
     GpuLook(crate::prefs::GpuLook),
     Length(Length),
     Frequency(Frequency),
+    /// The SolidCraft program designs open in (empty: `solidcraft` on the PATH).
+    SolidCraft(String),
     /// Drops a project from the recent list.
     ForgetRecent(usize),
     ClearRecent,
