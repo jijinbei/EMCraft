@@ -47,6 +47,7 @@ pub mod dialogs;
 pub mod files;
 pub mod geom;
 pub mod glyph;
+pub mod glyph_marks;
 pub mod handle;
 pub mod job;
 pub mod lang;

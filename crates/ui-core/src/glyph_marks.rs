@@ -1,0 +1,877 @@
+//! EMCraft's command glyphs as marks every window draws: small original line drawings (no image
+//! files), each in a square in an ink colour with an accent for the part that matters. The
+//! drawings are written against a small recorder that keeps what they draw ([`Painter`]), so a
+//! window paints the marks with its own toolkit, scaled to the size it wants.
+
+use std::cell::RefCell;
+
+use crate::glyph::Glyph;
+
+/// The side of the square glyphs are drawn in (points); a window scales them to its size.
+pub const SIZE: f32 = 16.0;
+
+/// Which of the two colours a mark is drawn in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ink {
+    Ink,
+    Accent,
+}
+
+/// A colour: the ink or the accent, with a share of its opacity.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Color32 {
+    pub ink: Ink,
+    pub alpha: f32,
+}
+
+impl Color32 {
+    fn gamma_multiply(self, a: f32) -> Color32 {
+        Color32 { alpha: self.alpha * a, ..self }
+    }
+}
+
+/// A line's width and colour.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Stroke {
+    pub width: f32,
+    pub color: Color32,
+}
+
+impl Stroke {
+    const NONE: Stroke = Stroke { width: 0.0, color: Color32 { ink: Ink::Ink, alpha: 0.0 } };
+
+    fn new(width: f32, color: Color32) -> Stroke {
+        Stroke { width, color }
+    }
+}
+
+/// A point.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pos2 {
+    pub x: f32,
+    pub y: f32,
+}
+
+fn pos2(x: f32, y: f32) -> Pos2 {
+    Pos2 { x, y }
+}
+
+/// An offset (an ellipse's radii).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Vec2 {
+    pub x: f32,
+    pub y: f32,
+}
+
+fn vec2(x: f32, y: f32) -> Vec2 {
+    Vec2 { x, y }
+}
+
+/// A rectangle by its corners.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Rect {
+    pub min: Pos2,
+    pub max: Pos2,
+}
+
+impl Rect {
+    fn from_two_pos(a: Pos2, b: Pos2) -> Rect {
+        Rect { min: pos2(a.x.min(b.x), a.y.min(b.y)), max: pos2(a.x.max(b.x), a.y.max(b.y)) }
+    }
+
+    fn center(&self) -> Pos2 {
+        pos2(0.5 * (self.min.x + self.max.x), 0.5 * (self.min.y + self.max.y))
+    }
+
+    fn width(&self) -> f32 {
+        self.max.x - self.min.x
+    }
+
+    fn height(&self) -> f32 {
+        self.max.y - self.min.y
+    }
+
+    fn left_top(&self) -> Pos2 {
+        self.min
+    }
+
+    fn right_top(&self) -> Pos2 {
+        pos2(self.max.x, self.min.y)
+    }
+
+    fn right_bottom(&self) -> Pos2 {
+        self.max
+    }
+
+    fn left_bottom(&self) -> Pos2 {
+        pos2(self.min.x, self.max.y)
+    }
+}
+
+/// A mark of a glyph.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Mark {
+    /// A polyline (closed: back to its first point).
+    Line { points: Vec<Pos2>, closed: bool, stroke: Stroke },
+    /// A dashed line through `points`: dashes `dash` long, `gap` apart.
+    Dashed { points: Vec<Pos2>, stroke: Stroke, dash: f32, gap: f32 },
+    /// A filled convex polygon with an outline.
+    Fill { points: Vec<Pos2>, fill: Color32, stroke: Stroke },
+    /// A circle, filled or outlined.
+    Circle { centre: Pos2, radius: f32, fill: Option<Color32>, stroke: Option<Stroke> },
+    /// An ellipse's outline.
+    Ellipse { centre: Pos2, radii: Vec2, stroke: Stroke },
+    /// A rectangle, its corners rounded, filled or outlined.
+    Rect { rect: Rect, rounding: f32, fill: Option<Color32>, stroke: Option<Stroke> },
+    /// A letter centred at `at`, `size` points high.
+    Text { at: Pos2, text: String, size: f32, color: Color32 },
+}
+
+/// The shapes a drawing adds.
+struct Shape;
+
+impl Shape {
+    fn line(points: Vec<Pos2>, stroke: Stroke) -> Mark {
+        Mark::Line { points, closed: false, stroke }
+    }
+
+    fn closed_line(points: Vec<Pos2>, stroke: Stroke) -> Mark {
+        Mark::Line { points, closed: true, stroke }
+    }
+
+    fn convex_polygon(points: Vec<Pos2>, fill: Color32, stroke: Stroke) -> Mark {
+        Mark::Fill { points, fill, stroke }
+    }
+
+    fn ellipse_stroke(centre: Pos2, radii: Vec2, stroke: Stroke) -> Mark {
+        Mark::Ellipse { centre, radii, stroke }
+    }
+
+    fn dashed_line(points: &[Pos2], stroke: Stroke, dash: f32, gap: f32) -> Vec<Mark> {
+        vec![Mark::Dashed { points: points.to_vec(), stroke, dash, gap }]
+    }
+}
+
+/// What the drawings draw with: it keeps their marks in order.
+#[derive(Default)]
+pub struct Painter {
+    marks: RefCell<Vec<Mark>>,
+}
+
+impl Painter {
+    fn add(&self, m: Mark) {
+        self.marks.borrow_mut().push(m);
+    }
+
+    fn extend(&self, ms: Vec<Mark>) {
+        self.marks.borrow_mut().extend(ms);
+    }
+
+    fn circle_stroke(&self, centre: Pos2, radius: f32, stroke: Stroke) {
+        self.add(Mark::Circle { centre, radius, fill: None, stroke: Some(stroke) });
+    }
+
+    fn circle_filled(&self, centre: Pos2, radius: f32, fill: Color32) {
+        self.add(Mark::Circle { centre, radius, fill: Some(fill), stroke: None });
+    }
+
+    fn rect_filled(&self, rect: Rect, rounding: f32, fill: Color32) {
+        self.add(Mark::Rect { rect, rounding, fill: Some(fill), stroke: None });
+    }
+
+    fn rect_stroke(&self, rect: Rect, rounding: f32, stroke: Stroke) {
+        self.add(Mark::Rect { rect, rounding, fill: None, stroke: Some(stroke) });
+    }
+
+    fn text(&self, at: Pos2, text: &str, size: f32, color: Color32) {
+        self.add(Mark::Text { at, text: text.to_owned(), size, color });
+    }
+}
+
+/// A box's three faces seen from the front, the top and the right (a glyph's square).
+struct BoxFaces {
+    front: [(f32, f32); 4],
+    top: [(f32, f32); 4],
+    side: [(f32, f32); 4],
+}
+
+const BOX_FACES: BoxFaces = BoxFaces {
+    front: [(0.15, 0.35), (0.6, 0.35), (0.6, 0.85), (0.15, 0.85)],
+    top: [(0.15, 0.35), (0.4, 0.15), (0.85, 0.15), (0.6, 0.35)],
+    side: [(0.6, 0.35), (0.85, 0.15), (0.85, 0.65), (0.6, 0.85)],
+};
+
+/// The marks of `glyph` in a square [`SIZE`] points on a side from the origin: each in the ink
+/// or the accent (with a share of its opacity).
+///
+/// ```
+/// use emcraft_ui_core::glyph::Glyph;
+/// let marks = emcraft_ui_core::glyph_marks::marks(Glyph::Waveguide);
+/// assert!(!marks.is_empty());
+/// ```
+pub fn marks(glyph: Glyph) -> Vec<Mark> {
+    let painter = Painter::default();
+    let p = &painter;
+    let r = Rect::from_two_pos(pos2(0.0, 0.0), pos2(SIZE, SIZE));
+    let (ink, accent) = (Color32 { ink: Ink::Ink, alpha: 1.0 }, Color32 { ink: Ink::Accent, alpha: 1.0 });
+    let pen = Pen::new(p, r);
+    let w = pen.w();
+    let k = Kit { p, pen, s: pen.s, c: pen.c, w, line: Stroke::new(w, ink), bold: Stroke::new(w * 1.4, accent), ink, accent };
+    let _ = paint_model(&k, glyph) || paint_setup(&k, glyph) || paint_results(&k, glyph) || paint_app(&k, glyph) || paint_tools(&k, glyph);
+    painter.marks.into_inner()
+}
+
+/// What a glyph is drawn with: the painter and its pen, the square's side and centre, the line
+/// width, the plain and bold strokes, and the two colours.
+#[derive(Clone, Copy)]
+struct Kit<'a> {
+    p: &'a Painter,
+    pen: Pen<'a>,
+    s: f32,
+    c: Pos2,
+    w: f32,
+    line: Stroke,
+    bold: Stroke,
+    ink: Color32,
+    accent: Color32,
+}
+
+/// The model's bodies, materials and walls. `false` for a glyph of another group.
+fn paint_model(k: &Kit<'_>, glyph: Glyph) -> bool {
+    let Kit { p, pen, s, c, w, line, bold, ink, accent } = *k;
+    match glyph {
+        // A rectangular guide in perspective with its TE10 field line.
+        Glyph::Waveguide => {
+            pen.closed(&[(0.12, 0.38), (0.62, 0.38), (0.62, 0.82), (0.12, 0.82)], line);
+            pen.open(&[(0.12, 0.38), (0.38, 0.18), (0.88, 0.18), (0.62, 0.38)], line);
+            pen.open(&[(0.88, 0.18), (0.88, 0.62), (0.62, 0.82)], line);
+            pen.open(&[(0.37, 0.44), (0.37, 0.76)], bold);
+        }
+        Glyph::Box => {
+            pen.closed(&[(0.15, 0.35), (0.6, 0.35), (0.6, 0.85), (0.15, 0.85)], line);
+            pen.closed(&[(0.15, 0.35), (0.4, 0.15), (0.85, 0.15), (0.6, 0.35)], bold);
+            pen.open(&[(0.85, 0.15), (0.85, 0.65), (0.6, 0.85)], line);
+        }
+        Glyph::Cylinder => {
+            p.add(Shape::ellipse_stroke(pen.at(0.5, 0.25), vec2(0.3 * s, 0.1 * s), bold));
+            pen.open(&[(0.2, 0.25), (0.2, 0.75)], line);
+            pen.open(&[(0.8, 0.25), (0.8, 0.75)], line);
+            p.add(Shape::ellipse_stroke(pen.at(0.5, 0.75), vec2(0.3 * s, 0.1 * s), line));
+        }
+        Glyph::Sphere => {
+            p.circle_stroke(c, 0.34 * s, line);
+            p.add(Shape::ellipse_stroke(c, vec2(0.34 * s, 0.12 * s), bold));
+        }
+        // Two overlapping bodies: a Boolean combination.
+        Glyph::Feature => {
+            pen.frame(pen.rect(0.12, 0.3, 0.6, 0.82), 1.0, line);
+            p.circle_stroke(pen.at(0.64, 0.4), 0.22 * s, bold);
+        }
+        // A body inside a body.
+        Glyph::Inclusion => {
+            pen.frame(pen.rect(0.12, 0.15, 0.88, 0.85), 1.0, line);
+            p.circle_filled(c, 0.17 * s, accent);
+        }
+        // A surface file coming in.
+        Glyph::Import => {
+            pen.open(&[(0.2, 0.55), (0.2, 0.85), (0.8, 0.85), (0.8, 0.55)], line);
+            pen.open(&[(0.5, 0.12), (0.5, 0.68)], bold);
+            pen.open(&[(0.32, 0.5), (0.5, 0.68), (0.68, 0.5)], bold);
+        }
+        // The region: a dashed box, faintly filled.
+        Glyph::Region => {
+            let BoxFaces { front, top, side } = BOX_FACES;
+            pen.fill(&front, accent.gamma_multiply(0.15), Stroke::NONE);
+            for face in [&front[..], &top[..], &side[..]] {
+                let pts = pen.points(face);
+                for k in 0..pts.len() {
+                    let (a, b) = (pts[k], pts[(k + 1) % pts.len()]);
+                    p.extend(Shape::dashed_line(&[a, b], Stroke::new(w, ink), 0.07 * s, 0.05 * s));
+                }
+            }
+        }
+        // A metal body: a box with its faces filled in the ink.
+        Glyph::Metal => {
+            let BoxFaces { front, top, side } = BOX_FACES;
+            pen.fill(&front, ink.gamma_multiply(0.55), line);
+            pen.fill(&top, ink.gamma_multiply(0.3), line);
+            pen.fill(&side, ink.gamma_multiply(0.75), line);
+        }
+        // A dielectric body: a box, its front hatched in the accent.
+        Glyph::Dielectric => {
+            let BoxFaces { front, top, side } = BOX_FACES;
+            pen.fill(&front, accent.gamma_multiply(0.25), line);
+            pen.closed(&top, line);
+            pen.closed(&side, line);
+            // Hatched across the front face, corner to corner.
+            for (a, b) in [((0.15, 0.6), (0.4, 0.85)), ((0.15, 0.35), (0.6, 0.8)), ((0.35, 0.35), (0.6, 0.6))] {
+                pen.open(&[a, b], Stroke::new(w * 0.8, accent));
+            }
+        }
+        // An imported part: a small metal box with an arrow coming down into it.
+        Glyph::Part => {
+            pen.fill(&[(0.3, 0.55), (0.75, 0.55), (0.75, 0.9), (0.3, 0.9)], ink.gamma_multiply(0.55), line);
+            pen.fill(&[(0.3, 0.55), (0.45, 0.42), (0.9, 0.42), (0.75, 0.55)], ink.gamma_multiply(0.3), line);
+            pen.open(&[(0.22, 0.08), (0.22, 0.45)], bold);
+            pen.open(&[(0.1, 0.33), (0.22, 0.45), (0.34, 0.33)], bold);
+        }
+        // A symmetry plane: dashed, edge on, with E or H beside it.
+        Glyph::SymmetryElectric | Glyph::SymmetryMagnetic => {
+            for k in 0..5 {
+                let y0 = 0.08 + 0.18 * k as f32;
+                pen.open(&[(0.32, y0), (0.32, y0 + 0.1)], bold);
+            }
+            let letter = if glyph == Glyph::SymmetryElectric { "E" } else { "H" };
+            p.text(pen.at(0.68, 0.5), letter, 0.62 * s, ink);
+        }
+        // Field lines: three arrows bending round a source.
+        Glyph::FieldLines => {
+            for (k, y) in [0.25_f32, 0.5, 0.75].into_iter().enumerate() {
+                let bow = 0.12 * (1.0 - k as f32);
+                let ink = if k == 1 { accent } else { ink };
+                pen.open(&[(0.12, y + bow), (0.35, y), (0.6, y), (0.84, y + bow)], Stroke::new(w * 1.1, ink));
+                pen.open(&[(0.72, y + bow - 0.08), (0.84, y + bow), (0.72, y + bow + 0.08)], Stroke::new(w * 1.1, ink));
+            }
+        }
+        // A material swatch: a slab with dots (polarised molecules).
+        Glyph::Material => {
+            pen.frame(pen.rect(0.14, 0.3, 0.86, 0.75), 2.0, line);
+            p.rect_filled(pen.rect(0.14, 0.52, 0.86, 0.75), 2.0, accent.gamma_multiply(0.6));
+            for x in [0.3, 0.5, 0.7] {
+                p.circle_filled(pen.at(x, 0.41), 0.045 * s, ink);
+            }
+        }
+        // A wall with hatching (finite conductivity).
+        Glyph::Walls => {
+            pen.open(&[(0.25, 0.12), (0.25, 0.88)], bold);
+            for k in 0..5 {
+                let y = 0.18 + 0.16 * k as f32;
+                pen.open(&[(0.25, y + 0.1), (0.1, y + 0.2)], line);
+            }
+            pen.open(&[(0.42, 0.5), (0.86, 0.5)], line);
+            pen.open(&[(0.42, 0.32), (0.86, 0.32)], Stroke::new(w * 0.7, ink));
+            pen.open(&[(0.42, 0.68), (0.86, 0.68)], Stroke::new(w * 0.7, ink));
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// Excitations, mesh, analyses and solves. `false` for a glyph of another group.
+fn paint_setup(k: &Kit<'_>, glyph: Glyph) -> bool {
+    let Kit { p, pen, s, line, bold, accent, .. } = *k;
+    match glyph {
+        // A wave into an end face.
+        Glyph::Port => {
+            pen.frame(pen.rect(0.58, 0.18, 0.86, 0.82), 1.0, line);
+            pen.open(&[(0.1, 0.5), (0.5, 0.5)], bold);
+            pen.open(&[(0.38, 0.38), (0.5, 0.5), (0.38, 0.62)], bold);
+        }
+        // A gap with a source and a resistor.
+        Glyph::Lumped => {
+            pen.open(&[(0.5, 0.08), (0.5, 0.25)], line);
+            pen.open(&[(0.5, 0.25), (0.62, 0.31), (0.38, 0.39), (0.62, 0.47), (0.38, 0.55), (0.5, 0.6)], bold);
+            p.circle_stroke(pen.at(0.5, 0.74), 0.1 * s, line);
+            pen.open(&[(0.5, 0.84), (0.5, 0.94)], line);
+        }
+        // Two arms and radiation.
+        Glyph::Dipole => {
+            pen.open(&[(0.5, 0.12), (0.5, 0.44)], bold);
+            pen.open(&[(0.5, 0.56), (0.5, 0.88)], bold);
+            for r in [0.2, 0.32] {
+                p.add(Shape::line(arc(pen.at(0.5, 0.5), r * s, -0.7, 0.7), line));
+                p.add(Shape::line(arc(pen.at(0.5, 0.5), r * s, std::f32::consts::PI - 0.7, std::f32::consts::PI + 0.7), line));
+            }
+        }
+        // Parallel wave fronts and a direction.
+        Glyph::PlaneWave => {
+            for x in [0.25, 0.45, 0.65] {
+                pen.open(&[(x, 0.15), (x, 0.85)], line);
+            }
+            pen.open(&[(0.12, 0.5), (0.88, 0.5)], bold);
+            pen.open(&[(0.76, 0.4), (0.88, 0.5), (0.76, 0.6)], bold);
+        }
+        // A box with an absorbing (dashed) layer.
+        Glyph::Open => {
+            pen.frame(pen.rect(0.3, 0.3, 0.7, 0.7), 1.0, line);
+            let r = pen.rect(0.1, 0.1, 0.9, 0.9);
+            for (a, b) in [
+                (r.left_top(), r.right_top()),
+                (r.right_top(), r.right_bottom()),
+                (r.right_bottom(), r.left_bottom()),
+                (r.left_bottom(), r.left_top()),
+            ] {
+                p.extend(Shape::dashed_line(&[a, b], bold, 0.08 * s, 0.06 * s));
+            }
+        }
+        // Triangles.
+        Glyph::Mesh => {
+            let v = [(0.12, 0.85), (0.5, 0.85), (0.88, 0.85), (0.3, 0.5), (0.7, 0.5), (0.5, 0.15)];
+            for (a, b) in [(0, 1), (1, 2), (0, 3), (3, 1), (1, 4), (4, 2), (3, 4), (3, 5), (5, 4)] {
+                pen.open(&[v[a], v[b]], line);
+            }
+            for &(x, y) in &v {
+                p.circle_filled(pen.at(x, y), 0.05 * s, accent);
+            }
+        }
+        // A sweep: a play triangle over a frequency axis.
+        Glyph::Sweep => {
+            pen.closed(&[(0.3, 0.18), (0.78, 0.45), (0.3, 0.72)], bold);
+            pen.open(&[(0.1, 0.88), (0.9, 0.88)], line);
+        }
+        // A named value: a dimension line between two ticks, its value a slider's knob.
+        Glyph::Variable => {
+            pen.open(&[(0.14, 0.3), (0.14, 0.7)], line);
+            pen.open(&[(0.86, 0.3), (0.86, 0.7)], line);
+            pen.open(&[(0.14, 0.5), (0.86, 0.5)], line);
+            p.circle_filled(pen.at(0.58, 0.5), 0.1 * s, accent);
+            pen.open(&[(0.3, 0.82), (0.7, 0.82)], bold);
+        }
+        // A family of curves, one per value of a variable.
+        Glyph::ParamSweep => {
+            pen.open(&[(0.1, 0.9), (0.9, 0.9)], line);
+            pen.open(&[(0.1, 0.9), (0.1, 0.1)], line);
+            pen.open(&[(0.18, 0.75), (0.4, 0.6), (0.62, 0.55), (0.88, 0.25)], line);
+            pen.open(&[(0.18, 0.62), (0.4, 0.45), (0.62, 0.42), (0.88, 0.15)], bold);
+            pen.open(&[(0.18, 0.82), (0.4, 0.74), (0.62, 0.7), (0.88, 0.45)], line);
+        }
+        // A valley with the point found at its bottom.
+        Glyph::Optimize => {
+            pen.open(&[(0.08, 0.2), (0.3, 0.62), (0.5, 0.78), (0.7, 0.62), (0.92, 0.2)], line);
+            p.circle_filled(pen.at(0.5, 0.78), 0.09 * s, accent);
+            pen.open(&[(0.2, 0.92), (0.8, 0.92)], bold);
+        }
+        // A resonance peak.
+        Glyph::Eigen => {
+            pen.open(&[(0.08, 0.85), (0.3, 0.8), (0.42, 0.65), (0.5, 0.15), (0.58, 0.65), (0.7, 0.8), (0.92, 0.85)], bold);
+            pen.open(&[(0.08, 0.9), (0.92, 0.9)], line);
+        }
+        // Radiated arcs from an antenna.
+        Glyph::Radiation => {
+            pen.open(&[(0.5, 0.55), (0.5, 0.9)], line);
+            pen.open(&[(0.38, 0.9), (0.62, 0.9)], line);
+            for r in [0.14, 0.26, 0.38] {
+                p.add(Shape::line(arc(pen.at(0.5, 0.5), r * s, -2.4, -0.74), bold));
+            }
+        }
+        // A pulse in time.
+        Glyph::Time => {
+            pen.open(&[(0.08, 0.7), (0.3, 0.7), (0.4, 0.2), (0.5, 0.85), (0.6, 0.45), (0.68, 0.7), (0.92, 0.7)], bold);
+            pen.open(&[(0.08, 0.88), (0.92, 0.88)], line);
+        }
+        // A cross-section with its mode pattern.
+        Glyph::PortModes => {
+            pen.frame(pen.rect(0.12, 0.25, 0.88, 0.75), 1.0, line);
+            for (x, h) in [(0.3, 0.12), (0.5, 0.2), (0.7, 0.12)] {
+                pen.open(&[(x, 0.5 - h), (x, 0.5 + h)], bold);
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// Results and probes. `false` for a glyph of another group.
+fn paint_results(k: &Kit<'_>, glyph: Glyph) -> bool {
+    let Kit { p, pen, s, c, w, line, bold, ink, accent } = *k;
+    match glyph {
+        // A chart.
+        Glyph::Chart => {
+            pen.open(&[(0.12, 0.12), (0.12, 0.88), (0.9, 0.88)], line);
+            pen.open(&[(0.16, 0.25), (0.35, 0.3), (0.5, 0.7), (0.62, 0.75), (0.75, 0.4), (0.88, 0.35)], bold);
+        }
+        // A colour map with arrows.
+        Glyph::Field => {
+            let steps = 5;
+            for k in 0..steps {
+                let t = k as f32 / (steps - 1) as f32;
+                let col = accent.gamma_multiply(0.25 + 0.75 * (1.0 - (2.0 * t - 1.0).abs()));
+                p.rect_filled(pen.rect(0.1 + 0.16 * k as f32, 0.2, 0.26 + 0.16 * k as f32, 0.8), 0.0, col);
+            }
+            pen.open(&[(0.25, 0.5), (0.75, 0.5)], Stroke::new(w * 1.2, ink));
+            pen.open(&[(0.65, 0.42), (0.75, 0.5), (0.65, 0.58)], Stroke::new(w * 1.2, ink));
+        }
+        // A table.
+        Glyph::Table => {
+            pen.frame(pen.rect(0.12, 0.18, 0.88, 0.82), 1.0, line);
+            p.rect_filled(pen.rect(0.12, 0.18, 0.88, 0.36), 0.0, accent.gamma_multiply(0.7));
+            for y in [0.5, 0.66] {
+                pen.open(&[(0.12, y), (0.88, y)], line);
+            }
+            pen.open(&[(0.42, 0.18), (0.42, 0.82)], line);
+        }
+        // Two curves on one axis.
+        Glyph::Compare => {
+            pen.open(&[(0.12, 0.12), (0.12, 0.88), (0.9, 0.88)], line);
+            pen.open(&[(0.16, 0.3), (0.4, 0.5), (0.6, 0.62), (0.88, 0.7)], line);
+            for (x, y) in [(0.25, 0.37), (0.5, 0.56), (0.75, 0.66)] {
+                p.circle_filled(pen.at(x, y), 0.06 * s, accent);
+            }
+        }
+        // A polar lobe.
+        Glyph::Pattern => {
+            p.circle_stroke(c, 0.38 * s, Stroke::new(w * 0.6, ink));
+            let pts: Vec<Pos2> = (0..=48)
+                .map(|k| {
+                    let t = k as f32 / 48.0 * std::f32::consts::TAU;
+                    let r = 0.36 * s * t.sin().abs();
+                    pos2(c.x + r * t.sin(), c.y - r * t.cos())
+                })
+                .collect();
+            p.add(Shape::closed_line(pts, bold));
+        }
+        // A folder.
+        Glyph::Sample => {
+            pen.closed(&[(0.1, 0.3), (0.38, 0.3), (0.45, 0.22), (0.9, 0.22), (0.9, 0.8), (0.1, 0.8)], line);
+            pen.open(&[(0.1, 0.4), (0.9, 0.4)], bold);
+        }
+        Glyph::Units => {
+            pen.open(&[(0.1, 0.62), (0.9, 0.62)], line);
+            for k in 0..9 {
+                let x = 0.1 + 0.1 * k as f32;
+                pen.open(&[(x, 0.62), (x, if k % 4 == 0 { 0.36 } else { 0.5 })], if k % 4 == 0 { bold } else { line });
+            }
+        }
+        Glyph::Clear => {
+            pen.open(&[(0.22, 0.22), (0.78, 0.78)], bold);
+            pen.open(&[(0.78, 0.22), (0.22, 0.78)], bold);
+        }
+        Glyph::Summary => {
+            for (k, y) in [0.25, 0.45, 0.65].into_iter().enumerate() {
+                p.circle_filled(pen.at(0.18, y), 0.05 * s, accent);
+                pen.open(&[(0.3, y), (if k == 2 { 0.65 } else { 0.85 }, y)], line);
+            }
+        }
+        Glyph::Probe => {
+            pen.open(&[(0.2, 0.8), (0.62, 0.38)], line);
+            p.circle_stroke(pen.at(0.68, 0.32), 0.14 * s, bold);
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// Files, views and the app. `false` for a glyph of another group.
+fn paint_app(k: &Kit<'_>, glyph: Glyph) -> bool {
+    let Kit { p, pen, s, c, line, bold, accent, .. } = *k;
+    match glyph {
+        Glyph::Script => {
+            pen.frame(pen.rect(0.18, 0.12, 0.82, 0.88), 2.0, line);
+            for (y, x1) in [(0.3, 0.7), (0.45, 0.6), (0.6, 0.72), (0.75, 0.5)] {
+                pen.open(&[(0.3, y), (x1, y)], bold);
+            }
+        }
+        // Four corners closing in on a box: fit the model to the view.
+        Glyph::Fit => {
+            for (x, y, dx, dy) in [(0.12, 0.12, 1.0, 1.0), (0.88, 0.12, -1.0, 1.0), (0.88, 0.88, -1.0, -1.0), (0.12, 0.88, 1.0, -1.0)] {
+                pen.open(&[(x, y + 0.22 * dy), (x, y), (x + 0.22 * dx, y)], line);
+            }
+            p.rect_filled(pen.rect(0.36, 0.36, 0.64, 0.64), 1.5, accent);
+        }
+        // A cube seen from a corner: the home (isometric) view.
+        Glyph::Home => {
+            let top = [(0.5, 0.14), (0.84, 0.32), (0.5, 0.5), (0.16, 0.32)];
+            pen.fill(&top, accent.gamma_multiply(0.35), bold);
+            pen.open(&[(0.16, 0.32), (0.16, 0.7), (0.5, 0.88), (0.84, 0.7), (0.84, 0.32)], line);
+            pen.open(&[(0.5, 0.5), (0.5, 0.88)], line);
+        }
+        // An eye on a plane seen square on: face the field's plane.
+        Glyph::Lookat => {
+            pen.fill(&[(0.42, 0.18), (0.88, 0.18), (0.88, 0.82), (0.42, 0.82)], accent.gamma_multiply(0.3), bold);
+            pen.open(&[(0.08, 0.5), (0.36, 0.5)], line);
+            pen.open(&[(0.26, 0.4), (0.36, 0.5), (0.26, 0.6)], line);
+        }
+        // Converging (perspective) or parallel (orthographic) edges of a box.
+        Glyph::Perspective => {
+            pen.closed(&[(0.3, 0.3), (0.7, 0.3), (0.7, 0.7), (0.3, 0.7)], bold);
+            pen.open(&[(0.1, 0.12), (0.3, 0.3)], line);
+            pen.open(&[(0.9, 0.12), (0.7, 0.3)], line);
+            pen.open(&[(0.9, 0.88), (0.7, 0.7)], line);
+            pen.open(&[(0.1, 0.88), (0.3, 0.7)], line);
+        }
+        Glyph::Orthographic => {
+            pen.closed(&[(0.12, 0.3), (0.62, 0.3), (0.62, 0.84), (0.12, 0.84)], line);
+            pen.closed(&[(0.38, 0.14), (0.88, 0.14), (0.88, 0.68), (0.38, 0.68)], bold);
+            for (x, y) in [(0.12, 0.3), (0.62, 0.3), (0.62, 0.84), (0.12, 0.84)] {
+                pen.open(&[(x, y), (x + 0.26, y - 0.16)], line);
+            }
+        }
+        // A page with a folded corner and a plus.
+        Glyph::New => {
+            pen.closed(&[(0.22, 0.1), (0.6, 0.1), (0.78, 0.28), (0.78, 0.9), (0.22, 0.9)], line);
+            pen.open(&[(0.6, 0.1), (0.6, 0.28), (0.78, 0.28)], line);
+            pen.open(&[(0.5, 0.44), (0.5, 0.76)], bold);
+            pen.open(&[(0.34, 0.6), (0.66, 0.6)], bold);
+        }
+        // An open folder.
+        Glyph::OpenFile => {
+            pen.open(&[(0.08, 0.82), (0.08, 0.22), (0.36, 0.22), (0.44, 0.3), (0.82, 0.3), (0.82, 0.42)], line);
+            pen.fill(&[(0.08, 0.82), (0.24, 0.42), (0.94, 0.42), (0.78, 0.82)], accent.gamma_multiply(0.3), bold);
+        }
+        // A floppy disk.
+        Glyph::Save => {
+            pen.closed(&[(0.14, 0.14), (0.74, 0.14), (0.86, 0.26), (0.86, 0.86), (0.14, 0.86)], line);
+            pen.frame(pen.rect(0.3, 0.14, 0.66, 0.36), 1.0, line);
+            p.rect_filled(pen.rect(0.28, 0.54, 0.72, 0.86), 1.5, accent);
+        }
+        // A gear.
+        Glyph::Settings => {
+            let teeth: Vec<Pos2> = (0..48)
+                .map(|k| {
+                    let a = k as f32 / 48.0 * std::f32::consts::TAU;
+                    let r = if (k / 3) % 2 == 0 { 0.42 } else { 0.32 } * s;
+                    pos2(c.x + r * a.cos(), c.y + r * a.sin())
+                })
+                .collect();
+            p.add(Shape::closed_line(teeth, line));
+            p.circle_stroke(c, 0.13 * s, bold);
+        }
+        // A band marked on a frequency axis.
+        Glyph::Band => {
+            pen.open(&[(0.08, 0.78), (0.92, 0.78)], line);
+            p.rect_filled(pen.rect(0.3, 0.3, 0.7, 0.72), 1.5, accent.gamma_multiply(0.35));
+            pen.open(&[(0.3, 0.86), (0.3, 0.26)], bold);
+            pen.open(&[(0.7, 0.86), (0.7, 0.26)], bold);
+        }
+        // A tick in a circle: the results' checks.
+        Glyph::Check => {
+            p.circle_stroke(c, 0.38 * s, line);
+            pen.open(&[(0.3, 0.52), (0.45, 0.66), (0.72, 0.36)], bold);
+        }
+        // A page of numbers: a Touchstone file.
+        Glyph::Touchstone => {
+            pen.closed(&[(0.2, 0.1), (0.62, 0.1), (0.8, 0.28), (0.8, 0.9), (0.2, 0.9)], line);
+            for y in [0.38, 0.52, 0.66, 0.8] {
+                pen.open(&[(0.3, y), (0.46, y)], bold);
+                pen.open(&[(0.54, y), (0.7, y)], line);
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// Planes, symmetry, tools, editing and the kinds of project. `false` for a glyph of another group.
+fn paint_tools(k: &Kit<'_>, glyph: Glyph) -> bool {
+    let Kit { p, pen, s, c, w, line, bold, ink, accent } = *k;
+    match glyph {
+        // A plane with a plus: keep it.
+        Glyph::KeepPlane => {
+            pen.fill(&[(0.1, 0.35), (0.6, 0.2), (0.6, 0.8), (0.1, 0.95)], accent.gamma_multiply(0.3), line);
+            pen.open(&[(0.78, 0.08), (0.78, 0.44)], bold);
+            pen.open(&[(0.6, 0.26), (0.96, 0.26)], bold);
+        }
+        // A shape and its mirror image across a dashed plane.
+        Glyph::Symmetry => {
+            for k in 0..5 {
+                let y0 = 0.08 + 0.18 * k as f32;
+                pen.open(&[(0.5, y0), (0.5, y0 + 0.1)], bold);
+            }
+            pen.closed(&[(0.42, 0.2), (0.12, 0.5), (0.42, 0.8)], line);
+            pen.fill(&[(0.58, 0.2), (0.88, 0.5), (0.58, 0.8)], accent.gamma_multiply(0.3), line);
+        }
+        // Three cells of a lattice, the middle one's sides dashed: periodic boundaries.
+        Glyph::Periodic => {
+            for (x0, x1) in [(0.06, 0.34), (0.66, 0.94)] {
+                pen.closed(&[(x0, 0.3), (x1, 0.3), (x1, 0.7), (x0, 0.7)], line);
+            }
+            pen.fill(&[(0.36, 0.3), (0.64, 0.3), (0.64, 0.7), (0.36, 0.7)], accent.gamma_multiply(0.3), line);
+            for x in [0.36, 0.64] {
+                for k in 0..3 {
+                    let y0 = 0.16 + 0.26 * k as f32;
+                    pen.open(&[(x, y0), (x, y0 + 0.12)], bold);
+                }
+            }
+        }
+        // A dispersion diagram: two bands over the phase, and the light line.
+        Glyph::Dispersion => {
+            pen.open(&[(0.12, 0.1), (0.12, 0.88), (0.9, 0.88)], line);
+            pen.open(&[(0.12, 0.88), (0.86, 0.14)], line);
+            let lower: Vec<(f32, f32)> = (0..=8).map(|k| k as f32 / 8.0).map(|u| (0.12 + 0.76 * u, 0.72 - 0.3 * u * u)).collect();
+            let upper: Vec<(f32, f32)> = (0..=8).map(|k| k as f32 / 8.0).map(|u| (0.12 + 0.76 * u, 0.3 + 0.12 * u * u)).collect();
+            pen.open(&lower, Stroke::new(w * 1.4, accent));
+            pen.open(&upper, Stroke::new(w * 1.4, accent));
+        }
+        // A house: the start page.
+        Glyph::Start => {
+            pen.open(&[(0.1, 0.5), (0.5, 0.14), (0.9, 0.5)], bold);
+            pen.open(&[(0.2, 0.42), (0.2, 0.86), (0.8, 0.86), (0.8, 0.42)], line);
+            p.rect_filled(pen.rect(0.42, 0.6, 0.58, 0.86), 1.0, accent);
+        }
+        // A video's play and pause.
+        Glyph::Play => pen.fill(&[(0.3, 0.18), (0.82, 0.5), (0.3, 0.82)], accent, Stroke::new(w, accent)),
+        Glyph::Pause => {
+            p.rect_filled(pen.rect(0.26, 0.2, 0.42, 0.8), 1.0, accent);
+            p.rect_filled(pen.rect(0.58, 0.2, 0.74, 0.8), 1.0, accent);
+        }
+        Glyph::Section => {
+            pen.open(&[(0.5, 0.35), (0.15, 0.35), (0.15, 0.85), (0.5, 0.85)], line);
+            pen.open(&[(0.15, 0.35), (0.4, 0.15), (0.75, 0.15)], line);
+            pen.fill(&[(0.5, 0.35), (0.75, 0.15), (0.75, 0.65), (0.5, 0.85)], accent.gamma_multiply(0.45), bold);
+        }
+        Glyph::Flip => {
+            pen.open(&[(0.15, 0.35), (0.85, 0.35)], line);
+            pen.open(&[(0.68, 0.2), (0.85, 0.35), (0.68, 0.5)], line);
+            pen.open(&[(0.85, 0.65), (0.15, 0.65)], bold);
+            pen.open(&[(0.32, 0.5), (0.15, 0.65), (0.32, 0.8)], bold);
+        }
+        Glyph::Ruler => {
+            pen.closed(&[(0.08, 0.62), (0.62, 0.08), (0.92, 0.38), (0.38, 0.92)], line);
+            for k in 0..5 {
+                let (x, y) = (0.22 + 0.11 * k as f32, 0.48 - 0.11 * k as f32);
+                let len = if k % 2 == 0 { 0.16 } else { 0.09 };
+                pen.open(&[(x, y), (x + len, y + len)], bold);
+            }
+        }
+        Glyph::Edit => {
+            pen.closed(&[(0.18, 0.66), (0.62, 0.22), (0.78, 0.38), (0.34, 0.82)], line);
+            pen.fill(&[(0.18, 0.66), (0.34, 0.82), (0.12, 0.88)], accent, bold);
+            pen.open(&[(0.54, 0.3), (0.7, 0.46)], line);
+        }
+        Glyph::Delete => {
+            pen.open(&[(0.16, 0.26), (0.84, 0.26)], bold);
+            pen.open(&[(0.4, 0.26), (0.42, 0.14), (0.58, 0.14), (0.6, 0.26)], line);
+            pen.open(&[(0.24, 0.26), (0.3, 0.88), (0.7, 0.88), (0.76, 0.26)], line);
+            pen.open(&[(0.42, 0.4), (0.43, 0.76)], line);
+            pen.open(&[(0.58, 0.4), (0.57, 0.76)], line);
+        }
+        // A face in perspective, a pointer on it.
+        Glyph::PickFace => {
+            pen.fill(&[(0.1, 0.42), (0.52, 0.42), (0.78, 0.16), (0.36, 0.16)], accent.gamma_multiply(0.45), line);
+            pen.closed(&[(0.1, 0.42), (0.1, 0.84), (0.52, 0.84), (0.52, 0.42)], line);
+            pen.fill(&[(0.5, 0.3), (0.5, 0.86), (0.86, 0.66)], ink, line);
+            pen.open(&[(0.66, 0.72), (0.8, 0.94)], line);
+        }
+        // Two dots and the gap's line between them.
+        Glyph::PickGap => {
+            pen.open(&[(0.22, 0.78), (0.78, 0.22)], line);
+            p.circle_filled(pen.at(0.22, 0.78), 0.11 * s, accent);
+            p.circle_filled(pen.at(0.78, 0.22), 0.11 * s, accent);
+            pen.open(&[(0.42, 0.46), (0.54, 0.58)], bold);
+        }
+        Glyph::KindSweep => {
+            pen.frame(pen.rect(0.34, 0.44, 0.66, 0.76), 2.0, line);
+            pen.open(&[(0.06, 0.6), (0.3, 0.6)], bold);
+            pen.open(&[(0.22, 0.53), (0.3, 0.6), (0.22, 0.67)], bold);
+            pen.open(&[(0.7, 0.6), (0.94, 0.6)], line);
+            pen.open(&[(0.86, 0.53), (0.94, 0.6), (0.86, 0.67)], line);
+            pen.open(&[(0.14, 0.34), (0.3, 0.33), (0.4, 0.16), (0.6, 0.16), (0.7, 0.33), (0.86, 0.34)], bold);
+        }
+        Glyph::KindResonator => {
+            pen.frame(pen.rect(0.1, 0.22, 0.9, 0.78), 2.0, Stroke::new(w * 1.2, ink));
+            let wave = |sign: f32| -> Vec<(f32, f32)> {
+                (0..=24).map(|k| k as f32 / 24.0).map(|u| (0.14 + 0.72 * u, 0.5 - sign * 0.18 * (2.0 * std::f32::consts::PI * u).sin())).collect()
+            };
+            pen.open(&wave(-1.0), Stroke::new(w, accent.gamma_multiply(0.45)));
+            pen.open(&wave(1.0), bold);
+        }
+        Glyph::KindAntenna => {
+            let pml: [(f32, f32); 5] = [(0.06, 0.06), (0.94, 0.06), (0.94, 0.94), (0.06, 0.94), (0.06, 0.06)];
+            p.extend(Shape::dashed_line(&pen.points(&pml), Stroke::new(w * 0.8, ink.gamma_multiply(0.6)), 0.06 * s, 0.05 * s));
+            pen.open(&[(0.5, 0.24), (0.5, 0.45)], Stroke::new(w * 1.3, ink));
+            pen.open(&[(0.5, 0.55), (0.5, 0.76)], Stroke::new(w * 1.3, ink));
+            for r in [0.17, 0.3] {
+                p.add(Shape::line(arc(c, r * s, -0.7, 0.7), bold));
+                p.add(Shape::line(arc(c, r * s, std::f32::consts::PI - 0.7, std::f32::consts::PI + 0.7), bold));
+            }
+        }
+        Glyph::KindPulse => {
+            let packet: Vec<(f32, f32)> = (0..=40)
+                .map(|k| 0.06 + 0.88 * k as f32 / 40.0)
+                .map(|x| {
+                    let u = (x - 0.46) / 0.13;
+                    (x, 0.46 - 0.3 * (-u * u).exp() * (2.0 * std::f32::consts::PI * (x - 0.46) / 0.15).cos())
+                })
+                .collect();
+            pen.open(&packet, bold);
+            pen.open(&[(0.06, 0.88), (0.94, 0.88)], line);
+            pen.open(&[(0.62, 0.88), (0.84, 0.88)], Stroke::new(w * 1.3, ink));
+            pen.open(&[(0.76, 0.81), (0.84, 0.88), (0.76, 0.95)], Stroke::new(w * 1.3, ink));
+        }
+        Glyph::Blank => {
+            pen.frame(pen.rect(0.2, 0.2, 0.8, 0.8), 3.0, line);
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// Draws in a unit square centred on the glyph's rectangle, y down.
+#[derive(Clone, Copy)]
+struct Pen<'a> {
+    p: &'a Painter,
+    c: Pos2,
+    s: f32,
+}
+
+impl<'a> Pen<'a> {
+    fn new(p: &'a Painter, r: Rect) -> Pen<'a> {
+        Pen { p, c: r.center(), s: r.width().min(r.height()) }
+    }
+
+    /// The stroke width for the glyph's size.
+    fn w(&self) -> f32 {
+        (self.s / 16.0).max(1.0)
+    }
+
+    fn at(&self, x: f32, y: f32) -> Pos2 {
+        pos2(self.c.x + (x - 0.5) * self.s, self.c.y + (y - 0.5) * self.s)
+    }
+
+    fn rect(&self, x0: f32, y0: f32, x1: f32, y1: f32) -> Rect {
+        Rect::from_two_pos(self.at(x0, y0), self.at(x1, y1))
+    }
+
+    fn points(&self, pts: &[(f32, f32)]) -> Vec<Pos2> {
+        pts.iter().map(|&(x, y)| self.at(x, y)).collect()
+    }
+
+    /// A polyline through `pts`.
+    fn open(&self, pts: &[(f32, f32)], stroke: Stroke) {
+        self.p.add(Shape::line(self.points(pts), stroke));
+    }
+
+    /// A closed polygon outline through `pts`.
+    fn closed(&self, pts: &[(f32, f32)], stroke: Stroke) {
+        self.p.add(Shape::closed_line(self.points(pts), stroke));
+    }
+
+    /// A filled convex polygon with an outline.
+    fn fill(&self, pts: &[(f32, f32)], fill: Color32, stroke: Stroke) {
+        self.p.add(Shape::convex_polygon(self.points(pts), fill, stroke));
+    }
+
+    /// A rectangle's outline, its corners rounded by `rounding`.
+    fn frame(&self, r: Rect, rounding: f32, stroke: Stroke) {
+        self.p.rect_stroke(r, rounding, stroke);
+    }
+}
+
+/// Points along an arc about `c` of radius `r` from angle `a0` to `a1` (radians, 0 along +x,
+/// growing clockwise on screen).
+fn arc(c: Pos2, r: f32, a0: f32, a1: f32) -> Vec<Pos2> {
+    (0..=16).map(|k| a0 + (a1 - a0) * k as f32 / 16.0).map(|a| pos2(c.x + r * a.cos(), c.y + r * a.sin())).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every glyph draws something (the blank one a plain frame), inside its square.
+    #[test]
+    fn every_glyph_draws_inside_its_square() {
+        let inside = |p: &Pos2| (-0.5..=SIZE + 0.5).contains(&p.x) && (-0.5..=SIZE + 0.5).contains(&p.y);
+        for g in Glyph::ALL {
+            let marks = marks(g);
+            assert!(!marks.is_empty(), "{g:?} draws nothing");
+            for m in &marks {
+                let points: Vec<Pos2> = match m {
+                    Mark::Line { points, .. } | Mark::Dashed { points, .. } | Mark::Fill { points, .. } => points.clone(),
+                    Mark::Circle { centre, .. } | Mark::Ellipse { centre, .. } | Mark::Text { at: centre, .. } => vec![*centre],
+                    Mark::Rect { rect, .. } => vec![rect.min, rect.max],
+                };
+                assert!(points.iter().all(inside), "{g:?}: {m:?}");
+            }
+        }
+    }
+}
