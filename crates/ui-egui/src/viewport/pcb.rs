@@ -4,6 +4,7 @@ use crate::lang::{Raw, args};
 use crate::ui_kit;
 use emcraft_engine::pcb::{Code, Inspection, Stage, near};
 use emcraft_model::units::{Time, Unit};
+use emcraft_ui_core::pcb::finding_label;
 use std::collections::BTreeSet;
 
 fn go(out: &mut Actions, stage: Stage) {
@@ -12,14 +13,7 @@ fn go(out: &mut Actions, stage: Stage) {
 
 /// The report of `net`, while it was made under the confirmed conditions.
 fn report<'a>(app: &'a EmcraftApp, net: &str) -> Option<&'a Inspection> {
-    let c = app.session.views().pcb.conditions()?;
-    app.replies.pcb.as_ref().filter(|r| {
-        r.net == net
-            && r.ground == c.ground
-            && r.reference == c.reference
-            && r.stop_hz == c.stop_hz
-            && r.frequency_unit == app.session.display().frequency.symbol()
-    })
+    emcraft_ui_core::pcb::report(&app.session, &app.replies, net)
 }
 
 /// The Set conditions form follows the confirmed conditions when they change (confirmed, a
@@ -39,7 +33,7 @@ pub(crate) fn sync(app: &mut EmcraftApp) {
 
 /// The route chosen, while it is one of the board's.
 fn route(app: &EmcraftApp) -> Option<&str> {
-    app.session.views().pcb.net().filter(|n| app.session.model().pcb().is_some_and(|b| b.segments.iter().any(|s| s.net == *n)))
+    emcraft_ui_core::pcb::route(&app.session)
 }
 
 /// The PCB-specific workflow stays above the workspace, as the FEM workflow does.
@@ -650,19 +644,6 @@ fn draw_report(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui,
     }
     for note in &report.import_notes {
         ui_kit::caption(ui, Raw(note.as_str()));
-    }
-}
-
-fn finding_label(code: Code) -> crate::lang::Text {
-    match code {
-        Code::ReturnGap => t!("Reference copper missing beneath the route"),
-        Code::ReferenceEdge => t!("Return corridor reaches a reference edge or slot"),
-        Code::NoReference => t!("No filled reference plane"),
-        Code::RouteTopology => t!("Route is branched, disconnected or closed"),
-        Code::ViaTransition => t!("Signal via needs a transition model"),
-        Code::MissingReturnVia => t!("Verify the return via at this layer transition"),
-        Code::NearbySignal => t!("Nearby parallel signal: check coupling"),
-        Code::UnsupportedCrossSection => t!("Cross-section outside the supported line model"),
     }
 }
 

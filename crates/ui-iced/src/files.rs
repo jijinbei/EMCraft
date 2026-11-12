@@ -62,7 +62,7 @@ impl App {
     }
 
     /// Runs `id` (a project opened or begun) and shows it as a new window would: nothing
-    /// selected, its chain's page for a system, else the model.
+    /// selected, on its first page ([`crate::app::first_page`]).
     fn opened(&mut self, id: &str, params: &Value) {
         // The changes before were saved or let go: their copy goes.
         self.autosave.drop_copy();
@@ -75,8 +75,7 @@ impl App {
             self.settings = false;
             self.selection = Default::default();
             self.dialog = None;
-            self.page =
-                if self.session.model().system.stages.is_empty() { emcraft_ui_core::view::View::Model } else { emcraft_ui_core::view::View::System };
+            self.page = crate::app::first_page(&self.session);
             self.tab = crate::ribbon::first_tab(self);
         }
     }

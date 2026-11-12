@@ -32,6 +32,15 @@ use crate::view3d::shader::Shot;
 use crate::view3d::{Click, Nav, Shown, View3d};
 use serde_json::json;
 
+/// The page a project opens on: a board's diagnosis, a system's chain, else the model.
+pub fn first_page(s: &Session) -> View {
+    match s.model().analysis() {
+        emcraft_engine::workflow::Analysis::Pcb => View::Pcb,
+        _ if !s.model().system.stages.is_empty() => View::System,
+        _ => View::Model,
+    }
+}
+
 /// The browser's sections (their English names) and rows.
 pub type Tree = Vec<(&'static str, Vec<Row>)>;
 
@@ -193,7 +202,7 @@ impl App {
         let mut session = Session::new();
         let error = sample.and_then(|name| session.execute("file.sample", &json!({ "name": name })).err()).map(|e| e.to_string());
         let look = Look::of(Themes::load(None).get("light"));
-        let page = if session.model().system.stages.is_empty() { View::Model } else { View::System };
+        let page = first_page(&session);
         let prefs = Prefs::default();
         let mut app = App {
             session,
@@ -257,6 +266,15 @@ impl App {
         App { autosave: emcraft_ui_core::autosave::Autosave::at(dir), ..self }
     }
 
+    /// On the PCB page, a net picked in 3D: the command that makes it the route.
+    fn picked_route(&mut self) -> Option<Command> {
+        let Some(emcraft_ui_core::scene3d::Pick::Net(i)) = self.selection.single().filter(|_| self.page == View::Pcb) else { return None };
+        let board = self.session.model().pcb()?;
+        let net = emcraft_ui_core::scene3d::board::nets(board).get(i).filter(|n| board.segments.iter().any(|s| &s.net == *n))?.clone();
+        self.selection = Selection::default();
+        Some(Command { id: "view.pcb", params: json!({"net": net, "stage": emcraft_engine::pcb::Stage::Net.id()}) })
+    }
+
     /// The field's values under the pointer, on the field overlay.
     pub fn probe(&self) -> Option<emcraft_engine::view::Probe> {
         let at = self.hover.filter(|_| self.view3d.overlay == emcraft_ui_core::scene3d::Overlay::Field)?;
@@ -306,6 +324,13 @@ impl App {
     /// What is drawn from the project made again where it changed: the 3D view's scene and the
     /// charts, in the window's theme.
     fn settle(&mut self) {
+        // The PCB page shows the board; the model page leaves it.
+        use emcraft_ui_core::scene3d::Overlay;
+        let board = self.page == View::Pcb;
+        if board != (self.view3d.overlay == Overlay::Board) {
+            let overlay = if board { Overlay::Board } else { Overlay::Plain };
+            self.view3d = std::mem::take(&mut self.view3d).navigated(Nav::Overlay(overlay));
+        }
         let (dirty, busy) = (self.session.is_dirty(), self.job.is_some());
         if self.autosave.due(self.began.elapsed().as_secs_f64(), dirty, busy) {
             let (r, new_failure) = self.autosave.write(&mut self.session);
@@ -597,6 +622,7 @@ impl App {
             View::Model => crate::model::view(self),
             View::Eigenmodes => crate::eigenmodes::view(self),
             View::PortModes => crate::port_modes::view(self),
+            View::Pcb => crate::pcb::view(self),
             v if v.chart().is_some() => crate::results::view(self, v),
             _ => crate::system::view(self),
         };
@@ -689,7 +715,7 @@ impl App {
                 if selection::step(&mut self.selection, click) == selection::Then::Fit {
                     self.view3d = std::mem::take(&mut self.view3d).navigated(Nav::Fit);
                 }
-                None
+                self.picked_route()
             }
             Message::Start(id) => {
                 self.start(&id, json!({}));

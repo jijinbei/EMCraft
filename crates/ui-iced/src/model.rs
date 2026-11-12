@@ -168,7 +168,7 @@ fn legend(app: &App) -> Element<'_, Message> {
     // An arrow in its colour beside what its set shows.
     let arrows = s.arrow_legend.iter().map(|(name, c)| {
         let ink = look::rgb(*c);
-        row![text("→").size(t.font_body).color(ink), text(name.clone()).size(t.font_small).color(t.text)]
+        row![text("➜").size(t.font_body).color(ink), text(name.clone()).size(t.font_small).color(t.text)]
             .spacing(6)
             .align_y(Alignment::Center)
             .boxed()

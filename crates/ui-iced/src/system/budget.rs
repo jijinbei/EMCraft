@@ -33,7 +33,7 @@ pub(super) fn chart(app: &App) -> Element<'_, Message> {
         .map(|c| button(text(tr(label(c))).size(t.font_button)).style(look::button(t, c == app.chart)).on_press(Message::Chart(c)).boxed());
     let at = super::budget_at(app).map(|s| text(s).size(t.font_body).color(t.text_dim).boxed());
     let picture: Element<Message> = match app.charts.system.as_ref().map(|p| &p.shown) {
-        Some(Ok(c)) => canvas(Plot { chart: c, palette: &app.look.theme.palette }).width(Fill).height(CHART_H).boxed(),
+        Some(Ok(c)) => canvas(Plot { chart: std::borrow::Cow::Borrowed(c), palette: &app.look.theme.palette }).width(Fill).height(CHART_H).boxed(),
         Some(Err(e)) => text(e.clone()).boxed(),
         None => space().boxed(),
     };

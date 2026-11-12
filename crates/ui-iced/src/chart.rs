@@ -21,9 +21,9 @@ const EM_PER_SCALE: f32 = 9.0;
 /// lacks comes from the window's fonts.
 pub const FACE: iced::Font = iced::Font::new("DejaVu Sans");
 
-/// The chart and the palette it is drawn in.
+/// The chart (kept, or made for the frame) and the palette it is drawn in.
 pub struct Plot<'a> {
-    pub chart: &'a emcraft_render::chart::Chart,
+    pub chart: std::borrow::Cow<'a, emcraft_render::chart::Chart>,
     pub palette: &'a Palette,
 }
 
@@ -103,7 +103,7 @@ impl canvas::Program<Message> for Plot<'_> {
 
     fn draw(&self, _: &(), renderer: &Renderer, _: &Theme, bounds: Rectangle, _: Cursor) -> Vec<Geometry> {
         let (w, h) = (bounds.width.max(1.0) as usize, bounds.height.max(1.0) as usize);
-        let d = emcraft_render::chart::drawing(self.chart, w, h, self.palette);
+        let d = emcraft_render::chart::drawing(&self.chart, w, h, self.palette);
         let mut frame = Frame::new(renderer, bounds.size());
         frame.fill_rectangle(Point::ORIGIN, bounds.size(), colour(d.ground, 1.0));
         d.shapes.iter().for_each(|s| put(&mut frame, s));

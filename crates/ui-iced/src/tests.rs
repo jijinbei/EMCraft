@@ -706,3 +706,43 @@ fn port_modes_are_kept_and_shown() {
     app.update(Message::File(FileAction::Request(Then::Sample { name: "cavity".into(), values: serde_json::Value::Null, purpose: None })));
     assert!(app.replies.port_modes.is_none(), "another project lets it go");
 }
+
+/// A board's diagnosis: the split-ground template opens on the PCB page; a route chosen, the
+/// conditions confirmed and the route inspected, its report is kept and shown. Analytic
+/// evidence: the ground plane's slot under the route leaves its return current no copper there,
+/// so the report finds the reference missing or a slot in the return corridor.
+#[test]
+fn a_boards_route_is_diagnosed() {
+    use emcraft_engine::pcb::{Code, Stage};
+    use emcraft_ui_core::view::View;
+    let mut app = App::new(Some("pcb-split-ground"));
+    assert_eq!(app.page, View::Pcb);
+    let Some(net) = app.session.model().pcb().and_then(|b| b.segments.first()).map(|s| s.net.clone()) else { panic!("a routed board") };
+    let run = |id: &'static str, params| Message::Run(Command { id, params });
+    app.update(run("view.pcb", json!({"net": net, "stage": Stage::Settings.id()})));
+    assert_eq!(emcraft_ui_core::pcb::route(&app.session), Some(net.as_str()));
+    let _ = app.view();
+    app.update(run("pcb.conditions", crate::pcb::conditions(&app)));
+    assert!(app.session.views().pcb.conditions().is_some(), "{:?}", app.error);
+    app.update(run("pcb.inspect", json!({"net": net})));
+    app.update(run("view.pcb", json!({"stage": Stage::Results.id()})));
+    let Some(report) = emcraft_ui_core::pcb::report(&app.session, &app.replies, &net) else { panic!("the report kept: {:?}", app.error) };
+    assert!(report.findings.iter().any(|f| matches!(f.code, Code::ReturnGap | Code::ReferenceEdge)), "{:?}", report.findings);
+    let _ = app.view();
+    // A plain microstrip meets the line model: its ideal line's S-parameters and TDR, charted.
+    let mut app = App::new(Some("pcb-microstrip"));
+    let Some(net) = app.session.model().pcb().and_then(|b| b.segments.first()).map(|s| s.net.clone()) else { panic!("a routed board") };
+    app.update(run("view.pcb", json!({"net": net, "stage": Stage::Settings.id()})));
+    app.update(run("pcb.conditions", crate::pcb::conditions(&app)));
+    app.update(run("pcb.inspect", json!({"net": net})));
+    app.update(run("view.pcb", json!({"stage": Stage::Results.id()})));
+    let line = emcraft_ui_core::pcb::report(&app.session, &app.replies, &net).and_then(|r| r.si.clone());
+    assert!(line.is_some_and(|l| !l.points.is_empty() && !l.tdr.is_empty()), "{:?}", app.error);
+    if let Ok(dir) = std::env::var("EMCRAFT_ICED_SHOTS") {
+        let _gpu = gpu();
+        let mut ui = iced_test::Simulator::with_size(settings(), (1400.0, 1000.0), app.view());
+        let shot = ui.snapshot(&app.theme()).unwrap_or_else(|e| panic!("{e}"));
+        let _ = std::fs::remove_file(std::path::Path::new(&dir).join("pcb-wgpu.png"));
+        assert!(shot.matches_image(std::path::Path::new(&dir).join("pcb")).unwrap_or(false));
+    }
+}

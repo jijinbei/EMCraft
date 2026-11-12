@@ -14,6 +14,7 @@
 //! - [`model`]: the model in 3D ([`view3d`], drawn by the GPU in iced's shader widget), meshed
 //!   and solved from its bar; [`results`]: the result pages that are charts;
 //!   [`eigenmodes`]: the modes a cavity resonates in; [`port_modes`]: each port's modes;
+//!   [`pcb`]: a board's guided diagnosis;
 //! - [`system`]: a system's node editor — the band, the canvas, the chart and the budget;
 //! - [`charts`]: the engine's charts, made again only when they change; [`chart`]: one drawn
 //!   as vectors by the GPU;
@@ -42,6 +43,7 @@ pub mod files;
 pub mod geom;
 pub mod look;
 pub mod model;
+pub mod pcb;
 pub mod port_modes;
 pub mod results;
 pub mod ribbon;

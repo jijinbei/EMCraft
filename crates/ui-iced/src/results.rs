@@ -20,7 +20,7 @@ const CHART_H: f32 = 520.0;
 pub fn view(app: &App, page: View) -> Element<'_, Message> {
     let t = app.look.tokens;
     let picture: Element<Message> = match app.charts.page.as_ref().map(|p| &p.shown) {
-        Some(Ok(c)) => canvas(Plot { chart: c, palette: &app.look.theme.palette }).width(Fill).height(CHART_H).boxed(),
+        Some(Ok(c)) => canvas(Plot { chart: std::borrow::Cow::Borrowed(c), palette: &app.look.theme.palette }).width(Fill).height(CHART_H).boxed(),
         Some(Err(e)) => {
             let missing = page.missing(&app.session, &app.replies);
             text(missing.map_or_else(|| e.clone(), |m| tr(m).to_owned())).size(t.font_heading).color(t.text_dim).boxed()

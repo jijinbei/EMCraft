@@ -54,6 +54,7 @@ pub mod math;
 pub mod navigation;
 pub mod page;
 pub mod param_labels;
+pub mod pcb;
 pub mod pen;
 pub mod pick;
 pub mod prefs;
