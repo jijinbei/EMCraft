@@ -76,6 +76,12 @@ fn field_bar(app: &App) -> Element<'_, Message> {
     let place = slider(0.0..=span.max(f64::MIN_POSITIVE), at, move |x| nav(Nav::At(x))).step(span / 200.0).width(200);
     let l = app.session.display().length;
     let shown_at = text(format!("{:.3} {}", l.from_si(at), l.symbol())).size(t.font_body).color(t.text_dim);
+    // The phase ωt in degrees, and its playing.
+    let playing = app.playing.is_some();
+    let play = tool(t, tr(if playing { t!("Pause") } else { t!("Play") }), playing, Some(Message::Play(!playing)));
+    let degrees = v.phase.to_degrees();
+    let phase = slider(0.0..=360.0, degrees, move |d: f64| nav(Nav::Phase(d.to_radians()))).step(1.0).width(160);
+    let shown_phase = text(format!("ωt {degrees:.0}°")).size(t.font_body).color(t.text_dim);
     row![
         label(tr(t!("Plane"))),
         planes.style(look::choice(t)),
@@ -84,7 +90,11 @@ fn field_bar(app: &App) -> Element<'_, Message> {
         label(tr(t!("Frequency"))),
         frequencies.style(look::choice(t)),
         place,
-        shown_at
+        shown_at,
+        Space::new().width(16),
+        play,
+        phase,
+        shown_phase
     ]
     .spacing(8)
     .align_y(Alignment::Center)

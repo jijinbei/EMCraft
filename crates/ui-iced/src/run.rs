@@ -53,8 +53,19 @@ impl App {
         }
     }
 
-    /// The running job looked at (each frame while it runs): its steps done once it ends.
-    pub(crate) fn tick(&mut self) {
+    /// A frame at `now`: the field's phase moved on while it plays, the running job looked at.
+    pub(crate) fn tick(&mut self, now: std::time::Instant) {
+        if let Some(last) = self.playing {
+            let dt = last.map_or(0.0, |l| now.saturating_duration_since(l).as_secs_f64());
+            let phase = self.view3d.field.phase + std::f64::consts::TAU * dt / crate::view3d::field::PERIOD;
+            self.view3d = std::mem::take(&mut self.view3d).navigated(crate::view3d::Nav::Phase(phase));
+            self.playing = Some(Some(now));
+        }
+        self.poll();
+    }
+
+    /// The running job looked at: its steps done once it ends.
+    fn poll(&mut self) {
         let done = match self.job.as_ref().map(Job::poll) {
             None | Some(Poll::Running) => return,
             Some(Poll::Finished(done)) => Some(*done),

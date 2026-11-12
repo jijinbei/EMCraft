@@ -96,7 +96,7 @@ fn finish(app: &mut App) {
     let began = std::time::Instant::now();
     while app.job.is_some() && began.elapsed().as_secs() < 120 {
         std::thread::sleep(std::time::Duration::from_millis(20));
-        app.update(Message::Tick);
+        app.update(Message::Tick(std::time::Instant::now()));
     }
     assert!(app.job.is_none(), "the job ended");
 }
@@ -214,7 +214,15 @@ fn a_click_picks_the_part_under_it() {
     assert_eq!(app.selection.len(), 1, "the part in the middle picked");
     let rows = app.picked.as_ref().map(|(_, r)| r.clone()).unwrap_or_default();
     assert!(rows.first().is_some_and(|r| !r.shown.is_empty()), "its row names it: {rows:?}");
+    // The GPU rings it (the preferences' outline): the scene stays, the frame carries its tag.
+    assert_eq!(app.view3d.shown.as_ref().map(|s| s.packed.id), packed, "ringed by the GPU: the scene stays");
+    let shot = app.view3d.shown.as_ref().map(|s| app.shot(s)).unwrap_or_else(|| panic!("no scene"));
+    assert_eq!(shot.selected, app.selection.iter().map(|p| p.tag()).collect::<Vec<_>>());
+    // Without the outline the scene lights it.
+    app.gpu_look.outline = false;
+    app.update(Message::View3d(Nav::Fit));
     assert_ne!(app.view3d.shown.as_ref().map(|s| s.packed.id), packed, "lit: the scene built again");
+    app.gpu_look.outline = true;
     app.update(click(Point::new(2.0, 2.0), true, false));
     assert_eq!(app.selection.len(), 1, "Shift on empty space keeps it");
     app.update(Message::View3d(Nav::Zoom(3.0)));
@@ -273,6 +281,15 @@ fn the_gpu_colours_the_field_and_a_phase_moves_only_the_frame() {
         emcraft_gpu3d::picture(0, &frame)
     };
     let quarter = picture(&app);
+    // Played, the phase moves on with the frames' clock (a period in field::PERIOD seconds).
+    app.update(Message::View3d(Nav::Phase(0.0)));
+    let t0 = std::time::Instant::now();
+    app.update(Message::Play(true));
+    app.update(Message::Tick(t0));
+    app.update(Message::Tick(t0 + std::time::Duration::from_secs_f64(crate::view3d::field::PERIOD / 4.0)));
+    assert!((app.view3d.field.phase - std::f64::consts::FRAC_PI_2).abs() < 1e-9, "a quarter period: {}", app.view3d.field.phase);
+    assert_eq!(shown(&app).packed.id, gpu.packed.id, "playing builds nothing again");
+    app.update(Message::Play(false));
     app.update(Message::View3d(Nav::Phase(0.0)));
     match (picture(&app), quarter) {
         (Ok(a), Ok(b)) => assert_ne!(a.rgba, b.rgba, "the phase moves the picture"),

@@ -78,8 +78,11 @@ pub enum Message {
     Start(String),
     /// The running job stopped.
     Cancel,
-    /// A frame drawn while a job runs (it is looked at) or a picture of the window is waited for.
-    Tick,
+    /// A frame drawn (when): while a job runs (it is looked at), the field plays or a picture of
+    /// the window is waited for.
+    Tick(std::time::Instant),
+    /// The field's phase played or stopped.
+    Play(bool),
     /// The picture of the window taken ([`App::shoot`]).
     Shot(iced::window::Screenshot),
 }
@@ -120,6 +123,8 @@ pub struct App {
     /// The 3D view's mouse mapping and drawing (the preferences').
     pub(crate) nav: &'static NavPreset,
     pub(crate) gpu_look: GpuLook,
+    /// The field's phase playing: the last frame's time.
+    pub(crate) playing: Option<Option<std::time::Instant>>,
     /// Where to write a picture of the window once it has drawn, and the frames drawn so far.
     shoot: Option<(std::path::PathBuf, u32)>,
 }
@@ -151,6 +156,7 @@ impl App {
             note: None,
             nav: prefs.nav(),
             gpu_look: prefs.gpu_look,
+            playing: None,
             shoot: None,
         };
         app.read();
@@ -184,6 +190,8 @@ impl App {
             selected: &self.selection,
             theme: &self.look.theme,
             gpu_field: self.gpu_look.field,
+            // The GPU rings what is selected; without its outline the scene lights it.
+            lit: !self.gpu_look.outline,
         };
         self.view3d = std::mem::take(&mut self.view3d).refreshed(&src);
         let key = (self.generation, self.selection.clone());
@@ -203,7 +211,12 @@ impl App {
             packed: shown.packed.clone(),
             camera: self.view3d.camera,
             ground: (t.viewport_top.rgb(), t.viewport_bottom.rgb()),
-            look: emcraft_gpu3d::Look { edges: g.edges, ao: g.ao, outline: false, pick: false },
+            look: emcraft_gpu3d::Look { edges: g.edges, ao: g.ao, outline: g.outline, pick: g.outline },
+            selected: if g.outline { self.selection.iter().map(|p| p.tag()).collect() } else { Vec::new() },
+            outline: {
+                let a = self.look.tokens.accent;
+                [a.r, a.g, a.b, 1.0]
+            },
             field: shown.field.as_ref().map(|(grid, scale)| emcraft_gpu3d::FieldFrame {
                 grid: grid.clone(),
                 phase: self.view3d.field.phase,
@@ -214,17 +227,22 @@ impl App {
         }
     }
 
-    /// What the window listens to: each frame while a job runs or its picture is waited for.
+    /// What the window listens to: each frame while a job runs, the field plays or its picture is
+    /// waited for.
     pub fn subscription(&self) -> Subscription<Message> {
-        if self.job.is_some() || self.shoot.is_some() { iced::window::frames().map(|_| Message::Tick) } else { Subscription::none() }
+        if self.job.is_some() || self.shoot.is_some() || self.playing.is_some() {
+            iced::window::frames().map(Message::Tick)
+        } else {
+            Subscription::none()
+        }
     }
 
     /// The window after `message`, and what iced does next: the picture of the window taken
     /// and written, then the window closed.
     pub fn react(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Tick if self.shoot.is_some() => {
-                self.tick();
+            Message::Tick(now) if self.shoot.is_some() => {
+                self.tick(now);
                 let (path, frames) = self.shoot.take().unwrap_or_default();
                 let ready = frames >= SHOOT_AFTER && self.job.is_none();
                 self.shoot = Some((path, frames + 1));
@@ -349,8 +367,12 @@ impl App {
                 self.cancel();
                 None
             }
-            Message::Tick => {
-                self.tick();
+            Message::Tick(now) => {
+                self.tick(now);
+                None
+            }
+            Message::Play(on) => {
+                self.playing = on.then_some(None);
                 None
             }
             Message::Shot(_) => None,

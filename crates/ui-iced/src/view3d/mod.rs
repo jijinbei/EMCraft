@@ -91,14 +91,16 @@ pub struct Shown {
 }
 
 /// What the scene is built from besides the view's own state: the project and the window's
-/// generation of it (raised by every command that ends well), what is selected (lit), the theme,
-/// and whether the GPU colours the field's plane (the preferences').
+/// generation of it (raised by every command that ends well), what is selected (lit in the scene
+/// when `lit`, else ringed by the GPU), the theme, and whether the GPU colours the field's plane
+/// (the preferences').
 pub struct Source<'a> {
     pub session: &'a Session,
     pub generation: u64,
     pub selected: &'a [Pick],
     pub theme: &'a Theme,
     pub gpu_field: bool,
+    pub lit: bool,
 }
 
 /// The 3D view's state.
@@ -156,7 +158,8 @@ impl View3d {
     /// The view after the project or the theme changed: the scene built again when what it shows
     /// changed, a new box fitted.
     pub fn refreshed(self, src: &Source) -> View3d {
-        let Source { session, generation, selected, theme, gpu_field } = *src;
+        let Source { session, generation, selected, theme, gpu_field, lit } = *src;
+        let selected = if lit { selected } else { &[] };
         let shown_field = |v: &FieldView| if gpu_field { FieldView { phase: 0.0, ..v.clone() } } else { v.clone() };
         let key = Key {
             generation,

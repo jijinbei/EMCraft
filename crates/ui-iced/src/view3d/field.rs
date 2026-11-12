@@ -10,6 +10,9 @@ use emcraft_render::plot::FieldPlot;
 use emcraft_ui_core::scene3d::ColourBar;
 use iced::widget::image::Handle;
 
+/// Seconds a played phase takes to go round once.
+pub const PERIOD: f64 = 2.0;
+
 /// Strips in the colour bar's gradient.
 const BAR_STRIPS: u32 = 90;
 
