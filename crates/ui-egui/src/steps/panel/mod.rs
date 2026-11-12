@@ -197,6 +197,6 @@ mod tests {
         }
         assert_eq!(Step::of_command("geometry.solid"), Some(Step::Geometry));
         assert_eq!(Step::of_command("solve.port_modes"), Some(Step::Excitation));
-        assert_eq!(overlay(Step::Mesh), Overlay::Mesh);
+        assert_eq!(overlay(Step::Mesh), crate::scene3d::Overlay::Mesh);
     }
 }
