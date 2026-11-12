@@ -66,6 +66,14 @@ impl App {
         self.reference().and_then(|r| reference::grip(&r, &self.view3d.camera, self.view_size()))
     }
 
+    /// The section's dimensions and the ports it meets, while it shows them.
+    pub(crate) fn section_notes(&self) -> Option<(Vec<emcraft_ui_core::scene3d::section::Dim>, Vec<emcraft_ui_core::scene3d::section::PortMark>)> {
+        let v = &self.view3d;
+        let (cut, outline) = (v.section.filter(|_| v.section_dims)?, v.cut_outline()?);
+        let l = self.session.display().length;
+        Some(emcraft_ui_core::scene3d::section::notes(self.session.model(), l, self.session.driven_port(), cut, outline))
+    }
+
     /// The selected body's grips to draw, the drag applied.
     pub(crate) fn body_grips(&self) -> Vec<grips::Mark> {
         grips::marks(self.session.model(), &self.selection, self.body_drag.as_ref(), self.session.display().length)

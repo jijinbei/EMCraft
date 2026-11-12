@@ -10,6 +10,7 @@
 pub mod field;
 pub mod labels;
 pub mod marks;
+pub mod navigator;
 pub mod shader;
 
 use std::sync::Arc;
@@ -74,6 +75,10 @@ pub enum Nav {
     Phase(f64),
     /// The section view's cut, or none (the whole model).
     Section(Option<Cut>),
+    /// The section's dimensions and port marks shown, or not.
+    Dims(bool),
+    /// The camera turned straight at the cut, orthographic, its outline framed.
+    LookAtCut,
     /// The field's arrows shown: E's, H's.
     Arrows(bool, bool),
     /// An eigenmode's field (by its index) instead of the sweep's, or the sweep's.
@@ -176,8 +181,9 @@ pub struct View3d {
     pub shown: Option<Shown>,
     /// What the field overlay shows, its plane's samples and why it could not be drawn.
     pub field: FieldView,
-    /// The section view's cut: the GPU clips the scene there.
+    /// The section view's cut: the GPU clips the scene there; whether its dimensions show.
     pub section: Option<Cut>,
+    pub section_dims: bool,
     pub(crate) sampled: Option<field::Sampled>,
     /// The plane's phasors as uploaded, for the generation and the view they were made from.
     grid: Option<((u64, FieldView), Arc<FieldGrid>)>,
@@ -199,6 +205,7 @@ impl Default for View3d {
             shown: None,
             field: field::start(),
             section: None,
+            section_dims: true,
             sampled: None,
             grid: None,
             field_error: None,
@@ -319,6 +326,15 @@ impl View3d {
     pub fn boxed(&self, b: BoxSel) -> Vec<Pick> {
         let (w, h) = (f64::from(self.size.0), f64::from(self.size.1));
         self.shown.as_ref().map(|s| emcraft_ui_core::selection::boxed(&s.built.scene, &self.camera, w, h, b)).unwrap_or_default()
+    }
+
+    /// The cut's outline (m): what lies on its plane, else the model's box flattened onto it.
+    pub fn cut_outline(&self) -> Option<Bounds> {
+        let (cut, b) = (self.section?, self.bounds()?);
+        Some(match &self.shown {
+            Some(s) => emcraft_ui_core::scene3d::section::outline(&s.built.scene, cut, b),
+            None => emcraft_ui_core::scene3d::section::flat(cut, b),
+        })
     }
 
     /// The model's box, once there is one.
@@ -456,6 +472,15 @@ impl View3d {
             }
             Nav::Phase(_) => self,
             Nav::Section(cut) => View3d { section: cut.filter(|c| c.at.is_finite()), ..self },
+            Nav::Dims(on) => View3d { section_dims: on, ..self },
+            Nav::LookAtCut => {
+                let goal = self.section.zip(self.cut_outline()).and_then(|(c, o)| emcraft_ui_core::scene3d::section::look(c, o));
+                let camera = Camera { projection: emcraft_render::view3d::Projection::Orthographic, ..self.camera };
+                match goal {
+                    Some(goal) => View3d { camera, goal: Some(goal), ..self },
+                    None => self,
+                }
+            }
             Nav::Size(w, h) if w.is_finite() && h.is_finite() && w >= 1.0 && h >= 1.0 => {
                 let unmoved = self.fitted.is_some_and(|(_, c)| c == self.camera);
                 let view = View3d { size: (w, h), ..self };

@@ -2,13 +2,15 @@
 //! ([`emcraft_ui_core::tools`]): the face under the pointer lit with its outline and corners, the
 //! port tool's tip or the snap's marker, the points picked and a dashed line to the pointer, the
 //! measurement's dimension (its legs along x, y and z in the axes' colours) and its card, the
-//! selected port's reference plane with its grip and distance, the selected body's grips, and the band saying which tool is
+//! selected port's reference plane with its grip and distance, the selected body's grips, the
+//! section's dimensions and the ports it meets, and the band saying which tool is
 //! on. A canvas laid over the shader widget; it lets every event through to the view under it.
 
 use emcraft_model::units::Length;
 use emcraft_render::view3d::{Camera, Scene};
 use emcraft_ui_core::geom::Vector;
 use emcraft_ui_core::lang::tr;
+use emcraft_ui_core::scene3d::section::{Dim, PortMark};
 use emcraft_ui_core::tools::grips::{Grip, Mark};
 use emcraft_ui_core::tools::{self, Hover, Ink, Measured, PortTarget, RefPlane, Snap, SnapKind, Tool, Tools};
 use iced::mouse::Cursor;
@@ -36,6 +38,10 @@ pub struct Marks<'a> {
     pub reference: Option<RefPlane>,
     /// The selected body's grips.
     pub grips: Vec<Mark>,
+    /// The section's dimensions and the ports it meets, while shown; the input's and the
+    /// outputs' colours.
+    pub section: Option<(Vec<Dim>, Vec<PortMark>)>,
+    pub port_inks: (Color, Color),
     pub length: Length,
     pub tokens: Tokens,
 }
@@ -84,6 +90,37 @@ fn tip(frame: &mut Frame, t: Tokens, at: Point, text: &str, ok: bool) {
         content: text.to_owned(),
         position: at,
         color: if ok { t.on_accent } else { t.text },
+        size: Pixels(size),
+        align_x: iced::widget::text::Alignment::Center,
+        align_y: alignment::Vertical::Center,
+        ..canvas::Text::default()
+    });
+}
+
+/// A filled arrowhead at `tip`, pointing away from `from`.
+fn arrowhead(frame: &mut Frame, tip: Point, from: Point, ink: Color) {
+    let (dx, dy) = (tip.x - from.x, tip.y - from.y);
+    let n = dx.hypot(dy);
+    if !(n > 0.0) {
+        return;
+    }
+    let (ux, uy) = (dx / n, dy / n);
+    let back = Point::new(tip.x - ux * 7.0, tip.y - uy * 7.0);
+    frame.fill(&polygon(&[tip, Point::new(back.x - uy * 3.0, back.y + ux * 3.0), Point::new(back.x + uy * 3.0, back.y - ux * 3.0)]), ink);
+}
+
+/// `text` in `ink` on a small card edged in `edge`, centred at `at`.
+fn card(frame: &mut Frame, t: Tokens, at: Point, text: &str, ink: Color, edge: Color) {
+    let size = t.font_small;
+    let ground = Size::new(text.chars().count() as f32 * size * CHAR_W + 8.0, size + 4.0);
+    let corner = Point::new(at.x - ground.width / 2.0, at.y - ground.height / 2.0);
+    let path = Path::rounded_rectangle(corner, ground, 3.0.into());
+    frame.fill(&path, Color { a: 0.92, ..t.panel });
+    frame.stroke(&path, stroke(1.0, edge));
+    frame.fill_text(canvas::Text {
+        content: text.to_owned(),
+        position: at,
+        color: ink,
         size: Pixels(size),
         align_x: iced::widget::text::Alignment::Center,
         align_y: alignment::Vertical::Center,
@@ -261,6 +298,46 @@ impl Marks<'_> {
         }
     }
 
+    /// The section's dimensions — extension lines, the dimension line with its arrows and its
+    /// length on a card — and the ports where they meet the cut, in their role's colour, named
+    /// past their upper (else right) end.
+    fn section(&self, frame: &mut Frame, on: &On, dims: &[Dim], ports: &[PortMark]) {
+        let t = self.tokens;
+        let ink = t.text;
+        let thin = stroke(1.0, Color { a: 0.7, ..ink });
+        for d in dims {
+            let shift = |q: [f64; 3]| [q[0] + d.off[0], q[1] + d.off[1], q[2] + d.off[2]];
+            let (Some(a), Some(b), Some(a2), Some(b2)) = (on.at(d.a), on.at(d.b), on.at(shift(d.a)), on.at(shift(d.b))) else { continue };
+            if a2.distance(b2) < 12.0 {
+                continue;
+            }
+            if d.off != [0.0; 3] {
+                frame.stroke(&Path::line(a, a2), thin);
+                frame.stroke(&Path::line(b, b2), thin);
+            }
+            frame.stroke(&Path::line(a2, b2), stroke(1.2, ink));
+            arrowhead(frame, a2, b2, ink);
+            arrowhead(frame, b2, a2, ink);
+            card(frame, t, Point::new((a2.x + b2.x) / 2.0, (a2.y + b2.y) / 2.0), &d.text, ink, t.border);
+        }
+        for m in ports {
+            let port = if m.input { self.port_inks.0 } else { self.port_inks.1 };
+            let (Some(a), Some(b)) = (on.at(m.a), on.at(m.b)) else { continue };
+            frame.stroke(&Path::line(a, b), stroke(4.0, port));
+            frame.fill(&Path::circle(a, 3.5), port);
+            frame.fill(&Path::circle(b, 3.5), port);
+            let (first, last) = if b.y < a.y - 0.5 || ((b.y - a.y).abs() <= 0.5 && b.x > a.x) { (a, b) } else { (b, a) };
+            let (dx, dy) = (last.x - first.x, last.y - first.y);
+            let n = dx.hypot(dy);
+            let (ux, uy) = if n > 0.0 { (dx / n, dy / n) } else { (0.0, -1.0) };
+            let size = t.font_small;
+            let (w, h) = (m.text.chars().count() as f32 * size * CHAR_W + 8.0, size + 4.0);
+            let reach = 10.0 + 0.5 * (w * ux.abs() + h * uy.abs()) + 4.0;
+            frame.stroke(&Path::line(last, Point::new(last.x + ux * 8.0, last.y + uy * 8.0)), stroke(1.0, port));
+            card(frame, t, Point::new(last.x + ux * reach, last.y + uy * reach), &m.text, t.text, port);
+        }
+    }
+
     /// `label` on a ground beside the point `at` (above and to its right).
     fn beside(&self, frame: &mut Frame, at: Point, label: &str) {
         let t = self.tokens;
@@ -296,6 +373,9 @@ impl canvas::Program<Message> for Marks<'_> {
             self.reference(&mut frame, &on, r);
         }
         self.grips(&mut frame, &on);
+        if let Some((dims, ports)) = &self.section {
+            self.section(&mut frame, &on, dims, ports);
+        }
         if let (Some(tool), Some(h)) = (self.tool, &self.tools.hover) {
             self.hovered(&mut frame, &on, tool, h);
         }

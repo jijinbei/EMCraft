@@ -357,16 +357,6 @@ pub(super) fn legend(p: &egui::Painter, rect: Rect, built: &crate::scene3d::Buil
     }
 }
 
-/// The standard view looking from the side of axis `k` given by `sign` (its eye there).
-pub(crate) fn view_from(k: usize, sign: f64) -> Option<StandardView> {
-    StandardView::ALL.into_iter().filter(|v| *v != StandardView::Iso).find(|v| {
-        let mut c = Camera::default();
-        c.standard(*v);
-        // The eye sits against the view direction.
-        -c.basis().forward[k] * sign > 0.99
-    })
-}
-
 /// The axes navigator in the bottom-left corner: the six signed axes as tips round a disc, the
 /// positive ones filled with their letter, the negative ones rings; a click views the model
 /// from that side.
@@ -375,35 +365,28 @@ pub(super) fn navigator(cam: &Camera, ui: &mut egui::Ui, rect: Rect, out: &mut A
     let c = pos2(rect.left() + 52.0, rect.bottom() - 52.0);
     let p = ui.painter().with_clip_rect(rect);
     p.circle_filled(c, 44.0, t.panel.gamma_multiply(0.75));
-    let axes = view3d::axes_on_screen(cam);
-    let forward = cam.basis().forward;
-    // Farthest first, so the tips towards the eye are drawn (and hit) on top.
-    let mut tips: Vec<(usize, f64)> = (0..3).flat_map(|k| [(k, 1.0), (k, -1.0)]).collect();
-    tips.sort_by(|a, b| (forward[b.0] * b.1).total_cmp(&(forward[a.0] * a.1)));
     let mut clicked = None;
-    for (k, sign) in tips {
-        let dir = vec2(axes[k][0] as f32, axes[k][1] as f32) * sign as f32;
-        let tip = c + dir * 30.0;
+    for tip in crate::navigation::navigator(cam) {
+        let at = c + vec2(tip.offset.x, tip.offset.y);
         // The axes' colours: x red, y green, z blue.
-        let color = [t.axis_x, t.axis_y, t.axis_z][k];
-        if sign > 0.0 {
-            p.line_segment([c, tip], Stroke::new(2.0, color));
+        let color = [t.axis_x, t.axis_y, t.axis_z][tip.axis.min(2)];
+        if tip.positive {
+            p.line_segment([c, at], Stroke::new(2.0, color));
         }
-        let r = Rect::from_center_size(tip, vec2(18.0, 18.0));
-        let Some(view) = view_from(k, sign) else { continue };
-        let resp = ui.hit(r, Handle::Standard(view), Sense::click());
-        let name = format!("{}{}", if sign > 0.0 { "+" } else { "−" }, ["X", "Y", "Z"][k]);
+        let r = Rect::from_center_size(at, vec2(18.0, 18.0));
+        let resp = ui.hit(r, Handle::Standard(tip.view), Sense::click());
+        let name = tip.name();
         let hover = resp.hovered();
-        if sign > 0.0 {
-            p.circle_filled(tip, if hover { 10.0 } else { 9.0 }, color);
-            p.text(tip, Align2::CENTER_CENTER, &name[1..], FontId::proportional(t.font_small), t.axis_label);
+        if tip.positive {
+            p.circle_filled(at, if hover { 10.0 } else { 9.0 }, color);
+            p.text(at, Align2::CENTER_CENTER, &name[1..], FontId::proportional(t.font_small), t.axis_label);
         } else {
-            p.circle_filled(tip, 7.0, t.panel);
-            p.circle_stroke(tip, if hover { 8.0 } else { 7.0 }, Stroke::new(2.0, color));
+            p.circle_filled(at, 7.0, t.panel);
+            p.circle_stroke(at, if hover { 8.0 } else { 7.0 }, Stroke::new(2.0, color));
         }
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, view.id()));
-        if resp.on_hover_text(trf(t!("View from {side} ({view})"), args!(side = name, view = view.id()))).clicked() {
-            clicked = Some(view);
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip.view.id()));
+        if resp.on_hover_text(trf(t!("View from {side} ({view})"), args!(side = name, view = tip.view.id()))).clicked() {
+            clicked = Some(tip.view);
         }
     }
     if let Some(v) = clicked {

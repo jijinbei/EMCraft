@@ -16,6 +16,7 @@ use crate::app::{App, Message};
 use crate::look::{self, Tokens};
 use crate::view3d::labels::Labels;
 use crate::view3d::marks::Marks;
+use crate::view3d::navigator::Navigator;
 use crate::view3d::{Nav, field, shader::Viewer};
 
 /// What the view can put forward, and each one's name.
@@ -151,7 +152,20 @@ fn section_bar(app: &App, cut: Cut) -> Element<'_, Message> {
     let l = app.session.display().length;
     let shown = text(format!("{:.3} {}", l.from_si(cut.at), l.symbol())).size(t.font_body).color(t.text_dim);
     let flip = tool(t, tr(t!("Keep the other side")), false, Some(set(Cut { keep: cut.keep.flipped(), ..cut })));
-    row(axes.chain([place.boxed(), shown.boxed(), flip])).spacing(8).align_y(Alignment::Center).wrap().vertical_spacing(6).boxed()
+    // A guide's H-plane (y = b/2) and E-plane (x = a/2) cuts.
+    use emcraft_ui_core::scene3d::section::Preset;
+    let presets = [(Preset::HPlane, t!("H-plane cut (y = b/2)")), (Preset::EPlane, t!("E-plane cut (x = a/2)"))]
+        .into_iter()
+        .map(|(p, label)| tool(t, tr(label), p.is(cut, (lo, hi)), Some(set(p.cut((lo, hi))))));
+    let look = tool(t, tr(t!("Look straight at the cut")), false, Some(Message::View3d(Nav::LookAtCut)));
+    let dims = app.view3d.section_dims;
+    let dims = tool(t, tr(if dims { t!("Dimensions: on") } else { t!("Dimensions: off") }), dims, Some(Message::View3d(Nav::Dims(!dims))));
+    row(presets.chain(axes).chain([place.boxed(), shown.boxed(), flip, look, dims]))
+        .spacing(8)
+        .align_y(Alignment::Center)
+        .wrap()
+        .vertical_spacing(6)
+        .boxed()
 }
 
 /// The field's colour bar: its quantity, its gradient and its ticks.
@@ -245,6 +259,8 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 model: app.session.model(),
                 reference: app.reference(),
                 grips: app.body_grips(),
+                section: app.section_notes(),
+                port_inks: (look::rgb(app.look.theme.scene.port_input), look::rgb(app.look.theme.scene.port_output)),
                 length: app.session.display().length,
                 tokens: t,
             };
@@ -252,8 +268,17 @@ pub fn view(app: &App) -> Element<'_, Message> {
             // the pointer comes over the view).
             let size = |s: iced::Size| Message::View3d(Nav::Size(s.width, s.height));
             let view = iced::widget::sensor(shader(viewer).width(Fill).height(Fill)).on_show(size).on_resize(size);
-            stack![view, canvas(labels).width(Fill).height(Fill), canvas(marks).width(Fill).height(Fill), legend(app), card(app), probe_card(app)]
-                .boxed()
+            let navigator = canvas(Navigator { camera: app.view3d.camera, tokens: t }).width(Fill).height(Fill);
+            stack![
+                view,
+                canvas(labels).width(Fill).height(Fill),
+                canvas(marks).width(Fill).height(Fill),
+                navigator,
+                legend(app),
+                card(app),
+                probe_card(app)
+            ]
+            .boxed()
         }
         None => container(text(tr(t!("No geometry yet: open a sample or start at step 1, Geometry."))).size(t.font_heading).color(t.text_dim))
             .center(Fill)

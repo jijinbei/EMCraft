@@ -331,6 +331,76 @@ impl Goal {
     }
 }
 
+/// How far (points) the axes navigator's tips stand from its middle, and how near a click
+/// must come to one.
+pub const NAVIGATOR_REACH: f32 = 30.0;
+pub const NAVIGATOR_TIP: f32 = 9.0;
+
+/// The standard view looking from the side of axis `k` given by `sign` (its eye there).
+///
+/// ```
+/// use emcraft_render::view3d::StandardView;
+/// assert_eq!(emcraft_ui_core::navigation::view_from(2, 1.0), Some(StandardView::Front));
+/// assert_eq!(emcraft_ui_core::navigation::view_from(7, 1.0), None);
+/// ```
+pub fn view_from(k: usize, sign: f64) -> Option<StandardView> {
+    StandardView::ALL.into_iter().filter(|v| *v != StandardView::Iso).find(|v| {
+        let mut c = Camera::default();
+        c.standard(*v);
+        // The eye sits against the view direction.
+        c.basis().forward.get(k).is_some_and(|f| -f * sign > 0.99)
+    })
+}
+
+/// A tip of the axes navigator: its axis (0, 1, 2), whether it is the positive end, where it
+/// stands from the navigator's middle (points, y down) and the view a click on it turns to.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Tip {
+    pub axis: usize,
+    pub positive: bool,
+    pub offset: crate::geom::Vector,
+    pub view: StandardView,
+}
+
+impl Tip {
+    /// Its name: `+X`, `−Z`.
+    pub fn name(self) -> String {
+        format!("{}{}", if self.positive { "+" } else { "−" }, ["X", "Y", "Z"][self.axis.min(2)])
+    }
+}
+
+/// The axes navigator seen through `cam`: the six signed axes as tips round its middle, the
+/// farthest first (so those toward the eye are drawn, and hit, on top).
+///
+/// ```
+/// use emcraft_render::view3d::{Camera, StandardView};
+/// let mut c = Camera::default();
+/// c.standard(StandardView::Front);
+/// let tips = emcraft_ui_core::navigation::navigator(&c);
+/// assert_eq!(tips.len(), 6);
+/// // From the front, +x points right and the nearest tip (drawn last) is +z.
+/// assert!(tips.iter().any(|t| t.axis == 0 && t.positive && (t.offset.x - 30.0).abs() < 1e-4));
+/// assert_eq!(tips.last().map(|t| (t.axis, t.positive)), Some((2, true)));
+/// ```
+pub fn navigator(cam: &Camera) -> Vec<Tip> {
+    let axes = emcraft_render::view3d::axes_on_screen(cam);
+    let forward = cam.basis().forward;
+    let mut tips: Vec<(usize, f64)> = (0..3).flat_map(|k| [(k, 1.0), (k, -1.0)]).collect();
+    tips.sort_by(|a, b| (forward[b.0] * b.1).total_cmp(&(forward[a.0] * a.1)));
+    tips.into_iter()
+        .filter_map(|(k, sign)| {
+            let offset = crate::geom::Vector::new((axes[k][0] * sign) as f32 * NAVIGATOR_REACH, (axes[k][1] * sign) as f32 * NAVIGATOR_REACH);
+            Some(Tip { axis: k, positive: sign > 0.0, offset, view: view_from(k, sign)? })
+        })
+        .collect()
+}
+
+/// The tip of `tips` a click `at` (points from the navigator's middle) lands on: the nearest one
+/// toward the eye within [`NAVIGATOR_TIP`].
+pub fn tip_at(tips: &[Tip], at: crate::geom::Vector) -> Option<Tip> {
+    tips.iter().rev().find(|t| (t.offset.x - at.x).hypot(t.offset.y - at.y) <= NAVIGATOR_TIP).copied()
+}
+
 /// The distances (m) a zoom keeps within, for a model of box `bounds`.
 ///
 /// ```

@@ -999,3 +999,28 @@ fn a_bodys_grips_resize_it() {
     app.update(Message::Grip(GripMove::End));
     assert!((size_x(&app) - 15.0).abs() < 1e-9, "Escape kept it");
 }
+
+/// The section view's dimensions, presets and the look at the cut. Analytic evidence: the iris
+/// filter's H-plane cut (y = b/2) carries its overall extents and its irises' apertures, and its
+/// two ports sized as the guide is wide; looking at the cut turns the camera orthographic to
+/// look along y (pitch ±90°).
+#[test]
+fn the_section_shows_its_dimensions_and_looks_at_the_cut() {
+    use crate::view3d::Nav;
+    use emcraft_ui_core::scene3d::section::Preset;
+    let mut app = App::new(Some("iris-bandpass"));
+    app.update(Message::View3d(Nav::Size(800.0, 600.0)));
+    let bounds = app.view3d.bounds().unwrap_or_else(|| panic!("a model"));
+    app.update(Message::View3d(Nav::Section(Some(Preset::HPlane.cut(bounds)))));
+    let (dims, ports) = app.section_notes().unwrap_or_else(|| panic!("notes on the cut"));
+    assert!(dims.len() > 2, "{dims:?}");
+    assert_eq!(ports.len(), 2);
+    let width = app.session.model().waveguide().map_or(0.0, |w| w.width.get());
+    assert!(ports.iter().all(|p| (p.b[0] - p.a[0] - width).abs() < 1e-12), "{ports:?}");
+    app.update(Message::View3d(Nav::LookAtCut));
+    settle(&mut app);
+    assert_eq!(app.view3d.camera.projection, emcraft_render::view3d::Projection::Orthographic);
+    assert!((app.view3d.camera.pitch.abs().to_degrees() - 90.0).abs() < 1e-6, "looking along y: {:?}", app.view3d.camera);
+    app.update(Message::View3d(Nav::Dims(false)));
+    assert!(app.section_notes().is_none(), "dimensions off");
+}

@@ -62,6 +62,8 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         let fixed = [
             ("view3d:fit".to_owned(), Message::View3d(Nav::Goal(emcraft_ui_core::navigation::Goal::Fit))),
             ("view3d:section".to_owned(), Message::View3d(Nav::Section(app.view3d.section.map_or(section, |_| None)))),
+            ("view3d:section:look".to_owned(), Message::View3d(Nav::LookAtCut)),
+            ("view3d:section:dims".to_owned(), Message::View3d(Nav::Dims(!app.view3d.section_dims))),
             ("toolbar:mesh.generate".to_owned(), Message::Start("mesh.generate".into())),
             ("toolbar:solve.run".to_owned(), Message::Start("solve.run".into())),
         ];
@@ -125,6 +127,9 @@ pub fn inspect(app: &App) -> Value {
             "distance": c.distance,
             "animating": v.animating(),
             "size": [v.size.0, v.size.1],
+            "section_dims": v.section_dims,
+            "section_notes": app.section_notes().map(|(d, p)| json!({"dims": d.iter().map(|d| d.text.clone()).collect::<Vec<_>>(), "ports": p.iter().map(|p| p.text.clone()).collect::<Vec<_>>()})),
+            "projection": format!("{:?}", c.projection).to_lowercase(),
             "section": v.section.map(|s| s.inspect(app.session.display().length)),
             "field": {"plane": f.plane.id(), "component": f.component.id(), "frequency": f.frequency, "phase": f.phase.to_degrees(), "mode": f.mode, "error": v.field_error},
         },

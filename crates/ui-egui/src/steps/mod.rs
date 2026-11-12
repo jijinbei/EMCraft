@@ -41,7 +41,6 @@ mod run;
 
 pub use bar::bar;
 pub(crate) use bar::{Look, Pill, pills};
-pub(crate) use panel::fmt;
 pub use panel::{export_touchstone, not_needed, panel};
 pub use run::{Preflight, confirm_setup, preflight, setup_params, start_run};
 

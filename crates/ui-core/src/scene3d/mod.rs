@@ -17,6 +17,7 @@ mod cache;
 mod extras;
 pub mod faces;
 mod field;
+pub mod section;
 pub use field::{arrow_legend, phase_arrows, plane_probe, probe_lines};
 mod geometry;
 mod legend;
