@@ -93,8 +93,10 @@ pub enum Message {
     Tool(Option<emcraft_ui_core::tools::Tool>),
     /// Escape: what the tool picked dropped; with nothing picked, the tool off.
     Escape,
-    /// The selected port's reference plane's grip dragged.
+    /// A grip dragged: a selected body's, or the selected port's reference plane's.
     Grip(crate::view3d::GripMove),
+    /// A key typed while a body's grip is held: a digit (Enter as '\n'), or Backspace.
+    GripKey(Option<char>),
     /// A key of the 3D view's (an arrow, Ctrl+1…7), taken while the view is shown and nothing
     /// else has the keys.
     Key3d(Nav),
@@ -169,6 +171,8 @@ pub struct App {
     /// picked, the measurement, the reference plane's drag).
     pub(crate) tool: Option<emcraft_ui_core::tools::Tool>,
     pub(crate) tools: emcraft_ui_core::tools::Tools,
+    /// A selected body's grip being dragged.
+    pub(crate) body_drag: Option<emcraft_ui_core::tools::grips::BodyDrag>,
     /// What is selected (in the 3D view or the browser), and the browser's tree for the
     /// generation it was read for.
     pub(crate) selection: Selection,
@@ -239,6 +243,7 @@ impl App {
             hover: None,
             tool: None,
             tools: Default::default(),
+            body_drag: None,
             selection: Selection::default(),
             tree: None,
             replies: Replies::default(),
@@ -767,6 +772,14 @@ impl App {
             Message::Tool(tool) => {
                 self.tool = tool;
                 self.tools.reset(tool);
+                None
+            }
+            Message::Escape if self.body_drag.is_some() => {
+                self.body_drag = None;
+                None
+            }
+            Message::GripKey(key) => {
+                self.typed(key);
                 None
             }
             Message::Escape => {

@@ -234,8 +234,8 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let picture: Element<Message> = match app.view3d.shown.as_ref().filter(|s| s.bounds.is_some()) {
         Some(s) => {
             let hover = app.view3d.overlay == Overlay::Field || app.tool.is_some();
-            let grip = app.grip_at().map(crate::geom::point);
-            let viewer = Viewer { shot: app.shot(s), nav: app.nav, hover, tool: app.tool.is_some(), grip };
+            let grips = app.grip_points().into_iter().map(crate::geom::point).collect();
+            let viewer = Viewer { shot: app.shot(s), nav: app.nav, hover, tool: app.tool.is_some(), grips };
             let labels = Labels { labels: &s.labels, camera: app.view3d.camera, boxsel: app.view3d.boxsel, tokens: t };
             let marks = Marks {
                 tools: &app.tools,
@@ -244,6 +244,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 scene: Some(&s.built.scene),
                 model: app.session.model(),
                 reference: app.reference(),
+                grips: app.body_grips(),
                 length: app.session.display().length,
                 tokens: t,
             };

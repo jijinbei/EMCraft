@@ -2,13 +2,14 @@
 //! ([`emcraft_ui_core::tools`]): the face under the pointer lit with its outline and corners, the
 //! port tool's tip or the snap's marker, the points picked and a dashed line to the pointer, the
 //! measurement's dimension (its legs along x, y and z in the axes' colours) and its card, the
-//! selected port's reference plane with its grip and distance, and the band saying which tool is
+//! selected port's reference plane with its grip and distance, the selected body's grips, and the band saying which tool is
 //! on. A canvas laid over the shader widget; it lets every event through to the view under it.
 
 use emcraft_model::units::Length;
 use emcraft_render::view3d::{Camera, Scene};
 use emcraft_ui_core::geom::Vector;
 use emcraft_ui_core::lang::tr;
+use emcraft_ui_core::tools::grips::{Grip, Mark};
 use emcraft_ui_core::tools::{self, Hover, Ink, Measured, PortTarget, RefPlane, Snap, SnapKind, Tool, Tools};
 use iced::mouse::Cursor;
 use iced::widget::canvas::{self, Frame, Geometry, LineDash, Path, Stroke};
@@ -33,6 +34,8 @@ pub struct Marks<'a> {
     pub scene: Option<&'a Scene>,
     pub model: &'a emcraft_model::Model,
     pub reference: Option<RefPlane>,
+    /// The selected body's grips.
+    pub grips: Vec<Mark>,
     pub length: Length,
     pub tokens: Tokens,
 }
@@ -223,13 +226,50 @@ impl Marks<'_> {
         frame.fill(&Path::circle(g, 6.0), t.panel);
         frame.stroke(&Path::circle(g, 6.0), stroke(2.0, t.accent));
         frame.fill(&Path::circle(g, 2.5), t.accent);
-        let label = r.label(self.length);
+        self.beside(frame, g, &r.label(self.length));
+    }
+
+    /// The selected body's grips: squares on its faces, arrows from its middle that move it in
+    /// the axes' colours, a ring that turns it; the dragged one's value beside it.
+    fn grips(&self, frame: &mut Frame, on: &On) {
+        let t = self.tokens;
+        let axes = [t.axis_x, t.axis_y, t.axis_z];
+        for m in &self.grips {
+            let Some(s) = on.at(m.at) else { continue };
+            match m.grip {
+                Grip::Move { axis } => {
+                    let c = axes.get(axis).copied().unwrap_or(t.accent);
+                    if let Some(f) = m.from.and_then(|f| on.at(f)) {
+                        frame.stroke(&Path::line(f, s), stroke(2.0, c));
+                    }
+                    frame.fill(&Path::circle(s, 5.5), c);
+                    frame.stroke(&Path::circle(s, 5.5), stroke(1.5, t.panel));
+                }
+                Grip::Turn => {
+                    frame.stroke(&Path::circle(s, 9.0), stroke(2.0, t.accent));
+                    frame.fill(&Path::circle(s, 3.0), t.accent);
+                }
+                _ => {
+                    let square = Path::rounded_rectangle(Point::new(s.x - 4.5, s.y - 4.5), Size::new(9.0, 9.0), 2.0.into());
+                    frame.fill(&square, t.panel);
+                    frame.stroke(&square, stroke(2.0, t.accent));
+                }
+            }
+            if let Some(label) = &m.label {
+                self.beside(frame, s, label);
+            }
+        }
+    }
+
+    /// `label` on a ground beside the point `at` (above and to its right).
+    fn beside(&self, frame: &mut Frame, at: Point, label: &str) {
+        let t = self.tokens;
         let size = t.font_small;
         let ground = Size::new(label.chars().count() as f32 * size * CHAR_W + 10.0, size + 6.0);
-        let corner = Point::new(g.x + 10.0, g.y - ground.height - 8.0);
+        let corner = Point::new(at.x + 10.0, at.y - ground.height - 8.0);
         frame.fill(&Path::rounded_rectangle(corner, ground, 4.0.into()), Color { a: 0.9, ..t.panel });
         frame.fill_text(canvas::Text {
-            content: label,
+            content: label.to_owned(),
             position: Point::new(corner.x + 5.0, corner.y + 3.0),
             color: t.text,
             size: Pixels(size),
@@ -255,6 +295,7 @@ impl canvas::Program<Message> for Marks<'_> {
         if let Some(r) = &self.reference {
             self.reference(&mut frame, &on, r);
         }
+        self.grips(&mut frame, &on);
         if let (Some(tool), Some(h)) = (self.tool, &self.tools.hover) {
             self.hovered(&mut frame, &on, tool, h);
         }

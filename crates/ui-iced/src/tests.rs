@@ -927,8 +927,8 @@ fn the_tools_measure_select_ports_and_move_the_reference_plane() {
     assert_eq!(app.tool, None);
     // The selected port's reference plane dragged by its grip.
     let Some(emcraft_ui_core::scene3d::Pick::Port(i)) = app.selection.single() else { panic!("a port") };
-    assert!(app.grip_at().is_some(), "its grip in view");
-    app.update(Message::Grip(GripMove::Start));
+    let grip = app.grip_at().unwrap_or_else(|| panic!("its grip in view"));
+    app.update(Message::Grip(GripMove::Start(grip)));
     app.update(Message::Grip(GripMove::By(40.0, 0.0)));
     app.update(Message::Grip(GripMove::By(0.0, 40.0)));
     assert!(app.tools.drag.is_some());
@@ -939,4 +939,63 @@ fn the_tools_measure_select_ports_and_move_the_reference_plane() {
     // `ui.inspect` names the tools' state.
     let seen = crate::control::inspect(&app);
     assert!(seen["tools"]["drag"].is_null() && seen["tools"]["tool"].is_null());
+}
+
+/// A selected body's grips. Analytic evidence: a 10 mm metal cube in a 40 mm box; its +x face's
+/// grip dragged lands its size on the grid (2 mm: the round step near a fiftieth of the box's
+/// 69.3 mm diagonal) or on another face's plane, and digits typed while a grip is held give the
+/// size exactly (15 mm); each let-go is one `geometry.body.edit`.
+#[test]
+fn a_bodys_grips_resize_it() {
+    use crate::view3d::{GripMove, Nav};
+    use emcraft_ui_core::scene3d::Pick;
+    use emcraft_ui_core::tools::grips::Grip;
+    let mut app = App::new(None);
+    app.run_now("file.new", &json!({}));
+    app.run_now("geometry.solid", &json!({"shape": "box", "size": [40, 40, 40]}));
+    app.run_now("geometry.body", &json!({"material": "metal", "shape": "box", "size": [10, 10, 10], "at": [15, 15, 15]}));
+    assert!(app.error.is_none(), "{:?}", app.error);
+    app.update(Message::View3d(Nav::Size(800.0, 600.0)));
+    settle(&mut app);
+    app.selection = emcraft_ui_core::selection::Selection::of(vec![Pick::Feature(0)], None);
+    let size_x = |app: &App| app.session.model().features().first().map(emcraft_model::Feature::bounds).map_or(0.0, |b| (b.max.x - b.min.x) * 1e3);
+    let grip = |app: &App| {
+        let m = app.body_grips().into_iter().find(|m| m.grip == Grip::Side { axis: 0, far: true }).unwrap_or_else(|| panic!("the +x grip"));
+        emcraft_ui_core::tools::screen(&app.view3d.camera, emcraft_ui_core::geom::Vector::new(800.0, 600.0), m.at)
+            .unwrap_or_else(|| panic!("in view"))
+    };
+    let along = |app: &App| {
+        let g = grip(app);
+        let c = app.view3d.camera;
+        let further = emcraft_ui_core::tools::screen(&c, emcraft_ui_core::geom::Vector::new(800.0, 600.0), [0.03, 0.02, 0.02]).unwrap_or(g);
+        let (dx, dy) = (further.x - g.x, further.y - g.y);
+        let n = dx.hypot(dy).max(1e-3);
+        (dx / n, dy / n)
+    };
+    assert!((size_x(&app) - 10.0).abs() < 1e-9);
+    // Dragged out along +x on screen.
+    let (ux, uy) = along(&app);
+    app.update(Message::Grip(GripMove::Start(grip(&app))));
+    assert!(app.body_drag.is_some(), "the grip taken");
+    app.update(Message::Grip(GripMove::By(ux * 60.0, uy * 60.0)));
+    app.update(Message::Grip(GripMove::End));
+    let dragged = size_x(&app);
+    assert!(dragged > 10.0, "grown: {dragged} mm {:?}", app.error);
+    let on_grid = ((dragged / 2.0).round() * 2.0 - dragged).abs() < 1e-6;
+    let on_plane = [15.0, 25.0, 40.0].iter().any(|p| (15.0 + dragged - p).abs() < 1e-6);
+    assert!(on_grid || on_plane, "{dragged} mm on the 2 mm grid or a face's plane");
+    // Typed while held: exactly 15 mm.
+    app.update(Message::Grip(GripMove::Start(grip(&app))));
+    for c in ['1', '5'] {
+        app.update(Message::GripKey(Some(c)));
+    }
+    app.update(Message::GripKey(Some('\n')));
+    assert!(app.body_drag.is_none());
+    assert!((size_x(&app) - 15.0).abs() < 1e-9, "typed 15: {} mm", size_x(&app));
+    // Escape lets a drag go with nothing changed.
+    app.update(Message::Grip(GripMove::Start(grip(&app))));
+    app.update(Message::Grip(GripMove::By(ux * 80.0, uy * 80.0)));
+    app.update(Message::Escape);
+    app.update(Message::Grip(GripMove::End));
+    assert!((size_x(&app) - 15.0).abs() < 1e-9, "Escape kept it");
 }

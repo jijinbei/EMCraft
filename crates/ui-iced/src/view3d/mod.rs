@@ -80,10 +80,11 @@ pub enum Nav {
     Mode(Option<usize>),
 }
 
-/// The reference plane's grip dragged: pressed, moved by points, let go.
+/// A grip dragged (a body's, or the selected port's reference plane's): pressed where (points
+/// from the view's corner), moved by points, let go.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GripMove {
-    Start,
+    Start(emcraft_ui_core::geom::Point),
     By(f32, f32),
     End,
 }

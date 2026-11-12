@@ -85,8 +85,9 @@ pub struct Viewer {
     pub hover: bool,
     /// A tool is on: a free left drag draws no box.
     pub tool: bool,
-    /// The selected port's reference plane's grip (points from the view's corner).
-    pub grip: Option<Point>,
+    /// The grips a plain left press takes (points from the view's corner): the selected body's,
+    /// the selected port's reference plane's.
+    pub grips: Vec<Point>,
 }
 
 /// The pointer between events: the drag in progress (its mode and where it was last), where the
@@ -174,9 +175,9 @@ impl shader::Program<Message> for Viewer {
                 let at = cursor.position_in(bounds)?;
                 let left = *b == mouse::Button::Left;
                 let plain = !grip.keys.shift && !grip.keys.ctrl && !grip.keys.alt;
-                if left && plain && self.grip.is_some_and(|g| g.distance(at) <= emcraft_ui_core::tools::GRIP_PX) {
+                if left && plain && self.grips.iter().any(|g| g.distance(at) <= emcraft_ui_core::tools::GRIP_PX) {
                     grip.gripped = Some(at);
-                    return Some(Action::publish(Message::Grip(GripMove::Start)).and_capture());
+                    return Some(Action::publish(Message::Grip(GripMove::Start(crate::geom::shared(at)))).and_capture());
                 }
                 grip.pressed = left.then_some(at);
                 grip.drag = match button(*b) {
@@ -323,6 +324,12 @@ pub fn keys(event: iced::Event, status: iced::event::Status, _: iced::window::Id
         Event::KeyReleased { key, .. } if arrow(&key).is_some() => Some(Message::Key3d(Nav::Released)),
         _ if status == iced::event::Status::Captured => None,
         Event::KeyPressed { key: Key::Named(Named::Escape), .. } => Some(Message::Escape),
+        // Digits typed while a grip is held (the window takes them only then), Enter as '\n'.
+        Event::KeyPressed { key: Key::Named(Named::Backspace), .. } => Some(Message::GripKey(None)),
+        Event::KeyPressed { key: Key::Named(Named::Enter), .. } => Some(Message::GripKey(Some('\n'))),
+        Event::KeyPressed { key: Key::Character(c), modifiers, .. } if !modifiers.command() && !modifiers.alt() && c.len() == 1 => {
+            c.chars().next().filter(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | 'e')).map(|c| Message::GripKey(Some(c)))
+        }
         Event::KeyPressed { key, modifiers, repeat, .. } if !modifiers.alt() => match (arrow(&key), &key) {
             (Some((right, up)), _) if !repeat || modifiers.command() => {
                 Some(Message::Key3d(Nav::Arrow { right, up, shift: modifiers.shift(), ctrl: modifiers.command() }))
