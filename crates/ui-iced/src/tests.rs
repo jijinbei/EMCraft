@@ -1137,3 +1137,65 @@ fn the_boundaries_step_finds_the_mirror_planes() {
     assert!(found.contains(&"x") && found.contains(&"y"), "{found:?}");
     assert!(crate::step_panel::view(&app).is_some());
 }
+
+/// The S-parameters page. Analytic evidence: a band picked over 7–8 GHz refined with 5 points
+/// adds the frequencies 7, 7.25, 7.5, 7.75 and 8 GHz to the sweep (merged, none twice); a click
+/// at 7.3 GHz opens the field at the nearest solved frequency; the table has a row per solved
+/// frequency; a reference plane set to 1 mm shifts arg S11 by 2β·1 mm (S follows at once).
+#[test]
+fn the_sparameters_page_refines_picks_and_compares() {
+    use crate::sparameters::SAct;
+    use emcraft_ui_core::view::View;
+    let mut app = App::new(Some("highpass"));
+    for points in [7, 4] {
+        app.run_now("solve.frequency", &json!({"start": 6, "stop": 9, "points": points}));
+        finish(&mut app);
+    }
+    app.update(Message::Page(View::SParameters));
+    let solved = |app: &App| app.session.results().sweep.as_ref().map_or(Vec::new(), |s| s.results.iter().map(|r| r.frequency).collect::<Vec<_>>());
+    assert_eq!(solved(&app).len(), 4);
+    // Two solves kept: the older drawn over the chart, then taken off.
+    let older = app.session.archive().first().map_or(0, |a| a.id);
+    app.update(Message::S(SAct::Compare(older)));
+    assert_eq!(app.sview.compare, vec![older]);
+    assert!(matches!(app.charts.page.as_ref().map(|p| &p.shown), Some(Ok(_))));
+    app.update(Message::S(SAct::Compare(older)));
+    assert!(app.sview.compare.is_empty());
+    // A band refined.
+    app.update(Message::S(SAct::Band(Some((7e9, 8e9)))));
+    app.update(Message::S(SAct::Points(5)));
+    app.update(Message::S(SAct::Refine));
+    finish(&mut app);
+    let after = solved(&app);
+    for f in [7.0e9, 7.25e9, 7.5e9, 7.75e9, 8.0e9] {
+        assert!(after.iter().any(|x| (x - f).abs() < 1.0), "{f} solved: {after:?} {:?}", app.error);
+    }
+    assert!(app.sview.band.is_none());
+    // The table: a row per solved frequency.
+    app.update(Message::S(SAct::Table(true)));
+    let table = emcraft_ui_core::results::sparameters::table(&app.session).unwrap_or_else(|| panic!("a table"));
+    assert_eq!(table.rows.len(), after.len());
+    let _ = app.view();
+    // A click: the nearest solved frequency's field on the model page.
+    app.update(Message::S(SAct::Pick(7.3e9)));
+    assert_eq!(app.page, View::Model);
+    assert!((app.view3d.field.frequency - 7.25e9).abs() < 1.0, "{}", app.view3d.field.frequency);
+    // A reference plane typed and set: S11 turns by 2β·d, β = √(k²εr − (π/a)²) of TE10 in the
+    // port's filling (εr 2, a 22.86 mm), |S11| unchanged.
+    let s11 = |app: &App| {
+        app.session.results().sweep.as_ref().and_then(|s| s.results.iter().find(|r| (r.frequency - 9e9).abs() < 1.0)).and_then(|r| r.s.get(0, 0))
+    };
+    let before = s11(&app).unwrap_or_else(|| panic!("S11 at 9 GHz"));
+    app.update(Message::Page(View::SParameters));
+    app.update(Message::S(SAct::Plane("1".into(), "1".into())));
+    app.update(Message::S(SAct::SetPlane("1".into())));
+    assert!((app.session.model().ports[0].deembed - 1e-3).abs() < 1e-12, "{:?}", app.error);
+    assert_eq!(app.planes.get("1").map(|(s, _)| s.as_str()), Some("1"));
+    let after = s11(&app).unwrap_or_else(|| panic!("S11 at 9 GHz"));
+    let k = 2.0 * std::f64::consts::PI * 9e9 / emcraft_model::units::C0;
+    let beta = (k * k * 2.0 - (std::f64::consts::PI / 22.86e-3).powi(2)).sqrt();
+    let turned = (after.arg() - before.arg()).rem_euclid(std::f64::consts::TAU);
+    let want = (2.0 * beta * 1e-3).rem_euclid(std::f64::consts::TAU);
+    assert!((after.norm() - before.norm()).abs() < 1e-9, "|S11| kept");
+    assert!((turned - want).abs() < 1e-6 || (turned - (std::f64::consts::TAU - want)).abs() < 1e-6, "turned {turned}, 2βd {want}");
+}

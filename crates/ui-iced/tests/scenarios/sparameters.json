@@ -1,0 +1,19 @@
+[
+  {"note": "The S-parameters page: two solves kept and listed, the phase shown, a band picked and refined with 21 points (7 to 8 GHz in steps of 0.05, merged into the sweep), the table unfolded, a click at 7.32 GHz opening the field at the nearest solved 7.3 GHz"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 6, "stop": 9, "points": 7}}},
+  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 6, "stop": 9, "points": 4}}},
+  {"call": "ui.set", "params": {"page": "sparameters"}},
+  {"expect": {"inspect": {"page": "sparameters", "sparameters.history.1": "*"}, "handles": ["s:display:phase", "s:table"]}},
+  {"click": "s:display:phase"},
+  {"expect": {"inspect": {"sparameters.display": "phase"}}},
+  {"click": "s:display:db"},
+  {"call": "ui.set", "params": {"band": [7, 8]}},
+  {"expect": {"inspect": {"sparameters.band.0": [7, 1e-9], "sparameters.band.1": [8, 1e-9]}, "handles": ["refine:start", "refine:clear"]}},
+  {"click": "refine:start"},
+  {"until": {"inspect": {"job": null, "sparameters.band": null}}, "timeout": 60},
+  {"click": "s:table"},
+  {"expect": {"inspect": {"sparameters.table": true}}},
+  {"call": "ui.set", "params": {"pick": 7.32}},
+  {"expect": {"inspect": {"page": "model", "view3d.overlay": "field", "view3d.field.frequency": [7.3e9, 1e-6]}}}
+]

@@ -11,11 +11,13 @@ lines against 7 000). Keeping two windows doubles every UI change.
 
 ## Decision
 
-- **Port what the egui window does alone, then switch at once.** Each stage moves the rules
-  into `emcraft-ui-core` first (the egui window then draws from them, unchanged), builds the
-  iced view on them, and writes the iced scenarios that replace the egui ones for it. When the
-  last stage lands, `apps/emcraft` runs the iced window and `crates/ui-egui` goes, in one
-  change; no fallback binary is kept.
+- **Port what the egui window does alone, then switch at once.** Each stage writes the rules
+  into `emcraft-ui-core`, builds the iced view on them, and writes the iced scenarios that
+  replace the egui ones for it. From stage B on the egui window is left as it is (stage A also
+  moved its workflow onto the shared rules): it keeps running and its tests keep passing until
+  it goes, and `cargo xtask dupes` leaves `crates/ui-egui` out meanwhile, since its rules are
+  written again rather than taken out of it. When the last stage lands, `apps/emcraft` runs the
+  iced window and `crates/ui-egui` goes, in one change; no fallback binary is kept.
 - **Stages.**
   - **A Workflow** (done): the step bar and the kind of analysis, each step's panel (checks and
     fixes, the Setup form over the band's diagram, the device, Run's preflight, the results'
@@ -57,6 +59,6 @@ lines against 7 000). Keeping two windows doubles every UI change.
 
 ## Consequences
 
-- Until F, a change to what both windows show goes into `emcraft-ui-core` once; a change to
-  the egui window's own drawing is avoided unless it is a fix.
+- Until F, the egui window changes only for a fix; new behaviour goes into `emcraft-ui-core`
+  and the iced window.
 - The gate keeps both windows' tests until F; then the egui ones go with their crate.

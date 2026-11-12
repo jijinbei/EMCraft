@@ -98,15 +98,20 @@ fn polygon(pts: &[[f64; 2]]) -> Path {
     })
 }
 
+/// `chart` drawn on `frame` at `size` in `palette`: its ground and its shapes.
+pub fn paint(frame: &mut Frame, chart: &emcraft_render::chart::Chart, size: Size, palette: &Palette) {
+    let (w, h) = (size.width.max(1.0) as usize, size.height.max(1.0) as usize);
+    let d = emcraft_render::chart::drawing(chart, w, h, palette);
+    frame.fill_rectangle(Point::ORIGIN, size, colour(d.ground, 1.0));
+    d.shapes.iter().for_each(|s| put(frame, s));
+}
+
 impl canvas::Program<Message> for Plot<'_> {
     type State = ();
 
     fn draw(&self, _: &(), renderer: &Renderer, _: &Theme, bounds: Rectangle, _: Cursor) -> Vec<Geometry> {
-        let (w, h) = (bounds.width.max(1.0) as usize, bounds.height.max(1.0) as usize);
-        let d = emcraft_render::chart::drawing(&self.chart, w, h, self.palette);
         let mut frame = Frame::new(renderer, bounds.size());
-        frame.fill_rectangle(Point::ORIGIN, bounds.size(), colour(d.ground, 1.0));
-        d.shapes.iter().for_each(|s| put(&mut frame, s));
+        paint(&mut frame, &self.chart, bounds.size(), self.palette);
         vec![frame.into_geometry()]
     }
 }

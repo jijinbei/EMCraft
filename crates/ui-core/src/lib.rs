@@ -61,6 +61,7 @@ pub mod pick;
 pub mod prefs;
 pub mod record;
 pub mod replies;
+pub mod results;
 pub mod ribbon;
 pub mod scenario;
 pub mod scene3d;

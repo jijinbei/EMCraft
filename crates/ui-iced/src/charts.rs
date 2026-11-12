@@ -7,6 +7,7 @@ use emcraft_engine::view::SystemChart;
 use emcraft_engine::views::ChartId;
 use emcraft_render::chart::Chart;
 use emcraft_ui_core::replies::Replies;
+use emcraft_ui_core::results::sparameters::{self, SView};
 use emcraft_ui_core::view::View;
 
 use crate::look::Look;
@@ -19,6 +20,8 @@ struct Key {
     language: &'static str,
     which: Option<SystemChart>,
     page: Option<View>,
+    /// What the S-parameter chart shows, on its page.
+    sview: Option<SView>,
 }
 
 /// A chart as made, or why it could not be.
@@ -61,6 +64,7 @@ pub struct Source<'a> {
     pub look: &'a Look,
     pub which: SystemChart,
     pub page: View,
+    pub sview: &'a SView,
 }
 
 impl Charts {
@@ -68,17 +72,27 @@ impl Charts {
     /// `page` (the system's `which`), made again where what they show changed; only the page shown
     /// is made.
     pub fn refreshed(self, src: &Source) -> Charts {
-        let Source { session, replies, generation, look, which, page } = *src;
-        let key = |which, page| Key { generation, theme: look.theme.name.clone(), language: emcraft_ui_core::lang::current(), which, page };
+        let Source { session, replies, generation, look, which, page, sview } = *src;
+        let s = (page == View::SParameters).then(|| sview.clone());
+        let key = |which, page| Key {
+            generation,
+            theme: look.theme.name.clone(),
+            language: emcraft_ui_core::lang::current(),
+            which,
+            page,
+            sview: s.clone(),
+        };
         // An analysis' chart is drawn from its reply, the window's own; every other from the session.
         let made = |id: ChartId| match (id, replies.analysis.as_ref()) {
+            (ChartId::SParameters, _) => sparameters::chart(session, sview),
             (ChartId::Analyses, Some(a)) => emcraft_engine::view::analyses::chart(&a.command, &a.reply, session.display().frequency.symbol())
                 .ok_or_else(|| emcraft_engine::EngineError::failed("nothing to chart")),
             _ => emcraft_engine::views::chart_of(session, id),
         };
         let shown = page.chart().map(|id| kept(self.page, key(None, Some(page)), || translated(session, id, made(id))));
         let system = session.results().system.as_ref().map(|_| {
-            kept(self.system, key(Some(which), None), || translated(session, ChartId::System, emcraft_engine::view::system_chart(session, which)))
+            let key = Key { sview: None, ..key(Some(which), None) };
+            kept(self.system, key, || translated(session, ChartId::System, emcraft_engine::view::system_chart(session, which)))
         });
         Charts { page: shown, system }
     }

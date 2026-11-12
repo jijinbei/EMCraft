@@ -23,7 +23,7 @@ use emcraft_ui_core::replies::Replies;
 use emcraft_ui_core::selection::{self, Selection};
 use emcraft_ui_core::theme::{Theme, Themes};
 use emcraft_ui_core::view::View;
-use iced::widget::{Space, button, container, row, text};
+use iced::widget::{button, container, row, text};
 use iced::{Alignment, Element, Fill, Subscription, Task, Widget};
 
 use crate::look::{self, Look};
@@ -97,6 +97,8 @@ pub enum Message {
     /// ask for.
     Step(Option<emcraft_engine::workflow::Step>),
     StepAct(crate::step_panel::Act),
+    /// What a control of the S-parameters page asks for.
+    S(crate::sparameters::SAct),
     /// A grip dragged: a selected body's, or the selected port's reference plane's.
     Grip(crate::view3d::GripMove),
     /// A key typed while a body's grip is held: a digit (Enter as '\n'), or Backspace.
@@ -186,6 +188,10 @@ pub struct App {
     pub(crate) ref_text: Option<(usize, String, f64)>,
     /// The workflow: the step open, the statuses, the Setup form, a refused or failed run.
     pub(crate) workflow: crate::steps::Workflow,
+    /// What the S-parameter page's chart shows, and its ports' reference planes as typed (each
+    /// port's text and the value it was typed over).
+    pub(crate) sview: emcraft_ui_core::results::sparameters::SView,
+    pub(crate) planes: std::collections::BTreeMap<String, (String, f64)>,
     /// What is selected (in the 3D view or the browser), and the browser's tree for the
     /// generation it was read for.
     pub(crate) selection: Selection,
@@ -259,6 +265,8 @@ impl App {
             body_drag: None,
             ref_text: None,
             workflow: Default::default(),
+            sview: Default::default(),
+            planes: Default::default(),
             selection: Selection::default(),
             tree: None,
             replies: Replies::default(),
@@ -387,6 +395,8 @@ impl App {
             self.view3d = std::mem::take(&mut self.view3d).navigated(Nav::Overlay(overlay));
         }
         self.refresh_steps();
+        self.sync_planes();
+        self.sview = std::mem::take(&mut self.sview).kept(&self.session);
         // The reference plane's number follows the port and a drag until it is edited.
         self.ref_text = match (self.reference_now(), self.ref_text.take()) {
             (Some((port, now)), Some(kept)) if kept.0 == port && kept.2 == now => Some(kept),
@@ -420,6 +430,7 @@ impl App {
             look: &self.look,
             which: self.chart,
             page: self.page,
+            sview: &self.sview,
         };
         self.charts = std::mem::take(&mut self.charts).refreshed(&charts);
     }
@@ -687,11 +698,13 @@ impl App {
                     .on_press(Message::Settings(!self.settings))
                     .boxed(),
             ))
-            .chain(tabs)
-            .chain(std::iter::once(Space::new().width(Fill).boxed()))
-            .chain(status))
+            .chain(tabs))
         .spacing(12)
-        .align_y(Alignment::Center);
+        .align_y(Alignment::Center)
+        // A narrow window (or a longer language) wraps the bar instead of squeezing its pages.
+        .wrap()
+        .vertical_spacing(6);
+        let bar = row![container(bar).width(Fill), row(status).spacing(12).align_y(Alignment::Center)].spacing(12).align_y(Alignment::Center);
         let bar = container(bar).padding([6, 14]).width(Fill).style(look::app_bar(t));
         let page = match self.page {
             _ if self.settings => crate::settings::view(self),
@@ -700,6 +713,7 @@ impl App {
             View::Eigenmodes => crate::eigenmodes::view(self),
             View::PortModes => crate::port_modes::view(self),
             View::Pcb => crate::pcb::view(self),
+            View::SParameters => crate::sparameters::view(self),
             v if v.chart().is_some() => crate::results::view(self, v),
             _ => crate::system::view(self),
         };
@@ -812,6 +826,10 @@ impl App {
             }
             Message::StepAct(a) => {
                 self.step_act(a);
+                None
+            }
+            Message::S(a) => {
+                self.s_act(a);
                 None
             }
             Message::RefText(s) => {

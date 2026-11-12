@@ -5,8 +5,9 @@
 //! is hashed. A run found in two places, not overlapping, is a copy; neighbouring runs of the same
 //! pair of places are joined into one range. Tests (`tests/` directories, `tests.rs` files and
 //! everything from a `#[cfg(test)]` line to the end of a file) are left out: repeated set-ups in
-//! tests are fine. So are the ported tetmesh crate and declarative tables (`SKIP_CRATES`,
-//! `SKIP_FILES`).
+//! tests are fine. So are the ported tetmesh crate, the egui window while it is being retired
+//! (docs/adr/0008-retire-egui.md: its rules are written again for the iced window, not taken
+//! out of it) and declarative tables (`SKIP_CRATES`, `SKIP_FILES`).
 //!
 //! With `loose`, each line is reduced to its shape before matching: names become `v`, numbers `0`
 //! and string literals `s`, keywords and punctuation stay. That also finds a routine copied with
@@ -16,8 +17,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-/// Ported code kept close to its upstream, and so left out (ATTRIBUTION.md).
-const SKIP_CRATES: &[&str] = &["tetmesh"];
+/// Ported code kept close to its upstream (ATTRIBUTION.md), and the egui window until it goes
+/// (ADR 0008), and so left out.
+const SKIP_CRATES: &[&str] = &["tetmesh", "ui-egui"];
 
 /// Declarative tables, whose entries look alike by design.
 const SKIP_FILES: &[&str] = &["crates/engine/src/cmd/table.rs"];

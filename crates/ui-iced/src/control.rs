@@ -76,6 +76,7 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
     let steps = crate::steps::shown_bar(app)
         .then(|| emcraft_engine::workflow::Step::ALL.into_iter().map(|s| (format!("step:{}", s.id()), Message::Step(Some(s)))).collect::<Vec<_>>());
     let panel = crate::step_panel::handles(app);
+    let spar = crate::sparameters::handles(app);
     let card = (!app.selection.is_clear()).then(|| [("card:edit".to_owned(), Message::Edit), ("card:delete".to_owned(), Message::Delete)]);
     let dialog = app.dialog.is_some().then(|| {
         [
@@ -96,6 +97,7 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         .chain(rows)
         .chain(steps.into_iter().flatten())
         .chain(panel)
+        .chain(spar)
         .chain(card.into_iter().flatten())
         .chain(dialog.into_iter().flatten())
         .chain(asking.into_iter().flatten())
@@ -126,6 +128,7 @@ pub fn inspect(app: &App) -> Value {
         "selection": app.selection.iter().map(|p| format!("{p:?}")).collect::<Vec<_>>(),
         "tools": app.tools.inspect(app.tool, app.session.display().length),
         "workflow": crate::steps::inspect(app),
+        "sparameters": crate::sparameters::inspect(app),
         "view3d": {
             "overlay": v.overlay.id(),
             "yaw": c.yaw.to_degrees(),
@@ -261,6 +264,15 @@ impl App {
                 Some(t) => self.update(Message::Tab(t)),
                 None => return err(format!("no tab `{}`", emcraft_engine::text::clip(t, 40))),
             }
+        }
+        // A band picked on the S-parameter chart (display units), and a frequency clicked there.
+        let fu = self.session.display().frequency;
+        if let Some([a, b]) = p.get("band").and_then(Value::as_array).and_then(|v| Some([v.first()?.as_f64()?, v.get(1)?.as_f64()?])) {
+            let (a, b) = (fu.to_si(a.min(b)), fu.to_si(a.max(b)));
+            self.update(Message::S(crate::sparameters::SAct::Band((a.is_finite() && b.is_finite()).then_some((a, b)))));
+        }
+        if let Some(f) = p.get("pick").and_then(Value::as_f64).filter(|f| f.is_finite()) {
+            self.update(Message::S(crate::sparameters::SAct::Pick(fu.to_si(f))));
         }
         // The Setup form's fields typed, by name.
         if let Some(fields) = p.get("setup").and_then(Value::as_object) {

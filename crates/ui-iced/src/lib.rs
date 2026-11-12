@@ -51,10 +51,12 @@ pub mod results;
 pub mod ribbon;
 pub mod run;
 pub mod settings;
+pub mod sparameters;
 pub mod start;
 pub mod step_panel;
 pub mod steps;
 pub mod system;
+pub mod table;
 pub mod tools;
 pub mod view3d;
 

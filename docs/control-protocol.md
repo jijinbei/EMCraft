@@ -105,7 +105,7 @@ page, the dialog's fields, the selection, the 3D view, the results kept), `ui.ha
 `view3d:fit`, `tool:<id>`, `row:<id>`, `card:edit`, `dialog:ok`, `file:save`, `edit:undo`, …),
 `ui.set` (`page`, `overlay`, `tab`, `settings`, `start`, `setup`: the Setup form's fields typed by
 name), the workflow's handles (`step:<id>`, `step:fix:<i>`, `setup:confirm`, `run:start`,
-`excitation:preview`, `results:check`, `results:export`; `ui.inspect`'s `workflow` gives the step
+`excitation:preview`, `results:check`, `results:export`; the S-parameters page's `s:display:<id>`, `s:table`, `s:mixed`, `history:<id>` (drawn over the chart) and `history:<id>:restore|pin|delete`, `refine:start`, `refine:clear`, with `ui.set`'s `band` (`[start, stop]`, display units) and `pick` (a frequency clicked on the chart); `ui.inspect`'s `workflow` gives the step
 open, each step's status and checks, the form, a refusal and a failure), `ui.point` (`at`: `[x, y]` in points
 from the 3D view's corner, `view3d.size` in `ui.inspect`; `click?`, `double?`, `add?`: the
 pointer there, what is under it found — a tool's face and snap, the field's values — and a
