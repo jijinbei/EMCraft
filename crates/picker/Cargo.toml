@@ -1,0 +1,15 @@
+[package]
+name = "emcraft-picker"
+description = "The system's file dialog for EMCraft's windows (rfd): projects to open and save, parts to import, each asked on a thread of its own so the window keeps drawing (emcraft_ui_core::files::Picker)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+emcraft-engine = { workspace = true }
+emcraft-ui-core = { workspace = true }
+# The system's file dialog (docs/adr/0001-libraries.md).
+rfd = "0.17"

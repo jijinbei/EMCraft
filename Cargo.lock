@@ -2267,9 +2267,9 @@ name = "emcraft"
 version = "0.1.0"
 dependencies = [
  "emcraft-engine",
+ "emcraft-picker",
  "emcraft-ui-egui",
  "getrandom 0.3.4",
- "rfd",
  "serde_json",
  "winresource",
 ]
@@ -2365,6 +2365,8 @@ dependencies = [
 name = "emcraft-iced"
 version = "0.1.0"
 dependencies = [
+ "emcraft-picker",
+ "emcraft-ui-core",
  "emcraft-ui-iced",
 ]
 
@@ -2411,6 +2413,15 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "emcraft-picker"
+version = "0.1.0"
+dependencies = [
+ "emcraft-engine",
+ "emcraft-ui-core",
+ "rfd",
 ]
 
 [[package]]

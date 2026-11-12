@@ -453,3 +453,33 @@ fn the_ribbon_opens_a_commands_dialog_and_runs_it() {
     assert!(app.rows().any(|r| r.id == "material:alumina"), "its row in the browser");
     assert_eq!(App::new(Some("adsb-receiver")).tab, RibbonTab::System);
 }
+
+/// Projects as files: a change marks the project unsaved; New asks first, Cancel keeps it,
+/// Save As writes it where chosen and Open reads it back with the change, a project begun anew
+/// in between. Analytic evidence: the εr written (3.3) is the one read back.
+#[test]
+fn a_project_is_saved_where_chosen_and_opened_again() {
+    use emcraft_ui_core::files::{Answer, FileAction, Purpose, Then};
+    let path = std::env::temp_dir().join(format!("emcraft-iced-{}.emcraft", std::process::id()));
+    let path_text = path.to_string_lossy().into_owned();
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::Row("material:ptfe-like".into()));
+    app.update(Message::Edit);
+    let k = app.dialog.as_ref().and_then(|d| d.fields.iter().position(|f| f.name == "eps_r")).unwrap_or_default();
+    app.update(Message::Dialog(crate::dialog::Edit::Text(k, "3.3".into())));
+    app.update(Message::Dialog(crate::dialog::Edit::Ok));
+    assert!(app.session.is_dirty());
+    app.update(Message::File(FileAction::Request(Then::New)));
+    assert_eq!(app.asking, Some(Then::New), "asked before the change is lost");
+    app.update(Message::File(FileAction::Confirm(Answer::Cancel)));
+    assert!(app.asking.is_none() && app.session.is_dirty());
+    app.update(Message::File(FileAction::Chosen(Purpose::SaveAs, Some(path_text.clone()))));
+    assert_eq!(app.error, None);
+    assert!(!app.session.is_dirty() && path.exists(), "saved");
+    app.update(Message::File(FileAction::Request(Then::New)));
+    assert!(app.session.model().materials.iter().all(|m| m.name != "ptfe-like"), "a new project");
+    app.update(Message::File(FileAction::Chosen(Purpose::Open, Some(path_text))));
+    let eps = app.session.model().materials.iter().find(|m| m.name == "ptfe-like").map(|m| m.eps_r.get());
+    assert_eq!(eps, Some(3.3));
+    let _ = std::fs::remove_file(&path);
+}

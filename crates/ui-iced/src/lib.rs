@@ -10,7 +10,7 @@
 //! - [`app`]: the window's state and messages; [`run`]: commands on the worker; [`ribbon`]:
 //!   every command by its tab and panel;
 //! - [`browser`]: the model and its results as a tree beside the 3D view; [`dialog`]: a
-//!   command's parameters over the window;
+//!   command's parameters over the window; [`files`]: projects opened and saved;
 //! - [`model`]: the model in 3D ([`view3d`], drawn by the GPU in iced's shader widget), meshed
 //!   and solved from its bar; [`sparameters`]: the sweep's chart;
 //! - [`system`]: a system's node editor — the band, the canvas, the chart and the budget;
@@ -34,6 +34,7 @@ pub mod browser;
 pub mod chart;
 pub mod charts;
 pub mod dialog;
+pub mod files;
 pub mod geom;
 pub mod look;
 pub mod model;
@@ -48,13 +49,19 @@ use emcraft_ui_core::{lang, prefs, theme};
 /// Runs the window, on sample `sample` when one is named, in the preferences the egui window
 /// keeps: its language, its theme (the user's themes too), the font the language is shown with
 /// and the 3D view's mouse mapping and drawing. With `shoot`, a picture of the window is written
-/// there once it has drawn (a running job ended first) and the window closes.
-pub fn run(sample: Option<String>, shoot: Option<std::path::PathBuf>) -> iced::Result {
+/// there once it has drawn (a running job ended first) and the window closes. `picker`: the
+/// host's file dialog.
+pub fn run(
+    sample: Option<String>,
+    shoot: Option<std::path::PathBuf>,
+    picker: Option<std::sync::Arc<dyn emcraft_ui_core::files::Picker>>,
+) -> iced::Result {
     let prefs = prefs::default_path().map(|p| prefs::Prefs::load(&p)).unwrap_or_default();
     lang::set(prefs.language());
     let theme = theme::Themes::load(theme::default_dir().as_deref()).get(&prefs.theme);
     let font = prefs.font_file.as_deref().and_then(|f| std::fs::read(f).ok());
-    let start = move || app::App::new(sample.as_deref()).dressed(theme.clone()).with_prefs(&prefs).shooting(shoot.clone());
+    let start =
+        move || app::App::new(sample.as_deref()).dressed(theme.clone()).with_prefs(&prefs).shooting(shoot.clone()).with_picker(picker.clone());
     iced::application(start, app::App::react, app::App::view)
         .subscription(app::App::subscription)
         .title(app::App::title)

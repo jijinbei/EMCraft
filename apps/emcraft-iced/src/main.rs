@@ -15,7 +15,8 @@ fn main() -> ExitCode {
         eprintln!("usage: emcraft-iced [--sample NAME] [--shot PNG]");
         return ExitCode::FAILURE;
     }
-    match emcraft_ui_iced::run(value("--sample"), value("--shot").map(Into::into)) {
+    let picker: std::sync::Arc<dyn emcraft_ui_core::files::Picker> = std::sync::Arc::new(emcraft_picker::SystemPicker);
+    match emcraft_ui_iced::run(value("--sample"), value("--shot").map(Into::into), Some(picker)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("emcraft-iced: {e}");

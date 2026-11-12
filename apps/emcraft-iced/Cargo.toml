@@ -13,4 +13,6 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
+emcraft-picker = { workspace = true }
+emcraft-ui-core = { workspace = true }
 emcraft-ui-iced = { workspace = true }

@@ -377,6 +377,7 @@
     "New project": "新規プロジェクト",
     "New project.": "新規プロジェクト。",
     "New projects": "新規プロジェクト",
+    "No file dialog here: open a project from the command line.": "ここではファイルダイアログを使えません：コマンドラインからプロジェクトを開いてください。",
     "No GPU: the 3D view needs a graphics adapter (or a software one, such as Mesa's llvmpipe).": "GPU がありません：3D ビューにはグラフィックスアダプター（または Mesa の llvmpipe などのソフトウェア版）が必要です。",
     "No S-parameters yet: Run (step 6).": "Sパラメータはまだありません：実行（ステップ 6）。",
     "No command matches.": "一致するコマンドはありません。",

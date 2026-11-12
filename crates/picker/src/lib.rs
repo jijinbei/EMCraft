@@ -1,8 +1,11 @@
 //! The system's file dialog for projects and parts (`rfd`), each asked on its own thread so the window
-//! keeps drawing; the answer goes back through the callback the window gave.
+//! keeps drawing; the answer goes back through the callback the window gave. Both windows use it.
 
-use emcraft_ui_egui::files::Picker;
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+use emcraft_ui_core::files::{PART_EXTENSIONS, Picker};
+
+/// The system's file dialog.
 pub struct SystemPicker;
 
 fn filters(d: rfd::FileDialog) -> rfd::FileDialog {
@@ -29,7 +32,7 @@ impl Picker for SystemPicker {
         std::thread::spawn(move || {
             let path = rfd::FileDialog::new()
                 .set_title("Import a part")
-                .add_filter("Parts (SolidCraft, 3MF, STL)", emcraft_ui_egui::files::PART_EXTENSIONS)
+                .add_filter("Parts (SolidCraft, 3MF, STL)", PART_EXTENSIONS)
                 .add_filter("SolidCraft design", &["solidcraft", "sc"])
                 .add_filter("3MF", &["3mf"])
                 .add_filter("STL", &["stl"])

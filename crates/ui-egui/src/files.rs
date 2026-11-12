@@ -4,7 +4,7 @@
 //! a path field in the window. The work itself is the engine's `file.new`, `file.open` and
 //! `file.save`.
 
-pub use emcraft_ui_core::files::{Answer, Ask, FileAction, Prompt, Purpose, Then};
+pub use emcraft_ui_core::files::{Answer, Ask, FileAction, PART_EXTENSIONS, Picker, Prompt, Purpose, Then, is_part};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
@@ -16,26 +16,6 @@ use crate::handle::Fixed;
 use crate::lang::{Raw, args, sample_label, tr, trf};
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, Hint, Style, UiExt, scenario, ui_kit};
-
-/// A file dialog, asked without blocking: `done` is called with the path chosen, `None` when
-/// cancelled, from any thread.
-pub trait Picker: Send + Sync {
-    /// A project to open.
-    fn open(&self, done: Box<dyn FnOnce(Option<String>) + Send>);
-    /// Where to save a project, `suggested` the file name offered.
-    fn save(&self, suggested: &str, done: Box<dyn FnOnce(Option<String>) + Send>);
-    /// A part to import: a SolidCraft design, a 3MF package or an STL file.
-    fn import(&self, done: Box<dyn FnOnce(Option<String>) + Send>);
-}
-
-/// The extensions of the parts `geometry.import` reads.
-pub const PART_EXTENSIONS: &[&str] = &["solidcraft", "sc", "3mf", "stl", "kicad_pcb"];
-
-/// Whether `path` names a part to import, by its extension.
-pub fn is_part(path: &str) -> bool {
-    let ext = std::path::Path::new(path).extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
-    ext.is_some_and(|e| PART_EXTENSIONS.contains(&e.as_str()))
-}
 
 pub struct Files {
     pub picker: Option<Arc<dyn Picker>>,

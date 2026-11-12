@@ -64,6 +64,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("ui-iced", Class::Layer(7)),
     // L7, below both windows: the 3D view drawn by the GPU (docs/adr/0004-gpu-viewport.md).
     ("gpu3d", Class::Layer(7)),
+    ("picker", Class::Layer(7)),
     ("testkit", Class::Testkit),
     // apps and tooling
     ("emcraft", Class::Exempt),

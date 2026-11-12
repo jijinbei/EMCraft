@@ -90,6 +90,8 @@ pub enum Message {
     Delete,
     /// The open dialog changed, confirmed or cancelled.
     Dialog(crate::dialog::Edit),
+    /// New, Open, Save, Save As, a path chosen, the answer to "save the changes?".
+    File(emcraft_ui_core::files::FileAction),
     /// A command started from a button: a long one on the worker.
     Start(String),
     /// The running job stopped.
@@ -131,6 +133,11 @@ pub struct App {
     pub(crate) dialog: Option<Dialog>,
     /// The ribbon's tab shown.
     pub(crate) tab: emcraft_ui_core::ribbon::RibbonTab,
+    /// The host's file dialog, when it has one.
+    pub(crate) picker: Option<std::sync::Arc<dyn emcraft_ui_core::files::Picker>>,
+    /// What "save the changes?" is asked before, and what waits for a save.
+    pub(crate) asking: Option<emcraft_ui_core::files::Then>,
+    pub(crate) after_save: Option<emcraft_ui_core::files::Then>,
     /// The charts as drawn.
     pub(crate) charts: crate::charts::Charts,
     /// Raised by every command that ends well (the model's revision does not follow a solve's
@@ -172,6 +179,9 @@ impl App {
             tree: None,
             dialog: None,
             tab: Default::default(),
+            picker: None,
+            asking: None,
+            after_save: None,
             charts: crate::charts::Charts::default(),
             generation: 0,
             job: None,
@@ -197,6 +207,11 @@ impl App {
     /// The window in the preferences' mouse mapping and 3D drawing.
     pub fn with_prefs(self, prefs: &Prefs) -> App {
         App { nav: prefs.nav(), gpu_look: prefs.gpu_look, ..self }
+    }
+
+    /// The window with the host's file dialog.
+    pub fn with_picker(self, picker: Option<std::sync::Arc<dyn emcraft_ui_core::files::Picker>>) -> App {
+        App { picker, ..self }
     }
 
     /// The window that writes a picture of itself to `path` once it has drawn, then closes.
@@ -388,6 +403,11 @@ impl App {
                 }
                 iced::exit()
             }
+            Message::File(a) => {
+                let task = self.file(a);
+                self.settle();
+                task
+            }
             m => {
                 self.update(m);
                 Task::none()
@@ -435,10 +455,17 @@ impl App {
             (None, Some(n)) => vec![text(n.clone()).size(t.font_body).color(t.app_bar_text).boxed()],
             (None, None) => Vec::new(),
         };
-        let head = [text("EMCraft").size(t.font_body).boxed(), text(self.session.name()).size(t.font_body).color(t.app_bar_text).boxed()];
-        let bar = row(head.into_iter().chain(tabs).chain(std::iter::once(Space::new().width(Fill).boxed())).chain(status))
-            .spacing(12)
-            .align_y(Alignment::Center);
+        // The project's name, marked while it has unsaved changes.
+        let name = format!("{}{}", self.session.name(), if self.session.is_dirty() { " •" } else { "" });
+        let head = [text("EMCraft").size(t.font_body).boxed(), text(name).size(t.font_body).color(t.app_bar_text).boxed()];
+        let bar = row(head
+            .into_iter()
+            .chain(crate::files::buttons(self))
+            .chain(tabs)
+            .chain(std::iter::once(Space::new().width(Fill).boxed()))
+            .chain(status))
+        .spacing(12)
+        .align_y(Alignment::Center);
         let bar = container(bar).padding([6, 14]).width(Fill).style(look::app_bar(t));
         let page = match self.page {
             View::Model => crate::model::view(self),
@@ -446,8 +473,9 @@ impl App {
             _ => crate::system::view(self),
         };
         let window = container(column![bar, crate::ribbon::view(self), page]).width(Fill).height(Fill).style(look::window(t));
-        match &self.dialog {
-            Some(d) => iced::widget::stack![window, crate::dialog::view(self, d)].boxed(),
+        let over = self.dialog.as_ref().map(|d| crate::dialog::view(self, d)).or_else(|| crate::files::question(self));
+        match over {
+            Some(o) => iced::widget::stack![window, o].boxed(),
             None => window.boxed(),
         }
     }
@@ -537,6 +565,11 @@ impl App {
                 None
             }
             Message::Shot(_) => None,
+            Message::File(a) => {
+                // Without iced's runtime (the tests): a dialog's answer is not awaited.
+                let _ = self.file(a);
+                None
+            }
         }
     }
 

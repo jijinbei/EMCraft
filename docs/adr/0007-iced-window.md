@@ -44,4 +44,5 @@ code to be written. iced is that toolkit in pure Rust (MIT).
   thread-pool executor has no timer). Charts are pictures kept until what they show changes:
   iced uploads a picture over 2 MiB over several frames, so one made anew each frame never shows.
 - `emcraft-iced --shot PNG` writes a picture of its own window once it has drawn, for looking at
-  a change in the real window (never the desktop).
+  a change in the real window (never the desktop). iced's picture leaves the text fields' values
+  out (they show in the window itself): the headless snapshots show them.

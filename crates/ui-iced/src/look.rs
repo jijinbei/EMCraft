@@ -85,6 +85,21 @@ pub fn quiet(t: Tokens) -> impl Fn(&iced::Theme, b::Status) -> b::Style {
     }
 }
 
+/// A button on the window's bar: its text in the bar's ink, the bar's hover under the pointer.
+pub fn bar_button(t: Tokens) -> impl Fn(&iced::Theme, b::Status) -> b::Style {
+    move |_, status| {
+        let fill = matches!(status, b::Status::Hovered | b::Status::Pressed).then_some(Background::Color(t.app_bar_hover));
+        let ink = if status == b::Status::Disabled { t.text_dim } else { t.app_bar_text };
+        b::Style {
+            background: fill,
+            text_color: ink,
+            border: Border { radius: 4.0.into(), ..Border::default() },
+            shadow: Shadow::default(),
+            snap: true,
+        }
+    }
+}
+
 /// A browser row: its text on nothing, the hover's fill under the pointer, the selection's when
 /// `selected`.
 pub fn row(t: Tokens, selected: bool) -> impl Fn(&iced::Theme, b::Status) -> b::Style {
