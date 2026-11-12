@@ -5,6 +5,7 @@
 use emcraft_engine::Session;
 use emcraft_engine::view::SystemChart;
 use emcraft_render::chart::Chart;
+use emcraft_ui_core::view::View;
 
 use crate::look::Look;
 
@@ -15,6 +16,7 @@ struct Key {
     theme: String,
     language: &'static str,
     which: Option<SystemChart>,
+    page: Option<View>,
 }
 
 /// A chart as made, or why it could not be.
@@ -24,10 +26,11 @@ pub struct Picture {
     pub shown: Result<Chart, String>,
 }
 
-/// The window's charts.
+/// The window's charts: the result page's shown (the engine's chart that page is) and the
+/// system's.
 #[derive(Clone, Debug, Default)]
 pub struct Charts {
-    pub sparameters: Option<Picture>,
+    pub page: Option<Picture>,
     pub system: Option<Picture>,
 }
 
@@ -47,16 +50,17 @@ fn kept(old: Option<Picture>, key: Key, draw: impl FnOnce() -> Result<Chart, Str
 }
 
 impl Charts {
-    /// The charts of `session` at `generation` ([`crate::app::App`]'s) in `look` (the system's
-    /// `which`), drawn again where what they show changed.
-    pub fn refreshed(self, session: &Session, generation: u64, look: &Look, which: SystemChart) -> Charts {
-        let key = |which| Key { generation, theme: look.theme.name.clone(), language: emcraft_ui_core::lang::current(), which };
-        let sparameters = kept(self.sparameters, key(None), || translated(emcraft_engine::view::sparameter_chart(session)));
+    /// The charts of `session` at `generation` ([`crate::app::App`]'s) in `look` for result page
+    /// `page` (the system's `which`), made again where what they show changed; only the page shown
+    /// is made.
+    pub fn refreshed(self, session: &Session, generation: u64, look: &Look, which: SystemChart, page: View) -> Charts {
+        let key = |which, page| Key { generation, theme: look.theme.name.clone(), language: emcraft_ui_core::lang::current(), which, page };
+        let shown = page.chart().map(|id| kept(self.page, key(None, Some(page)), || translated(emcraft_engine::views::chart_of(session, id))));
         let system = session
             .results()
             .system
             .as_ref()
-            .map(|_| kept(self.system, key(Some(which)), || translated(emcraft_engine::view::system_chart(session, which))));
-        Charts { sparameters: Some(sparameters), system }
+            .map(|_| kept(self.system, key(Some(which), None), || translated(emcraft_engine::view::system_chart(session, which))));
+        Charts { page: shown, system }
     }
 }

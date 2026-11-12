@@ -163,7 +163,12 @@ fn run_solves_on_the_worker_and_shows_the_sweep() {
     assert_eq!(app.error, None);
     assert!(app.session.results().sweep.is_some(), "the sweep came back");
     assert_eq!(app.page, View::SParameters);
-    assert!(app.charts.sparameters.as_ref().is_some_and(|p| p.shown.is_ok()), "its chart drawn again with the sweep");
+    assert!(app.charts.page.as_ref().is_some_and(|p| p.shown.is_ok()), "its chart drawn again with the sweep");
+    // The sweep's other pages: TDR and the pulse, each its chart.
+    for page in [View::Tdr, View::Pulse] {
+        app.update(Message::Page(page));
+        assert!(app.charts.page.as_ref().is_some_and(|p| p.shown.is_ok()), "{page:?}'s chart");
+    }
     assert!(app.note.as_deref().is_some_and(|n| n.contains(" s")), "its time noted: {:?}", app.note);
 }
 
@@ -199,6 +204,7 @@ fn the_3d_frame_draws_the_model() {
         let pick = Message::Click(crate::view3d::Click { at: emcraft_ui_core::geom::Point::new(400.0, 300.0), add: false, double: false });
         for (name, page, then) in [
             ("sparameters", emcraft_ui_core::view::View::SParameters, None),
+            ("tdr", emcraft_ui_core::view::View::Tdr, None),
             ("model", emcraft_ui_core::view::View::Model, None),
             ("model-ports", emcraft_ui_core::view::View::Model, Some(ports)),
             ("model-field", emcraft_ui_core::view::View::Model, Some(field)),

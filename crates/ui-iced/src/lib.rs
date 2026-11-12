@@ -12,7 +12,7 @@
 //! - [`browser`]: the model and its results as a tree beside the 3D view; [`dialog`]: a
 //!   command's parameters over the window; [`files`]: projects opened and saved;
 //! - [`model`]: the model in 3D ([`view3d`], drawn by the GPU in iced's shader widget), meshed
-//!   and solved from its bar; [`sparameters`]: the sweep's chart;
+//!   and solved from its bar; [`results`]: the result pages that are charts;
 //! - [`system`]: a system's node editor — the band, the canvas, the chart and the budget;
 //! - [`charts`]: the engine's charts, made again only when they change; [`chart`]: one drawn
 //!   as vectors by the GPU;
@@ -38,9 +38,9 @@ pub mod files;
 pub mod geom;
 pub mod look;
 pub mod model;
+pub mod results;
 pub mod ribbon;
 pub mod run;
-pub mod sparameters;
 pub mod system;
 pub mod view3d;
 

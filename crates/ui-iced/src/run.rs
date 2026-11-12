@@ -10,8 +10,8 @@ use serde_json::{Value, json};
 
 use crate::app::App;
 
-/// The pages the window has, in its bar's order.
-pub const PAGES: [View; 3] = [View::Model, View::SParameters, View::System];
+/// The pages the window has, in its bar's order (those with something to show are offered).
+pub const PAGES: [View; 8] = [View::Model, View::SParameters, View::Tdr, View::Pulse, View::FarField, View::Dispersion, View::Study, View::System];
 
 impl App {
     /// Runs `id` with `params`: a long command on the worker (one at a time), else at once.

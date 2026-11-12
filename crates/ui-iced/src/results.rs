@@ -1,5 +1,6 @@
-//! The S-parameters page: the sweep's chart ([`crate::charts`]) drawn by the GPU, its words in
-//! the window's language.
+//! A result page that is one of the engine's charts — S-parameters, TDR, the pulse, the far field,
+//! dispersion, a study ([`emcraft_ui_core::view::View::chart`]) — drawn by the GPU
+//! ([`crate::charts`]), its words in the window's language; or why there is nothing to show yet.
 
 use emcraft_ui_core::lang::tr;
 use emcraft_ui_core::replies::Replies;
@@ -13,13 +14,13 @@ use crate::chart::Plot;
 /// The chart's height (points).
 const CHART_H: f32 = 520.0;
 
-/// The S-parameters page, or why there is nothing to show yet.
-pub fn view(app: &App) -> Element<'_, Message> {
+/// Result page `page`.
+pub fn view(app: &App, page: View) -> Element<'_, Message> {
     let t = app.look.tokens;
-    let picture: Element<Message> = match app.charts.sparameters.as_ref().map(|p| &p.shown) {
+    let picture: Element<Message> = match app.charts.page.as_ref().map(|p| &p.shown) {
         Some(Ok(c)) => canvas(Plot { chart: c, palette: &app.look.theme.palette }).width(Fill).height(CHART_H).boxed(),
         Some(Err(e)) => {
-            let missing = View::SParameters.missing(&app.session, &Replies::default());
+            let missing = page.missing(&app.session, &Replies::default());
             text(missing.map_or_else(|| e.clone(), |m| tr(m).to_owned())).size(t.font_heading).color(t.text_dim).boxed()
         }
         None => text("").boxed(),

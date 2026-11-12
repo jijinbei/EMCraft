@@ -276,7 +276,7 @@ impl App {
         if self.tree.as_ref().is_none_or(|(g, _)| *g != self.generation) {
             self.tree = Some((self.generation, browser::tree(&self.session, &Replies::default())));
         }
-        self.charts = std::mem::take(&mut self.charts).refreshed(&self.session, self.generation, &self.look, self.chart);
+        self.charts = std::mem::take(&mut self.charts).refreshed(&self.session, self.generation, &self.look, self.chart, self.page);
     }
 
     /// The browser's rows, in their sections.
@@ -490,6 +490,7 @@ impl App {
         let t = self.look.tokens;
         let tabs = PAGES
             .into_iter()
+            .filter(|v| *v == self.page || v.available(&self.session, &Replies::default()))
             .map(|v| button(text(page_label(v)).size(t.font_button)).style(look::button(t, v == self.page)).on_press(Message::Page(v)).boxed());
         let status: Vec<Element<Message>> = match (self.progress(), &self.note) {
             (Some(p), _) => vec![
@@ -514,7 +515,7 @@ impl App {
         let bar = container(bar).padding([6, 14]).width(Fill).style(look::app_bar(t));
         let page = match self.page {
             View::Model => crate::model::view(self),
-            View::SParameters => crate::sparameters::view(self),
+            v if v.chart().is_some() => crate::results::view(self, v),
             _ => crate::system::view(self),
         };
         let parts = [bar.boxed(), crate::ribbon::view(self)].into_iter().chain(crate::files::recoveries(self)).chain(std::iter::once(page));

@@ -199,6 +199,28 @@ impl View {
         }
     }
 
+    /// The engine's chart the view is (`emcraft_engine::views::chart_of`), for the views that are
+    /// one chart.
+    ///
+    /// ```
+    /// use emcraft_engine::views::ChartId;
+    /// use emcraft_ui_core::view::View;
+    /// assert_eq!(View::FarField.chart(), Some(ChartId::Pattern));
+    /// assert_eq!(View::Model.chart(), None);
+    /// ```
+    pub const fn chart(self) -> Option<emcraft_engine::views::ChartId> {
+        use emcraft_engine::views::ChartId as C;
+        Some(match self {
+            View::SParameters => C::SParameters,
+            View::Tdr => C::Tdr,
+            View::Pulse => C::Pulse,
+            View::FarField => C::Pattern,
+            View::Dispersion => C::Dispersion,
+            View::Study => C::Study,
+            _ => return None,
+        })
+    }
+
     /// Whether the view shows results (which go out of date when the model changes after its
     /// run), not the model.
     pub fn is_result(self) -> bool {
