@@ -145,6 +145,9 @@ pub struct App {
     /// generation it was read for.
     pub(crate) selection: Selection,
     pub(crate) tree: Option<(u64, Tree)>,
+    /// The replies of commands the views show (port modes, a comparison, …), kept and let go
+    /// by the shared table.
+    pub(crate) replies: Replies,
     /// The command's dialog open over the window.
     pub(crate) dialog: Option<Dialog>,
     /// The ribbon's tab shown.
@@ -206,6 +209,7 @@ impl App {
             hover: None,
             selection: Selection::default(),
             tree: None,
+            replies: Replies::default(),
             dialog: None,
             tab: Default::default(),
             picker: None,
@@ -320,7 +324,7 @@ impl App {
         };
         self.view3d = std::mem::take(&mut self.view3d).refreshed(&src);
         if self.tree.as_ref().is_none_or(|(g, _)| *g != self.generation) {
-            self.tree = Some((self.generation, browser::tree(&self.session, &Replies::default())));
+            self.tree = Some((self.generation, browser::tree(&self.session, &self.replies)));
         }
         self.charts = std::mem::take(&mut self.charts).refreshed(&self.session, self.generation, &self.look, self.chart, self.page);
     }
@@ -420,9 +424,9 @@ impl App {
             return;
         }
         match self.session.execute(id, &params) {
-            Ok(_) => {
+            Ok(reply) => {
                 self.error = None;
-                self.after(id);
+                self.after(id, &params, &reply);
             }
             Err(e) => {
                 d.refused(&e.to_string());
@@ -539,7 +543,7 @@ impl App {
     /// The window: the application bar — the project, its pages, the running job — over the page.
     pub fn view(&self) -> Element<'_, Message> {
         let t = self.look.tokens;
-        let tabs = PAGES.into_iter().filter(|v| *v == self.page || v.available(&self.session, &Replies::default())).map(|v| {
+        let tabs = PAGES.into_iter().filter(|v| *v == self.page || v.available(&self.session, &self.replies)).map(|v| {
             button(text(page_label(v)).size(t.font_button))
                 .style(look::button(t, v == self.page && !self.settings && !self.home))
                 .on_press(Message::Page(v))
@@ -584,6 +588,7 @@ impl App {
             _ if self.home => crate::start::view(self),
             View::Model => crate::model::view(self),
             View::Eigenmodes => crate::eigenmodes::view(self),
+            View::PortModes => crate::port_modes::view(self),
             v if v.chart().is_some() => crate::results::view(self, v),
             _ => crate::system::view(self),
         };
@@ -764,9 +769,9 @@ impl App {
     /// Runs `command` on the project; the chain read again after a change.
     fn run(&mut self, command: Command) {
         match self.session.execute(command.id, &command.params) {
-            Ok(_) => {
+            Ok(reply) => {
                 self.error = None;
-                self.after(command.id);
+                self.after(command.id, &command.params, &reply);
             }
             Err(e) => self.error = Some(e.to_string()),
         }

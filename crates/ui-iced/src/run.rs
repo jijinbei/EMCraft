@@ -11,8 +11,18 @@ use serde_json::{Value, json};
 use crate::app::App;
 
 /// The pages the window has, in its bar's order (those with something to show are offered).
-pub const PAGES: [View; 9] =
-    [View::Model, View::SParameters, View::Tdr, View::Pulse, View::Eigenmodes, View::FarField, View::Dispersion, View::Study, View::System];
+pub const PAGES: [View; 10] = [
+    View::Model,
+    View::PortModes,
+    View::SParameters,
+    View::Tdr,
+    View::Pulse,
+    View::Eigenmodes,
+    View::FarField,
+    View::Dispersion,
+    View::Study,
+    View::System,
+];
 
 impl App {
     /// Runs `id` with `params`: a long command on the worker (one at a time), else at once.
@@ -35,17 +45,19 @@ impl App {
     /// Runs `id` at once on the project.
     pub(crate) fn run_now(&mut self, id: &str, params: &Value) {
         match self.session.execute(id, params) {
-            Ok(_) => {
+            Ok(reply) => {
                 self.error = None;
-                self.after(id);
+                self.after(id, params, &reply);
             }
             Err(e) => self.error = Some(format!("{}: {e}", command_label(id))),
         }
     }
 
-    /// What follows a command's success: what is drawn from the project drawn again, the chain
-    /// read again, and after a solve its results' page.
-    pub(crate) fn after(&mut self, id: &str) {
+    /// What follows a command's success (`id` with `params`, its `reply`): the replies the views
+    /// show kept or let go (the shared table, `Replies::after`), what is drawn from the project
+    /// drawn again, the chain read again, and after a solve its results' page.
+    pub(crate) fn after(&mut self, id: &str, params: &Value, reply: &Value) {
+        self.replies = std::mem::take(&mut self.replies).after(id, params, reply, &self.session);
         self.generation += 1;
         self.read();
         if job::is_solve(id) {
@@ -82,9 +94,9 @@ impl App {
     fn follow(&mut self, step: Then) {
         match step {
             Then::Session(s) => self.session = *s,
-            Then::After { command, .. } => {
+            Then::After { command, params, reply } => {
                 self.note = Some(command_label(&command).to_owned());
-                self.after(&command);
+                self.after(&command, &params, &reply);
             }
             Then::Keep(v) => self.page = v,
             Then::Note(took) => self.note = self.note.take().map(|n| n + &took),

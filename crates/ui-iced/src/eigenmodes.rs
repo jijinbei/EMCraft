@@ -2,7 +2,6 @@
 //! — in a table, and a button that shows its field in the 3D view.
 
 use emcraft_ui_core::lang::tr;
-use emcraft_ui_core::replies::Replies;
 use emcraft_ui_core::view::View;
 use iced::widget::{button, column, scrollable, table, text};
 use iced::{Element, Widget};
@@ -14,7 +13,7 @@ use crate::look;
 pub fn view(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
     let Some(eigen) = app.session.results().eigen.as_ref() else {
-        let missing = View::Eigenmodes.missing(&app.session, &Replies::default()).map_or("", tr);
+        let missing = View::Eigenmodes.missing(&app.session, &app.replies).map_or("", tr);
         return column![text(missing).size(t.font_heading).color(t.text_dim)].padding(16).boxed();
     };
     let fu = app.session.display().frequency;

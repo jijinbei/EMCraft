@@ -678,3 +678,24 @@ fn the_start_page_draws_templates_and_opens_one() {
     app.update(Message::File(FileAction::Request(open)));
     assert!(!app.home && app.session.name() == "cavity");
 }
+
+/// The port modes page, on the replies kept: before the modes are solved it says what they
+/// need; solve.port_modes' reply is kept and shown, each port's modes; opening another project
+/// lets it go. Analytic evidence: WR-90's TE10 propagates at the band's frequency above its
+/// 6.56 GHz cut-off, its β positive.
+#[test]
+fn port_modes_are_kept_and_shown() {
+    use emcraft_ui_core::files::{FileAction, Then};
+    use emcraft_ui_core::view::View;
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::Page(View::PortModes));
+    assert!(app.replies.port_modes.is_none());
+    app.update(Message::Start("solve.port_modes".into()));
+    finish(&mut app);
+    let Some(modes) = app.replies.port_modes.clone() else { panic!("the reply kept: {:?}", app.error) };
+    let first = &modes.ports[0].modes[0];
+    assert!(first.propagating && first.beta.is_some_and(|b| b > 0.0), "{first:?}");
+    let _ = app.view();
+    app.update(Message::File(FileAction::Request(Then::Sample { name: "cavity".into(), values: serde_json::Value::Null, purpose: None })));
+    assert!(app.replies.port_modes.is_none(), "another project lets it go");
+}
