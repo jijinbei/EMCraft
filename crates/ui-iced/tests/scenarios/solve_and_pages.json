@@ -3,7 +3,7 @@
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
   {"expect": {"inspect": {"page": "model", "results.sweep": false}, "handles": ["toolbar:solve.run", "row:material:ptfe-like"], "hidden": ["page:tdr"]}},
   {"call": "engine.execute", "params": {"command": "solve.run"}},
-  {"expect": {"inspect": {"results.sweep": true, "page": "sparameters", "note": {"includes": " s"}}, "handles": ["page:tdr", "page:pulse", "page:analyses"]}},
+  {"expect": {"inspect": {"results.sweep": true, "page": "sparameters", "messages.last.text": {"includes": " s"}}, "handles": ["page:tdr", "page:pulse", "page:analyses"]}},
   {"click": "page:tdr"},
   {"expect": {"inspect": {"page": "tdr"}}},
   {"call": "ui.set", "params": {"page": "model", "overlay": "field"}},

@@ -113,6 +113,7 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
             .map(|a| (format!("ask:{}", format!("{a:?}").to_lowercase()), Message::File(FileAction::Confirm(a))))
     });
     let job = app.job.is_some().then(|| ("job:cancel".to_owned(), Message::Cancel));
+    let log = (!app.log.lines().is_empty()).then(|| ("messages:toggle".to_owned(), Message::Log(!app.log_open)));
     pages
         .chain(bar)
         .chain(tabs)
@@ -131,6 +132,7 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         .chain(dialog.into_iter().flatten())
         .chain(asking.into_iter().flatten())
         .chain(job)
+        .chain(log)
         .collect()
 }
 
@@ -146,7 +148,11 @@ pub fn inspect(app: &App) -> Value {
         "start": app.home,
         "tab": app.tab.id(),
         "error": app.error,
-        "note": app.note,
+        "messages": {
+            "last": app.log.last().map(|l| json!({"text": l.text, "error": l.error, "count": l.count})),
+            "count": app.log.lines().len(),
+            "open": app.log_open,
+        },
         "job": app.job.as_ref().map(|j| json!({"command": j.command, "text": j.text()})),
         "dialog": app.dialog.as_ref().map(|d| json!({
             "command": d.command.id,
@@ -226,7 +232,10 @@ impl App {
                 self.cancel();
                 Some(ok(Value::Null))
             }
-            "ui.messages" => Some(ok(json!({"error": self.error, "note": self.note}))),
+            "ui.messages" => Some(ok(json!({
+                "error": self.error,
+                "messages": self.log.lines().iter().map(|l| json!({"text": l.text, "error": l.error, "count": l.count})).collect::<Vec<_>>(),
+            }))),
             "ui.screenshot" | "ui.render" => {
                 let path = p.get("path").and_then(Value::as_str).map(str::to_owned);
                 let r = req.clone();

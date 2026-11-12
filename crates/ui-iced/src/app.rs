@@ -27,7 +27,7 @@ use iced::widget::{button, container, row, text};
 use iced::{Alignment, Element, Fill, Subscription, Task, Widget};
 
 use crate::look::{self, Look};
-use crate::run::{PAGES, cancel_label, page_label};
+use crate::run::{PAGES, page_label};
 use crate::view3d::shader::Shot;
 use crate::view3d::{Click, Nav, Shown, View3d};
 use serde_json::json;
@@ -161,6 +161,8 @@ pub enum Message {
     Start(String),
     /// The running job stopped.
     Cancel,
+    /// The earlier messages shown or folded.
+    Log(bool),
     /// A frame drawn (when): while a job runs (it is looked at), the field plays or a picture of
     /// the window is waited for.
     Tick(std::time::Instant),
@@ -264,8 +266,10 @@ pub struct App {
     pub(crate) generation: u64,
     /// The command running on the worker.
     pub(crate) job: Option<Job>,
-    /// What the last job did (its name and time).
-    pub(crate) note: Option<String>,
+    /// What the commands did or why they were refused, newest last (the message area's).
+    pub(crate) log: emcraft_ui_core::messages::Log,
+    /// Whether the message area shows the earlier messages.
+    pub(crate) log_open: bool,
     /// The 3D view's mouse mapping and drawing (the preferences').
     pub(crate) nav: &'static NavPreset,
     pub(crate) gpu_look: GpuLook,
@@ -279,7 +283,17 @@ impl App {
     /// The window on sample `sample` (its chain read), or on an empty project.
     pub fn new(sample: Option<&str>) -> App {
         let mut session = Session::new();
-        let error = sample.and_then(|name| session.execute("file.sample", &json!({ "name": name })).err()).map(|e| e.to_string());
+        // The sample opened, said in the message area as it would be from the start page.
+        let opened = sample.map(|name| {
+            let params = json!({ "name": name });
+            session.execute("file.sample", &params).map(|reply| emcraft_ui_core::status::text("file.sample", &params, &reply, &session))
+        });
+        let error = opened.as_ref().and_then(|r| r.as_ref().err()).map(ToString::to_string);
+        let log = match &opened {
+            Some(Ok(said)) => emcraft_ui_core::messages::Log::default().with(said, false),
+            Some(Err(e)) => emcraft_ui_core::messages::Log::default().with(&e.to_string(), true),
+            None => emcraft_ui_core::messages::Log::default(),
+        };
         let look = Look::of(Themes::load(None).get("light"));
         let page = first_page(&session);
         let prefs = Prefs::default();
@@ -332,7 +346,8 @@ impl App {
             charts: crate::charts::Charts::default(),
             generation: 0,
             job: None,
-            note: None,
+            log,
+            log_open: false,
             nav: prefs.nav(),
             gpu_look: prefs.gpu_look,
             playing: None,
@@ -372,7 +387,7 @@ impl App {
             (Some(id), _) => self.command(id),
             (None, Some(Ok((id, params)))) => self.start(&id, params),
             (None, Some(Err(e))) => {
-                self.error = Some(e);
+                self.fail(e);
                 self.search = query;
             }
             (None, None) => {
@@ -434,7 +449,7 @@ impl App {
                     let _ = self.prefs.save(path);
                 }
             }
-            Err(e) => self.error = Some(e),
+            Err(e) => self.fail(e),
         }
     }
 
@@ -479,7 +494,7 @@ impl App {
         if self.autosave.due(self.began.elapsed().as_secs_f64(), dirty, busy) {
             let (r, new_failure) = self.autosave.write(&mut self.session);
             if let (Err(e), true) = (r, new_failure) {
-                self.error = Some(emcraft_ui_core::lang::trf(t!("Autosave failed: {error}"), emcraft_ui_core::args!(error = e)));
+                self.fail(emcraft_ui_core::lang::trf(t!("Autosave failed: {error}"), emcraft_ui_core::args!(error = e)));
             }
         }
         let src = crate::view3d::Source {
@@ -562,7 +577,7 @@ impl App {
         };
         match opened {
             Ok(d) => self.dialog = Some(d),
-            Err(e) => self.error = Some(e),
+            Err(e) => self.fail(e),
         }
     }
 
@@ -572,9 +587,9 @@ impl App {
             Some(spec) if spec.params.is_empty() => self.start(id, serde_json::json!({})),
             Some(_) => match self.open(id, &serde_json::json!({})) {
                 Ok(d) => self.dialog = Some(d),
-                Err(e) => self.error = Some(e),
+                Err(e) => self.fail(e),
             },
-            None => self.error = Some(format!("no command `{id}`")),
+            None => self.fail(format!("no command `{id}`")),
         }
     }
 
@@ -615,8 +630,10 @@ impl App {
                 self.error = None;
                 self.after(id, &params, &reply);
             }
+            // Shown under the field it names, and said in the message area.
             Err(e) => {
                 d.refused(&e.to_string());
+                self.log = std::mem::take(&mut self.log).with(&format!("{}: {e}", emcraft_ui_core::lang::command_label(id)), true);
                 self.dialog = Some(d);
             }
         }
@@ -758,14 +775,6 @@ impl App {
                 .on_press(Message::Page(v))
                 .boxed()
         });
-        let status: Vec<Element<Message>> = match (self.progress(), &self.note) {
-            (Some(p), _) => vec![
-                text(p).size(t.font_body).color(t.app_bar_text).boxed(),
-                button(text(cancel_label()).size(t.font_button)).style(look::button(t, false)).on_press(Message::Cancel).boxed(),
-            ],
-            (None, Some(n)) => vec![text(n.clone()).size(t.font_body).color(t.app_bar_text).boxed()],
-            (None, None) => Vec::new(),
-        };
         // The project's name, marked while it has unsaved changes.
         let name = format!("{}{}", self.session.name(), if self.session.is_dirty() { " •" } else { "" });
         let head = [text("EMCraft").size(t.font_body).boxed(), text(name).size(t.font_body).color(t.app_bar_text).boxed()];
@@ -792,7 +801,6 @@ impl App {
         // A narrow window (or a longer language) wraps the bar instead of squeezing its pages.
         .wrap()
         .vertical_spacing(6);
-        let bar = row![container(bar).width(Fill), row(status).spacing(12).align_y(Alignment::Center)].spacing(12).align_y(Alignment::Center);
         let bar = container(bar).padding([6, 14]).width(Fill).style(look::app_bar(t));
         let page = match self.page {
             _ if self.settings => crate::settings::view(self),
@@ -813,7 +821,8 @@ impl App {
             Some(panel) => iced::widget::row![page, panel].spacing(8).height(Fill).boxed(),
             None => page,
         };
-        let parts = std::iter::once(bar.boxed()).chain(ribbon).chain(steps).chain(crate::files::recoveries(self)).chain(std::iter::once(page));
+        let parts =
+            std::iter::once(bar.boxed()).chain(ribbon).chain(steps).chain(crate::files::recoveries(self)).chain([page, crate::messages::view(self)]);
         let window = container(iced::widget::Column::with_children(parts)).width(Fill).height(Fill).style(look::window(t));
         let over = self
             .dialog
@@ -972,7 +981,7 @@ impl App {
             Message::Open(id, values) => {
                 match self.open(id, &values) {
                     Ok(d) => self.dialog = Some(d),
-                    Err(e) => self.error = Some(e),
+                    Err(e) => self.fail(e),
                 }
                 None
             }
@@ -1030,6 +1039,10 @@ impl App {
             Message::Key3d(_) => None,
             Message::Start(id) => {
                 self.start(&id, json!({}));
+                None
+            }
+            Message::Log(open) => {
+                self.log_open = open;
                 None
             }
             Message::Cancel => {
@@ -1123,7 +1136,7 @@ impl App {
                 self.error = None;
                 self.after(command.id, &command.params, &reply);
             }
-            Err(e) => self.error = Some(e.to_string()),
+            Err(e) => self.fail(e.to_string()),
         }
     }
 

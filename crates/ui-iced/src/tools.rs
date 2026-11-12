@@ -41,15 +41,15 @@ impl App {
             Some(Outcome::Run(id, params)) => self.start(id, params),
             Some(Outcome::Dialog(id, params)) => match self.open(id, &params) {
                 Ok(d) => self.dialog = Some(d),
-                Err(e) => self.error = Some(e),
+                Err(e) => self.fail(e),
             },
-            Some(Outcome::Refused(why)) => self.error = Some(tr(why).to_owned()),
+            Some(Outcome::Refused(why)) => self.fail(tr(why).to_owned()),
             Some(Outcome::Measure(picks)) => {
                 // A question of the model: answered at once, nothing changed.
                 let params = emcraft_ui_core::tools::measure_params(l, picks);
                 match self.session.execute("geometry.measure", &params) {
                     Ok(reply) => self.tools.measured = Some(Measured { picks, reply }),
-                    Err(e) => self.error = Some(e.to_string()),
+                    Err(e) => self.fail(e.to_string()),
                 }
             }
             None => {}

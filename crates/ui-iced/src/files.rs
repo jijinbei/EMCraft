@@ -144,7 +144,7 @@ impl App {
     /// The host's file dialog for `purpose`, its answer a message; none in a window without one.
     fn pick(&mut self, purpose: Purpose) -> Task<Message> {
         let Some(picker) = self.picker.clone() else {
-            self.error = Some(tr(t!("No file dialog here: open a project from the command line.")).to_owned());
+            self.fail(tr(t!("No file dialog here: open a project from the command line.")).to_owned());
             return Task::none();
         };
         let suggested = format!("{}.{}", self.session.name(), emcraft_engine::project::EXTENSION);

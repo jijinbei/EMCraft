@@ -1,0 +1,16 @@
+[
+  {"note": "The message area: what each command did on its last line, a refusal in the error's colour, the same refusal again counted, the earlier messages opened and folded"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"expect": {"inspect": {"messages.last.text": {"includes": "Opened sample highpass"}, "messages.last.error": false}, "handles": ["messages:toggle"]}},
+  {"call": "ui.dialog", "params": {"open": "model.material.create", "set": {"name": "ceramic", "eps_r": "9.8"}, "ok": true}},
+  {"expect": {"inspect": {"messages.last.text": "*", "messages.last.error": false, "dialog": null}}},
+  {"call": "ui.dialog", "params": {"open": "model.material.create", "set": {"name": "ceramic", "eps_r": "9.8"}, "ok": true}},
+  {"expect": {"inspect": {"messages.last.error": true, "messages.last.count": 1}}},
+  {"click": "dialog:ok"},
+  {"expect": {"inspect": {"messages.last.error": true, "messages.last.count": 2}}},
+  {"click": "dialog:cancel"},
+  {"click": "messages:toggle"},
+  {"expect": {"inspect": {"messages.open": true, "messages.count": 3}}},
+  {"click": "messages:toggle"},
+  {"expect": {"inspect": {"messages.open": false}}}
+]

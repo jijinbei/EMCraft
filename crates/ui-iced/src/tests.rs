@@ -183,7 +183,7 @@ fn run_solves_on_the_worker_and_shows_the_sweep() {
         app.update(Message::Page(page));
         assert!(app.charts.page.as_ref().is_some_and(|p| p.shown.is_ok()), "{page:?}'s chart");
     }
-    assert!(app.note.as_deref().is_some_and(|n| n.contains(" s")), "its time noted: {:?}", app.note);
+    assert!(app.log.lines().iter().any(|n| n.text.contains(" s")), "its time noted: {:?}", app.log);
 }
 
 /// The 3D view's frame drawn offscreen on the process's own device, as the shader widget draws

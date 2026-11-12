@@ -40,7 +40,6 @@ impl App {
         let mut job = Job::start(&self.session, id, params, None);
         (job.view, job.estimate) = (Some(self.page), estimate);
         self.error = None;
-        self.note = None;
         self.job = Some(job);
     }
 
@@ -52,7 +51,7 @@ impl App {
                 self.after(id, params, &reply);
             }
             Err(e) => {
-                self.error = Some(format!("{}: {e}", command_label(id)));
+                self.fail(format!("{}: {e}", command_label(id)));
                 self.workflow.failure = Some((id.to_owned(), e.to_string()));
             }
         }
@@ -62,6 +61,8 @@ impl App {
     /// show kept or let go (the shared table, `Replies::after`), what is drawn from the project
     /// drawn again, the chain read again, and after a solve its results' page.
     pub(crate) fn after(&mut self, id: &str, params: &Value, reply: &Value) {
+        let said = emcraft_ui_core::status::text(id, params, reply, &self.session);
+        self.tell(&said);
         self.replies = std::mem::take(&mut self.replies).after(id, params, reply, &self.session);
         self.generation += 1;
         // A project opened or begun shows as a new window would: nothing selected, on its first
@@ -121,15 +122,11 @@ impl App {
     fn follow(&mut self, step: Then) {
         match step {
             Then::Session(s) => self.session = *s,
-            Then::After { command, params, reply } => {
-                self.note = Some(command_label(&command).to_owned());
-                self.after(&command, &params, &reply);
-            }
+            Then::After { command, params, reply } => self.after(&command, &params, &reply),
             Then::Keep(v) => self.page = v,
-            Then::Note(took) => self.note = self.note.take().map(|n| n + &took),
+            Then::Note(took) => self.log = std::mem::take(&mut self.log).amended(&took),
             Then::Failed { command, error } => {
-                self.note = None;
-                self.error = Some(format!("{}: {error}", command_label(&command)));
+                self.fail(format!("{}: {error}", command_label(&command)));
                 self.workflow.failure = Some((command, error));
             }
             Then::Answer(waiting, answer) => waiting.into_iter().for_each(|w| drop(w.send(answer.clone()))),
@@ -156,8 +153,20 @@ impl App {
     pub(crate) fn cancel(&mut self) {
         if let Some(job) = self.job.take() {
             job.cancel();
-            self.note = Some(trf(t!("{command} cancelled."), args!(command = command_label(&job.command))));
+            self.tell(&trf(t!("{command} cancelled."), args!(command = command_label(&job.command))));
         }
+    }
+
+    /// `e` refused: shown where it was asked for, and said in the message area.
+    pub(crate) fn fail(&mut self, e: impl Into<String>) {
+        let e = e.into();
+        self.log = std::mem::take(&mut self.log).with(&e, true);
+        self.error = Some(e);
+    }
+
+    /// `text` said in the message area.
+    pub(crate) fn tell(&mut self, text: &str) {
+        self.log = std::mem::take(&mut self.log).with(text, false);
     }
 
     /// The running job as the bar says it ([`Job::text`]).

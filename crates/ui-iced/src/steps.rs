@@ -174,7 +174,7 @@ impl App {
                 if dialog {
                     match self.open(&command, &json!({})) {
                         Ok(d) => self.dialog = Some(d),
-                        Err(e) => self.error = Some(e),
+                        Err(e) => self.fail(e),
                     }
                 }
             }
@@ -189,11 +189,11 @@ impl App {
             Act::PreviewModes if self.session.model().job.range().is_some() => self.start("solve.port_modes", json!({})),
             Act::PreviewModes => match self.open("solve.port_modes", &json!({})) {
                 Ok(d) => self.dialog = Some(d),
-                Err(e) => self.error = Some(e),
+                Err(e) => self.fail(e),
             },
             Act::CheckResults => match self.session.execute("results.check", &json!({})) {
                 Ok(v) => self.workflow.check = Some(v),
-                Err(e) => self.error = Some(e.to_string()),
+                Err(e) => self.fail(e.to_string()),
             },
             Act::Export => self.export_touchstone(),
         }
@@ -206,7 +206,7 @@ impl App {
         self.workflow.fields = f;
         match params {
             Ok(p) => self.run_now("project.setup", &p),
-            Err(e) => self.error = Some(e),
+            Err(e) => self.fail(e),
         }
     }
 
@@ -220,7 +220,7 @@ impl App {
         }
         let pre = emcraft_ui_core::steps::run::preflight(self.solver(), &self.statuses());
         if let Some(refusal) = pre.refusal() {
-            self.error = Some(refusal.clone());
+            self.fail(refusal.clone());
             self.workflow.refusal = Some(refusal);
             return;
         }

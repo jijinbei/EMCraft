@@ -47,6 +47,7 @@ pub mod geom;
 pub mod icons;
 pub mod import;
 pub mod look;
+pub mod messages;
 pub mod model;
 pub mod pcb;
 pub mod port_modes;

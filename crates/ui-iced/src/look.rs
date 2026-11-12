@@ -184,6 +184,15 @@ pub fn ground(t: Tokens) -> impl Fn(&iced::Theme) -> container::Style {
     move |_| container::Style { background: Some(Background::Color(t.panel)), border: border(t.border, t.radius_lg), ..container::Style::default() }
 }
 
+/// A chip: the accent's when `on`, else the panel's header.
+pub fn chip(t: Tokens, on: bool) -> impl Fn(&iced::Theme) -> container::Style {
+    move |_| container::Style {
+        background: Some(Background::Color(if on { t.accent } else { t.panel_header })),
+        border: border(Color::TRANSPARENT, t.radius_sm),
+        ..container::Style::default()
+    }
+}
+
 /// The application bar.
 pub fn app_bar(t: Tokens) -> impl Fn(&iced::Theme) -> container::Style {
     move |_| container::Style { text_color: Some(t.app_bar_text), background: Some(Background::Color(t.app_bar)), ..container::Style::default() }

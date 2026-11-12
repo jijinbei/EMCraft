@@ -49,7 +49,7 @@ impl App {
         }
         match self.open(id, &values) {
             Ok(d) => self.dialog = Some(d),
-            Err(e) => self.error = Some(e),
+            Err(e) => self.fail(e),
         }
     }
 
