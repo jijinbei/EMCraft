@@ -178,11 +178,13 @@ fn the_3d_frame_draws_the_model() {
         app.update(Message::Start("solve.run".into()));
         finish(&mut app);
         let ports = Message::View3d(crate::view3d::Nav::Overlay(emcraft_ui_core::scene3d::Overlay::Ports));
+        let field = Message::View3d(crate::view3d::Nav::Overlay(emcraft_ui_core::scene3d::Overlay::Field));
         let pick = Message::Click(crate::view3d::Click { at: emcraft_ui_core::geom::Point::new(400.0, 300.0), add: false, double: false });
         for (name, page, then) in [
             ("sparameters", emcraft_ui_core::view::View::SParameters, None),
             ("model", emcraft_ui_core::view::View::Model, None),
             ("model-ports", emcraft_ui_core::view::View::Model, Some(ports)),
+            ("model-field", emcraft_ui_core::view::View::Model, Some(field)),
             ("model-selected", emcraft_ui_core::view::View::Model, Some(pick)),
         ] {
             app.update(Message::Page(page));
@@ -220,4 +222,30 @@ fn a_click_picks_the_part_under_it() {
     app.update(click(Point::new(2.0, 2.0), false, true));
     assert!(app.selection.is_clear(), "a double click on empty space clears");
     assert!(app.view3d.camera.distance > zoomed, "and fits the view again");
+}
+
+/// The field overlay, once solved: the field view's plane drawn coloured with its colour bar; a
+/// component changed plots the same samples again, a plane changed samples anew. Analytic
+/// evidence: in the TE10 high-pass guide Ey is the field's only E component, so its colour bar
+/// is signed (from −peak to +peak) and |E| unsigned.
+#[test]
+fn the_field_overlay_draws_the_plane_with_its_colour_bar() {
+    use crate::view3d::Nav;
+    use emcraft_engine::view::{Component, Plane};
+    use emcraft_ui_core::scene3d::Overlay;
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::Start("solve.run".into()));
+    finish(&mut app);
+    app.update(Message::View3d(Nav::Overlay(Overlay::Field)));
+    assert_eq!(app.view3d.field_error, None);
+    let bar = |app: &App| app.view3d.shown.as_ref().and_then(|s| s.built.colour_bar.clone());
+    assert!(bar(&app).is_some_and(|b| b.scale.signed), "Ey is signed");
+    let samples = |app: &App| app.view3d.sampled.as_ref().map(|s| s.samples().clone());
+    let first = samples(&app);
+    app.update(Message::View3d(Nav::Component(Component::E)));
+    assert!(bar(&app).is_some_and(|b| !b.scale.signed), "|E| is not");
+    assert!(first.zip(samples(&app)).is_some_and(|(a, b)| std::sync::Arc::ptr_eq(&a, &b)), "the same samples");
+    app.update(Message::View3d(Nav::Plane(Plane::E)));
+    let again = samples(&app);
+    assert!(again.as_ref().is_some_and(|s| s.plane == Plane::E), "sampled anew on the E-plane");
 }

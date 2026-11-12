@@ -2,14 +2,17 @@
 //! theme's colours) drawn by the GPU in iced's shader widget ([`shader`]), navigated by the mouse
 //! mapping (orbit, pan, zoom), fitted to the model and turned to the standard views. Its state is
 //! a value: each [`Nav`] gives the next ([`View3d::navigated`]), each change to the project the
-//! scene built again when what it shows changed ([`View3d::refreshed`]).
+//! scene built again when what it shows changed ([`View3d::refreshed`]). On the field overlay
+//! the field view's plane is drawn in it, coloured by the field ([`field`]).
 
+pub mod field;
 pub mod labels;
 pub mod shader;
 
 use std::sync::Arc;
 
 use emcraft_engine::Session;
+use emcraft_engine::view::{Component, FieldView, Plane};
 use emcraft_gpu3d::Packed;
 use emcraft_render::Rgb;
 use emcraft_render::view3d::{Camera, StandardView};
@@ -36,6 +39,12 @@ pub enum Nav {
     Overlay(Overlay),
     /// The view's size (points), as laid out.
     Size(f32, f32),
+    /// The field overlay's plane, component, frequency (Hz) and the plane's place along its
+    /// normal (m from the model's low side).
+    Plane(Plane),
+    Component(Component),
+    Frequency(f64),
+    At(f64),
 }
 
 /// A click on the view: where (points from its corner), whether Shift or Ctrl was held, whether
@@ -54,6 +63,8 @@ struct Key {
     generation: u64,
     overlay: Overlay,
     selected: Vec<Pick>,
+    /// The field view, on the field overlay.
+    field: Option<FieldView>,
     theme: String,
     language: &'static str,
 }
@@ -68,6 +79,8 @@ pub struct Shown {
     pub bounds: Option<Bounds>,
     pub labels: Vec<scene3d::Label>,
     pub legend: Vec<(String, Rgb)>,
+    /// The field's colour bar, on the field overlay.
+    pub bar: Option<field::Bar>,
 }
 
 /// The 3D view's state.
@@ -81,21 +94,34 @@ pub struct View3d {
     /// The view's size (points).
     pub size: (f32, f32),
     pub shown: Option<Shown>,
+    /// What the field overlay shows, its plane's samples and why it could not be drawn.
+    pub field: FieldView,
+    pub(crate) sampled: Option<field::Sampled>,
+    pub field_error: Option<String>,
 }
 
 impl Default for View3d {
     fn default() -> Self {
-        View3d { overlay: Overlay::Plain, camera: Camera::default(), fitted: None, size: (800.0, 600.0), shown: None }
+        View3d {
+            overlay: Overlay::Plain,
+            camera: Camera::default(),
+            fitted: None,
+            size: (800.0, 600.0),
+            shown: None,
+            field: field::start(),
+            sampled: None,
+            field_error: None,
+        }
     }
 }
 
-/// The scene of `session` for `overlay` in `theme`'s colours, packed.
-fn built(session: &Session, theme: &Theme, key: Key) -> Shown {
-    let b = scene3d::build_with(session, key.overlay, &Colours::of(theme), &[], &key.selected);
+/// The scene of `session` for `key` in `theme`'s colours with the field's `layers`, packed.
+fn built(session: &Session, theme: &Theme, key: Key, layers: &[scene3d::FieldLayer]) -> Shown {
+    let b = scene3d::build_with(session, key.overlay, &Colours::of(theme), layers, &key.selected);
     let packed = Packed::with_arrows(b.gpu_scene.as_ref().unwrap_or(&b.scene), emcraft_gpu3d::next_id(), None, &b.arrows);
     let bounds = b.bounds.or_else(|| b.scene.bounds());
-    let (labels, legend) = (b.labels.clone(), b.legend.clone());
-    Shown { key, built: Arc::new(b), packed: Arc::new(packed), bounds, labels, legend }
+    let (labels, legend, bar) = (b.labels.clone(), b.legend.clone(), b.colour_bar.as_ref().map(field::Bar::of));
+    Shown { key, built: Arc::new(b), packed: Arc::new(packed), bounds, labels, legend, bar }
 }
 
 impl View3d {
@@ -108,14 +134,28 @@ impl View3d {
             generation,
             selected: selected.to_vec(),
             overlay: self.overlay,
+            field: (self.overlay == Overlay::Field).then(|| self.field.clone()),
             theme: theme.name.clone(),
             language: emcraft_ui_core::lang::current(),
         };
         if self.shown.as_ref().is_some_and(|s| s.key == key) {
             return self;
         }
-        let shown = built(session, theme, key);
-        let view = View3d { shown: Some(shown), ..self };
+        let (sampled, plot) = match &key.field {
+            Some(v) => {
+                let (sampled, plot) = field::plot(session, generation, v, self.sampled.clone());
+                (sampled, Some(plot))
+            }
+            None => (self.sampled.clone(), None),
+        };
+        let place = sampled.as_ref().map(field::Sampled::place);
+        let layers: Vec<scene3d::FieldLayer> = match (&plot, place) {
+            (Some(Ok(plot)), Some((plane, at))) => vec![scene3d::FieldLayer { plot, plane, at, gpu: false }],
+            _ => Vec::new(),
+        };
+        let shown = built(session, theme, key, &layers);
+        let field_error = plot.and_then(Result::err);
+        let view = View3d { shown: Some(shown), sampled, field_error, ..self };
         match view.bounds() {
             Some(b) if view.fitted.is_none_or(|(f, _)| f != b) => view.fit(),
             _ => view,
@@ -174,6 +214,10 @@ impl View3d {
             Nav::Fit => self.fit(),
             Nav::Standard(v) => self.moved(|c| c.standard(v)).fit(),
             Nav::Overlay(overlay) => View3d { overlay, ..self },
+            Nav::Plane(plane) => View3d { field: FieldView { plane, at: None, ..self.field.clone() }, ..self },
+            Nav::Component(component) => View3d { field: FieldView { component, ..self.field.clone() }, ..self },
+            Nav::Frequency(frequency) => View3d { field: FieldView { frequency, ..self.field.clone() }, ..self },
+            Nav::At(at) => View3d { field: FieldView { at: Some(at), ..self.field.clone() }, ..self },
             Nav::Size(w, h) if w.is_finite() && h.is_finite() && w >= 1.0 && h >= 1.0 => {
                 let unmoved = self.fitted.is_some_and(|(_, c)| c == self.camera);
                 let view = View3d { size: (w, h), ..self };
