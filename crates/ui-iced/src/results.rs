@@ -42,7 +42,13 @@ pub fn view(app: &App, page: View) -> Element<'_, Message> {
         View::Study => (study_choices(app), emcraft_ui_core::results::study::points(&app.session, &app.study).map(|tb| crate::table::view(t, &tb))),
         _ => (None, None),
     };
-    scrollable(Column::with_children(above.into_iter().chain(std::iter::once(picture)).chain(below)).spacing(10).padding(16)).boxed()
+    // The chart's style: its ⚙ beside the page's choices, its card under them.
+    let above = match (above, crate::style_card::gear(app)) {
+        (Some(a), Some(g)) => Some(row![a, g].spacing(8).align_y(Alignment::Start).boxed()),
+        (a, g) => a.or(g),
+    };
+    let style = crate::style_card::card(app);
+    scrollable(Column::with_children(above.into_iter().chain(style).chain(std::iter::once(picture)).chain(below)).spacing(10).padding(16)).boxed()
 }
 
 /// The analyses' buttons, the one shown lit, and a line on its numbers.
@@ -311,6 +317,7 @@ pub fn inspect(app: &App) -> serde_json::Value {
             "at": app.study.slice.at,
             "points": emcraft_ui_core::results::study::points(&app.session, &app.study).map(|t| t.rows.len()),
         },
-        "chart": app.charts.page.as_ref().map(|c| match &c.shown { Ok(chart) => serde_json::json!({"title": chart.title}), Err(e) => serde_json::json!({"error": e}) }),
+        "chart": app.charts.page.as_ref().map(|c| match &c.shown { Ok(chart) => serde_json::json!({"title": chart.title, "grid": chart.look.grid}), Err(e) => serde_json::json!({"error": e}) }),
+        "style": app.style.open.map(emcraft_engine::views::ChartId::id),
     })
 }

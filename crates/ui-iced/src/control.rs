@@ -78,6 +78,7 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
     let panel = crate::step_panel::handles(app);
     let spar = crate::sparameters::handles(app);
     let result_views = crate::results::handles(app);
+    let style = crate::style_card::handles(app);
     let card = (!app.selection.is_clear()).then(|| [("card:edit".to_owned(), Message::Edit), ("card:delete".to_owned(), Message::Delete)]);
     let dialog = app.dialog.is_some().then(|| {
         [
@@ -100,6 +101,7 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         .chain(panel)
         .chain(spar)
         .chain(result_views)
+        .chain(style)
         .chain(card.into_iter().flatten())
         .chain(dialog.into_iter().flatten())
         .chain(asking.into_iter().flatten())

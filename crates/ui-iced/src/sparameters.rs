@@ -243,7 +243,8 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let display =
         pick_list(Some(v.display), SDisplay::ALL, |d: &SDisplay| shown(*d).to_owned()).on_select(|d| send(SAct::Display(d))).style(look::choice(t));
     let mixed = rules::pairs(s).then(|| action(t, tr(t!("Mixed mode")), v.mixed, Some(send(SAct::Mixed(!v.mixed)))));
-    let controls = row(std::iter::once(display.boxed()).chain(mixed)).spacing(8).align_y(Alignment::Center);
+    let controls = row(std::iter::once(display.boxed()).chain(mixed).chain(crate::style_card::gear(app))).spacing(8).align_y(Alignment::Center);
+    let style = crate::style_card::card(app);
     let chart: Element<Message> = match app.charts.page.as_ref().map(|p| &p.shown) {
         Some(Ok(c)) => {
             let marked = (app.view3d.field.mode.is_none()).then_some(app.view3d.field.frequency);
@@ -279,8 +280,16 @@ pub fn view(app: &App) -> Element<'_, Message> {
         .coupling
         .as_ref()
         .map(|r| column![text(tr(t!("Coupling matrix"))).size(t.font_body), crate::table::view(t, &rules::coupling(r))].spacing(4).boxed());
-    let parts =
-        [controls.boxed(), chart].into_iter().chain(band).chain(planes).chain(caption).chain(history).chain(coupling).chain(toggle).chain(table);
+    let parts = std::iter::once(controls.boxed())
+        .chain(style)
+        .chain(std::iter::once(chart))
+        .chain(band)
+        .chain(planes)
+        .chain(caption)
+        .chain(history)
+        .chain(coupling)
+        .chain(toggle)
+        .chain(table);
     iced::widget::scrollable(Column::with_children(parts).spacing(10).padding(16)).boxed()
 }
 

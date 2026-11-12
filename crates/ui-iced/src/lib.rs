@@ -56,6 +56,7 @@ pub mod sparameters;
 pub mod start;
 pub mod step_panel;
 pub mod steps;
+pub mod style_card;
 pub mod system;
 pub mod table;
 pub mod tools;

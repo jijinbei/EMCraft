@@ -99,8 +99,9 @@ pub enum Message {
     StepAct(crate::step_panel::Act),
     /// What a control of the S-parameters page asks for.
     S(crate::sparameters::SAct),
-    /// What a result page's choice asks for.
+    /// What a result page's choice asks for, and its chart's style card.
     R(crate::results::RAct),
+    Style(crate::style_card::StyleAct),
     /// A command's dialog opened with these values over the model's.
     Open(&'static str, serde_json::Value),
     /// A grip dragged: a selected body's, or the selected port's reference plane's.
@@ -201,6 +202,8 @@ pub struct App {
     pub(crate) pattern: emcraft_ui_core::results::views::PatternCut,
     pub(crate) pulse: emcraft_ui_core::results::views::PulseForm,
     pub(crate) study: emcraft_ui_core::results::study::StudyView,
+    /// The open chart's style card.
+    pub(crate) style: emcraft_ui_core::results::style::StyleForm,
     /// The point pinned on the field's plane (its coordinates, display units).
     pub(crate) pinned: Option<[f64; 2]>,
     /// What is selected (in the 3D view or the browser), and the browser's tree for the
@@ -282,6 +285,7 @@ impl App {
             pattern: Default::default(),
             pulse: Default::default(),
             study: Default::default(),
+            style: Default::default(),
             pinned: None,
             selection: Selection::default(),
             tree: None,
@@ -418,6 +422,7 @@ impl App {
         self.refresh_steps();
         self.sync_planes();
         self.own_pulse();
+        self.sync_style();
         self.sview = std::mem::take(&mut self.sview).kept(&self.session);
         // The reference plane's number follows the port and a drag until it is edited.
         self.ref_text = match (self.reference_now(), self.ref_text.take()) {
@@ -860,6 +865,10 @@ impl App {
             }
             Message::R(a) => {
                 self.r_act(a);
+                None
+            }
+            Message::Style(a) => {
+                self.style_act(a);
                 None
             }
             Message::Open(id, values) => {

@@ -1299,3 +1299,41 @@ fn the_study_page_slices_a_grid() {
     assert!(chart(&app).is_some());
     let _ = app.view();
 }
+
+/// A chart's style card. Evidence: each change is one view.chart.style the chart then shows — a
+/// title typed and committed is the chart's, an axis end typed is the axis' end (a text that is no
+/// number commits nothing), a curve hidden is left out of the chart, Reset brings it all back.
+#[test]
+fn the_style_card_edits_the_charts_style() {
+    use crate::style_card::StyleAct;
+    use emcraft_ui_core::results::style::Field;
+    use emcraft_ui_core::view::View;
+    let mut app = App::new(Some("highpass"));
+    app.run_now("solve.frequency", &json!({"start": 6, "stop": 9, "points": 5}));
+    finish(&mut app);
+    app.update(Message::Page(View::SParameters));
+    app.update(Message::Style(StyleAct::Toggle));
+    assert!(crate::style_card::card(&app).is_some());
+    let chart = |app: &App| app.charts.page.as_ref().and_then(|p| p.shown.as_ref().ok()).cloned().unwrap_or_else(|| panic!("a chart"));
+    app.update(Message::Style(StyleAct::Typed(Field::Title, "Filter".into())));
+    app.update(Message::Style(StyleAct::Commit(Field::Title)));
+    assert_eq!(chart(&app).title, "Filter");
+    app.update(Message::Style(StyleAct::Typed(Field::Min(1), "abc".into())));
+    app.update(Message::Style(StyleAct::Commit(Field::Min(1))));
+    assert_ne!(chart(&app).y.min, -30.0);
+    app.update(Message::Style(StyleAct::Typed(Field::Min(1), "-30".into())));
+    app.update(Message::Style(StyleAct::Commit(Field::Min(1))));
+    assert_eq!(chart(&app).y.min, -30.0);
+    let first = chart(&app).curves().first().map(|(k, _)| (*k).to_owned()).unwrap_or_default();
+    app.update(Message::Style(StyleAct::Send(emcraft_ui_core::results::style::params(
+        emcraft_engine::views::ChartId::SParameters,
+        json!({"hidden": [first.clone()]}),
+    ))));
+    assert!(chart(&app).series.iter().all(|s| s.key != first), "{first} left out");
+    app.update(Message::Style(StyleAct::Send(emcraft_ui_core::results::style::params(
+        emcraft_engine::views::ChartId::SParameters,
+        json!({"reset": true}),
+    ))));
+    assert_ne!(chart(&app).title, "Filter");
+    let _ = app.view();
+}
