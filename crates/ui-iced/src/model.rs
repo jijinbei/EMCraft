@@ -196,14 +196,26 @@ fn card(app: &App) -> Element<'_, Message> {
     container(card).padding(12).center_x(Fill).boxed()
 }
 
+/// The field's values under the pointer on a card beside it (the field overlay).
+fn probe_card(app: &App) -> Element<'_, Message> {
+    let t = app.look.tokens;
+    let (Some(probe), Some(at)) = (app.probe(), app.hover) else { return Space::new().boxed() };
+    let v = &app.view3d.field;
+    let lines = emcraft_ui_core::scene3d::probe_lines(&probe, v.component, v.phase)
+        .into_iter()
+        .map(|l| text(emcraft_render::math::to_unicode(&l)).size(t.font_small).color(t.text).boxed());
+    let card = container(column(lines).spacing(2)).padding([5, 8]).style(look::ground(t));
+    iced::widget::pin(card).x(at.x + 16.0).y(at.y + 16.0).boxed()
+}
+
 /// The model page.
 pub fn view(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
     let picture: Element<Message> = match app.view3d.shown.as_ref().filter(|s| s.bounds.is_some()) {
         Some(s) => {
-            let viewer = Viewer { shot: app.shot(s), nav: app.nav };
+            let viewer = Viewer { shot: app.shot(s), nav: app.nav, hover: app.view3d.overlay == Overlay::Field };
             let labels = Labels { labels: &s.labels, camera: app.view3d.camera, tokens: t };
-            stack![shader(viewer).width(Fill).height(Fill), canvas(labels).width(Fill).height(Fill), legend(app), card(app)].boxed()
+            stack![shader(viewer).width(Fill).height(Fill), canvas(labels).width(Fill).height(Fill), legend(app), card(app), probe_card(app)].boxed()
         }
         None => container(text(tr(t!("No geometry yet: open a sample or start at step 1, Geometry."))).size(t.font_heading).color(t.text_dim))
             .center(Fill)

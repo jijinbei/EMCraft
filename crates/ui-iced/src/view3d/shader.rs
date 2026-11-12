@@ -74,10 +74,12 @@ pub fn frame(shot: &Shot, out: [u32; 2], ppp: f32) -> Frame {
     }
 }
 
-/// The view's program: what it draws and the mouse mapping its drags follow.
+/// The view's program: what it draws, the mouse mapping its drags follow, and whether the
+/// pointer's place is reported (over the field's plane, for its values).
 pub struct Viewer {
     pub shot: Shot,
     pub nav: &'static NavPreset,
+    pub hover: bool,
 }
 
 /// The pointer between events: the drag in progress (its mode and where it was last), where the
@@ -90,6 +92,8 @@ pub struct Grip {
     clicked: Option<(std::time::Instant, Point)>,
     keys: NavKeys,
     size: Option<Size>,
+    /// The pointer was last reported over the view.
+    over: bool,
 }
 
 /// How far the pointer may move between press and release for a click, and between two clicks
@@ -153,6 +157,12 @@ impl shader::Program<Message> for Viewer {
                 grip.pressed = (*b == mouse::Button::Left).then_some(at);
                 grip.drag = button(*b).and_then(|b| self.nav.mode(b, grip.keys)).map(|mode| (mode, at));
                 Some(Action::capture())
+            }
+            iced::Event::Mouse(mouse::Event::CursorMoved { .. }) if grip.drag.is_none() => {
+                // Not dragging: where the pointer is, while asked and inside; once that it left.
+                let at = cursor.position_in(bounds).filter(|_| self.hover);
+                let was = std::mem::replace(&mut grip.over, at.is_some());
+                (at.is_some() || was).then(|| Action::publish(Message::Hover(at.map(crate::geom::shared))))
             }
             iced::Event::Mouse(mouse::Event::CursorMoved { position }) => {
                 let (mode, last) = grip.drag?;

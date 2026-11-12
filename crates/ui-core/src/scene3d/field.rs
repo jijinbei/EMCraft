@@ -226,3 +226,39 @@ pub fn phase_arrows(
     }
     (arrows, legend)
 }
+
+/// The field under pixel `at` of the view through `camera`: where the ray meets the plane of
+/// `samples` (in a model whose low corner is `lo`, m; display lengths `unit`), and the fields
+/// there; `None` off the plane or along it.
+pub fn plane_probe(
+    samples: &emcraft_engine::view::PlaneSamples,
+    camera: &emcraft_render::view3d::Camera,
+    at: emcraft_render::view3d::Pixel,
+    lo: [f64; 3],
+    unit: emcraft_model::units::Length,
+) -> Option<emcraft_engine::view::Probe> {
+    let (origin, dir) = camera.ray(at)?;
+    let k = samples.normal_axis();
+    let plane = lo[k] + samples.at;
+    if dir[k].abs() < 1e-12 {
+        return None;
+    }
+    let t = (plane - origin[k]) / dir[k];
+    let mut p = [0, 1, 2].map(|i| origin[i] + t * dir[i]);
+    p[k] = plane;
+    let q = samples.plane_point(emcraft_model::Point3::new(p[0], p[1], p[2]), unit)?;
+    samples.probe(q)
+}
+
+/// What a probe's card says (TeX): the component at the phase with its unit, then each field's
+/// components' magnitudes.
+pub fn probe_lines(probe: &emcraft_engine::view::Probe, component: emcraft_engine::view::Component, phase: f64) -> Vec<String> {
+    let fmt = emcraft_render::axes::format;
+    let unit = |magnetic: bool| if magnetic { "A/m" } else { "V/m" };
+    let (now, _) = probe.value(component, phase);
+    let head = format!("{} = {} {}", component.tex(), fmt(now), unit(component.is_magnetic()));
+    let fields = [("E", probe.e, false), ("H", probe.h, true)].into_iter().map(|(f, v, magnetic)| {
+        format!("$|{f}_x|$ {}  $|{f}_y|$ {}  $|{f}_z|$ {} {}", fmt(v.x.norm()), fmt(v.y.norm()), fmt(v.z.norm()), unit(magnetic))
+    });
+    std::iter::once(head).chain(fields).collect()
+}

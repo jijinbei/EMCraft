@@ -78,6 +78,8 @@ pub enum Message {
     View3d(Nav),
     /// A click on the 3D view: what is under it picked.
     Click(Click),
+    /// Where the pointer is over the 3D view (points from its corner), or that it left.
+    Hover(Option<emcraft_ui_core::geom::Point>),
     /// A browser row clicked (by its id): what it names selected, what it shows or runs.
     Row(String),
     /// The selection's edit dialog opened.
@@ -127,6 +129,8 @@ pub struct App {
     /// The page shown.
     pub(crate) page: View,
     pub(crate) view3d: View3d,
+    /// Where the pointer is over the 3D view, while the field's values are read there.
+    pub(crate) hover: Option<Point>,
     /// What is selected (in the 3D view or the browser), and the browser's tree for the
     /// generation it was read for.
     pub(crate) selection: Selection,
@@ -183,6 +187,7 @@ impl App {
             look,
             page,
             view3d: View3d::default(),
+            hover: None,
             selection: Selection::default(),
             tree: None,
             dialog: None,
@@ -226,6 +231,16 @@ impl App {
     /// there newer than their projects offered for recovery.
     pub fn with_autosave(self, dir: Option<std::path::PathBuf>) -> App {
         App { autosave: emcraft_ui_core::autosave::Autosave::at(dir), ..self }
+    }
+
+    /// The field's values under the pointer, on the field overlay.
+    pub fn probe(&self) -> Option<emcraft_engine::view::Probe> {
+        let at = self.hover.filter(|_| self.view3d.overlay == emcraft_ui_core::scene3d::Overlay::Field)?;
+        let samples = self.view3d.sampled.as_ref()?.samples().clone();
+        let (w, h) = self.view3d.size;
+        let pixel = emcraft_render::view3d::Pixel::new(f64::from(at.x), f64::from(at.y), f64::from(w), f64::from(h));
+        let lo = self.view3d.bounds()?.0;
+        emcraft_ui_core::scene3d::plane_probe(&samples, &self.view3d.camera, pixel, lo, self.session.display().length)
     }
 
     /// The window with the host's file dialog.
@@ -543,6 +558,10 @@ impl App {
                 None
             }
             Message::Row(id) => self.row(&id),
+            Message::Hover(at) => {
+                self.hover = at;
+                None
+            }
             Message::Edit => {
                 self.edit();
                 None

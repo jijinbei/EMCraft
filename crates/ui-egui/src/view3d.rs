@@ -595,23 +595,13 @@ fn normal(plane: Plane) -> usize {
 fn hover_probe(app: &EmcraftApp, v: &View3d, field: &FieldState, ui: &egui::Ui, rect: Rect, lo: [f64; 3]) -> Option<emcraft_engine::view::Probe> {
     let samples = field.samples.as_ref()?;
     let at = ui.ctx().pointer_hover_pos().filter(|p| rect.contains(*p))?;
-    let (origin, dir) = v.camera.ray(emcraft_render::view3d::Pixel::new(
+    let pixel = emcraft_render::view3d::Pixel::new(
         f64::from(at.x - rect.left()),
         f64::from(at.y - rect.top()),
         f64::from(rect.width()),
         f64::from(rect.height()),
-    ))?;
-    let k = samples.normal_axis();
-    let plane = lo[k] + samples.at;
-    if dir[k].abs() < 1e-12 {
-        return None;
-    }
-    let t = (plane - origin[k]) / dir[k];
-    let mut p = [0, 1, 2].map(|i| origin[i] + t * dir[i]);
-    p[k] = plane;
-    let unit = app.session.display().length;
-    let q = samples.plane_point(emcraft_model::Point3::new(p[0], p[1], p[2]), unit)?;
-    samples.probe(q)
+    );
+    scene3d::plane_probe(samples, &v.camera, pixel, lo, app.session.display().length)
 }
 
 /// A card by the pointer with the fields under it: the coloured quantity at this phase, and E
@@ -619,13 +609,7 @@ fn hover_probe(app: &EmcraftApp, v: &View3d, field: &FieldState, ui: &egui::Ui, 
 fn hover_card(p: &egui::Painter, ui: &egui::Ui, probe: &emcraft_engine::view::Probe, component: emcraft_engine::view::Component, phase: f64) {
     let Some(at) = ui.ctx().pointer_hover_pos() else { return };
     let t = &Tokens::get();
-    let fmt = emcraft_render::axes::format;
-    let unit = |magnetic: bool| if magnetic { "A/m" } else { "V/m" };
-    let (now, _) = probe.value(component, phase);
-    let mut lines = vec![format!("{} = {} {}", component.tex(), fmt(now), unit(component.is_magnetic()))];
-    for (f, v, magnetic) in [("E", probe.e, false), ("H", probe.h, true)] {
-        lines.push(format!("$|{f}_x|$ {}  $|{f}_y|$ {}  $|{f}_z|$ {} {}", fmt(v.x.norm()), fmt(v.y.norm()), fmt(v.z.norm()), unit(magnetic)));
-    }
+    let lines = scene3d::probe_lines(probe, component, phase);
     let galleys: Vec<_> = lines.iter().map(|l| p.layout_job(crate::math::job(l, t.font_small, t.text))).collect();
     let w = galleys.iter().map(|g| g.size().x).fold(0.0, f32::max) + 16.0;
     let h = galleys.iter().map(|g| g.size().y + 2.0).sum::<f32>() + 10.0;

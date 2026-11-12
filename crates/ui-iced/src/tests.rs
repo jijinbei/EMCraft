@@ -203,6 +203,7 @@ fn the_3d_frame_draws_the_model() {
             ("model-ports", emcraft_ui_core::view::View::Model, Some(ports)),
             ("model-field", emcraft_ui_core::view::View::Model, Some(field)),
             ("model-arrows", emcraft_ui_core::view::View::Model, Some(h_arrows)),
+            ("model-probe", emcraft_ui_core::view::View::Model, Some(Message::Hover(Some(emcraft_ui_core::geom::Point::new(400.0, 300.0))))),
             ("model-selected", emcraft_ui_core::view::View::Model, Some(pick)),
             ("model-section", emcraft_ui_core::view::View::Model, Some(section)),
         ] {
@@ -518,4 +519,31 @@ fn unsaved_work_is_copied_and_recovered() {
     assert_eq!(next.prefs.recent.first(), Some(&saved));
     let _ = std::fs::remove_file(&saved);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The field's values under the pointer: over the plane on the field overlay a probe reads them
+/// (the coloured component and each field's components); off the plane, or on another overlay,
+/// nothing. Analytic evidence: TE10's E on the H-plane is Ey alone, so |Ex| and |Ez| read far
+/// below |Ey|.
+#[test]
+fn the_pointer_over_the_plane_reads_the_field() {
+    use crate::view3d::Nav;
+    use emcraft_ui_core::geom::Point;
+    use emcraft_ui_core::scene3d::Overlay;
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::View3d(Nav::Size(800.0, 600.0)));
+    app.update(Message::Start("solve.run".into()));
+    finish(&mut app);
+    app.update(Message::Page(emcraft_ui_core::view::View::Model));
+    app.update(Message::View3d(Nav::Overlay(Overlay::Field)));
+    app.update(Message::Hover(Some(Point::new(400.0, 300.0))));
+    let Some(p) = app.probe() else { panic!("the plane under the view's middle") };
+    let (ey, ex, ez) = (p.e.y.norm(), p.e.x.norm(), p.e.z.norm());
+    assert!(ey > 0.0 && ex < 0.1 * ey && ez < 0.1 * ey, "Ey {ey}, Ex {ex}, Ez {ez}");
+    assert!(emcraft_ui_core::scene3d::probe_lines(&p, app.view3d.field.component, 0.0)[0].contains("V/m"));
+    app.update(Message::Hover(Some(Point::new(2.0, 2.0))));
+    assert!(app.probe().is_none(), "off the plane");
+    app.update(Message::Hover(Some(Point::new(400.0, 300.0))));
+    app.update(Message::View3d(Nav::Overlay(Overlay::Plain)));
+    assert!(app.probe().is_none(), "no field shown");
 }
