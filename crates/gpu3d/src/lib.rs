@@ -44,7 +44,7 @@ pub use wgpu;
 
 pub use field::{FieldFrame, FieldGrid};
 pub use pack::{Arrow, LINE, MAX_BYTES, Motion, Packed, TRI_VERTEX, UNIFORM_BYTES, Uniforms};
-pub use renderer::{Caps, Renderer};
+pub use renderer::{Caps, Renderer, scoped};
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum Gpu3dError {
@@ -201,9 +201,7 @@ impl Cache {
         match &self.packed {
             Some((k, p)) if *k == (generation, field) => p.clone(),
             _ => {
-                let mut p = Packed::with_field(scene, next_id(), field);
-                p.append_arrows(arrows);
-                let p = Arc::new(p);
+                let p = Arc::new(Packed::with_arrows(scene, next_id(), field, arrows));
                 self.packed = Some(((generation, field), p.clone()));
                 p
             }

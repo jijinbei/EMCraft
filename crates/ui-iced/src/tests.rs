@@ -66,6 +66,7 @@ fn the_node_editor_edits_drags_and_links_the_chain() {
 #[test]
 fn an_empty_chain_offers_its_stages_and_a_click_adds_one() {
     let mut app = App::new(None);
+    app.update(Message::Page(emcraft_ui_core::view::View::System));
     let messages: Vec<Message> = {
         let mut ui = iced_test::simulator(app.view());
         assert!(ui.click("+ Amplifier").is_ok(), "the amplifier's button is shown");
@@ -87,5 +88,101 @@ fn an_empty_chain_offers_its_stages_and_a_click_adds_one() {
             assert!(shot.matches_image(&path).unwrap_or(false));
         }
         emcraft_ui_core::lang::set("en");
+    }
+}
+
+/// Waits for the running job to end (a cap of two minutes), looking at it as the frames would.
+fn finish(app: &mut App) {
+    let began = std::time::Instant::now();
+    while app.job.is_some() && began.elapsed().as_secs() < 120 {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        app.update(Message::Tick);
+    }
+    assert!(app.job.is_none(), "the job ended");
+}
+
+/// The model page: a sample without a chain opens on it, its scene built and fitted; a drag
+/// orbits, the wheel zooms, Fit frames it again, and a view resized keeps a moved camera but
+/// fits an unmoved one again.
+#[test]
+fn the_model_page_shows_the_scene_and_navigates() {
+    use crate::view3d::Nav;
+    use emcraft_ui_core::view::View;
+    let mut app = App::new(Some("highpass"));
+    assert_eq!(app.page, View::Model);
+    assert!(app.view3d.bounds().is_some(), "the scene has the model's box");
+    let fitted = app.view3d.camera;
+    app.update(Message::View3d(Nav::Size(300.0, 600.0)));
+    assert_ne!(app.view3d.camera, fitted, "an unmoved camera fits the new shape");
+    let fitted = app.view3d.camera;
+    app.update(Message::View3d(Nav::Orbit(40.0, 0.0)));
+    assert_ne!(app.view3d.camera.yaw, fitted.yaw);
+    app.update(Message::View3d(Nav::Zoom(2.0)));
+    assert!(app.view3d.camera.distance < fitted.distance);
+    let moved = app.view3d.camera;
+    app.update(Message::View3d(Nav::Size(900.0, 300.0)));
+    assert_eq!(app.view3d.camera, moved, "a moved camera stays");
+    app.update(Message::View3d(Nav::Size(300.0, 600.0)));
+    app.update(Message::View3d(Nav::Fit));
+    assert_eq!(app.view3d.camera.distance, fitted.distance, "fitted again as at first");
+    // Another overlay builds the scene again; the theme's colours change it too.
+    let packed = app.view3d.shown.as_ref().map(|s| s.packed.id);
+    app.update(Message::View3d(Nav::Overlay(emcraft_ui_core::scene3d::Overlay::Materials)));
+    assert_ne!(app.view3d.shown.as_ref().map(|s| s.packed.id), packed);
+}
+
+/// Run from the model page's bar: the confirmed job solves on the worker while the window keeps
+/// its session, then its session comes back with the sweep and the S-parameters page shows it.
+/// Cancelled, the project stays as it was. Analytic evidence: the high-pass filter's sweep is the
+/// sample's own (its |S21| checked against the exact ladder in the engine's tests); here only
+/// that the sweep arrived and how.
+#[test]
+fn run_solves_on_the_worker_and_shows_the_sweep() {
+    use emcraft_ui_core::view::View;
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::Start("solve.run".into()));
+    assert!(app.job.is_some(), "the solve runs on the worker");
+    assert!(app.progress().is_some_and(|p| !p.is_empty()));
+    app.update(Message::Cancel);
+    assert!(app.job.is_none() && app.session.results().sweep.is_none(), "cancelled: nothing changed");
+    app.update(Message::Start("solve.run".into()));
+    finish(&mut app);
+    assert_eq!(app.error, None);
+    assert!(app.session.results().sweep.is_some(), "the sweep came back");
+    assert_eq!(app.page, View::SParameters);
+    assert!(app.charts.sparameters.as_ref().is_some_and(|p| p.shown.is_ok()), "its chart drawn again with the sweep");
+    assert!(app.note.as_deref().is_some_and(|n| n.contains(" s")), "its time noted: {:?}", app.note);
+}
+
+/// The 3D view's frame drawn offscreen on the process's own device, as the shader widget draws
+/// it on the window's: the model's pixels differ from the ground. With `EMCRAFT_ICED_SHOTS=DIR`
+/// the picture is written there. A machine with no adapter at all skips it.
+#[test]
+fn the_3d_frame_draws_the_model() {
+    let app = App::new(Some("highpass"));
+    let Some(shown) = app.view3d.shown.as_ref() else { panic!("no scene") };
+    let frame = crate::view3d::shader::frame(&app.shot(shown), [640, 400], 1.0);
+    let canvas = match emcraft_gpu3d::picture(0, &frame) {
+        Ok(c) => c,
+        Err(emcraft_gpu3d::Gpu3dError::NoAdapter(e)) => return eprintln!("skipped: {e}"),
+        Err(e) => panic!("{e}"),
+    };
+    let corner = &canvas.rgba[..4];
+    let differ = canvas.rgba.chunks(4).filter(|p| p != &corner).count();
+    assert!(differ > canvas.rgba.len() / 4 / 20, "the model covers some of the view ({differ} pixels)");
+    if let Ok(dir) = std::env::var("EMCRAFT_ICED_SHOTS") {
+        let png = canvas.png().unwrap_or_default();
+        assert!(std::fs::write(std::path::Path::new(&dir).join("model-3d.png"), png).is_ok());
+        // The pages around it, solved (the simulator draws no shader: the 3D view is blank).
+        let mut app = App::new(Some("highpass"));
+        app.update(Message::Start("solve.run".into()));
+        finish(&mut app);
+        for (name, page) in [("sparameters", emcraft_ui_core::view::View::SParameters), ("model", emcraft_ui_core::view::View::Model)] {
+            app.update(Message::Page(page));
+            let mut ui = iced_test::Simulator::with_size(iced::Settings::default(), (1400.0, 900.0), app.view());
+            let shot = ui.snapshot(&app.theme()).unwrap_or_else(|e| panic!("{e}"));
+            let _ = std::fs::remove_file(std::path::Path::new(&dir).join(format!("{name}-wgpu.png")));
+            assert!(shot.matches_image(std::path::Path::new(&dir).join(name)).unwrap_or(false));
+        }
     }
 }

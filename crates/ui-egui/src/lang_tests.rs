@@ -814,7 +814,7 @@ fn in_source() -> BTreeSet<String> {
     }
     let mut out = BTreeSet::new();
     let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    for dir in ["ui-egui/src", "ui-core/src", "engine/src"] {
+    for dir in ["ui-egui/src", "ui-iced/src", "ui-core/src", "engine/src"] {
         walk(&crates.join(dir), &mut out);
     }
     out

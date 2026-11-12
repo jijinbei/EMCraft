@@ -1,6 +1,7 @@
 //! The window's state, the messages that change it and what each ends in: a field's draft, a
-//! gesture's next state ([`Canvas::step`], from the shared crate), a command run on the session
-//! and the chain read again after it.
+//! gesture's next state ([`Canvas::step`], from the shared crate), the 3D view's next camera, a
+//! command run on the session (a long one on the worker, [`crate::run`]) and the chain and the
+//! scene read again after it.
 
 use std::collections::BTreeMap;
 
@@ -13,11 +14,18 @@ use emcraft_ui_core::system::gesture::{Canvas, Command, Input};
 use emcraft_ui_core::system::layout::Layout;
 use std::rc::Rc;
 
+use emcraft_ui_core::job::Job;
+use emcraft_ui_core::navigation::NavPreset;
+use emcraft_ui_core::prefs::{GpuLook, Prefs};
 use emcraft_ui_core::theme::{Theme, Themes};
-use iced::widget::{column, container, row, text};
-use iced::{Element, Fill, Widget};
+use emcraft_ui_core::view::View;
+use iced::widget::{Space, button, column, container, row, text};
+use iced::{Alignment, Element, Fill, Subscription, Task, Widget};
 
 use crate::look::{self, Look};
+use crate::run::{PAGES, cancel_label, page_label};
+use crate::view3d::shader::Shot;
+use crate::view3d::{Nav, Shown, View3d};
 use serde_json::json;
 
 /// The band's fields' node, in a [`Field`].
@@ -39,7 +47,7 @@ pub enum Pointer {
 }
 
 /// What changes the window.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum Message {
     /// A field's text typed.
     Typed(Field, String),
@@ -57,7 +65,22 @@ pub enum Message {
     Run(Command),
     /// The chart shown under the canvas.
     Chart(SystemChart),
+    /// The page shown.
+    Page(View),
+    /// The 3D view's camera or what it shows changed.
+    View3d(Nav),
+    /// A command started from a button: a long one on the worker.
+    Start(String),
+    /// The running job stopped.
+    Cancel,
+    /// A frame drawn while a job runs (it is looked at) or a picture of the window is waited for.
+    Tick,
+    /// The picture of the window taken ([`App::shoot`]).
+    Shot(iced::window::Screenshot),
 }
+
+/// Frames drawn before the window's picture is taken: its first frames settled.
+const SHOOT_AFTER: u32 = 20;
 
 /// The window: the project, the canvas between frames, the drafts typed and what went wrong.
 pub struct App {
@@ -73,6 +96,23 @@ pub struct App {
     pub(crate) unread: Option<String>,
     /// The theme the window is dressed in.
     pub(crate) look: Look,
+    /// The page shown.
+    pub(crate) page: View,
+    pub(crate) view3d: View3d,
+    /// The charts as drawn.
+    pub(crate) charts: crate::charts::Charts,
+    /// Raised by every command that ends well (the model's revision does not follow a solve's
+    /// results): what is drawn from the project is drawn again when it moves.
+    pub(crate) generation: u64,
+    /// The command running on the worker.
+    pub(crate) job: Option<Job>,
+    /// What the last job did (its name and time).
+    pub(crate) note: Option<String>,
+    /// The 3D view's mouse mapping and drawing (the preferences').
+    pub(crate) nav: &'static NavPreset,
+    pub(crate) gpu_look: GpuLook,
+    /// Where to write a picture of the window once it has drawn, and the frames drawn so far.
+    shoot: Option<(std::path::PathBuf, u32)>,
 }
 
 impl App {
@@ -81,15 +121,103 @@ impl App {
         let mut session = Session::new();
         let error = sample.and_then(|name| session.execute("file.sample", &json!({ "name": name })).err()).map(|e| e.to_string());
         let look = Look::of(Themes::load(None).get("light"));
-        let canvas = Canvas::default();
-        let mut app = App { session, canvas, pointer: None, drafts: BTreeMap::new(), chart: SystemChart::Along, error, unread: None, look };
+        let page = if session.model().system.stages.is_empty() { View::Model } else { View::System };
+        let prefs = Prefs::default();
+        let mut app = App {
+            session,
+            canvas: Canvas::default(),
+            pointer: None,
+            drafts: BTreeMap::new(),
+            chart: SystemChart::Along,
+            error,
+            unread: None,
+            look,
+            page,
+            view3d: View3d::default(),
+            charts: crate::charts::Charts::default(),
+            generation: 0,
+            job: None,
+            note: None,
+            nav: prefs.nav(),
+            gpu_look: prefs.gpu_look,
+            shoot: None,
+        };
         app.read();
+        app.settle();
         app
     }
 
     /// The window dressed in `theme`.
     pub fn dressed(self, theme: Rc<Theme>) -> App {
-        App { look: Look::of(theme), ..self }
+        let mut app = App { look: Look::of(theme), ..self };
+        app.settle();
+        app
+    }
+
+    /// The window in the preferences' mouse mapping and 3D drawing.
+    pub fn with_prefs(self, prefs: &Prefs) -> App {
+        App { nav: prefs.nav(), gpu_look: prefs.gpu_look, ..self }
+    }
+
+    /// The window that writes a picture of itself to `path` once it has drawn, then closes.
+    pub fn shooting(self, path: Option<std::path::PathBuf>) -> App {
+        App { shoot: path.map(|p| (p, 0)), ..self }
+    }
+
+    /// What is drawn from the project made again where it changed: the 3D view's scene and the
+    /// charts, in the window's theme.
+    fn settle(&mut self) {
+        self.view3d = std::mem::take(&mut self.view3d).refreshed(&self.session, self.generation, &self.look.theme);
+        self.charts = std::mem::take(&mut self.charts).refreshed(&self.session, self.generation, &self.look, self.chart);
+    }
+
+    /// What the 3D view draws of `shown`: through its camera, on the theme's ground, with the
+    /// preferences' drawing.
+    pub fn shot(&self, shown: &Shown) -> Shot {
+        let t = &self.look.theme.tokens;
+        let g = self.gpu_look;
+        Shot {
+            packed: shown.packed.clone(),
+            camera: self.view3d.camera,
+            ground: (t.viewport_top.rgb(), t.viewport_bottom.rgb()),
+            look: emcraft_gpu3d::Look { edges: g.edges, ao: g.ao, outline: false, pick: false },
+            moving: false,
+        }
+    }
+
+    /// What the window listens to: each frame while a job runs or its picture is waited for.
+    pub fn subscription(&self) -> Subscription<Message> {
+        if self.job.is_some() || self.shoot.is_some() { iced::window::frames().map(|_| Message::Tick) } else { Subscription::none() }
+    }
+
+    /// The window after `message`, and what iced does next: the picture of the window taken
+    /// and written, then the window closed.
+    pub fn react(&mut self, message: Message) -> Task<Message> {
+        match message {
+            Message::Tick if self.shoot.is_some() => {
+                self.tick();
+                let (path, frames) = self.shoot.take().unwrap_or_default();
+                let ready = frames >= SHOOT_AFTER && self.job.is_none();
+                self.shoot = Some((path, frames + 1));
+                if ready {
+                    return iced::window::latest().and_then(iced::window::screenshot).map(Message::Shot);
+                }
+                Task::none()
+            }
+            Message::Shot(shot) => {
+                let canvas = emcraft_render::Canvas { w: shot.size.width as usize, h: shot.size.height as usize, rgba: shot.rgba.to_vec() };
+                if let (Some((path, _)), Some(png)) = (self.shoot.take(), canvas.png())
+                    && let Err(e) = std::fs::write(&path, png)
+                {
+                    eprintln!("emcraft-iced: {}: {e}", path.display());
+                }
+                iced::exit()
+            }
+            m => {
+                self.update(m);
+                Task::none()
+            }
+        }
     }
 
     /// iced's theme from the window's.
@@ -115,14 +243,34 @@ impl App {
         if let Some(command) = self.next(message) {
             self.run(command);
         }
+        self.settle();
     }
 
-    /// The window: the application bar over the System view.
+    /// The window: the application bar — the project, its pages, the running job — over the page.
     pub fn view(&self) -> Element<'_, Message> {
         let t = self.look.tokens;
-        let bar = row![text("EMCraft").size(t.font_body), text(self.session.name()).size(t.font_body).color(t.app_bar_text)].spacing(16);
+        let tabs = PAGES
+            .into_iter()
+            .map(|v| button(text(page_label(v)).size(t.font_button)).style(look::button(t, v == self.page)).on_press(Message::Page(v)).boxed());
+        let status: Vec<Element<Message>> = match (self.progress(), &self.note) {
+            (Some(p), _) => vec![
+                text(p).size(t.font_body).color(t.app_bar_text).boxed(),
+                button(text(cancel_label()).size(t.font_button)).style(look::button(t, false)).on_press(Message::Cancel).boxed(),
+            ],
+            (None, Some(n)) => vec![text(n.clone()).size(t.font_body).color(t.app_bar_text).boxed()],
+            (None, None) => Vec::new(),
+        };
+        let head = [text("EMCraft").size(t.font_body).boxed(), text(self.session.name()).size(t.font_body).color(t.app_bar_text).boxed()];
+        let bar = row(head.into_iter().chain(tabs).chain(std::iter::once(Space::new().width(Fill).boxed())).chain(status))
+            .spacing(12)
+            .align_y(Alignment::Center);
         let bar = container(bar).padding([6, 14]).width(Fill).style(look::app_bar(t));
-        container(column![bar, crate::system::view(self)]).width(Fill).height(Fill).style(look::window(t)).boxed()
+        let page = match self.page {
+            View::Model => crate::model::view(self),
+            View::SParameters => crate::sparameters::view(self),
+            _ => crate::system::view(self),
+        };
+        container(column![bar, page]).width(Fill).height(Fill).style(look::window(t)).boxed()
     }
 
     /// The window after `message`, and the command it ends in.
@@ -148,6 +296,27 @@ impl App {
                 self.chart = c;
                 None
             }
+            Message::Page(v) => {
+                self.page = v;
+                None
+            }
+            Message::View3d(nav) => {
+                self.view3d = std::mem::take(&mut self.view3d).navigated(nav);
+                None
+            }
+            Message::Start(id) => {
+                self.start(&id, json!({}));
+                None
+            }
+            Message::Cancel => {
+                self.cancel();
+                None
+            }
+            Message::Tick => {
+                self.tick();
+                None
+            }
+            Message::Shot(_) => None,
         }
     }
 
@@ -191,7 +360,7 @@ impl App {
         match self.session.execute(command.id, &command.params) {
             Ok(_) => {
                 self.error = None;
-                self.read();
+                self.after(command.id);
             }
             Err(e) => self.error = Some(e.to_string()),
         }
@@ -199,7 +368,7 @@ impl App {
 
     /// Reads the chain again (`solve.system`, a moment), when it has stages: what keeps it from
     /// reading is kept to show.
-    fn read(&mut self) {
+    pub(crate) fn read(&mut self) {
         self.unread = if self.session.model().system.stages.is_empty() {
             None
         } else {

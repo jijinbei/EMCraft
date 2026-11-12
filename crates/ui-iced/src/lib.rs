@@ -7,8 +7,11 @@
 //! [`app::App`], [`app::Message`], [`app::App::update`] and [`app::App::view`]. Every change to
 //! the project is an engine command.
 //!
-//! - [`app`]: the window's state and messages;
+//! - [`app`]: the window's state and messages; [`run`]: commands on the worker;
+//! - [`model`]: the model in 3D ([`view3d`], drawn by the GPU in iced's shader widget), meshed
+//!   and solved from its bar; [`sparameters`]: the sweep's chart;
 //! - [`system`]: a system's node editor — the band, the canvas, the chart and the budget;
+//! - [`charts`]: the engine's charts as pictures, drawn again only when they change;
 //! - [`look`]: the theme's tokens as iced's styles;
 //! - [`geom`]: the shared points on iced's screen and back.
 
@@ -23,21 +26,29 @@ macro_rules! t {
 }
 
 pub mod app;
+pub mod charts;
 pub mod geom;
 pub mod look;
+pub mod model;
+pub mod run;
+pub mod sparameters;
 pub mod system;
+pub mod view3d;
 
 use emcraft_ui_core::{lang, prefs, theme};
 
 /// Runs the window, on sample `sample` when one is named, in the preferences the egui window
-/// keeps: its language, its theme (the user's themes too) and the font the language is shown
-/// with.
-pub fn run(sample: Option<String>) -> iced::Result {
+/// keeps: its language, its theme (the user's themes too), the font the language is shown with
+/// and the 3D view's mouse mapping and drawing. With `shoot`, a picture of the window is written
+/// there once it has drawn (a running job ended first) and the window closes.
+pub fn run(sample: Option<String>, shoot: Option<std::path::PathBuf>) -> iced::Result {
     let prefs = prefs::default_path().map(|p| prefs::Prefs::load(&p)).unwrap_or_default();
     lang::set(prefs.language());
     let theme = theme::Themes::load(theme::default_dir().as_deref()).get(&prefs.theme);
     let font = prefs.font_file.as_deref().and_then(|f| std::fs::read(f).ok());
-    iced::application(move || app::App::new(sample.as_deref()).dressed(theme.clone()), app::App::update, app::App::view)
+    let start = move || app::App::new(sample.as_deref()).dressed(theme.clone()).with_prefs(&prefs).shooting(shoot.clone());
+    iced::application(start, app::App::react, app::App::view)
+        .subscription(app::App::subscription)
         .title(app::App::title)
         .theme(app::App::theme)
         .fonts(font)

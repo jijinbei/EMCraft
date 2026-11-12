@@ -191,6 +191,34 @@ impl Job {
         self.started.elapsed().as_secs_f64()
     }
 
+    /// A running job in brief: what runs, how far it is (its count, from the job's progress) and
+    /// for how long — `Frequency sweep · 3/11 · 4 s`.
+    pub fn text(&self) -> String {
+        let snap = self.snapshot();
+        let command = if self.command == "engine.script" { tr(t!("Script")) } else { crate::lang::command_label(&self.command) };
+        let secs = format!("{:.0}", self.elapsed());
+        let (done, total) = (snap.done.min(snap.total) as usize, snap.total as usize);
+        let what = match snap.stage.as_str() {
+            _ if total == 0 => tr(t!("starting")).to_owned(),
+            // Its full solves are added until the residuals are small: how many so far, and the
+            // worst residual of the last pass in the basis (falling to the tolerance, 1e-4).
+            "fast sweep" => match snap.residual {
+                Some(r) => trf(t!("fast: {n} in full, residual {r}"), args!(n = done, r = format!("{r:.0e}"))),
+                None => trf(t!("fast: {n} in full"), args!(n = done)),
+            },
+            "frequency" | "phase" | "adaptive pass" => format!("{done}/{total}"),
+            // A study's points (each a thousand parts) and a script's steps: the engine's stage.
+            stage if total >= 1000 => format!("{stage}, {} %", (100 * done) / total),
+            stage => format!("{stage} {done} / {total}"),
+        };
+        match self.remaining() {
+            Some(left) => {
+                trf(t!("{command} · {what} · {secs} s · {left} left"), args!(command = command, what = what, secs = secs, left = duration(left)))
+            }
+            None => trf(t!("{command} · {what} · {secs} s"), args!(command = command, what = what, secs = secs)),
+        }
+    }
+
     /// Seconds left ([`remaining`]); `None` when nothing can honestly say (the job row then shows
     /// only the time it has run).
     pub fn remaining(&self) -> Option<f64> {
@@ -262,6 +290,23 @@ pub fn finished(job: Job, done: Option<Done>, now: View, dialog_open: bool) -> V
     // The waiting requests are answered before what was queued runs.
     let (before, after): (Vec<Then>, Vec<Then>) = steps.into_iter().partition(|t| !matches!(t, Then::Run(_)));
     before.into_iter().chain(std::iter::once(Then::Answer(waiting, answer))).chain(after).collect()
+}
+
+/// A duration in brief: `0.4 s`, `12 s`, `3 min`, `1.5 h`.
+///
+/// ```
+/// use emcraft_ui_core::job::duration;
+/// assert_eq!((duration(0.42), duration(12.3), duration(180.0)), ("0.4 s".into(), "12 s".into(), "3 min".into()));
+/// assert_eq!(duration(f64::NAN), "–");
+/// ```
+pub fn duration(seconds: f64) -> String {
+    match seconds {
+        s if !s.is_finite() || s < 0.0 => "–".to_owned(),
+        s if s < 10.0 => format!("{s:.1} s"),
+        s if s < 90.0 => format!("{s:.0} s"),
+        s if s < 5400.0 => format!("{:.0} min", s / 60.0),
+        s => format!("{:.1} h", s / 3600.0),
+    }
 }
 
 /// The share done at which the rate so far has replaced the estimate entirely.

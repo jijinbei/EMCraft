@@ -9,9 +9,6 @@ use iced::{Element, Fill, Widget};
 use crate::app::{App, Message};
 use crate::look;
 
-/// The chart's size in pixels.
-const CHART: [usize; 2] = [1100, 320];
-
 /// A chart choice's name.
 fn label(c: SystemChart) -> emcraft_ui_core::lang::Text {
     match c {
@@ -31,13 +28,10 @@ pub(super) fn chart(app: &App) -> Element<'_, Message> {
         .into_iter()
         .map(|c| button(text(tr(label(c))).size(t.font_button)).style(look::button(t, c == app.chart)).on_press(Message::Chart(c)).boxed());
     let at = super::budget_at(app).map(|s| text(s).size(t.font_body).color(t.text_dim).boxed());
-    let picture: Element<Message> = match emcraft_engine::view::system_chart(&app.session, app.chart) {
-        Ok(mut c) => {
-            emcraft_ui_core::chart_words::translate_chart(&mut c);
-            let canvas = emcraft_render::chart::draw(&c, CHART[0], CHART[1], &app.look.theme.palette);
-            image(image::Handle::from_rgba(canvas.w as u32, canvas.h as u32, canvas.rgba)).width(Fill).boxed()
-        }
-        Err(e) => text(e.to_string()).boxed(),
+    let picture: Element<Message> = match app.charts.system.as_ref().map(|p| &p.shown) {
+        Some(Ok(h)) => image(h.clone()).width(Fill).boxed(),
+        Some(Err(e)) => text(e.clone()).boxed(),
+        None => space().boxed(),
     };
     column![row(choices.chain(at)).spacing(6), picture].spacing(6).boxed()
 }

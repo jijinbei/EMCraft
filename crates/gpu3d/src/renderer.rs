@@ -53,10 +53,20 @@ pub struct Caps {
 impl Caps {
     /// What `adapter` and `device` allow.
     pub fn of(adapter: &wgpu::Adapter, device: &wgpu::Device) -> Caps {
-        let f = |format| adapter.get_texture_format_features(format).flags;
+        Caps::from_flags(|format| adapter.get_texture_format_features(format).flags, &device.limits())
+    }
+
+    /// What every adapter of `device`'s features allows, for a window that hands over its device
+    /// but not its adapter (iced's shader widget): the formats' guaranteed features.
+    pub fn guaranteed(device: &wgpu::Device) -> Caps {
+        let features = device.features();
+        Caps::from_flags(|format: wgpu::TextureFormat| format.guaranteed_format_features(features).flags, &device.limits())
+    }
+
+    /// The caps from the formats' feature flags and the device's limits.
+    fn from_flags(f: impl Fn(wgpu::TextureFormat) -> wgpu::TextureFormatFeatureFlags, limits: &wgpu::Limits) -> Caps {
         let four = [FRAME, DEPTH, ACCUM, REVEAL].iter().all(|&t| f(t).sample_count_supported(4));
         let oit = [ACCUM, REVEAL].iter().all(|&t| f(t).contains(wgpu::TextureFormatFeatureFlags::BLENDABLE));
-        let limits = device.limits();
         Caps { samples: if four { 4 } else { 1 }, oit, max_side: limits.max_texture_dimension_2d, max_buffer: limits.max_buffer_size }
     }
 }

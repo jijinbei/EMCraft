@@ -37,3 +37,11 @@ code to be written. iced is that toolkit in pure Rust (MIT).
 - The build compiles iced and its forks too (a longer cold build; the gate's cache keeps it).
 - The first view is a system's node editor; the rest follow, each moving what it decides into
   `emcraft-ui-core` first when the egui window still holds it.
+- The 3D view is iced's shader widget drawing `emcraft-gpu3d`'s renderer on the window's own
+  device (`Caps::guaranteed`: the device's guaranteed formats, as the widget hands over no
+  adapter), the scene from `emcraft_ui_core::scene3d`. Long commands run on the shared worker
+  (`emcraft_ui_core::job`), looked at each frame while one runs (`window::frames`; the
+  thread-pool executor has no timer). Charts are pictures kept until what they show changes:
+  iced uploads a picture over 2 MiB over several frames, so one made anew each frame never shows.
+- `emcraft-iced --shot PNG` writes a picture of its own window once it has drawn, for looking at
+  a change in the real window (never the desktop).

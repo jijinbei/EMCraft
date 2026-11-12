@@ -2529,6 +2529,7 @@ name = "emcraft-ui-iced"
 version = "0.1.0"
 dependencies = [
  "emcraft-engine",
+ "emcraft-gpu3d",
  "emcraft-i18n",
  "emcraft-model",
  "emcraft-render",

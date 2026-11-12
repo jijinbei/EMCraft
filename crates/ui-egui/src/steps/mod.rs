@@ -387,16 +387,7 @@ pub const ESTIMATED: [&str; 9] = [
     "study.optimize",
 ];
 
-/// A duration in brief: `0.4 s`, `12 s`, `3 min`, `1.5 h`.
-pub fn duration(seconds: f64) -> String {
-    match seconds {
-        s if !s.is_finite() || s < 0.0 => "–".to_owned(),
-        s if s < 10.0 => format!("{s:.1} s"),
-        s if s < 90.0 => format!("{s:.0} s"),
-        s if s < 5400.0 => format!("{:.0} min", s / 60.0),
-        s => format!("{:.1} h", s / 3600.0),
-    }
-}
+pub use emcraft_ui_core::job::duration;
 
 /// A run's estimate (`project.estimate`'s reply) in a line — its time, `ref.` when it is the
 /// reference machine's — with what it counts on hover, published as `handle`.

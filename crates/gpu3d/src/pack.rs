@@ -163,6 +163,14 @@ impl Packed {
         p
     }
 
+    /// As [`Packed::with_field`], with the field's or the ports' `arrows` (their cylinders and
+    /// cones made by the shaders).
+    pub fn with_arrows(scene: &Scene, id: u64, field: Option<(u32, usize, f64)>, arrows: &[Arrow]) -> Packed {
+        let mut p = Packed::with_field(scene, id, field);
+        p.append_arrows(arrows);
+        p
+    }
+
     pub(crate) fn append_arrows(&mut self, arrows: &[Arrow]) {
         for a in arrows.iter().take(8192) {
             if !a.start.iter().chain(&a.end).all(|v| v.is_finite() && v.abs() < 1e12) {

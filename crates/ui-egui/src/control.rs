@@ -154,7 +154,7 @@ fn job_progress(j: &crate::job::Job) -> Value {
         "elapsed": j.elapsed(),
         "estimate": j.estimate,
         "remaining": j.remaining(),
-        "text": crate::messages::job_text(j),
+        "text": j.text(),
         "device": j.place().map(|w| json!({"device": w.device.id(), "gpu": w.gpu(), "fronts": w.fronts})),
     })
 }

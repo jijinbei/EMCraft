@@ -2,9 +2,8 @@
 //! repeated), and the running job's progress with its Cancel.
 
 use crate::handle::Fixed;
-use crate::lang::{args, tr, trf};
 
-use crate::{Action, Actions, EmcraftApp, Hint, UiExt, label, scenario, theme, ui_kit};
+use crate::{Action, Actions, EmcraftApp, Hint, UiExt, scenario, theme, ui_kit};
 
 /// A line of the message area.
 #[derive(Clone, Debug, PartialEq)]
@@ -165,7 +164,7 @@ fn progress(app: &EmcraftApp, ui: &mut egui::Ui, t: &theme::Tokens, out: &mut Ac
         if let Some(w) = job.place() {
             device_chip(ui, &w, t);
         }
-        ui.label(egui::RichText::new(job_text(job)).size(t.font_body));
+        ui.label(egui::RichText::new(job.text()).size(t.font_body));
         ui_kit::progress(ui, job.snapshot().fraction(), 180.0);
     });
 }
@@ -187,35 +186,6 @@ fn device_chip(ui: &mut egui::Ui, w: &crate::job::Where, t: &theme::Tokens) {
     r.response.hint(hint);
 }
 
-/// A running job in brief: what runs, how far it is (its count, from the job's progress) and
-/// for how long — `Frequency sweep · 3/11 · 4 s`.
-pub(crate) fn job_text(job: &crate::job::Job) -> String {
-    let snap = job.snapshot();
-    let command = if job.command == "engine.script" { tr(t!("Script")) } else { label(&job.command) };
-    let secs = format!("{:.0}", job.elapsed());
-    let (done, total) = (snap.done.min(snap.total) as usize, snap.total as usize);
-    let what = match snap.stage.as_str() {
-        _ if total == 0 => tr(t!("starting")).to_owned(),
-        // Its full solves are added until the residuals are small: how many so far, and the
-        // worst residual of the last pass in the basis (falling to the tolerance, 1e-4).
-        "fast sweep" => match snap.residual {
-            Some(r) => trf(t!("fast: {n} in full, residual {r}"), args!(n = done, r = format!("{r:.0e}"))),
-            None => trf(t!("fast: {n} in full"), args!(n = done)),
-        },
-        "frequency" | "phase" | "adaptive pass" => format!("{done}/{total}"),
-        // A study's points (each a thousand parts) and a script's steps: the engine's stage.
-        stage if total >= 1000 => format!("{stage}, {} %", (100 * done) / total),
-        stage => format!("{stage} {done} / {total}"),
-    };
-    match job.remaining() {
-        Some(left) => trf(
-            t!("{command} · {what} · {secs} s · {left} left"),
-            args!(command = command, what = what, secs = secs, left = crate::steps::duration(left)),
-        ),
-        None => trf(t!("{command} · {what} · {secs} s"), args!(command = command, what = what, secs = secs)),
-    }
-}
-
 /// The running job in the right column (the step panel, the docked dialog that started it): what
 /// runs and how far it is, its bar and Cancel. Escape does not cancel: Cancel is a click.
 pub(crate) fn job_card(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
@@ -225,7 +195,7 @@ pub(crate) fn job_card(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         ui.set_width(ui.available_width());
         ui.horizontal(|ui| {
             ui.spinner();
-            ui.add(egui::Label::new(egui::RichText::new(job_text(job)).size(t.font_body).color(t.selected_ink)).wrap());
+            ui.add(egui::Label::new(egui::RichText::new(job.text()).size(t.font_body).color(t.selected_ink)).wrap());
         });
         ui_kit::progress(ui, job.snapshot().fraction(), ui.available_width());
         ui.add_space(2.0);

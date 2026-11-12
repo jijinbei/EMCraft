@@ -140,8 +140,7 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             if let Some(job) = &app.job {
                 let (left, right) = (title_right + 24.0, gear.left() - 10.0);
                 if right - left > 40.0 {
-                    let mut lay =
-                        egui::text::LayoutJob::simple_singleline(crate::messages::job_text(job), FontId::proportional(t.font_small), t.app_bar_text);
+                    let mut lay = egui::text::LayoutJob::simple_singleline(job.text(), FontId::proportional(t.font_small), t.app_bar_text);
                     lay.wrap = egui::text::TextWrapping::truncate_at_width(right - left);
                     let g = ui.painter().layout_job(lay);
                     let at = pos2(right - g.size().x, r.center().y - g.size().y / 2.0);
