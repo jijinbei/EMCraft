@@ -1103,3 +1103,37 @@ fn every_steps_panel_and_the_kind() {
     app.update(Message::Step(Some(Step::Setup)));
     assert!(crate::step_panel::view(&app).is_some());
 }
+
+/// Hostile text in the Setup form never crashes: each is refused under its field (or read as
+/// the number it is), Confirm runs nothing it cannot take, and the model stays as it was.
+#[test]
+fn hostile_setup_input_is_refused_in_place() {
+    use crate::step_panel::Act;
+    use emcraft_engine::workflow::Step;
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::Step(Some(Step::Setup)));
+    let before = app.session.model().clone();
+    let long = "9".repeat(2 * emcraft_ui_core::dialogs::MAX_FIELD);
+    for bad in ["", "NaN", "inf", "-1", "1e400", "0", "abc", "1e-400", "١٢", long.as_str(), "18446744073709551616"] {
+        for name in emcraft_ui_core::steps::form::NAMES {
+            app.update(Message::StepAct(Act::Typed(name, bad.to_owned())));
+        }
+        app.update(Message::StepAct(Act::Confirm));
+        let _ = app.view();
+        assert!(app.workflow.fields.text("start").chars().count() <= emcraft_ui_core::dialogs::MAX_FIELD, "the text is bounded");
+    }
+    assert_eq!(app.session.model().job, before.job, "nothing hostile was confirmed");
+    assert!(!app.workflow.fields.errors.is_empty());
+}
+
+/// The Boundaries step finds the model's mirror planes. Analytic evidence: the high-pass
+/// filter's rectangular guide, filled section by section across its whole width and height, is
+/// mirror symmetric across x = a/2 and y = b/2 (its ports' TE10 too).
+#[test]
+fn the_boundaries_step_finds_the_mirror_planes() {
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::Step(Some(emcraft_engine::workflow::Step::Boundaries)));
+    let found = app.workflow.symmetry.as_ref().map(|(_, f, _)| f.iter().map(|f| f.axis.id()).collect::<Vec<_>>()).unwrap_or_default();
+    assert!(found.contains(&"x") && found.contains(&"y"), "{found:?}");
+    assert!(crate::step_panel::view(&app).is_some());
+}

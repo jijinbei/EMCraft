@@ -39,6 +39,9 @@ pub struct Workflow {
     /// `project.estimate`'s reply for the step's run, with the generation and the request it
     /// was asked for.
     estimate: Option<(u64, Value, Result<Value, String>)>,
+    /// The mirror planes and the rotation the model allows, found for the Boundaries step
+    /// once per generation.
+    pub symmetry: Option<(u64, Vec<emcraft_model::Found>, Option<emcraft_model::symmetry::rotation::FoundRotation>)>,
 }
 
 /// A status's mark and the token colour it is drawn in.
@@ -90,6 +93,10 @@ impl App {
                 let f = std::mem::take(&mut self.workflow.fields).with_defaults();
                 self.workflow.fields = emcraft_ui_core::steps::band::with_proposal(f, &self.session);
                 self.devices();
+            }
+            Some(Step::Boundaries) if self.workflow.symmetry.as_ref().is_none_or(|(g, _, _)| *g != generation) => {
+                let m = self.session.model();
+                self.workflow.symmetry = Some((generation, m.find_symmetry(), m.find_rotation()));
             }
             Some(Step::Results) => {
                 let ports = self.session.sparameter_entries().len().max(1);

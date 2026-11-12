@@ -190,14 +190,39 @@ fn boundaries(app: &App) -> Vec<Element<'_, Message>> {
         })
         .collect();
     let symmetry = kv(t, t!("symmetry"), if planes.is_empty() { tr(t!("none (the whole model)")).into() } else { planes.join("; ") });
-    let rotation =
-        m.domain.rotation.as_ref().map(|r| kv(t, t!("rotation"), trf(t!("C{n} · 1/{n} of the model, harmonic {m}"), args!(n = r.n, m = r.m))));
+    // The group the model has (its geometry and ports) and the share the planes set solve.
+    let found = app.workflow.symmetry.as_ref().filter(|(g, _, _)| *g == app.generation);
+    let group = found.map(|(_, found, _)| {
+        use emcraft_model::symmetry::mirror_group;
+        let has: Vec<&str> = found.iter().map(|f| f.axis.id()).collect();
+        let axes = if has.is_empty() { tr(t!("no mirror plane")).to_owned() } else { trf(t!("mirrors across {axes}"), args!(axes = has.join(", "))) };
+        let used: Vec<&str> = m.domain.symmetry.iter().map(|s| s.axis.id()).collect();
+        let share = 1u32 << used.len().min(3);
+        let solved = if used.is_empty() {
+            trf(t!("the whole model ({group})"), args!(group = mirror_group(0)))
+        } else {
+            trf(t!("1/{share} of the model ({group})"), args!(share = share, group = mirror_group(used.len())))
+        };
+        let unused: Vec<&str> = has.iter().copied().filter(|a| !used.contains(a)).collect();
+        let more = (!unused.is_empty() && used.len() < 2 && m.domain.rotation.is_none())
+            .then(|| small(t, trf(t!("Find symmetry can cut it across {axes} too"), args!(axes = unused.join(", "))), t.text_dim));
+        [kv(t, t!("model's symmetry"), format!("{} · {axes}", mirror_group(has.len()))), kv(t, t!("solved"), solved)]
+            .into_iter()
+            .chain(more)
+            .collect::<Vec<_>>()
+    });
+    let rotation = match (&m.domain.rotation, found.and_then(|(_, _, r)| r.as_ref())) {
+        (Some(r), _) => vec![kv(t, t!("rotation"), trf(t!("C{n} · 1/{n} of the model, harmonic {m}"), args!(n = r.n, m = r.m)))],
+        (None, Some(r)) => vec![kv(t, t!("model's rotation"), r.group()), small(t, tr(t!("Find rotation can solve it on a sector")), t.text_dim)],
+        (None, None) => Vec::new(),
+    };
     let periodic = m.domain.periodic.as_ref().map(|p| kv(t, t!("periodic"), emcraft_ui_core::browser::periodic_text(p)));
     std::iter::once(section(t, t!("Boundaries")))
         .chain(std::iter::once(walls))
         .chain(thick)
         .chain(std::iter::once(kv(t, t!("open"), open)))
         .chain(std::iter::once(symmetry))
+        .chain(group.into_iter().flatten())
         .chain(rotation)
         .chain(periodic)
         .collect()
