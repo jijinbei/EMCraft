@@ -17,7 +17,8 @@
 //! - [`system`]: a system's node editor — the band, the canvas, the chart and the budget;
 //! - [`charts`]: the engine's charts, made again only when they change; [`chart`]: one drawn
 //!   as vectors by the GPU;
-//! - [`settings`]: the preferences both windows share;
+//! - [`start`]: the start page, the templates drawn; [`settings`]: the preferences both windows
+//!   share;
 //! - [`look`]: the theme's tokens as iced's styles;
 //! - [`geom`]: the shared points on iced's screen and back.
 
@@ -45,6 +46,7 @@ pub mod results;
 pub mod ribbon;
 pub mod run;
 pub mod settings;
+pub mod start;
 pub mod system;
 pub mod view3d;
 
@@ -67,13 +69,17 @@ pub fn run(
     let font = prefs.font_file.as_deref().and_then(|f| std::fs::read(f).ok());
     // A picture of the window is taken without copying or offering work.
     let autosave = emcraft_ui_core::autosave::default_dir().filter(|_| shoot.is_none());
+    // On the start page the templates' pictures are drawn at once.
     let start = move || {
-        app::App::new(sample.as_deref())
+        let mut app = app::App::new(sample.as_deref())
+            .with_themes(themes.clone())
             .dressed(theme.clone())
             .with_prefs(&prefs, prefs::default_path())
             .with_autosave(autosave.clone())
             .shooting(shoot.clone())
-            .with_picker(picker.clone())
+            .with_picker(picker.clone());
+        let thumbs = if app.home { app.draw_thumbs() } else { iced::Task::none() };
+        (app, thumbs)
     };
     iced::application(start, app::App::react, app::App::view)
         .subscription(app::App::subscription)

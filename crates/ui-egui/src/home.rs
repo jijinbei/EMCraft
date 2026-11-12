@@ -7,9 +7,9 @@
 use std::collections::HashMap;
 
 use egui::{Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
-use emcraft_engine::Session;
 use emcraft_engine::templates::Group;
-use emcraft_render::view3d::{Camera, StandardView};
+use emcraft_render::view3d::Camera;
+use emcraft_ui_core::start::{self, group_title, title_and_rest};
 use serde_json::Value;
 
 use crate::action::Pref;
@@ -18,7 +18,6 @@ use crate::glyphs::{self, Glyph};
 use crate::handle::{Fixed, Handle};
 use crate::lang::{Raw, args, sample_label, tr, trf};
 use crate::pending::Pending;
-use crate::scene3d::{self, Overlay};
 use crate::settings::Section;
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, Hint, Picture, Style, UiExt, scenario};
@@ -93,40 +92,18 @@ pub fn template_picture(name: &str, values: &Value, size: [usize; 2]) -> Result<
     template_canvas(name, values, size).map(|d| (Picture::new(&d.canvas), d.camera))
 }
 
-/// Template `name`'s model with its parameters changed to `values`, without its mesh or solve,
-/// drawn from the corner `size` pixels, with the camera it was drawn from; why it cannot be built.
+/// Template `name`'s model with its parameters changed to `values`, drawn from the corner `size`
+/// pixels in the current theme ([`emcraft_ui_core::start::template_picture`]: a board's
+/// preview, else its scene drawn by the GPU offscreen), with the camera it was drawn from; why it
+/// cannot be built.
 pub fn template_canvas(name: &str, values: &Value, size: [usize; 2]) -> Result<Drawing, String> {
-    let steps: Vec<emcraft_engine::Step> = emcraft_engine::template_steps(name, values)
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .filter(|s| !["mesh.", "solve.", "results."].iter().any(|p| s.command.starts_with(p)))
-        .collect();
-    let mut s = Session::new();
-    s.run_steps(&steps).map_err(|e| e.to_string())?;
-    if let Some(board) = s.model().pcb() {
-        let t = Tokens::get();
-        let rgb = crate::theme::rgb;
-        let canvas = emcraft_render::pcb::preview(board, size, rgb(t.panel), rgb(t.panel).mix(rgb(t.success), 0.25), rgb(t.warning))?;
-        return Ok(Drawing { canvas, camera: Camera::default() });
+    match start::template_picture(name, values, size, &crate::theme::current())? {
+        start::TemplatePicture::Board(canvas) => Ok(Drawing { canvas, camera: Camera::default() }),
+        start::TemplatePicture::Scene { scene, camera, ground } => {
+            let canvas = crate::gpu3d::scene_picture(&scene, &camera, [size[0] as u32, size[1] as u32], ground).map_err(|e| e.to_string())?;
+            Ok(Drawing { canvas, camera })
+        }
     }
-    // The model's shape only: its symmetry planes (how it is solved) left out of the picture.
-    for axis in s.model().domain.symmetry.iter().map(|q| q.axis).collect::<Vec<_>>() {
-        let plane =
-            serde_json::json!({"kind": "geometry", "name": emcraft_engine::visibility::GeometryObject::Symmetry(axis).key(), "visible": false});
-        s.execute("view.visibility", &plane).map_err(|e| e.to_string())?;
-    }
-    let built = scene3d::build(&s, Overlay::Materials, &crate::theme::scene_colours());
-    let (lo, hi) = built.bounds.ok_or("nothing to draw")?;
-    let [w, h] = size;
-    let mut cam = Camera::default();
-    cam.standard(StandardView::Iso);
-    cam.fit(lo, hi, w as f64 / h.max(1) as f64);
-    cam.distance *= 0.8;
-    let t = &Tokens::get();
-    let rgb = crate::theme::rgb;
-    let ground = (rgb(t.viewport_top), rgb(t.viewport_bottom));
-    let canvas = crate::gpu3d::scene_picture(&built.scene, &cam, [w as u32, h as u32], ground).map_err(|e| e.to_string())?;
-    Ok(Drawing { canvas, camera: cam })
 }
 
 pub fn show(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {
@@ -408,24 +385,6 @@ fn samples(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut A
     }
 }
 
-/// A group's heading on the start page.
-fn group_title(group: Group) -> crate::lang::Text {
-    match group {
-        Group::Filters => t!("Filters"),
-        Group::Lines => t!("Guides and lines"),
-        Group::Junctions => t!("Bends, tees and steps"),
-        Group::Couplers => t!("Couplers and dividers"),
-        Group::Materials => t!("Loads, materials and ferrites"),
-        Group::Periodic => t!("Periodic guides and compressors"),
-        Group::Resonators => t!("Cavities and resonators"),
-        Group::Dispersion => t!("Dispersion"),
-        Group::Antennas => t!("Antennas"),
-        Group::Scattering => t!("Scattering"),
-        Group::Boards => t!("Board checks"),
-        Group::Systems => t!("Systems"),
-    }
-}
-
 /// The units new projects start with, and the way to every other setting.
 fn settings(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
@@ -436,33 +395,4 @@ fn settings(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let all = crate::ui_kit::styled(t!("All settings…"), false);
     ui.act(true, all, Fixed::HomeSettings.into(), Action::OpenSettings(Some(Section::Appearance)), out)
         .hint(t!("The theme, the 3D view, dialogs and files"));
-}
-
-/// A template's description as a card's name and the line under it: split at its first colon,
-/// comma, dash or bracket that leaves a name of 6 to 48 characters (`Waveguide high-pass
-/// filter` · `WR-90 filled with …`), else whole as the name.
-fn title_and_rest(about: &str) -> (&str, &str) {
-    let mut best: Option<usize> = None;
-    for sep in [": ", "：", ", ", "、", " — ", " (", "（"] {
-        if let Some(i) = about.find(sep) {
-            let n = about[..i].chars().count();
-            if (6..=48).contains(&n) && best.is_none_or(|b| i < b) {
-                best = Some(i);
-            }
-        }
-    }
-    match best {
-        Some(i) => (about[..i].trim(), about[i..].trim_start_matches([':', '：', ',', '、', ' ', '—']).trim()),
-        None => (about.trim(), ""),
-    }
-}
-
-#[cfg(test)]
-mod card_tests {
-    #[test]
-    fn a_description_splits_into_a_name_and_a_line() {
-        assert_eq!(super::title_and_rest("Waveguide high-pass filter: WR-90 filled"), ("Waveguide high-pass filter", "WR-90 filled"));
-        assert_eq!(super::title_and_rest("Straight rectangular waveguide, WR-90 (a × b)"), ("Straight rectangular waveguide", "WR-90 (a × b)"));
-        assert_eq!(super::title_and_rest("Short"), ("Short", ""));
-    }
 }

@@ -100,6 +100,10 @@ pub enum Message {
     Dismiss(usize),
     /// The settings page shown, or left.
     Settings(bool),
+    /// The start page shown, or left.
+    Home(bool),
+    /// A template's picture drawn (its pixels), or why not.
+    Thumb(&'static str, Result<(u32, u32, Vec<u8>), String>),
     /// A preference changed.
     Pref(emcraft_ui_core::action::Pref),
     /// A command started from a button: a long one on the worker.
@@ -158,6 +162,9 @@ pub struct App {
     /// The themes there are (the user's too), and whether the settings page is shown.
     pub(crate) themes: Themes,
     pub(crate) settings: bool,
+    /// The start page is shown, and the templates' pictures.
+    pub(crate) home: bool,
+    pub(crate) thumbs: crate::start::Thumbs,
     began: std::time::Instant,
     /// The charts as drawn.
     pub(crate) charts: crate::charts::Charts,
@@ -209,6 +216,8 @@ impl App {
             autosave: Default::default(),
             themes: Themes::load(None),
             settings: false,
+            home: sample.is_none(),
+            thumbs: Default::default(),
             began: std::time::Instant::now(),
             charts: crate::charts::Charts::default(),
             generation: 0,
@@ -489,6 +498,11 @@ impl App {
                 self.settle();
                 task
             }
+            // The start page (again in a new theme) draws the templates' pictures.
+            m @ (Message::Home(true) | Message::Pref(_)) => {
+                self.update(m);
+                if self.home { self.draw_thumbs() } else { Task::none() }
+            }
             m => {
                 self.update(m);
                 Task::none()
@@ -527,7 +541,7 @@ impl App {
         let t = self.look.tokens;
         let tabs = PAGES.into_iter().filter(|v| *v == self.page || v.available(&self.session, &Replies::default())).map(|v| {
             button(text(page_label(v)).size(t.font_button))
-                .style(look::button(t, v == self.page && !self.settings))
+                .style(look::button(t, v == self.page && !self.settings && !self.home))
                 .on_press(Message::Page(v))
                 .boxed()
         });
@@ -548,6 +562,12 @@ impl App {
             .chain(crate::files::recent(self))
             .chain(crate::files::edits(self))
             .chain(std::iter::once(
+                button(text(emcraft_ui_core::lang::tr(t!("Start"))).size(t.font_button))
+                    .style(look::button(t, self.home))
+                    .on_press(Message::Home(!self.home))
+                    .boxed(),
+            ))
+            .chain(std::iter::once(
                 button(text(emcraft_ui_core::lang::tr(t!("Settings"))).size(t.font_button))
                     .style(look::button(t, self.settings))
                     .on_press(Message::Settings(!self.settings))
@@ -561,13 +581,14 @@ impl App {
         let bar = container(bar).padding([6, 14]).width(Fill).style(look::app_bar(t));
         let page = match self.page {
             _ if self.settings => crate::settings::view(self),
+            _ if self.home => crate::start::view(self),
             View::Model => crate::model::view(self),
             View::Eigenmodes => crate::eigenmodes::view(self),
             v if v.chart().is_some() => crate::results::view(self, v),
             _ => crate::system::view(self),
         };
-        // The ribbon's commands are the project's: not over the settings.
-        let ribbon = (!self.settings).then(|| crate::ribbon::view(self));
+        // The ribbon's commands are the project's: not over the settings or the start page.
+        let ribbon = (!self.settings && !self.home).then(|| crate::ribbon::view(self));
         let parts = std::iter::once(bar.boxed()).chain(ribbon).chain(crate::files::recoveries(self)).chain(std::iter::once(page));
         let window = container(iced::widget::Column::with_children(parts)).width(Fill).height(Fill).style(look::window(t));
         let over = self.dialog.as_ref().map(|d| crate::dialog::view(self, d)).or_else(|| crate::files::question(self));
@@ -603,6 +624,7 @@ impl App {
             Message::Page(v) => {
                 self.page = v;
                 self.settings = false;
+                self.home = false;
                 None
             }
             Message::View3d(nav) => {
@@ -675,6 +697,17 @@ impl App {
             Message::Shot(_) => None,
             Message::Settings(on) => {
                 self.settings = on;
+                self.home &= !on;
+                None
+            }
+            Message::Home(on) => {
+                self.home = on;
+                self.settings &= !on;
+                None
+            }
+            Message::Thumb(name, drawn) => {
+                let picture = drawn.map(|(w, h, rgba)| iced::widget::image::Handle::from_rgba(w, h, rgba));
+                self.thumbs.1.insert(name, picture);
                 None
             }
             Message::Pref(p) => {

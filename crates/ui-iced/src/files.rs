@@ -71,6 +71,8 @@ impl App {
             self.remember(path);
         }
         if self.error.is_none() {
+            self.home = false;
+            self.settings = false;
             self.selection = Default::default();
             self.dialog = None;
             self.page =

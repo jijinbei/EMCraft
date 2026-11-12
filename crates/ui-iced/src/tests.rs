@@ -649,3 +649,32 @@ fn settings_change_the_window_at_once() {
     app.update(Message::Page(emcraft_ui_core::view::View::Model));
     assert!(!app.settings, "a page leaves the settings");
 }
+
+/// The start page: a window opened on nothing shows it; a template's picture is its model drawn
+/// from the corner by the GPU (offscreen), and its card opens the template, leaving the page.
+#[test]
+fn the_start_page_draws_templates_and_opens_one() {
+    use emcraft_ui_core::files::{FileAction, Then};
+    let _gpu = gpu();
+    let mut app = App::new(None);
+    assert!(app.home);
+    // A system has no model to draw: its card goes without a picture.
+    assert!(crate::start::drawn("adsb-receiver", (*app.look.theme).clone()).is_err());
+    for name in ["highpass", "cavity"] {
+        match crate::start::drawn(name, (*app.look.theme).clone()) {
+            Ok(p) => app.update(Message::Thumb(name, Ok(p))),
+            Err(e) if e.contains("adapter") => return eprintln!("skipped: {e}"),
+            Err(e) => panic!("{name}: {e}"),
+        }
+    }
+    assert_eq!(app.thumbs.1.len(), 2);
+    if let Ok(dir) = std::env::var("EMCRAFT_ICED_SHOTS") {
+        let mut ui = iced_test::Simulator::with_size(settings(), (1400.0, 900.0), app.view());
+        let shot = ui.snapshot(&app.theme()).unwrap_or_else(|e| panic!("{e}"));
+        let _ = std::fs::remove_file(std::path::Path::new(&dir).join("start-wgpu.png"));
+        assert!(shot.matches_image(std::path::Path::new(&dir).join("start")).unwrap_or(false));
+    }
+    let open = Then::Sample { name: "cavity".into(), values: serde_json::Value::Null, purpose: None };
+    app.update(Message::File(FileAction::Request(open)));
+    assert!(!app.home && app.session.name() == "cavity");
+}
