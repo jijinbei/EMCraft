@@ -129,7 +129,15 @@ fn editor<'a>(t: Tokens, i: usize, f: &'a Field) -> Element<'a, Message> {
                 .on_press(send(Edit::AddRow(i)));
             Column::with_children(std::iter::once(head.boxed()).chain(rows).chain(std::iter::once(add.boxed()))).spacing(4).boxed()
         }
-        Kind::Number | Kind::Integer | Kind::Text | Kind::Numbers | Kind::Json => input(t, &f.text, move |s| Edit::Text(i, s)),
+        // Its id names it (`dialog-<parameter>`), for scenarios and agents to find.
+        Kind::Number | Kind::Integer | Kind::Text | Kind::Numbers | Kind::Json => text_input("", &f.text)
+            .id(format!("dialog-{}", f.name))
+            .size(t.font_body)
+            .padding([3, 6])
+            .style(look::field(t))
+            .on_input(move |s| send(Edit::Text(i, s)))
+            .on_submit(send(Edit::Ok))
+            .boxed(),
     }
 }
 

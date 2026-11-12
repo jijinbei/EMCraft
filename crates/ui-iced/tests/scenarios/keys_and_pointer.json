@@ -1,0 +1,23 @@
+[
+  {"note": "The window driven through its layout as a person drives it: buttons pressed where they are drawn, a field typed into, keys given to the field that has the keyboard and then to the window"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"press": "Settings"},
+  {"expect": {"inspect": {"settings": true}}},
+  {"key": "Escape"},
+  {"expect": {"inspect": {"settings": false}}},
+  {"note": "The search typed in: Escape in its field clears it"},
+  {"field": "#emcraft-search", "text": "mesh"},
+  {"expect": {"inspect": {"search.query": "mesh"}, "handles": ["search:mesh.generate"]}},
+  {"key": "Escape"},
+  {"expect": {"inspect": {"search.query": ""}}},
+  {"note": "A dialog's field typed and OK pressed; Ctrl+Z takes it back"},
+  {"call": "ui.dialog", "params": {"open": "model.material.create"}},
+  {"field": "#dialog-name", "text": "ceramic"},
+  {"field": "#dialog-eps_r", "text": "9.8"},
+  {"press": "OK"},
+  {"expect": {"inspect": {"dialog": null, "messages.last.error": false}}},
+  {"key": "Ctrl+Z"},
+  {"expect": {"inspect": {"messages.last.text": {"includes": "Undone"}}}},
+  {"size": [1000, 700]},
+  {"shot": "keys-and-pointer"}
+]
