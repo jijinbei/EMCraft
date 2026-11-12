@@ -23,7 +23,7 @@ use emcraft_ui_core::replies::Replies;
 use emcraft_ui_core::selection::{self, Selection};
 use emcraft_ui_core::theme::{Theme, Themes};
 use emcraft_ui_core::view::View;
-use iced::widget::{Space, button, column, container, row, text};
+use iced::widget::{Space, button, container, row, text};
 use iced::{Alignment, Element, Fill, Subscription, Task, Widget};
 
 use crate::look::{self, Look};
@@ -92,6 +92,8 @@ pub enum Message {
     Dialog(crate::dialog::Edit),
     /// New, Open, Save, Save As, a path chosen, the answer to "save the changes?".
     File(emcraft_ui_core::files::FileAction),
+    /// An autosaved copy found on start let go (deleted).
+    Dismiss(usize),
     /// A command started from a button: a long one on the worker.
     Start(String),
     /// The running job stopped.
@@ -138,6 +140,12 @@ pub struct App {
     /// What "save the changes?" is asked before, and what waits for a save.
     pub(crate) asking: Option<emcraft_ui_core::files::Then>,
     pub(crate) after_save: Option<emcraft_ui_core::files::Then>,
+    /// The preferences (the recent projects among them) and where they are kept.
+    pub(crate) prefs: Prefs,
+    pub(crate) prefs_path: Option<std::path::PathBuf>,
+    /// Copies of unsaved work, and the clock they are due by.
+    pub(crate) autosave: emcraft_ui_core::autosave::Autosave,
+    began: std::time::Instant,
     /// The charts as drawn.
     pub(crate) charts: crate::charts::Charts,
     /// Raised by every command that ends well (the model's revision does not follow a solve's
@@ -182,6 +190,10 @@ impl App {
             picker: None,
             asking: None,
             after_save: None,
+            prefs: Prefs::default(),
+            prefs_path: None,
+            autosave: Default::default(),
+            began: std::time::Instant::now(),
             charts: crate::charts::Charts::default(),
             generation: 0,
             job: None,
@@ -204,9 +216,16 @@ impl App {
         app
     }
 
-    /// The window in the preferences' mouse mapping and 3D drawing.
-    pub fn with_prefs(self, prefs: &Prefs) -> App {
-        App { nav: prefs.nav(), gpu_look: prefs.gpu_look, ..self }
+    /// The window in the preferences' mouse mapping and 3D drawing, keeping them (the recent
+    /// projects) at `path`.
+    pub fn with_prefs(self, prefs: &Prefs, path: Option<std::path::PathBuf>) -> App {
+        App { nav: prefs.nav(), gpu_look: prefs.gpu_look, prefs: prefs.clone(), prefs_path: path, ..self }
+    }
+
+    /// The window copying unsaved work into `dir` (none: no copies), with the copies found
+    /// there newer than their projects offered for recovery.
+    pub fn with_autosave(self, dir: Option<std::path::PathBuf>) -> App {
+        App { autosave: emcraft_ui_core::autosave::Autosave::at(dir), ..self }
     }
 
     /// The window with the host's file dialog.
@@ -222,6 +241,13 @@ impl App {
     /// What is drawn from the project made again where it changed: the 3D view's scene and the
     /// charts, in the window's theme.
     fn settle(&mut self) {
+        let (dirty, busy) = (self.session.is_dirty(), self.job.is_some());
+        if self.autosave.due(self.began.elapsed().as_secs_f64(), dirty, busy) {
+            let (r, new_failure) = self.autosave.write(&mut self.session);
+            if let (Err(e), true) = (r, new_failure) {
+                self.error = Some(emcraft_ui_core::lang::trf(t!("Autosave failed: {error}"), emcraft_ui_core::args!(error = e)));
+            }
+        }
         let src = crate::view3d::Source {
             session: &self.session,
             generation: self.generation,
@@ -371,13 +397,16 @@ impl App {
     }
 
     /// What the window listens to: each frame while a job runs, the field plays or its picture is
-    /// waited for.
+    /// waited for; and the window's close, asked first about unsaved changes.
     pub fn subscription(&self) -> Subscription<Message> {
-        if self.job.is_some() || self.shoot.is_some() || self.playing.is_some() {
+        let closing =
+            iced::window::close_requests().map(|_| Message::File(emcraft_ui_core::files::FileAction::Request(emcraft_ui_core::files::Then::Quit)));
+        let frames = if self.job.is_some() || self.shoot.is_some() || self.playing.is_some() {
             iced::window::frames().map(Message::Tick)
         } else {
             Subscription::none()
-        }
+        };
+        Subscription::batch([frames, closing])
     }
 
     /// The window after `message`, and what iced does next: the picture of the window taken
@@ -461,6 +490,7 @@ impl App {
         let bar = row(head
             .into_iter()
             .chain(crate::files::buttons(self))
+            .chain(crate::files::recent(self))
             .chain(tabs)
             .chain(std::iter::once(Space::new().width(Fill).boxed()))
             .chain(status))
@@ -472,7 +502,8 @@ impl App {
             View::SParameters => crate::sparameters::view(self),
             _ => crate::system::view(self),
         };
-        let window = container(column![bar, crate::ribbon::view(self), page]).width(Fill).height(Fill).style(look::window(t));
+        let parts = [bar.boxed(), crate::ribbon::view(self)].into_iter().chain(crate::files::recoveries(self)).chain(std::iter::once(page));
+        let window = container(iced::widget::Column::with_children(parts)).width(Fill).height(Fill).style(look::window(t));
         let over = self.dialog.as_ref().map(|d| crate::dialog::view(self, d)).or_else(|| crate::files::question(self));
         match over {
             Some(o) => iced::widget::stack![window, o].boxed(),
@@ -565,6 +596,10 @@ impl App {
                 None
             }
             Message::Shot(_) => None,
+            Message::Dismiss(i) => {
+                self.autosave.dismiss(i);
+                None
+            }
             Message::File(a) => {
                 // Without iced's runtime (the tests): a dialog's answer is not awaited.
                 let _ = self.file(a);

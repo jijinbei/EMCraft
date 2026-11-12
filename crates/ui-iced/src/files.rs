@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use emcraft_ui_core::autosave;
 use emcraft_ui_core::files::{Answer, FileAction, Picker, Purpose, Then};
 use emcraft_ui_core::lang::{args, tr, trf};
 use iced::widget::{Space, button, center, column, container, opaque, row, text};
@@ -39,8 +40,23 @@ impl App {
             Then::Open => return self.pick(Purpose::Open),
             Then::OpenPath(path) => self.opened("file.open", &json!({ "path": path })),
             Then::Sample { name, .. } => self.opened("file.sample", &json!({ "name": name })),
-            Then::Quit => return iced::exit(),
-            Then::Recover { .. } | Then::Import => {}
+            Then::Quit => {
+                self.autosave.drop_copy();
+                return iced::exit();
+            }
+            Then::Recover { file, original } => {
+                self.autosave.found.retain(|f| f.file.as_os_str() != file.as_str());
+                let params = match original {
+                    Some(o) => json!({ "path": file, "original": o }),
+                    None => json!({ "path": file }),
+                };
+                self.opened("file.open", &params);
+                // The copy is this project's from now on: a save deletes it.
+                if self.error.is_none() {
+                    self.autosave.file = Some(file.into());
+                }
+            }
+            Then::Import => {}
         }
         Task::none()
     }
@@ -48,7 +64,12 @@ impl App {
     /// Runs `id` (a project opened or begun) and shows it as a new window would: nothing
     /// selected, its chain's page for a system, else the model.
     fn opened(&mut self, id: &str, params: &Value) {
+        // The changes before were saved or let go: their copy goes.
+        self.autosave.drop_copy();
         self.run_now(id, params);
+        if let Some(path) = params.get("path").and_then(Value::as_str).filter(|_| self.error.is_none() && id == "file.open") {
+            self.remember(path);
+        }
         if self.error.is_none() {
             self.selection = Default::default();
             self.dialog = None;
@@ -58,9 +79,31 @@ impl App {
         }
     }
 
-    /// Whether the project has a file of its own to save to.
+    /// Whether the project has a file of its own to save to (not an autosaved copy it was
+    /// recovered from).
     fn has_file(&self) -> bool {
-        self.session.path().is_some()
+        self.session.path().is_some_and(|p| !autosave::inside(self.autosave.dir.as_deref(), p))
+    }
+
+    /// `path` first in the recent projects (an autosaved copy is none), the preferences kept.
+    fn remember(&mut self, path: &str) {
+        if autosave::inside(self.autosave.dir.as_deref(), path) {
+            return;
+        }
+        self.prefs.add_recent(path);
+        if let Some(p) = &self.prefs_path {
+            let _ = self.prefs.save(p);
+        }
+    }
+
+    /// After a save: its copy goes and the file joins the recent projects.
+    fn saved(&mut self) {
+        if self.error.is_none() && !self.session.is_dirty() {
+            self.autosave.drop_copy();
+            if let Some(p) = self.session.path().map(str::to_owned) {
+                self.remember(&p);
+            }
+        }
     }
 
     /// Saves to the project's own file, or asks where.
@@ -69,6 +112,7 @@ impl App {
             return self.pick(Purpose::SaveAs);
         }
         self.run_now("file.save", &json!({}));
+        self.saved();
         self.after_saved()
     }
 
@@ -99,6 +143,7 @@ impl App {
             }
             (Purpose::SaveAs, Some(p)) => {
                 self.run_now("file.save", &json!({ "path": p }));
+                self.saved();
                 self.after_saved()
             }
             // Cancelled: what waited for the save waits no more.
@@ -114,7 +159,10 @@ impl App {
         let Some(then) = self.asking.take() else { return Task::none() };
         match answer {
             Answer::Cancel | Answer::StopJob => Task::none(),
-            Answer::Discard => self.go(then),
+            Answer::Discard => {
+                self.autosave.drop_copy();
+                self.go(then)
+            }
             Answer::Save => {
                 self.after_save = Some(then);
                 self.save()
@@ -155,6 +203,48 @@ pub fn buttons(app: &App) -> impl Iterator<Item = Element<'_, Message>> {
             _ => emcraft_ui_core::lang::command_label(id).to_owned(),
         };
         button(text(label).size(t.font_button)).style(look::bar_button(t)).on_press_maybe(idle.then_some(Message::File(action))).boxed()
+    })
+}
+
+/// The recent projects, one chosen opened (asking first about unsaved changes).
+pub fn recent(app: &App) -> Option<Element<'_, Message>> {
+    let t = app.look.tokens;
+    let list = app.prefs.recent.clone();
+    (!list.is_empty() && app.job.is_none()).then(|| {
+        iced::widget::pick_list(None::<String>, list, |p: &String| {
+            std::path::Path::new(p).file_name().map_or_else(|| p.clone(), |n| n.to_string_lossy().into_owned())
+        })
+        .placeholder(tr(t!("Open recent")))
+        .on_select(|p| Message::File(FileAction::Request(Then::OpenPath(p))))
+        .text_size(t.font_button)
+        .style(look::choice(t))
+        .boxed()
+    })
+}
+
+/// The autosaved copies found on start, newer than their projects: each with Recover and a mark
+/// that lets it go.
+pub fn recoveries(app: &App) -> Option<Element<'_, Message>> {
+    let t = app.look.tokens;
+    let found = &app.autosave.found;
+    (!found.is_empty()).then(|| {
+        let rows = found.iter().enumerate().take(4).map(|(i, f)| {
+            let what = match &f.original {
+                Some(o) => trf(t!("Autosaved copy of {project}\n{file}"), args!(project = o, file = f.file.display())),
+                None => trf(t!("Autosaved copy of a project never saved\n{file}"), args!(file = f.file.display())),
+            };
+            let then = Then::Recover { file: f.file.display().to_string(), original: f.original.clone() };
+            row![
+                column![text(f.name.clone()).size(t.font_body), text(what).size(t.font_small).color(t.text_dim)].spacing(2).width(Fill),
+                text(autosave::ago(f.modified)).size(t.font_small).color(t.text_dim),
+                button(text(tr(t!("Recover"))).size(t.font_button)).style(look::button(t, true)).on_press(Message::File(FileAction::Request(then))),
+                button(text("×").size(t.font_button)).style(look::quiet(t)).on_press(Message::Dismiss(i)),
+            ]
+            .spacing(10)
+            .align_y(iced::Alignment::Center)
+            .boxed()
+        });
+        container(iced::widget::Column::with_children(rows).spacing(6)).padding(10).width(Fill).style(look::ground(t)).boxed()
     })
 }
 

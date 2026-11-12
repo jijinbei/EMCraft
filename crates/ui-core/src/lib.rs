@@ -16,7 +16,7 @@
 //!   and the browser's rows ([`browser`]: what each part of the model is called, and its
 //!   [`math`] symbols), the board's [`pen`], how the mouse and keys move the 3D view
 //!   ([`navigation`]), a port mode's focus ([`steps`]);
-//! - what a window keeps: its [`prefs`] between launches, a [`record`]ing of its actions and the
+//! - what a window keeps: its [`prefs`] between launches, copies of unsaved work ([`autosave`]), a [`record`]ing of its actions and the
 //!   [`crash`] reports made of them;
 //! - [`geom`]: points, offsets and rectangles on screen, each window converting them to its own;
 //! - [`system`]: a system's stages as the window shows them (their kinds, the settings a new one
@@ -36,6 +36,7 @@ macro_rules! t {
 
 pub mod action;
 pub mod after;
+pub mod autosave;
 pub mod browser;
 pub mod chart_words;
 pub mod commands;

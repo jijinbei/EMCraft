@@ -60,10 +60,20 @@ pub fn run(
     lang::set(prefs.language());
     let theme = theme::Themes::load(theme::default_dir().as_deref()).get(&prefs.theme);
     let font = prefs.font_file.as_deref().and_then(|f| std::fs::read(f).ok());
-    let start =
-        move || app::App::new(sample.as_deref()).dressed(theme.clone()).with_prefs(&prefs).shooting(shoot.clone()).with_picker(picker.clone());
+    // A picture of the window is taken without copying or offering work.
+    let autosave = emcraft_ui_core::autosave::default_dir().filter(|_| shoot.is_none());
+    let start = move || {
+        app::App::new(sample.as_deref())
+            .dressed(theme.clone())
+            .with_prefs(&prefs, prefs::default_path())
+            .with_autosave(autosave.clone())
+            .shooting(shoot.clone())
+            .with_picker(picker.clone())
+    };
     iced::application(start, app::App::react, app::App::view)
         .subscription(app::App::subscription)
+        // Closing asks about unsaved changes first (App::subscription).
+        .exit_on_close_request(false)
         .title(app::App::title)
         .theme(app::App::theme)
         // The language's font, and the pictures' face the charts' labels are set in.

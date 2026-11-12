@@ -483,3 +483,39 @@ fn a_project_is_saved_where_chosen_and_opened_again() {
     assert_eq!(eps, Some(3.3));
     let _ = std::fs::remove_file(&path);
 }
+
+/// Unsaved work is copied (here at once: no wait), the copy offered on the next start and
+/// recovered with the change; a real save deletes the copy and puts the file first among the
+/// recent projects.
+#[test]
+fn unsaved_work_is_copied_and_recovered() {
+    use emcraft_ui_core::files::{FileAction, Purpose, Then};
+    let dir = std::env::temp_dir().join(format!("emcraft-iced-autosave-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut app = App::new(Some("highpass")).with_autosave(Some(dir.clone()));
+    app.autosave.every = 0.0;
+    app.update(Message::Row("material:ptfe-like".into()));
+    app.update(Message::Edit);
+    let k = app.dialog.as_ref().and_then(|d| d.fields.iter().position(|f| f.name == "eps_r")).unwrap_or_default();
+    app.update(Message::Dialog(crate::dialog::Edit::Text(k, "4.4".into())));
+    app.update(Message::Dialog(crate::dialog::Edit::Ok));
+    // The next message after the change finds the copy due.
+    app.update(Message::Page(emcraft_ui_core::view::View::Model));
+    let Some(copy) = app.autosave.file.clone() else { panic!("a copy written") };
+    assert!(copy.exists());
+    // The next start offers it; Recover opens it, unsaved, with the change.
+    let mut next = App::new(None).with_autosave(Some(dir.clone()));
+    assert_eq!(next.autosave.found.len(), 1);
+    let then = Then::Recover { file: copy.display().to_string(), original: None };
+    next.update(Message::File(FileAction::Request(then)));
+    let eps = next.session.model().materials.iter().find(|m| m.name == "ptfe-like").map(|m| m.eps_r.get());
+    assert_eq!(eps, Some(4.4));
+    assert!(next.autosave.found.is_empty() && next.autosave.file.as_ref() == Some(&copy));
+    // Saved where chosen: the copy goes, the file is the first recent project.
+    let saved = std::env::temp_dir().join(format!("emcraft-iced-saved-{}.emcraft", std::process::id())).display().to_string();
+    next.update(Message::File(FileAction::Chosen(Purpose::SaveAs, Some(saved.clone()))));
+    assert!(!copy.exists(), "the copy deleted by the save");
+    assert_eq!(next.prefs.recent.first(), Some(&saved));
+    let _ = std::fs::remove_file(&saved);
+    let _ = std::fs::remove_dir_all(&dir);
+}
