@@ -81,6 +81,7 @@ pub fn param_label(command: &str, name: &'static str) -> &'static str {
         (_, "er") => t!("Permittivity εr").en(),
         (_, "excitation") => t!("Excitation").en(),
         (_, "excite") => t!("Excited ports").en(),
+        (_, "face_name") => t!("Face name").en(),
         (_, "face") => t!("Port face").en(),
         (_, "feed") => t!("Feed length").en(),
         (_, "fields") => t!("Save fields").en(),

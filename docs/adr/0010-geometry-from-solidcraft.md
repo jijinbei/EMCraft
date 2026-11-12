@@ -1,6 +1,6 @@
 # ADR 0010: Shapes are made in SolidCraft
 
-Status: accepted (2026-11-13); H1 and H2 done.
+Status: accepted (2026-11-13); H1–H3 done.
 
 ## Context
 
@@ -51,7 +51,11 @@ copies what SolidCraft (the sibling CAD) does properly. The same commands also b
   (`geometry.reload`); its parameters are rows of the Parameters, set where it is imported
   (`geometry.design`); Geometry's ＋ makes a new design (written empty, opened in SolidCraft,
   imported once saved). A template's design is set by the template's parameters, not opened.
-- **H3** Ports by face name.
+- **H3** (done) Ports by face name: an imported design's bodies keep each triangle's B-rep face
+  and each face's persistent name (`Model::faces`, `emcraft_model::faces`);
+  `model.port.create {face_name}` spans the named face (flat across x, y or z; the guide's side
+  where the model is unless `end` says), found again at every replay; the port tool records a
+  named face by its name.
 - **H4** Designs from SolidCraft scripts: the six designs' Rust generators replaced,
   `cargo xtask designs`.
 - **H5** A pilot: six templates moved (an H-plane bend, a cylindrical cavity, a coaxial line, an

@@ -160,10 +160,21 @@ impl Tools {
     pub fn clicked(&mut self, tool: Tool, m: &emcraft_model::Model, l: Length) -> Option<Outcome> {
         let hover = self.hover.clone()?;
         let port = |end: emcraft_model::End| json!({"name": next_name(m), "end": end.id()});
+        // A design's face by its name, which it keeps through the design's changes (ADR 0010);
+        // another by its rectangle.
         let on_face = |end, axis: emcraft_model::Axis, face: [f64; 5]| {
             let mut p = port(end);
-            p["face"] = json!(face.map(|c| neat(l, c)));
-            p["axis"] = json!(axis.id());
+            let emcraft_model::port::FrameAxes { u, v, .. } = emcraft_model::port::Frame::new(axis).axes();
+            let mut centre = emcraft_model::Point3::ORIGIN;
+            (centre[axis.index()], centre[u], centre[v]) = (face[0], face[1] + face[3] / 2.0, face[2] + face[4] / 2.0);
+            let tol = 1e-6 * face[3].max(face[4]).max(1e-9);
+            match emcraft_model::faces::name_at(m, axis, centre, tol) {
+                Some(name) => p["face_name"] = json!(name),
+                None => {
+                    p["face"] = json!(face.map(|c| neat(l, c)));
+                    p["axis"] = json!(axis.id());
+                }
+            }
             p
         };
         match tool {

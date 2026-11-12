@@ -63,6 +63,9 @@ pub struct Model {
     /// session keeps to undo to share it rather than copy it.
     #[serde(skip)]
     pub mesh: Option<Arc<Mesh>>,
+    /// The names of imported designs' faces, by body ([`crate::faces`]).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub faces: crate::faces::Faces,
 }
 
 /// What keeps a model from being solved ([`Model::check`]); its text says what to do.
@@ -107,6 +110,7 @@ impl Default for Model {
             job: crate::job::Job::Open,
             system: crate::system::Chain::default(),
             mesh: None,
+            faces: crate::faces::Faces::new(),
         }
     }
 }

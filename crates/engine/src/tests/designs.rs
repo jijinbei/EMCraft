@@ -292,3 +292,42 @@ fn a_design_saved_again_or_set_here_is_read_again() {
     }
     approx::assert_abs_diff_eq!(bounds(&s)[2], 25.0, epsilon = 1e-6);
 }
+
+/// A port on a design's face by its name follows the face (ADR 0010): the taper's far end face,
+/// found by where it is, takes a port by its name; the design's length changed (in the file,
+/// read again), the port is on the new end; a face that is not there is refused naming the
+/// port. Analytic evidence: the taper's far end lies at z = `l`.
+#[test]
+fn a_port_on_a_named_face_follows_it() {
+    let bytes = emcraft_templates::design("template:taper.solidcraft").unwrap();
+    let path = super::scratch("named-face-taper.solidcraft");
+    let write_l = |l: &str| {
+        let mut d: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        for p in d["params"].as_array_mut().unwrap() {
+            if p["name"] == "l" {
+                p["expr"] = json!(l);
+            }
+        }
+        std::fs::write(&path, serde_json::to_vec(&d).unwrap()).unwrap();
+    };
+    write_l("30");
+    let mut s = Session::new();
+    s.execute("geometry.import", &json!({"path": path, "materials": {"Body1": "interior"}})).unwrap();
+    assert!(!s.model.faces.is_empty(), "the design's face names kept");
+    let b = s.model.bounds().unwrap();
+    let centre = emcraft_model::Point3::new((b.min.x + b.max.x) / 2.0, (b.min.y + b.max.y) / 2.0, b.max.z);
+    let far = emcraft_model::faces::name_at(&s.model, emcraft_model::Axis::Z, centre, 1e-9).expect("the far end's face has a name");
+    s.execute("model.port.create", &json!({"name": "2", "face_name": far})).unwrap();
+    let at = |s: &Session| s.model.ports[0].face.map(|f| (f.axis, f.at * 1e3));
+    assert_eq!(s.model.ports[0].end, emcraft_model::End::End, "the guide lies before the far end");
+    let (axis, z) = at(&s).unwrap();
+    assert_eq!(axis, emcraft_model::Axis::Z);
+    approx::assert_abs_diff_eq!(z, 30.0, epsilon = 1e-6);
+    write_l("44");
+    s.execute("geometry.reload", &json!({})).unwrap();
+    approx::assert_abs_diff_eq!(at(&s).unwrap().1, 44.0, epsilon = 1e-6);
+    let e = s.execute("model.port.create", &json!({"name": "3", "face_name": "no such face"})).unwrap_err();
+    assert!(matches!(&e, EngineError::Params(m) if m.contains("port `3`") && m.contains("no face")), "{e}");
+    let e = s.execute("model.port.create", &json!({"name": "4", "face_name": far, "face": [0, 0, 0, 1, 1]})).unwrap_err();
+    assert!(matches!(&e, EngineError::Params(m) if m.contains("not both")), "{e}");
+}

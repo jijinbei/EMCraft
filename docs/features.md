@@ -1030,10 +1030,11 @@ A waveguide port on an end face, matched to the guide's lowest modes. The first 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `name` | string |  | yes | unique name (without `:`) |
-| `end` | string |  | yes | `start` (z = 0) or `end` (z = length); with `face`, the side the guide lies |
+| `end` | string |  | no | `start` (z = 0) or `end` (z = length); with `face` or `face_name`, the side the guide lies (with `face_name`, where the model is when left out); required otherwise |
 | `modes` | integer |  | no | modes in the port condition, 1 to 32 (default 4) |
 | `face` | array | length | no | [at, u0, v0, a, b]: the rectangle [u0, u0 + a] × [v0, v0 + b] of the plane at `at` across `axis`, u and v its other two axes in the order x, y, z (across z: [z, x0, y0, a, b]) |
 | `axis` | string |  | no | the axis `face` lies across: `x`, `y` or `z` (default) |
+| `face_name` | string |  | no | an imported SolidCraft design's face by its persistent name, flat across x, y or z: the port spans it and follows it when the design changes (in place of `face` and `axis`; a face no longer there is an error naming the port) |
 | `mode_solver` | string |  | no | `auto` (default: closed forms where they apply) or `numeric` (the cross-section solver) |
 | `impedance` | number |  | no | the reference impedance (Ω) S is referred to here, for a line with one (coaxial, strip); the line's own when left out |
 | `deembed` | number | length | no | de-embedding: how far inside the model S's reference plane lies from the port's face, along its line (negative: a line added outside); default 0 |

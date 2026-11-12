@@ -8,6 +8,7 @@ use emcraft_model::{
 use serde_json::{Value, json};
 
 use crate::{EngineError, Params, Result, Session};
+use emcraft_model::port::FrameAxes;
 
 /// Most items in one list parameter (sections, layers, strips, vias).
 const MAX_ITEMS: usize = 1000;
@@ -266,6 +267,12 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     let materials = body_materials(p, &parts.iter().map(|b| b.body.clone()).collect::<Vec<_>>())?;
     let layer = OpenLayer::read(s, p)?;
     let region = choose_region(s, p, &mut parts, &materials, &material, layer.thickness.is_some())?;
+    // The design's faces by name, each body's triangles in the order they are placed (ADR 0010).
+    let named: Vec<(String, emcraft_model::faces::NamedFaces)> = parts
+        .iter()
+        .filter(|b| !b.names.is_empty())
+        .map(|b| (b.body.name.clone(), emcraft_model::faces::NamedFaces { names: b.names.clone(), source: b.source.clone() }))
+        .collect();
     let mut fitted = Fitted::default();
     let mut placed = Vec::new();
     let mut imported = Vec::new();
@@ -312,6 +319,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         s.model.set_open(Some(emcraft_model::Open { thickness: t, reflection: None, shape: emcraft_model::OpenShape::Box }))?;
     }
     s.model.set_parts(imported);
+    s.model.faces.extend(named);
     let bounds = s.model.bounds().unwrap_or_default();
     Ok(json!({
         "triangles": triangles,
@@ -335,6 +343,8 @@ struct PartBody {
     body: emcraft_io::Surface,
     source: Vec<u32>,
     exact: Option<Vec<Option<FaceSurface>>>,
+    /// A design's faces' persistent names, by the face index `source` holds (none for a mesh).
+    names: Vec<String>,
 }
 
 impl PartBody {
@@ -363,12 +373,15 @@ fn read_part(p: &Params, path: &str, unit: f64) -> Result<Vec<PartBody>> {
         let overrides = design_overrides(p, &bytes)?;
         let tolerance = p.positive_length("tolerance").optional()?.map(|t| t * 1e3);
         let read = emcraft_io::solidcraft::read(&bytes, &overrides, tolerance)?;
-        read.into_iter().map(|b| PartBody { source: b.surface.tags.clone(), exact: Some(b.surfaces), body: b.surface }).collect()
+        read.into_iter().map(|b| PartBody { source: b.surface.tags.clone(), exact: Some(b.surfaces), names: b.face_names, body: b.surface }).collect()
     } else {
         if p.has("parameters") {
             return Err(p.error("parameters", "only a SolidCraft design (.sc, .solidcraft) has parameters"));
         }
-        emcraft_io::read_bodies(path, &bytes, unit)?.into_iter().map(|b| PartBody { source: b.tags.clone(), exact: None, body: b }).collect()
+        emcraft_io::read_bodies(path, &bytes, unit)?
+            .into_iter()
+            .map(|b| PartBody { source: b.tags.clone(), exact: None, names: Vec::new(), body: b })
+            .collect()
     };
     if parts.is_empty() {
         return Err(EngineError::failed(format!("`{path}` holds no body")));
@@ -972,7 +985,22 @@ pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
     if face.is_none() && axis.is_some_and(|a| a != Axis::Z) {
         return Err(p.error("axis", "x or y needs `face` (a port's end lies across z)"));
     }
-    let end: End = p.choice("end").required()?;
+    // A design's face by its name: found again wherever the design now puts it (ADR 0010).
+    let named = match p.string("face_name").optional()? {
+        Some(_) if face.is_some() => return Err(p.error("face_name", "give `face_name` or `face`, not both")),
+        Some(n) => Some(
+            emcraft_model::faces::port_face(&s.model, n)
+                .map_err(|why| p.error("face_name", format!("port `{}`: {why}", crate::text::clip(name, 64))))?,
+        ),
+        None => None,
+    };
+    let face = face.or(named);
+    // The side the guide lies on: as given, else (a named face) where the model is.
+    let end: End = match (p.choice("end").optional()?, named) {
+        (Some(e), _) => e,
+        (None, Some(f)) => guide_side(&s.model, &f),
+        (None, None) => return Err(p.error("end", "required: `start` or `end`")),
+    };
     // An imported cavity's channel along x or y: its end is its opening there.
     let face = match face {
         Some(f) => Some(f),
@@ -990,6 +1018,19 @@ pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
     };
     s.model.add_port(port)?;
     Ok(json!({"name": name}))
+}
+
+/// The side of face `f` the guide lies on: `start` where the model is beyond it along its axis,
+/// else `end`.
+fn guide_side(m: &emcraft_model::Model, f: &PortFace) -> End {
+    let FrameAxes { u, v, .. } = emcraft_model::port::Frame::new(f.axis).axes();
+    let k = f.axis.index();
+    let span = m.bounds().map_or(1.0, |b| (0..3).map(|d| b.max[d] - b.min[d]).fold(1e-9, f64::max));
+    let mut q = Point3::ORIGIN;
+    q[u] = f.u0 + f.a.get() / 2.0;
+    q[v] = f.v0 + f.b.get() / 2.0;
+    q[k] = f.at + 1e-4 * span;
+    if m.material_at(q).is_some() { End::Start } else { End::End }
 }
 
 /// The opening of an imported cavity a port at `end` goes on when its channel runs along x or
@@ -1097,7 +1138,7 @@ mod tests {
     fn a_part_moves_with_its_exact_surfaces() {
         let body = emcraft_io::Surface { name: "post".into(), positions: vec![Point3::new(1.0, 0.0, 0.0)], triangles: Vec::new(), tags: Vec::new() };
         let post = FaceSurface::Cylinder { origin: Point3::ORIGIN, axis: Vec3::unit(2), radius: 1.0 };
-        let mut part = PartBody { body, source: Vec::new(), exact: Some(vec![Some(post), None]) };
+        let mut part = PartBody { body, source: Vec::new(), exact: Some(vec![Some(post), None]), names: Vec::new() };
         let d = Vec3::new(0.03, 0.02, 0.01);
         part.moved(d);
         assert_eq!(part.body.positions, vec![Point3::new(1.03, 0.02, 0.01)]);
