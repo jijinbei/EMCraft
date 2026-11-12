@@ -1011,6 +1011,38 @@ fn a_bodys_grips_resize_it() {
     assert!((size_x(&app) - 15.0).abs() < 1e-9, "Escape kept it");
 }
 
+/// A waveguide's section selected has one grip, at its far end; typed while held it gives the
+/// section's length exactly, one `geometry.waveguide` run again with it, the section's form in
+/// the properties panel following. Analytic evidence: the high-pass filter's sections are 15,
+/// 20 and 15 mm; the first set to 12 mm makes the guide 47 mm long, the others kept.
+#[test]
+fn a_sections_grip_sets_its_length_and_the_form_follows() {
+    use crate::view3d::{GripMove, Nav};
+    use emcraft_ui_core::tools::grips::Grip;
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::View3d(Nav::Size(800.0, 600.0)));
+    settle(&mut app);
+    app.update(Message::Row("section:1".into()));
+    let lengths = |app: &App| app.session.model().waveguide().map(|w| w.sections.iter().map(|s| s.length.get() * 1e3).collect::<Vec<_>>());
+    assert_eq!(lengths(&app), Some(vec![15.0, 20.0, 15.0]));
+    let marks = app.body_grips();
+    assert_eq!(marks.iter().map(|m| m.grip).collect::<Vec<_>>(), [Grip::Side { axis: 2, far: true }], "its far end alone");
+    assert_eq!(app.dialog.as_ref().map(|d| d.command.id), Some("geometry.waveguide"), "its form beside the view");
+    let at = emcraft_ui_core::tools::screen(&app.view3d.camera, emcraft_ui_core::geom::Vector::new(800.0, 600.0), marks[0].at)
+        .unwrap_or_else(|| panic!("in view"));
+    app.update(Message::Grip(GripMove::Start(at)));
+    assert!(app.body_drag.is_some(), "the grip taken");
+    for c in ['1', '2'] {
+        app.update(Message::GripKey(Some(c)));
+    }
+    app.update(Message::GripKey(Some('\n')));
+    assert!(app.error.is_none(), "{:?}", app.error);
+    let got = lengths(&app).unwrap_or_default();
+    assert!(got.len() == 3 && (got[0] - 12.0).abs() < 1e-9 && (got[1] - 20.0).abs() < 1e-9, "{got:?}");
+    let shown = app.dialog.as_ref().and_then(|d| d.fields.iter().find(|f| f.name == "sections")).and_then(|f| f.rows.first().cloned());
+    assert!(shown.is_some_and(|row| row.iter().any(|c| c == "12")), "the form shows the new length");
+}
+
 /// The section view's dimensions, presets and the look at the cut. Analytic evidence: the iris
 /// filter's H-plane cut (y = b/2) carries its overall extents and its irises' apertures, and its
 /// two ports sized as the guide is wide; looking at the cut turns the camera orthographic to

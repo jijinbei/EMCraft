@@ -123,12 +123,22 @@ impl App {
         }
     }
 
-    /// The grip let go: its edit run, when it moved something.
+    /// The grip let go: its edit run (a body's, the waveguide's), when it moved something.
     fn let_go(&mut self) {
         let l = self.session.display().length;
         if let Some(bd) = self.body_drag.take() {
-            if let Some(params) = grips::let_go(&bd, l) {
-                self.run_now("geometry.body.edit", &params);
+            match grips::let_go(&bd, l) {
+                Some(grips::Edit::Body(params)) => self.run_now("geometry.body.edit", &params),
+                // The waveguide built again with the dimension the grip gave.
+                Some(grips::Edit::Guide(e)) => {
+                    let now = self.session.execute("project.values", &serde_json::json!({"command": "geometry.waveguide"}));
+                    match now.map(|v| grips::patched(v, e)) {
+                        Ok(Some(params)) => self.run_now("geometry.waveguide", &params),
+                        Ok(None) => self.fail("the waveguide's dimensions were not found"),
+                        Err(e) => self.fail(e.to_string()),
+                    }
+                }
+                None => {}
             }
         } else if let Some(d) = self.tools.drag.take()
             && let Some(params) = reference::let_go(&d, self.session.model(), l)

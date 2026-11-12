@@ -240,8 +240,9 @@ pub struct App {
     /// generation it was read for.
     pub(crate) selection: Selection,
     pub(crate) tree: Option<(u64, Tree)>,
-    /// The row the properties panel last followed the selection to.
-    pub(crate) followed: Option<String>,
+    /// The row the properties panel last followed the selection to, and the project's generation
+    /// then.
+    pub(crate) followed: (Option<String>, u64),
     /// The replies of commands the views show (port modes, a comparison, …), kept and let go
     /// by the shared table.
     pub(crate) replies: Replies,
@@ -351,7 +352,7 @@ impl App {
             pinned: None,
             selection: Selection::default(),
             tree: None,
-            followed: None,
+            followed: (None, 0),
             replies: Replies::default(),
             dialog: None,
             adding: None,
@@ -647,15 +648,18 @@ impl App {
 
     /// The properties panel following the selection (docs/adr/0009-model-tree-window.md): a row
     /// selected shows its form, the form of one no longer selected goes; a command's dialog open
-    /// (not a form) is left as it is. Only a change of selection does it: a form closed stays
-    /// closed while its row stays selected.
+    /// (not a form) is left as it is. Only a change of selection does it — a form closed stays
+    /// closed while its row stays selected — or a change of the model under a form not edited
+    /// (a grip let go, undo): it shows the item as it is now.
     fn follow_selection(&mut self) {
         let row = self.selected_row();
         let key = row.as_ref().map(|r| r.id.clone());
-        if key == self.followed {
+        let (same, changed) = (key == self.followed.0, self.followed.1 != self.generation);
+        self.followed = (key, self.generation);
+        let untouched = |d: &Dialog| d.item.is_some() && d.unchanged.is_some() && d.clone().params().ok() == d.unchanged;
+        if same && !(changed && self.dialog.as_ref().is_some_and(untouched)) {
             return;
         }
-        self.followed = key;
         if self.dialog.as_ref().is_some_and(|d| d.item.is_none()) {
             return;
         }
@@ -720,7 +724,7 @@ impl App {
                 self.after(id, &params, &reply);
                 // An item's form stays, on the item as it is now.
                 if d.item.is_some() {
-                    self.followed = None;
+                    self.followed.0 = None;
                 }
             }
             // Shown under the field it names, and said in the message area.

@@ -1,5 +1,6 @@
 //! A selected body's grips in the 3D view (docs/adr/0005-geometry-ux.md), whatever window
-//! draws them: a box's six faces, a cylinder's radius and length, a sphere's radius, an arrow
+//! draws them: a waveguide's broad and narrow walls and each section's far end (its length;
+//! letting go runs `geometry.waveguide` again with it, [`patched`]), a box's six faces, a cylinder's radius and length, a sphere's radius, an arrow
 //! along each axis that moves the whole body, and (for a body that may turn) a ring at its middle
 //! that turns its own axis to the next one, keeping its middle. Dragging one moves it along its
 //! direction on screen, its value snapping to the planes of the other bodies' faces, the model's
@@ -50,6 +51,15 @@ impl Grip {
     }
 }
 
+/// What a held body is: a body placed (a feature or an inclusion), the waveguide's box (its broad
+/// and narrow walls), or one of its sections (its length).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Of {
+    Body(emcraft_engine::bodies::BodyRef),
+    Guide,
+    Section(usize),
+}
+
 /// A body as its grips see it: its name, shape, origin and axis.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Held {
@@ -57,7 +67,7 @@ pub struct Held {
     pub shape: Shape,
     pub at: Point3,
     pub axis: Axis,
-    pub of: emcraft_engine::bodies::BodyRef,
+    pub of: Of,
 }
 
 impl Held {
@@ -75,8 +85,12 @@ impl Held {
     }
 }
 
-/// The single body `selected`, when it is a primitive (box, cylinder, sphere).
+/// The single body `selected`, when it is a primitive (box, cylinder, sphere), the waveguide or
+/// one of its sections.
 pub fn held(m: &emcraft_model::Model, selected: &[Pick]) -> Option<Held> {
+    if let Some(h) = guide_held(m, selected) {
+        return Some(h);
+    }
     let (shape, at, axis, at_ref) = match selected[..] {
         [Pick::Feature(i)] => m.features().get(i).map(|f| (f.shape.clone(), f.at, f.axis, emcraft_engine::bodies::BodyRef::Feature(i)))?,
         [Pick::Inclusion(i)] => m.inclusions().get(i).map(|f| (f.shape.clone(), f.at, Axis::Z, emcraft_engine::bodies::BodyRef::Inclusion(i)))?,
@@ -86,12 +100,42 @@ pub fn held(m: &emcraft_model::Model, selected: &[Pick]) -> Option<Held> {
         return None;
     }
     let name = emcraft_engine::bodies::bodies(m).into_iter().find(|b| b.at == at_ref)?.name;
-    Some(Held { name, shape, at, axis, of: at_ref })
+    Some(Held { name, shape, at, axis, of: Of::Body(at_ref) })
+}
+
+/// The waveguide's box, or its section `i` (from z where the ones before it end), as a held box.
+fn guide_held(m: &emcraft_model::Model, selected: &[Pick]) -> Option<Held> {
+    let w = m.waveguide()?;
+    let (a, b) = (w.width.get(), w.height.get());
+    let (of, z0, length) = match selected[..] {
+        [Pick::Guide] => (Of::Guide, 0.0, w.sections.iter().map(|s| s.length.get()).sum()),
+        [Pick::Section(i)] => (Of::Section(i), w.sections.iter().take(i).map(|s| s.length.get()).sum(), w.sections.get(i)?.length.get()),
+        _ => return None,
+    };
+    let size = emcraft_model::BoxSize::new(Vec3::new(a, b, length)).ok()?;
+    let name = match of {
+        Of::Section(i) => format!("section {}", i + 1),
+        _ => "waveguide".to_owned(),
+    };
+    Some(Held { name, shape: Shape::Box { size }, at: Point3::new(0.0, 0.0, z0), axis: Axis::Z, of })
 }
 
 /// Each grip of `h` (with the drag `d` applied when it is held): where it is and its outward
 /// direction, in the model's frame (m).
 pub fn grips_of(h: &Held) -> Vec<(Grip, [f64; 3], [f64; 3])> {
+    // A guide's box: its broad and narrow walls' far faces; a section: its far end.
+    let only = |g: &Grip| match h.of {
+        Of::Guide => matches!(g, Grip::Side { axis: 0 | 1, far: true }),
+        Of::Section(_) => matches!(g, Grip::Side { axis: 2, far: true }),
+        Of::Body(_) => true,
+    };
+    let mut all = body_grips(h);
+    all.retain(|(g, _, _)| only(g));
+    all
+}
+
+/// Each grip a body placed has.
+fn body_grips(h: &Held) -> Vec<(Grip, [f64; 3], [f64; 3])> {
     let world = |local: Vec3| h.at + h.axis.turn(local);
     let dir = |local: Vec3| {
         let w = h.axis.turn(local);
@@ -135,7 +179,7 @@ pub fn grips_of(h: &Held) -> Vec<(Grip, [f64; 3], [f64; 3])> {
         q[axis] += 0.25 * (b.max[axis] - b.min[axis]);
         out.push((Grip::Move { axis }, q, d));
     }
-    if matches!(h.of, emcraft_engine::bodies::BodyRef::Feature(_)) && !matches!(h.shape, Shape::Sphere { .. }) {
+    if matches!(h.of, Of::Body(emcraft_engine::bodies::BodyRef::Feature(_))) && !matches!(h.shape, Shape::Sphere { .. }) {
         out.push((Grip::Turn, p(middle), [0.0; 3]));
     }
     out
@@ -222,12 +266,12 @@ fn planes(m: &emcraft_model::Model, h: &Held, axis: usize) -> Vec<f64> {
     let mut out = Vec::new();
     let mut add = |b: emcraft_model::Aabb| out.extend([b.min[axis], b.max[axis]]);
     for (i, f) in m.features().iter().enumerate() {
-        if h.of != BodyRef::Feature(i) {
+        if h.of != Of::Body(BodyRef::Feature(i)) {
             add(f.bounds());
         }
     }
     for (i, f) in m.inclusions().iter().enumerate() {
-        if h.of != BodyRef::Inclusion(i) {
+        if h.of != Of::Body(BodyRef::Inclusion(i)) {
             add(f.bounds());
         }
     }
@@ -345,14 +389,23 @@ const TURN_PX: f64 = 24.0;
 /// The drag let go: `geometry.body.edit`'s parameters with the dimension (and a box's near face
 /// its origin), the origin moved, or the axis turned, where it was left; none when it moved
 /// nothing.
-pub fn let_go(bd: &BodyDrag, l: Length) -> Option<Value> {
+pub fn let_go(bd: &BodyDrag, l: Length) -> Option<Edit> {
     let moved = bd.moved(l);
     if moved == 0.0 || (bd.grip == Grip::Turn && moved < TURN_PX) {
         return None;
     }
     let neat = |x: f64| (l.from_si(x) * 1e6).round() / 1e6;
-    let point = |q: Point3| json!([neat(q.x), neat(q.y), neat(q.z)]);
     let h = &bd.held;
+    // The waveguide's: its wall or its section's length, in display units.
+    let shown = neat(value(h, bd.grip, moved));
+    match (h.of, bd.grip) {
+        (Of::Guide, Grip::Side { axis: 0, .. }) => return Some(Edit::Guide(GuideEdit::Width(shown))),
+        (Of::Guide, Grip::Side { axis: 1, .. }) => return Some(Edit::Guide(GuideEdit::Height(shown))),
+        (Of::Section(i), Grip::Side { axis: 2, .. }) => return Some(Edit::Guide(GuideEdit::Length(i, shown))),
+        (Of::Guide | Of::Section(_), _) => return None,
+        (Of::Body(_), _) => {}
+    }
+    let point = |q: Point3| json!([neat(q.x), neat(q.y), neat(q.z)]);
     let mut params = json!({"body": h.name});
     match (&h.shape, bd.grip) {
         (Shape::Box { size }, Grip::Side { axis, far }) => {
@@ -381,7 +434,45 @@ pub fn let_go(bd: &BodyDrag, l: Length) -> Option<Value> {
         }
         _ => return None,
     }
-    Some(params)
+    Some(Edit::Body(params))
+}
+
+/// What letting go of a grip edits: a body (`geometry.body.edit`'s parameters) or the waveguide.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Edit {
+    Body(Value),
+    Guide(GuideEdit),
+}
+
+/// A waveguide's dimension changed by its grip (display units).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum GuideEdit {
+    Width(f64),
+    Height(f64),
+    /// Section `i`'s length.
+    Length(usize, f64),
+}
+
+/// `geometry.waveguide`'s parameters as they are (`project.values`) with `e` made: what running
+/// it again sets; none when they do not hold what it changes.
+///
+/// ```
+/// use emcraft_ui_core::tools::grips::{GuideEdit, patched};
+/// use serde_json::json;
+/// let now = json!({"width": 22.86, "height": 10.16, "sections": [{"length": 15, "material": "ptfe"}]});
+/// assert_eq!(patched(now.clone(), GuideEdit::Length(0, 12.5)).unwrap()["sections"][0]["length"], json!(12.5));
+/// assert_eq!(patched(now.clone(), GuideEdit::Width(20.0)).unwrap()["width"], json!(20.0));
+/// assert!(patched(now, GuideEdit::Length(3, 1.0)).is_none());
+/// ```
+pub fn patched(mut values: Value, e: GuideEdit) -> Option<Value> {
+    let slot = match e {
+        GuideEdit::Width(_) => values.get_mut("width")?,
+        GuideEdit::Height(_) => values.get_mut("height")?,
+        GuideEdit::Length(i, _) => values.get_mut("sections")?.get_mut(i)?.get_mut("length")?,
+    };
+    let (GuideEdit::Width(x) | GuideEdit::Height(x) | GuideEdit::Length(_, x)) = e;
+    *slot = json!(x);
+    Some(values)
 }
 
 /// A grip as drawn: which, where (m; the dragged one where the drag has taken it), the middle
