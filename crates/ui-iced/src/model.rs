@@ -337,5 +337,6 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let field = (app.view3d.overlay == Overlay::Field).then(|| field_bar(app));
     let section = app.view3d.section.map(|c| section_bar(app, c));
     let main = column(std::iter::once(bar(app)).chain(section).chain(field).chain(std::iter::once(picture))).spacing(8).height(Fill);
-    row![crate::browser::view(app), main].spacing(12).padding(12).height(Fill).boxed()
+    let side = crate::field_panel::view(app);
+    row(std::iter::once(crate::browser::view(app)).chain(std::iter::once(main.boxed())).chain(side)).spacing(12).padding(12).height(Fill).boxed()
 }

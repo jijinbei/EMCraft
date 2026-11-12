@@ -14,14 +14,18 @@ const CHAR_W: f32 = 0.62;
 /// Most rows drawn (a long sweep's table scrolls past them in the window's own scroll).
 const MOST_ROWS: usize = 2000;
 
+/// How many ems `s` takes: a wide (CJK) character a whole one, any other [`CHAR_W`].
+fn ems(s: &str) -> f32 {
+    s.chars().map(|c| if c >= '\u{2E80}' { 1.0 } else { CHAR_W }).sum()
+}
+
 /// `table` in the window's tokens.
 pub fn view<'a>(t: Tokens, table: &Table) -> Element<'a, Message> {
     let size = t.font_small;
     let widths: Vec<f32> = (0..table.headers.len())
         .map(|c| {
-            let longest =
-                std::iter::once(&table.headers[c]).chain(table.rows.iter().filter_map(|r| r.get(c))).map(|s| s.chars().count()).max().unwrap_or(0);
-            longest as f32 * size * CHAR_W + 14.0
+            let cells = std::iter::once(&table.headers[c]).chain(table.rows.iter().filter_map(|r| r.get(c)));
+            cells.map(|s| ems(s)).fold(0.0, f32::max) * size + 14.0
         })
         .collect();
     let mark = |m: Option<bool>| table.marks.as_ref().map(|_| text(if m == Some(true) { "◆" } else { "" }).size(size).width(14).boxed());

@@ -1199,3 +1199,42 @@ fn the_sparameters_page_refines_picks_and_compares() {
     assert!((after.norm() - before.norm()).abs() < 1e-9, "|S11| kept");
     assert!((turned - want).abs() < 1e-6 || (turned - (std::f64::consts::TAU - want)).abs() < 1e-6, "turned {turned}, 2βd {want}");
 }
+
+/// The field view's side column. Analytic evidence: the high-pass filter is lossless, so the
+/// power its S entries carry is all the incident power (|S11|² + |S21|² = 1): what is not
+/// accounted for is within the solve's error. A probe added at the pinned point reads the field
+/// there; its dialogs save the picture and the animation of the view as it stands.
+#[test]
+fn the_field_column_reads_power_probes_and_a_pinned_point() {
+    use crate::view3d::Nav;
+    use emcraft_ui_core::scene3d::Overlay;
+    let mut app = App::new(Some("highpass"));
+    app.run_now("solve.frequency", &json!({"start": 6, "stop": 9, "points": 4}));
+    finish(&mut app);
+    app.update(Message::View3d(Nav::Size(800.0, 600.0)));
+    app.update(Message::View3d(Nav::Overlay(Overlay::Field)));
+    app.update(Message::View3d(Nav::Frequency(8e9)));
+    let report = emcraft_engine::power::at(&app.session, 8e9, 0).unwrap_or_else(|e| panic!("{e}"));
+    let lost = report["unaccounted"].as_f64().unwrap_or(f64::NAN);
+    assert!(lost.abs() < 1e-3, "lossless: {lost}");
+    assert!(crate::field_panel::view(&app).is_some());
+    // A click on the plane pins its point.
+    let at = (0..60)
+        .flat_map(|i| (0..40).map(move |j| emcraft_ui_core::geom::Point::new(200.0 + 7.0 * i as f32, 150.0 + 7.0 * j as f32)))
+        .find(|p| app.probe_at(*p).is_some())
+        .unwrap_or_else(|| panic!("the plane under the view"));
+    app.update(Message::Click(crate::view3d::Click { at, add: false, double: false }));
+    assert!(app.pinned.is_some());
+    // A probe there, read; then taken away.
+    let point = app.probe_point().unwrap_or_else(|| panic!("a point"));
+    app.update(Message::Run(emcraft_ui_core::system::gesture::Command { id: "view.probe.add", params: json!({"at": point}) }));
+    assert_eq!(app.session.views().probes.len(), 1, "{:?}", app.error);
+    let name = app.session.views().probes[0].name.clone();
+    let _ = app.view();
+    app.update(Message::Run(emcraft_ui_core::system::gesture::Command { id: "view.probe.delete", params: json!({"name": name}) }));
+    assert!(app.session.views().probes.is_empty());
+    // The picture's dialog, filled with the view as it stands.
+    let params = emcraft_ui_core::results::fields::save_params(&app.view3d.field, None, &app.session, "field.png", false);
+    app.update(Message::Open("view.field", params));
+    assert_eq!(app.dialog.as_ref().map(|d| d.command.id), Some("view.field"));
+}

@@ -74,6 +74,7 @@ impl App {
             // Another project: its own workflow, the machine's devices kept.
             self.workflow = std::mem::take(&mut self.workflow).for_another_project();
             self.selection = Default::default();
+            self.pinned = None;
             self.dialog = None;
             (self.home, self.settings) = (false, false);
             self.page = crate::app::first_page(&self.session);

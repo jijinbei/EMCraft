@@ -2,6 +2,7 @@
 //! session (choices the window keeps), its tables as rows of text, and the lines and actions
 //! round it. Each window draws them; the engine draws the charts.
 
+pub mod fields;
 pub mod sparameters;
 
 /// A table as text: its caption, its headers, its rows (as many cells as headers), and which

@@ -99,6 +99,8 @@ pub enum Message {
     StepAct(crate::step_panel::Act),
     /// What a control of the S-parameters page asks for.
     S(crate::sparameters::SAct),
+    /// A command's dialog opened with these values over the model's.
+    Open(&'static str, serde_json::Value),
     /// A grip dragged: a selected body's, or the selected port's reference plane's.
     Grip(crate::view3d::GripMove),
     /// A key typed while a body's grip is held: a digit (Enter as '\n'), or Backspace.
@@ -192,6 +194,8 @@ pub struct App {
     /// port's text and the value it was typed over).
     pub(crate) sview: emcraft_ui_core::results::sparameters::SView,
     pub(crate) planes: std::collections::BTreeMap<String, (String, f64)>,
+    /// The point pinned on the field's plane (its coordinates, display units).
+    pub(crate) pinned: Option<[f64; 2]>,
     /// What is selected (in the 3D view or the browser), and the browser's tree for the
     /// generation it was read for.
     pub(crate) selection: Selection,
@@ -267,6 +271,7 @@ impl App {
             workflow: Default::default(),
             sview: Default::default(),
             planes: Default::default(),
+            pinned: None,
             selection: Selection::default(),
             tree: None,
             replies: Replies::default(),
@@ -335,7 +340,12 @@ impl App {
 
     /// The field's values under the pointer, on the field overlay.
     pub fn probe(&self) -> Option<emcraft_engine::view::Probe> {
-        let at = self.hover.filter(|_| self.view3d.overlay == emcraft_ui_core::scene3d::Overlay::Field)?;
+        self.probe_at(self.hover?)
+    }
+
+    /// The fields on the field's plane under `at` (points from the 3D view's corner).
+    pub fn probe_at(&self, at: Point) -> Option<emcraft_engine::view::Probe> {
+        (self.view3d.overlay == emcraft_ui_core::scene3d::Overlay::Field).then_some(())?;
         let samples = self.view3d.sampled.as_ref()?.samples().clone();
         let (w, h) = self.view3d.size;
         let pixel = emcraft_render::view3d::Pixel::new(f64::from(at.x), f64::from(at.y), f64::from(w), f64::from(h));
@@ -832,6 +842,13 @@ impl App {
                 self.s_act(a);
                 None
             }
+            Message::Open(id, values) => {
+                match self.open(id, &values) {
+                    Ok(d) => self.dialog = Some(d),
+                    Err(e) => self.error = Some(e),
+                }
+                None
+            }
             Message::RefText(s) => {
                 self.ref_text = self.reference_now().map(|(port, now)| (port, emcraft_ui_core::dialogs::bounded(&s), now));
                 None
@@ -862,6 +879,10 @@ impl App {
                 None
             }
             Message::Click(c) => {
+                // On the field's plane a click pins the point (its fields beside the view).
+                if let Some(p) = self.probe_at(c.at) {
+                    self.pinned = Some(p.at);
+                }
                 let pick = self.view3d.pick(c.at);
                 let click = if c.double { selection::Click::Double { pick } } else { selection::Click::Single { pick, add: c.add } };
                 if selection::step(&mut self.selection, click) == selection::Then::Fit {
