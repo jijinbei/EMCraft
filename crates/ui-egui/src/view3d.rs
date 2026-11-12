@@ -704,64 +704,13 @@ fn build(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, overlay: Over
     v.generation = v.generation.wrapping_add(1);
 }
 
-/// Upload complex vectors once. Their phase, lengths and glyph geometry are evaluated in WGSL.
+/// The field's arrows for the GPU to turn with the phase (`scene3d::phase_arrows`), with their
+/// legend.
 fn dynamic_field_arrows(app: &EmcraftApp, field: &FieldState, built: &mut Built) {
     let (Some(samples), Some((lo, _))) = (field.samples.as_ref(), built.bounds) else { return };
-    let (x, y) = samples.axes();
-    let [c, u, v] = scene3d::field_frame_of(&app.session, samples.plane, samples.at, x.span(), y.span(), lo);
-    let normal = scene3d::normal_axis(samples.plane);
-    let du = [0, 1, 2].map(|k| u[k] - c[k]);
-    let dv = [0, 1, 2].map(|k| v[k] - c[k]);
-    let len = |d: [f64; 3]| d.iter().map(|v| v * v).sum::<f64>().sqrt();
-    let max_length = len(du).max(len(dv)) / 18.0 * 0.85;
-    for (shown, component, color) in [
-        (field.view.show_e, emcraft_engine::view::Component::E, crate::theme::scene().port_input),
-        (field.view.show_h, emcraft_engine::view::Component::H, crate::theme::scene().port_output),
-    ] {
-        if !shown {
-            continue;
-        }
-        let emcraft_engine::view::Phasors { nx, ny, grid: mut data } = samples.phasors(component);
-        if nx < 2 || ny < 2 {
-            continue;
-        }
-        // Normalize against the full complex field, not its in-plane numerical residue.
-        let peak = emcraft_engine::view::robust_peak(data.iter().flatten().map(|(re, im)| len(*re).hypot(len(*im))).collect());
-        for (re, im) in data.iter_mut().flatten() {
-            re[normal] = 0.0;
-            im[normal] = 0.0;
-        }
-        if !(peak > 0.0 && peak.is_finite()) {
-            continue;
-        }
-        // An arrow at full length is the peak (its length clamps at it).
-        built.arrow_legend.push((scene3d::arrow_legend(component.is_magnetic(), peak), color));
-        let stride = nx.max(ny).div_ceil(18).max(1);
-        for j in (stride / 2..ny).step_by(stride) {
-            for i in (stride / 2..nx).step_by(stride) {
-                let Some(Some((re, im))) = data.get(j * nx + i) else { continue };
-                if !re.iter().chain(im).all(|v| v.is_finite()) || len(*re).hypot(len(*im)) < peak * 0.05 {
-                    continue;
-                }
-                let centre = [0, 1, 2].map(|k| c[k] + du[k] * i as f64 / (nx - 1) as f64 + dv[k] * j as f64 / (ny - 1) as f64);
-                for side in [-1.0, 1.0] {
-                    let mut start = centre;
-                    start[normal] += side * max_length * 0.14;
-                    built.arrows.push(crate::gpu3d::Arrow {
-                        start,
-                        end: start,
-                        color,
-                        section_clip: true,
-                        motion: Some(crate::gpu3d::Motion {
-                            re: re.map(|v| v * max_length / peak),
-                            im: im.map(|v| v * max_length / peak),
-                            max_length,
-                        }),
-                    });
-                }
-            }
-        }
-    }
+    let (arrows, legend) = scene3d::phase_arrows(&app.session, samples, &field.view, lo, &crate::theme::scene_colours());
+    built.arrows.extend(arrows);
+    built.arrow_legend.extend(legend);
 }
 
 /// The browser rows of what is selected in the view, in its order (looked up again only when the

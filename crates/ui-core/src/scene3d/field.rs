@@ -160,3 +160,69 @@ fn field_arrows(colours: &Colours, session: &Session, f: &FieldLayer, lo: [f64; 
     }
     out
 }
+
+/// The field's arrows on its plane for the GPU to turn with the phase (each carries its phasor,
+/// the vertex shader takes Re(F e^{jωt})), E's and H's as the view shows them, with what each
+/// set's legend says: on a grid of about 18 a side, a pair either side of the plane, each at full
+/// length the set's peak (the field's whole complex length, robust to a few spikes); what lies
+/// across the plane left out, and arrows under a twentieth of the peak.
+pub fn phase_arrows(
+    session: &Session,
+    samples: &emcraft_engine::view::PlaneSamples,
+    view: &emcraft_engine::view::FieldView,
+    lo: [f64; 3],
+    colours: &Colours,
+) -> (Vec<super::Arrow>, Vec<(String, emcraft_render::Rgb)>) {
+    let (x, y) = samples.axes();
+    let [c, u, v] = super::field_frame_of(session, samples.plane, samples.at, x.span(), y.span(), lo);
+    let normal = normal_axis(samples.plane);
+    let du = [0, 1, 2].map(|k| u[k] - c[k]);
+    let dv = [0, 1, 2].map(|k| v[k] - c[k]);
+    let len = |d: [f64; 3]| d.iter().map(|v| v * v).sum::<f64>().sqrt();
+    let max_length = len(du).max(len(dv)) / 18.0 * 0.85;
+    let sets = [
+        (view.show_e, emcraft_engine::view::Component::E, colours.scene.port_input),
+        (view.show_h, emcraft_engine::view::Component::H, colours.scene.port_output),
+    ];
+    let mut arrows = Vec::new();
+    let mut legend = Vec::new();
+    for (component, color) in sets.into_iter().filter(|s| s.0).map(|s| (s.1, s.2)) {
+        let emcraft_engine::view::Phasors { nx, ny, grid } = samples.phasors(component);
+        if nx < 2 || ny < 2 {
+            continue;
+        }
+        // Normalized against the full complex field, not its in-plane numerical residue.
+        let peak = emcraft_engine::view::robust_peak(grid.iter().flatten().map(|(re, im)| len(*re).hypot(len(*im))).collect());
+        if !(peak > 0.0 && peak.is_finite()) {
+            continue;
+        }
+        let in_plane = |mut p: [f64; 3]| {
+            p[normal] = 0.0;
+            p
+        };
+        legend.push((arrow_legend(component.is_magnetic(), peak), color));
+        let stride = nx.max(ny).div_ceil(18).max(1);
+        for j in (stride / 2..ny).step_by(stride) {
+            for i in (stride / 2..nx).step_by(stride) {
+                let Some(Some((re, im))) = grid.get(j * nx + i) else { continue };
+                let (re, im) = (in_plane(*re), in_plane(*im));
+                if !re.iter().chain(&im).all(|v| v.is_finite()) || len(re).hypot(len(im)) < peak * 0.05 {
+                    continue;
+                }
+                let centre = [0, 1, 2].map(|k| c[k] + du[k] * i as f64 / (nx - 1) as f64 + dv[k] * j as f64 / (ny - 1) as f64);
+                for side in [-1.0, 1.0] {
+                    let mut start = centre;
+                    start[normal] += side * max_length * 0.14;
+                    arrows.push(super::Arrow {
+                        start,
+                        end: start,
+                        color,
+                        section_clip: true,
+                        motion: Some(super::Motion { re: re.map(|v| v * max_length / peak), im: im.map(|v| v * max_length / peak), max_length }),
+                    });
+                }
+            }
+        }
+    }
+    (arrows, legend)
+}

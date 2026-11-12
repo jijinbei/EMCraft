@@ -53,6 +53,8 @@ pub enum Nav {
     Phase(f64),
     /// The section view's cut, or none (the whole model).
     Section(Option<Cut>),
+    /// The field's arrows shown: E's, H's.
+    Arrows(bool, bool),
 }
 
 /// A click on the view: where (points from its corner), whether Shift or Ctrl was held, whether
@@ -89,6 +91,8 @@ pub struct Shown {
     pub bounds: Option<Bounds>,
     pub labels: Vec<scene3d::Label>,
     pub legend: Vec<(String, Rgb)>,
+    /// The field's arrows: what each set shows and its scale (plain Unicode), in its colour.
+    pub arrow_legend: Vec<(String, Rgb)>,
     /// The field's colour bar, on the field overlay.
     pub bar: Option<field::Bar>,
     /// The field plane's phasors and colour scale when the GPU colours it.
@@ -146,20 +150,36 @@ impl Default for View3d {
     }
 }
 
+/// The field's arrows for the GPU to turn with the phase, and their legend.
+type Arrows = (Vec<scene3d::Arrow>, Vec<(String, Rgb)>);
+
 /// The scene of `session` for `key` in `theme`'s colours with the field's `layers`, packed, its
-/// plane marked for the GPU to colour from `grid` when it does (`view` its scale's).
-fn built(session: &Session, theme: &Theme, key: Key, layers: &[scene3d::FieldLayer], grid: Option<(Arc<FieldGrid>, &FieldView)>) -> Shown {
+/// plane marked for the GPU to colour from `grid` when it does (`view` its scale's), the field's
+/// `arrows` with it.
+fn built(
+    session: &Session,
+    theme: &Theme,
+    key: Key,
+    layers: &[scene3d::FieldLayer],
+    grid: Option<(Arc<FieldGrid>, &FieldView)>,
+    arrows: Arrows,
+) -> Shown {
     let b = scene3d::build_with(session, key.overlay, &Colours::of(theme), layers, &key.selected);
+    let (more, said) = arrows;
+    let b =
+        scene3d::Built { arrows: b.arrows.into_iter().chain(more).collect(), arrow_legend: b.arrow_legend.into_iter().chain(said).collect(), ..b };
     let mark = grid.as_ref().map(|(g, _)| g.mark());
     let packed = Packed::with_arrows(b.gpu_scene.as_ref().unwrap_or(&b.scene), emcraft_gpu3d::next_id(), mark, &b.arrows);
     let bounds = b.bounds.or_else(|| b.scene.bounds());
-    let (labels, legend, bar) = (b.labels.clone(), b.legend.clone(), b.colour_bar.as_ref().map(field::Bar::of));
+    let (labels, bar) = (b.labels.clone(), b.colour_bar.as_ref().map(field::Bar::of));
+    let legend = b.legend.clone();
+    let arrow_legend = b.arrow_legend.iter().map(|(s, c)| (emcraft_render::math::to_unicode(s), *c)).collect();
     // The scale the colour bar shows, so the plane and the bar agree.
     let field = grid.map(|(g, v)| {
         let scale = b.colour_bar.as_ref().map_or_else(|| g.scale(v), |c| c.scale);
         (g, scale)
     });
-    Shown { key, built: Arc::new(b), packed: Arc::new(packed), bounds, labels, legend, bar, field }
+    Shown { key, built: Arc::new(b), packed: Arc::new(packed), bounds, labels, legend, arrow_legend, bar, field }
 }
 
 impl View3d {
@@ -203,7 +223,12 @@ impl View3d {
             (Some(Ok(plot)), Some((plane, at))) => vec![scene3d::FieldLayer { plot, plane, at, gpu: grid.is_some() }],
             _ => Vec::new(),
         };
-        let shown = built(session, theme, key, &layers, grid.clone().map(|g| (g, &self.field)));
+        // With the GPU's colouring its arrows turn on the GPU too: their phasors go with the scene.
+        let arrows = match (&grid, &sampled, lo) {
+            (Some(_), Some(s), Some(lo)) => scene3d::phase_arrows(session, s.samples(), &self.field, lo, &Colours::of(theme)),
+            _ => (Vec::new(), Vec::new()),
+        };
+        let shown = built(session, theme, key, &layers, grid.clone().map(|g| (g, &self.field)), arrows);
         let field_error = plot.and_then(Result::err);
         let grid = grid.map(|g| (grid_key, g)).or_else(|| self.grid.clone());
         let view = View3d { shown: Some(shown), sampled, grid, field_error, ..self };
@@ -279,7 +304,13 @@ impl View3d {
             Nav::Standard(v) => self.moved(|c| c.standard(v)).fit(),
             Nav::Overlay(overlay) => View3d { overlay, ..self },
             Nav::Plane(plane) => View3d { field: FieldView { plane, at: None, ..self.field.clone() }, ..self },
-            Nav::Component(component) => View3d { field: FieldView { component, ..self.field.clone() }, ..self },
+            // The arrows follow the field coloured: E's for an electric component, H's for a
+            // magnetic one.
+            Nav::Component(component) => {
+                let (show_e, show_h) = (!component.is_magnetic(), component.is_magnetic());
+                View3d { field: FieldView { component, show_e, show_h, ..self.field.clone() }, ..self }
+            }
+            Nav::Arrows(show_e, show_h) => View3d { field: FieldView { show_e, show_h, ..self.field.clone() }, ..self },
             Nav::Frequency(frequency) => View3d { field: FieldView { frequency, ..self.field.clone() }, ..self },
             Nav::At(at) => View3d { field: FieldView { at: Some(at), ..self.field.clone() }, ..self },
             Nav::Phase(phase) if phase.is_finite() => {

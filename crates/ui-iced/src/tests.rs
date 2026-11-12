@@ -8,6 +8,13 @@ use serde_json::json;
 
 use crate::app::{App, BAND, Field, Message, Pointer};
 
+/// One test at a time on the GPU: the offscreen device's pictures and the simulator's wgpu
+/// snapshots made side by side from several threads have crashed the driver.
+fn gpu() -> std::sync::MutexGuard<'static, ()> {
+    static GPU: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    GPU.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 fn field(node: &str, key: &'static str) -> Field {
     Field { node: node.to_owned(), key }
 }
@@ -65,6 +72,7 @@ fn the_node_editor_edits_drags_and_links_the_chain() {
 /// it. With `EMCRAFT_ICED_SHOTS=DIR` the sample's view is written there as a PNG to look at.
 #[test]
 fn an_empty_chain_offers_its_stages_and_a_click_adds_one() {
+    let _gpu = gpu();
     let mut app = App::new(None);
     app.update(Message::Page(emcraft_ui_core::view::View::System));
     let messages: Vec<Message> = {
@@ -159,6 +167,7 @@ fn run_solves_on_the_worker_and_shows_the_sweep() {
 /// the picture is written there. A machine with no adapter at all skips it.
 #[test]
 fn the_3d_frame_draws_the_model() {
+    let _gpu = gpu();
     let app = App::new(Some("highpass"));
     let Some(shown) = app.view3d.shown.as_ref() else { panic!("no scene") };
     let frame = crate::view3d::shader::frame(&app.shot(shown), [640, 400], 1.0);
@@ -179,6 +188,7 @@ fn the_3d_frame_draws_the_model() {
         finish(&mut app);
         let ports = Message::View3d(crate::view3d::Nav::Overlay(emcraft_ui_core::scene3d::Overlay::Ports));
         let field = Message::View3d(crate::view3d::Nav::Overlay(emcraft_ui_core::scene3d::Overlay::Field));
+        let h_arrows = Message::View3d(crate::view3d::Nav::Arrows(true, true));
         let cut = app.view3d.bounds().map(|b| emcraft_ui_core::scene3d::Cut::middle(0, b));
         let section = Message::View3d(crate::view3d::Nav::Section(cut));
         let pick = Message::Click(crate::view3d::Click { at: emcraft_ui_core::geom::Point::new(400.0, 300.0), add: false, double: false });
@@ -187,6 +197,7 @@ fn the_3d_frame_draws_the_model() {
             ("model", emcraft_ui_core::view::View::Model, None),
             ("model-ports", emcraft_ui_core::view::View::Model, Some(ports)),
             ("model-field", emcraft_ui_core::view::View::Model, Some(field)),
+            ("model-arrows", emcraft_ui_core::view::View::Model, Some(h_arrows)),
             ("model-selected", emcraft_ui_core::view::View::Model, Some(pick)),
             ("model-section", emcraft_ui_core::view::View::Model, Some(section)),
         ] {
@@ -268,6 +279,7 @@ fn the_field_overlay_draws_the_plane_with_its_colour_bar() {
 /// phasor with both parts non-zero), so the two pictures do.
 #[test]
 fn the_gpu_colours_the_field_and_a_phase_moves_only_the_frame() {
+    let _gpu = gpu();
     use crate::view3d::Nav;
     use emcraft_ui_core::scene3d::Overlay;
     let mut app = App::new(Some("highpass"));
@@ -277,6 +289,14 @@ fn the_gpu_colours_the_field_and_a_phase_moves_only_the_frame() {
     let shown = |app: &App| app.view3d.shown.clone().unwrap_or_else(|| panic!("no scene"));
     let gpu = shown(&app);
     assert!(gpu.field.is_some(), "the GPU colours the plane");
+    // The arrows turn on the GPU. TE10's E lies across the H-plane (Ey only), so no E arrow lies
+    // in it; its H (Hx, Hz) does.
+    let turning = |s: &crate::view3d::Shown| s.built.arrows.iter().filter(|a| a.motion.is_some()).count();
+    assert_eq!(turning(&gpu), 0, "E across the H-plane: no arrow in it");
+    app.update(Message::View3d(Nav::Arrows(false, true)));
+    let h = shown(&app);
+    assert!(turning(&h) > 0 && !h.arrow_legend.is_empty(), "H's arrows, with their legend");
+    let gpu = h;
     app.update(Message::View3d(Nav::Phase(std::f64::consts::FRAC_PI_2)));
     assert_eq!(shown(&app).packed.id, gpu.packed.id, "a phase builds nothing again");
     let picture = |app: &App| {
@@ -313,6 +333,7 @@ fn the_gpu_colours_the_field_and_a_phase_moves_only_the_frame() {
 /// changes and the other half differs again.
 #[test]
 fn the_section_view_clips_on_the_gpu() {
+    let _gpu = gpu();
     use crate::view3d::{Click, Nav};
     use emcraft_ui_core::geom::Point;
     use emcraft_ui_core::scene3d::Cut;

@@ -87,6 +87,9 @@ fn field_bar(app: &App) -> Element<'_, Message> {
     let degrees = v.phase.to_degrees();
     let phase = slider(0.0..=360.0, degrees, move |d: f64| nav(Nav::Phase(d.to_radians()))).step(1.0).width(160);
     let shown_phase = text(format!("ωt {degrees:.0}°")).size(t.font_body).color(t.text_dim);
+    let (e, h) = (v.show_e, v.show_h);
+    let e_arrows = tool(t, tr(t!("E arrows")), e, Some(nav(Nav::Arrows(!e, h))));
+    let h_arrows = tool(t, tr(t!("H arrows")), h, Some(nav(Nav::Arrows(e, !h))));
     row![
         label(tr(t!("Plane"))),
         planes.style(look::choice(t)),
@@ -99,7 +102,10 @@ fn field_bar(app: &App) -> Element<'_, Message> {
         Space::new().width(16),
         play,
         phase,
-        shown_phase
+        shown_phase,
+        Space::new().width(16),
+        e_arrows,
+        h_arrows
     ]
     .spacing(8)
     .align_y(Alignment::Center)
@@ -140,13 +146,23 @@ const BAR_W: f32 = 180.0;
 /// The legend over the view's corner: the field's colour bar, then a swatch and a name each.
 fn legend(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
-    let Some(s) = app.view3d.shown.as_ref().filter(|s| !s.legend.is_empty() || s.bar.is_some()) else { return Space::new().boxed() };
+    let Some(s) = app.view3d.shown.as_ref().filter(|s| !s.legend.is_empty() || !s.arrow_legend.is_empty() || s.bar.is_some()) else {
+        return Space::new().boxed();
+    };
+    // An arrow in its colour beside what its set shows.
+    let arrows = s.arrow_legend.iter().map(|(name, c)| {
+        let ink = look::rgb(*c);
+        row![text("→").size(t.font_body).color(ink), text(name.clone()).size(t.font_small).color(t.text)]
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .boxed()
+    });
     let entries = s.legend.iter().map(|(name, c)| {
         let swatch = container(Space::new().width(12).height(12))
             .style(move |_: &iced::Theme| container::Style { background: Some(look::rgb(*c).into()), ..container::Style::default() });
         row![swatch, text(name.clone()).size(t.font_small).color(t.text)].spacing(6).align_y(Alignment::Center).boxed()
     });
-    let list = column(s.bar.iter().map(|b| colour_bar(t, b)).chain(entries)).spacing(4);
+    let list = column(s.bar.iter().map(|b| colour_bar(t, b)).chain(arrows).chain(entries)).spacing(4);
     container(container(list).padding(8).style(look::ground(t))).padding(12).boxed()
 }
 
