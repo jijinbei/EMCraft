@@ -103,7 +103,10 @@ answered when its job ends), `engine.script`, `engine.commands`, `ui.inspect` (t
 page, the dialog's fields, the selection, the 3D view, the results kept), `ui.handles` and
 `ui.click` (`page:<id>`, `tab:<id>`, `command:<id>`, `overlay:<id>`, `view3d:std:<id>`,
 `view3d:fit`, `tool:<id>`, `row:<id>`, `card:edit`, `dialog:ok`, `file:save`, `edit:undo`, …),
-`ui.set` (`page`, `overlay`, `tab`, `settings`, `start`), `ui.point` (`at`: `[x, y]` in points
+`ui.set` (`page`, `overlay`, `tab`, `settings`, `start`, `setup`: the Setup form's fields typed by
+name), the workflow's handles (`step:<id>`, `step:fix:<i>`, `setup:confirm`, `run:start`,
+`excitation:preview`, `results:check`, `results:export`; `ui.inspect`'s `workflow` gives the step
+open, each step's status and checks, the form, a refusal and a failure), `ui.point` (`at`: `[x, y]` in points
 from the 3D view's corner, `view3d.size` in `ui.inspect`; `click?`, `double?`, `add?`: the
 pointer there, what is under it found — a tool's face and snap, the field's values — and a
 click), `ui.dialog` (`open`, `set`, `ok`, `cancel`), `ui.cancel`, `ui.messages` and

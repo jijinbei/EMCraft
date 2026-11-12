@@ -34,6 +34,7 @@ macro_rules! t {
 }
 
 pub mod app;
+pub mod band;
 pub mod browser;
 pub mod chart;
 pub mod charts;
@@ -51,6 +52,8 @@ pub mod ribbon;
 pub mod run;
 pub mod settings;
 pub mod start;
+pub mod step_panel;
+pub mod steps;
 pub mod system;
 pub mod tools;
 pub mod view3d;

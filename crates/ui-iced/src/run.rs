@@ -51,7 +51,10 @@ impl App {
                 self.error = None;
                 self.after(id, params, &reply);
             }
-            Err(e) => self.error = Some(format!("{}: {e}", command_label(id))),
+            Err(e) => {
+                self.error = Some(format!("{}: {e}", command_label(id)));
+                self.workflow.failure = Some((id.to_owned(), e.to_string()));
+            }
         }
     }
 
@@ -63,7 +66,13 @@ impl App {
         self.generation += 1;
         // A project opened or begun shows as a new window would: nothing selected, on its first
         // page, the start page and the settings left.
+        // A solve started from Run shows its results' step.
+        if emcraft_ui_core::job::is_solve(id) && self.workflow.step == Some(emcraft_engine::workflow::Step::Run) {
+            self.open_step(Some(emcraft_engine::workflow::Step::Results));
+        }
         if matches!(id, "file.new" | "file.open" | "file.sample" | "pcb.sample") {
+            // Another project: its own workflow, the machine's devices kept.
+            self.workflow = std::mem::take(&mut self.workflow).for_another_project();
             self.selection = Default::default();
             self.dialog = None;
             (self.home, self.settings) = (false, false);
@@ -119,6 +128,7 @@ impl App {
             Then::Failed { command, error } => {
                 self.note = None;
                 self.error = Some(format!("{}: {error}", command_label(&command)));
+                self.workflow.failure = Some((command, error));
             }
             Then::Answer(waiting, answer) => waiting.into_iter().for_each(|w| drop(w.send(answer.clone()))),
             Then::Run(list) => self.queue(list),

@@ -73,6 +73,9 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         overlays.chain(views).chain(fixed).chain(tools).collect::<Vec<_>>()
     });
     let rows = app.rows().map(|r| (format!("row:{}", r.id), Message::Row(r.id.clone())));
+    let steps = crate::steps::shown_bar(app)
+        .then(|| emcraft_engine::workflow::Step::ALL.into_iter().map(|s| (format!("step:{}", s.id()), Message::Step(Some(s)))).collect::<Vec<_>>());
+    let panel = crate::step_panel::handles(app);
     let card = (!app.selection.is_clear()).then(|| [("card:edit".to_owned(), Message::Edit), ("card:delete".to_owned(), Message::Delete)]);
     let dialog = app.dialog.is_some().then(|| {
         [
@@ -91,6 +94,8 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         .chain(commands)
         .chain(model.into_iter().flatten())
         .chain(rows)
+        .chain(steps.into_iter().flatten())
+        .chain(panel)
         .chain(card.into_iter().flatten())
         .chain(dialog.into_iter().flatten())
         .chain(asking.into_iter().flatten())
@@ -120,6 +125,7 @@ pub fn inspect(app: &App) -> Value {
         "asking": app.asking.as_ref().map(|t| format!("{t:?}")),
         "selection": app.selection.iter().map(|p| format!("{p:?}")).collect::<Vec<_>>(),
         "tools": app.tools.inspect(app.tool, app.session.display().length),
+        "workflow": crate::steps::inspect(app),
         "view3d": {
             "overlay": v.overlay.id(),
             "yaw": c.yaw.to_degrees(),
@@ -254,6 +260,16 @@ impl App {
             match ribbon::RibbonTab::parse(t) {
                 Some(t) => self.update(Message::Tab(t)),
                 None => return err(format!("no tab `{}`", emcraft_engine::text::clip(t, 40))),
+            }
+        }
+        // The Setup form's fields typed, by name.
+        if let Some(fields) = p.get("setup").and_then(Value::as_object) {
+            for (k, v) in fields {
+                let Some(name) = emcraft_ui_core::steps::form::NAMES.iter().chain(["touchstone"].iter()).find(|n| **n == k.as_str()) else {
+                    return err(format!("no Setup field `{}`", emcraft_engine::text::clip(k, 40)));
+                };
+                let text = v.as_str().map_or_else(|| v.to_string(), str::to_owned);
+                self.update(Message::StepAct(crate::step_panel::Act::Typed(name, text)));
             }
         }
         for (k, m) in [("settings", Message::Settings as fn(bool) -> Message), ("start", Message::Home)] {

@@ -93,6 +93,10 @@ pub enum Message {
     Tool(Option<emcraft_ui_core::tools::Tool>),
     /// Escape: what the tool picked dropped; with nothing picked, the tool off.
     Escape,
+    /// A step of the workflow opened (or the one open closed), and what its panel's controls
+    /// ask for.
+    Step(Option<emcraft_engine::workflow::Step>),
+    StepAct(crate::step_panel::Act),
     /// A grip dragged: a selected body's, or the selected port's reference plane's.
     Grip(crate::view3d::GripMove),
     /// A key typed while a body's grip is held: a digit (Enter as '\n'), or Backspace.
@@ -180,6 +184,8 @@ pub struct App {
     /// The reference plane's number as typed: the port, the text, and the value (display
     /// units) it was typed over (the text follows the port and a drag until it is edited).
     pub(crate) ref_text: Option<(usize, String, f64)>,
+    /// The workflow: the step open, the statuses, the Setup form, a refused or failed run.
+    pub(crate) workflow: crate::steps::Workflow,
     /// What is selected (in the 3D view or the browser), and the browser's tree for the
     /// generation it was read for.
     pub(crate) selection: Selection,
@@ -252,6 +258,7 @@ impl App {
             tools: Default::default(),
             body_drag: None,
             ref_text: None,
+            workflow: Default::default(),
             selection: Selection::default(),
             tree: None,
             replies: Replies::default(),
@@ -379,6 +386,7 @@ impl App {
             let overlay = if board { Overlay::Board } else { Overlay::Plain };
             self.view3d = std::mem::take(&mut self.view3d).navigated(Nav::Overlay(overlay));
         }
+        self.refresh_steps();
         // The reference plane's number follows the port and a drag until it is edited.
         self.ref_text = match (self.reference_now(), self.ref_text.take()) {
             (Some((port, now)), Some(kept)) if kept.0 == port && kept.2 == now => Some(kept),
@@ -697,7 +705,13 @@ impl App {
         };
         // The ribbon's commands are the project's: not over the settings or the start page.
         let ribbon = (!self.settings && !self.home).then(|| crate::ribbon::view(self));
-        let parts = std::iter::once(bar.boxed()).chain(ribbon).chain(crate::files::recoveries(self)).chain(std::iter::once(page));
+        let steps = crate::steps::shown_bar(self).then(|| crate::steps::bar(self));
+        // The open step's panel at the page's right.
+        let page = match crate::step_panel::view(self).filter(|_| crate::steps::shown_bar(self)) {
+            Some(panel) => iced::widget::row![page, panel].spacing(8).height(Fill).boxed(),
+            None => page,
+        };
+        let parts = std::iter::once(bar.boxed()).chain(ribbon).chain(steps).chain(crate::files::recoveries(self)).chain(std::iter::once(page));
         let window = container(iced::widget::Column::with_children(parts)).width(Fill).height(Fill).style(look::window(t));
         let over = self.dialog.as_ref().map(|d| crate::dialog::view(self, d)).or_else(|| crate::files::question(self));
         match over {
@@ -790,6 +804,14 @@ impl App {
             }
             Message::Escape if self.body_drag.is_some() => {
                 self.body_drag = None;
+                None
+            }
+            Message::Step(step) => {
+                self.open_step(step);
+                None
+            }
+            Message::StepAct(a) => {
+                self.step_act(a);
                 None
             }
             Message::RefText(s) => {

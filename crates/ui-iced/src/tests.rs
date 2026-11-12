@@ -1077,3 +1077,29 @@ fn the_pivot_the_plane_the_projection_and_the_reference_number() {
     app.update(Message::RefZero);
     assert_eq!(deembed(&app), 0.0);
 }
+
+/// Every step's panel is drawn for the high-pass filter (its port modes previewed in the
+/// Excitation step: TE10 propagates in WR-90 at the band's top), and a kind of analysis chosen
+/// on the bar is the project's. Evidence: the waveguide's TE10 cut-off (6.557 GHz) lies below
+/// the band's top, so its mode propagates.
+#[test]
+fn every_steps_panel_and_the_kind() {
+    use emcraft_engine::workflow::Step;
+    let mut app = App::new(Some("highpass"));
+    for step in Step::ALL {
+        app.update(Message::Step(Some(step)));
+        let _ = app.view();
+        assert_eq!(app.workflow.step, (step != Step::Intent).then_some(step), "{step:?}");
+        assert!(crate::step_panel::view(&app).is_some() == (step != Step::Intent));
+    }
+    app.update(Message::Step(Some(Step::Excitation)));
+    app.update(Message::StepAct(crate::step_panel::Act::PreviewModes));
+    finish(&mut app);
+    let reply = app.replies.port_modes.as_ref().unwrap_or_else(|| panic!("port modes: {:?}", app.error));
+    assert!(reply.ports.iter().all(|p| p.modes.first().is_some_and(|m| m.propagating)), "TE10 propagates");
+    let _ = app.view();
+    app.update(Message::Run(emcraft_ui_core::system::gesture::Command { id: "project.analysis", params: json!({"kind": "eigenmodes"}) }));
+    assert_eq!(app.solver(), emcraft_ui_core::steps::Solver::Eigenmodes);
+    app.update(Message::Step(Some(Step::Setup)));
+    assert!(crate::step_panel::view(&app).is_some());
+}
