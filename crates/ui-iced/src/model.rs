@@ -3,7 +3,7 @@
 //! labels and legend. A solve runs on the worker ([`crate::run`]); its progress shows in the window's bar.
 
 use emcraft_render::view3d::StandardView;
-use emcraft_ui_core::lang::tr;
+use emcraft_ui_core::lang::{args, tr, trf};
 use emcraft_ui_core::scene3d::Overlay;
 use iced::widget::{Space, canvas, column, container, row, shader, stack, text};
 use iced::{Alignment, Element, Fill, Widget};
@@ -65,6 +65,20 @@ fn legend(app: &App) -> Element<'_, Message> {
     container(container(list).padding(8).style(look::ground(t))).padding(12).boxed()
 }
 
+/// What is selected, on a card at the top of the view: its name and detail, or how many parts.
+fn card(app: &App) -> Element<'_, Message> {
+    let t = app.look.tokens;
+    let rows = app.picked.as_ref().map_or(&[][..], |(_, rows)| rows.as_slice());
+    let line = match (rows, app.selection.len()) {
+        (_, 0) => return Space::new().boxed(),
+        ([r], 1) if r.detail.is_empty() => r.shown.clone(),
+        ([r], 1) => format!("{}  ·  {}", r.shown, r.detail),
+        (_, n) => trf(t!("{n} selected"), args!(n = n)),
+    };
+    let card = container(text(line).size(t.font_body).color(t.text)).padding([6, 12]).style(look::ground(t));
+    container(card).padding(12).center_x(Fill).boxed()
+}
+
 /// The model page.
 pub fn view(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
@@ -72,7 +86,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Some(s) => {
             let viewer = Viewer { shot: app.shot(s), nav: app.nav };
             let labels = Labels { labels: &s.labels, camera: app.view3d.camera, tokens: t };
-            stack![shader(viewer).width(Fill).height(Fill), canvas(labels).width(Fill).height(Fill), legend(app)].boxed()
+            stack![shader(viewer).width(Fill).height(Fill), canvas(labels).width(Fill).height(Fill), legend(app), card(app)].boxed()
         }
         None => container(text(tr(t!("No geometry yet: open a sample or start at step 1, Geometry."))).size(t.font_heading).color(t.text_dim))
             .center(Fill)

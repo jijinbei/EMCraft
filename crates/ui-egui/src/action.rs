@@ -163,7 +163,7 @@ impl EmcraftApp {
     /// Edits the one row selected, as its double-click does.
     fn edit_selected(&mut self) -> Result<Value, UiError> {
         let row = self.ui_state.selection().single().and_then(|p| crate::browser::rows_of(self, &[p]).into_iter().next());
-        match row.and_then(|(_, r)| r.edit_action()) {
+        match row.and_then(|(_, r)| crate::browser::RowExt::edit_action(&r)) {
             Some(a) => self.apply(a),
             None => Ok(Value::Null),
         }

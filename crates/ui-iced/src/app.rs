@@ -14,9 +14,12 @@ use emcraft_ui_core::system::gesture::{Canvas, Command, Input};
 use emcraft_ui_core::system::layout::Layout;
 use std::rc::Rc;
 
+use emcraft_ui_core::browser::{self, Row};
 use emcraft_ui_core::job::Job;
 use emcraft_ui_core::navigation::NavPreset;
 use emcraft_ui_core::prefs::{GpuLook, Prefs};
+use emcraft_ui_core::replies::Replies;
+use emcraft_ui_core::selection::{self, Selection};
 use emcraft_ui_core::theme::{Theme, Themes};
 use emcraft_ui_core::view::View;
 use iced::widget::{Space, button, column, container, row, text};
@@ -25,7 +28,7 @@ use iced::{Alignment, Element, Fill, Subscription, Task, Widget};
 use crate::look::{self, Look};
 use crate::run::{PAGES, cancel_label, page_label};
 use crate::view3d::shader::Shot;
-use crate::view3d::{Nav, Shown, View3d};
+use crate::view3d::{Click, Nav, Shown, View3d};
 use serde_json::json;
 
 /// The band's fields' node, in a [`Field`].
@@ -69,6 +72,8 @@ pub enum Message {
     Page(View),
     /// The 3D view's camera or what it shows changed.
     View3d(Nav),
+    /// A click on the 3D view: what is under it picked.
+    Click(Click),
     /// A command started from a button: a long one on the worker.
     Start(String),
     /// The running job stopped.
@@ -99,6 +104,10 @@ pub struct App {
     /// The page shown.
     pub(crate) page: View,
     pub(crate) view3d: View3d,
+    /// What is selected in the 3D view, and its rows (the browser's) for the generation and
+    /// selection they were read for.
+    pub(crate) selection: Selection,
+    pub(crate) picked: Option<((u64, Selection), Vec<Row>)>,
     /// The charts as drawn.
     pub(crate) charts: crate::charts::Charts,
     /// Raised by every command that ends well (the model's revision does not follow a solve's
@@ -134,6 +143,8 @@ impl App {
             look,
             page,
             view3d: View3d::default(),
+            selection: Selection::default(),
+            picked: None,
             charts: crate::charts::Charts::default(),
             generation: 0,
             job: None,
@@ -167,7 +178,12 @@ impl App {
     /// What is drawn from the project made again where it changed: the 3D view's scene and the
     /// charts, in the window's theme.
     fn settle(&mut self) {
-        self.view3d = std::mem::take(&mut self.view3d).refreshed(&self.session, self.generation, &self.look.theme);
+        self.view3d = std::mem::take(&mut self.view3d).refreshed(&self.session, self.generation, &self.selection, &self.look.theme);
+        let key = (self.generation, self.selection.clone());
+        if self.picked.as_ref().is_none_or(|(k, _)| *k != key) {
+            let rows = browser::rows_of(&self.session, &Replies::default(), &self.selection).into_iter().map(|(_, r)| r).collect();
+            self.picked = Some((key, rows));
+        }
         self.charts = std::mem::take(&mut self.charts).refreshed(&self.session, self.generation, &self.look, self.chart);
     }
 
@@ -302,6 +318,14 @@ impl App {
             }
             Message::View3d(nav) => {
                 self.view3d = std::mem::take(&mut self.view3d).navigated(nav);
+                None
+            }
+            Message::Click(c) => {
+                let pick = self.view3d.pick(c.at);
+                let click = if c.double { selection::Click::Double { pick } } else { selection::Click::Single { pick, add: c.add } };
+                if selection::step(&mut self.selection, click) == selection::Then::Fit {
+                    self.view3d = std::mem::take(&mut self.view3d).navigated(Nav::Fit);
+                }
                 None
             }
             Message::Start(id) => {

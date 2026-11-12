@@ -1,4 +1,9 @@
-//! An item of the model a browser row names, with the commands that edit and delete it.
+//! The browser: its rows ([`tree`]) and the item of the model a row names, with the commands
+//! that edit and delete it.
+
+mod tree;
+
+pub use tree::*;
 
 use serde::Deserialize;
 use serde_json::Value;

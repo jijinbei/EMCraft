@@ -13,7 +13,7 @@ use emcraft_engine::Session;
 use emcraft_gpu3d::Packed;
 use emcraft_render::Rgb;
 use emcraft_render::view3d::{Camera, StandardView};
-use emcraft_ui_core::scene3d::{self, Colours, Overlay};
+use emcraft_ui_core::scene3d::{self, Colours, Overlay, Pick};
 use emcraft_ui_core::theme::Theme;
 
 /// A box (m): its low and high corners.
@@ -38,20 +38,32 @@ pub enum Nav {
     Size(f32, f32),
 }
 
-/// What the scene was built from: the window's generation of the project, the overlay, the theme and the
-/// language its legend is in.
+/// A click on the view: where (points from its corner), whether Shift or Ctrl was held, whether
+/// it was the second of a double click.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Click {
+    pub at: emcraft_ui_core::geom::Point,
+    pub add: bool,
+    pub double: bool,
+}
+
+/// What the scene was built from: the window's generation of the project, the overlay, what is
+/// selected (lit), the theme and the language its labels and legend are in.
 #[derive(Clone, Debug, PartialEq)]
 struct Key {
     generation: u64,
     overlay: Overlay,
+    selected: Vec<Pick>,
     theme: String,
     language: &'static str,
 }
 
-/// The scene as built: packed for the GPU, the model's box, the labels and the legend.
+/// The scene as built (what a click picks from), packed for the GPU, the model's box, the labels
+/// and the legend.
 #[derive(Clone, Debug)]
 pub struct Shown {
     key: Key,
+    pub built: Arc<scene3d::Built>,
     pub packed: Arc<Packed>,
     pub bounds: Option<Bounds>,
     pub labels: Vec<scene3d::Label>,
@@ -78,28 +90,44 @@ impl Default for View3d {
 }
 
 /// The scene of `session` for `overlay` in `theme`'s colours, packed.
-fn built(session: &Session, overlay: Overlay, theme: &Theme, key: Key) -> Shown {
-    let b = scene3d::build(session, overlay, &Colours::of(theme));
+fn built(session: &Session, theme: &Theme, key: Key) -> Shown {
+    let b = scene3d::build_with(session, key.overlay, &Colours::of(theme), &[], &key.selected);
     let packed = Packed::with_arrows(b.gpu_scene.as_ref().unwrap_or(&b.scene), emcraft_gpu3d::next_id(), None, &b.arrows);
     let bounds = b.bounds.or_else(|| b.scene.bounds());
-    Shown { key, packed: Arc::new(packed), bounds, labels: b.labels, legend: b.legend }
+    let (labels, legend) = (b.labels.clone(), b.legend.clone());
+    Shown { key, built: Arc::new(b), packed: Arc::new(packed), bounds, labels, legend }
 }
 
 impl View3d {
     /// The view after the project or the theme changed: the scene built again when what it shows
     /// changed, a new box fitted.
-    /// `generation`: the window's, raised by every command that ends well.
-    pub fn refreshed(self, session: &Session, generation: u64, theme: &Theme) -> View3d {
-        let key = Key { generation, overlay: self.overlay, theme: theme.name.clone(), language: emcraft_ui_core::lang::current() };
+    /// `generation`: the window's, raised by every command that ends well; `selected`: what is
+    /// lit.
+    pub fn refreshed(self, session: &Session, generation: u64, selected: &[Pick], theme: &Theme) -> View3d {
+        let key = Key {
+            generation,
+            selected: selected.to_vec(),
+            overlay: self.overlay,
+            theme: theme.name.clone(),
+            language: emcraft_ui_core::lang::current(),
+        };
         if self.shown.as_ref().is_some_and(|s| s.key == key) {
             return self;
         }
-        let shown = built(session, self.overlay, theme, key);
+        let shown = built(session, theme, key);
         let view = View3d { shown: Some(shown), ..self };
         match view.bounds() {
             Some(b) if view.fitted.is_none_or(|(f, _)| f != b) => view.fit(),
             _ => view,
         }
+    }
+
+    /// What is under `at` (points from the view's corner): the part its nearest triangle is.
+    pub fn pick(&self, at: emcraft_ui_core::geom::Point) -> Option<Pick> {
+        let shown = self.shown.as_ref()?;
+        let (w, h) = (f64::from(self.size.0), f64::from(self.size.1));
+        let pixel = emcraft_render::view3d::Pixel::new(f64::from(at.x), f64::from(at.y), w, h);
+        shown.built.pick(&self.camera, pixel).and_then(Pick::from_tag)
     }
 
     /// The model's box, once there is one.

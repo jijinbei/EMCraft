@@ -178,10 +178,12 @@ fn the_3d_frame_draws_the_model() {
         app.update(Message::Start("solve.run".into()));
         finish(&mut app);
         let ports = Message::View3d(crate::view3d::Nav::Overlay(emcraft_ui_core::scene3d::Overlay::Ports));
+        let pick = Message::Click(crate::view3d::Click { at: emcraft_ui_core::geom::Point::new(400.0, 300.0), add: false, double: false });
         for (name, page, then) in [
             ("sparameters", emcraft_ui_core::view::View::SParameters, None),
             ("model", emcraft_ui_core::view::View::Model, None),
             ("model-ports", emcraft_ui_core::view::View::Model, Some(ports)),
+            ("model-selected", emcraft_ui_core::view::View::Model, Some(pick)),
         ] {
             app.update(Message::Page(page));
             if let Some(m) = then {
@@ -193,4 +195,29 @@ fn the_3d_frame_draws_the_model() {
             assert!(shot.matches_image(std::path::Path::new(&dir).join(name)).unwrap_or(false));
         }
     }
+}
+
+/// A click on the model picks the part under it (the shared selection's rules): its row names it
+/// on the card and the scene is built again with it lit; Shift adds, a click on empty space
+/// clears, a double click there fits the view again.
+#[test]
+fn a_click_picks_the_part_under_it() {
+    use crate::view3d::{Click, Nav};
+    use emcraft_ui_core::geom::Point;
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::View3d(Nav::Size(800.0, 600.0)));
+    let packed = app.view3d.shown.as_ref().map(|s| s.packed.id);
+    let click = |at, add, double| Message::Click(Click { at, add, double });
+    app.update(click(Point::new(400.0, 300.0), false, false));
+    assert_eq!(app.selection.len(), 1, "the part in the middle picked");
+    let rows = app.picked.as_ref().map(|(_, r)| r.clone()).unwrap_or_default();
+    assert!(rows.first().is_some_and(|r| !r.shown.is_empty()), "its row names it: {rows:?}");
+    assert_ne!(app.view3d.shown.as_ref().map(|s| s.packed.id), packed, "lit: the scene built again");
+    app.update(click(Point::new(2.0, 2.0), true, false));
+    assert_eq!(app.selection.len(), 1, "Shift on empty space keeps it");
+    app.update(Message::View3d(Nav::Zoom(3.0)));
+    let zoomed = app.view3d.camera.distance;
+    app.update(click(Point::new(2.0, 2.0), false, true));
+    assert!(app.selection.is_clear(), "a double click on empty space clears");
+    assert!(app.view3d.camera.distance > zoomed, "and fits the view again");
 }

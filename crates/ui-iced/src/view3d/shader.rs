@@ -12,7 +12,7 @@ use emcraft_ui_core::navigation::{NavButton, NavKeys, NavMode, NavPreset};
 use iced::widget::shader::{self, Action, Viewport};
 use iced::{Point, Rectangle, Size, keyboard, mouse};
 
-use super::Nav;
+use super::{Click, Nav};
 use crate::app::Message;
 
 /// Supersampled at rest up to this many output pixels (as the egui window's).
@@ -62,14 +62,23 @@ pub struct Viewer {
     pub nav: &'static NavPreset,
 }
 
-/// The pointer between events: the drag in progress (its mode and where it was last), the
-/// modifier keys held and the view's size as last reported.
+/// The pointer between events: the drag in progress (its mode and where it was last), where the
+/// left button went down, the last click (when and where, for a double click), the modifier keys
+/// held and the view's size as last reported.
 #[derive(Default)]
 pub struct Grip {
     drag: Option<(NavMode, Point)>,
+    pressed: Option<Point>,
+    clicked: Option<(std::time::Instant, Point)>,
     keys: NavKeys,
     size: Option<Size>,
 }
+
+/// How far the pointer may move between press and release for a click, and between two clicks
+/// of a double click (points); how soon the second must follow.
+const CLICK_SLOP: f32 = 4.0;
+const DOUBLE_SLOP: f32 = 6.0;
+const DOUBLE_WITHIN: std::time::Duration = std::time::Duration::from_millis(400);
 
 fn button(b: mouse::Button) -> Option<NavButton> {
     match b {
@@ -93,6 +102,15 @@ fn dragged(mode: NavMode, d: iced::Vector) -> Nav {
     }
 }
 
+/// The click at `at`, a double click when the last one was near and just before; the click kept
+/// for the next (a double click's second is not the first of another).
+fn clicked(grip: &mut Grip, at: Point) -> Click {
+    let now = std::time::Instant::now();
+    let double = grip.clicked.is_some_and(|(t, p)| now.duration_since(t) <= DOUBLE_WITHIN && p.distance(at) <= DOUBLE_SLOP);
+    grip.clicked = (!double).then_some((now, at));
+    Click { at: crate::geom::shared(at), add: grip.keys.shift || grip.keys.ctrl, double }
+}
+
 fn publish(nav: Nav) -> Option<Action<Message>> {
     Some(Action::publish(Message::View3d(nav)).and_capture())
 }
@@ -114,8 +132,8 @@ impl shader::Program<Message> for Viewer {
             }
             iced::Event::Mouse(mouse::Event::ButtonPressed(b)) => {
                 let at = cursor.position_in(bounds)?;
-                let mode = button(*b).and_then(|b| self.nav.mode(b, grip.keys))?;
-                grip.drag = Some((mode, at));
+                grip.pressed = (*b == mouse::Button::Left).then_some(at);
+                grip.drag = button(*b).and_then(|b| self.nav.mode(b, grip.keys)).map(|mode| (mode, at));
                 Some(Action::capture())
             }
             iced::Event::Mouse(mouse::Event::CursorMoved { position }) => {
@@ -124,9 +142,14 @@ impl shader::Program<Message> for Viewer {
                 grip.drag = Some((mode, at));
                 publish(dragged(mode, at - last))
             }
-            iced::Event::Mouse(mouse::Event::ButtonReleased(_)) => {
-                grip.drag.take()?;
-                Some(Action::request_redraw())
+            iced::Event::Mouse(mouse::Event::ButtonReleased(b)) => {
+                grip.drag = None;
+                let at = cursor.position_in(bounds);
+                let pressed = grip.pressed.take().filter(|_| *b == mouse::Button::Left);
+                match (pressed, at) {
+                    (Some(p), Some(at)) if p.distance(at) <= CLICK_SLOP => Some(Action::publish(Message::Click(clicked(grip, at))).and_capture()),
+                    _ => Some(Action::request_redraw()),
+                }
             }
             iced::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                 cursor.position_in(bounds)?;

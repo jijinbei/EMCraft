@@ -13,7 +13,8 @@
 //! - what a frame asks of the window ([`action`]: each `Action` a click, a key or a request
 //!   makes, performed by each window its own way) and what those carry: a [`pick`] in the 3D
 //!   view, a [`selection`] click, the window's [`layer`]s, the [`files`] actions, a browser item
-//!   ([`browser`]), the board's [`pen`], how the mouse and keys move the 3D view
+//!   and the browser's rows ([`browser`]: what each part of the model is called, and its
+//!   [`math`] symbols), the board's [`pen`], how the mouse and keys move the 3D view
 //!   ([`navigation`]), a port mode's focus ([`steps`]);
 //! - what a window keeps: its [`prefs`] between launches, a [`record`]ing of its actions and the
 //!   [`crash`] reports made of them;
@@ -47,6 +48,7 @@ pub mod handle;
 pub mod job;
 pub mod lang;
 pub mod layer;
+pub mod math;
 pub mod navigation;
 pub mod page;
 pub mod param_labels;
