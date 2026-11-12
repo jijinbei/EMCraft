@@ -104,6 +104,9 @@ pub enum Message {
     Search(String),
     SearchPick(Option<&'static str>),
     FocusSearch,
+    /// A browser section folded or unfolded; Delete pressed (the selected items deleted).
+    Fold(String),
+    DeleteKey,
     /// What a result page's choice asks for, and its chart's style card.
     R(crate::results::RAct),
     Style(crate::style_card::StyleAct),
@@ -211,6 +214,8 @@ pub struct App {
     pub(crate) style: emcraft_ui_core::results::style::StyleForm,
     /// The command search's query.
     pub(crate) search: String,
+    /// The browser's sections folded.
+    pub(crate) folded: Vec<String>,
     /// The point pinned on the field's plane (its coordinates, display units).
     pub(crate) pinned: Option<[f64; 2]>,
     /// What is selected (in the 3D view or the browser), and the browser's tree for the
@@ -294,6 +299,7 @@ impl App {
             study: Default::default(),
             style: Default::default(),
             search: String::new(),
+            folded: Vec::new(),
             pinned: None,
             selection: Selection::default(),
             tree: None,
@@ -516,6 +522,11 @@ impl App {
     fn row(&mut self, id: &str) -> Option<Command> {
         let r = self.rows().find(|r| r.id == id)?.clone();
         self.selection = Selection::of(r.pick.into_iter().collect(), Some(r.id.clone()));
+        // A row of the model takes the workflow to its step (the mesh's to Mesh, a port's to
+        // Excitation), whose panel shows it.
+        if let Some(step) = crate::browser::step_of(&r).filter(|s| self.workflow.step != Some(*s) && crate::steps::shown_bar(self)) {
+            self.open_step(Some(step));
+        }
         match r.act {
             Act::Show(v) if crate::run::PAGES.contains(&v) => self.page = v,
             Act::Run(id, params) => self.start(id, params),
@@ -904,6 +915,20 @@ impl App {
                 None
             }
             Message::FocusSearch => None,
+            Message::Fold(section) => {
+                match self.folded.iter().position(|f| *f == section) {
+                    Some(i) => {
+                        self.folded.remove(i);
+                    }
+                    None => self.folded.push(section),
+                }
+                None
+            }
+            Message::DeleteKey if self.keys_free() && self.job.is_none() && !self.selection.is_clear() => {
+                self.delete();
+                None
+            }
+            Message::DeleteKey => None,
             Message::Style(a) => {
                 self.style_act(a);
                 None

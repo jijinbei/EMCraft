@@ -1369,3 +1369,36 @@ fn the_command_search_finds_opens_and_runs() {
     app.update(Message::SearchPick(None));
     assert!(app.error.as_deref().is_some_and(|e| e.starts_with("not JSON")) && !app.search.is_empty());
 }
+
+/// The browser: a section folds and unfolds; a row's eye hides what it names
+/// (view.visibility) and shows it again; a material's row takes the workflow to the geometry's
+/// step; Delete deletes the selected item (undoable).
+#[test]
+fn the_browser_folds_hides_and_deletes() {
+    use emcraft_engine::visibility::DisplayObject;
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::Fold("Bodies".into()));
+    assert_eq!(app.folded, vec!["Bodies".to_owned()]);
+    let _ = app.view();
+    app.update(Message::Fold("Bodies".into()));
+    assert!(app.folded.is_empty());
+    let vacuum = DisplayObject::Material("vacuum".into());
+    app.update(Message::Run(emcraft_ui_core::system::gesture::Command {
+        id: "view.visibility",
+        params: json!({"kind": vacuum.kind(), "name": vacuum.name(), "visible": false}),
+    }));
+    assert!(!app.session.views().visible(&vacuum));
+    let materials = app.session.model().materials.len();
+    app.update(Message::Row("material:ptfe-like".into()));
+    assert_eq!(app.workflow.step, Some(emcraft_engine::workflow::Step::Geometry));
+    // ptfe-like fills sections: deleting it is refused, the model as it was.
+    app.update(Message::DeleteKey);
+    assert_eq!(app.session.model().materials.len(), materials);
+    assert!(app.error.as_deref().is_some_and(|e| e.contains("used by")), "{:?}", app.error);
+    // A material of its own goes.
+    app.update(Message::Run(emcraft_ui_core::system::gesture::Command { id: "model.material.create", params: json!({"name": "spare", "eps_r": 3}) }));
+    assert_eq!(app.session.model().materials.len(), materials + 1);
+    app.update(Message::Row("material:spare".into()));
+    app.update(Message::DeleteKey);
+    assert_eq!(app.session.model().materials.len(), materials, "{:?}", app.error);
+}

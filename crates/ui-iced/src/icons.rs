@@ -113,3 +113,37 @@ impl canvas::Program<Message> for Icon {
         vec![frame.into_geometry()]
     }
 }
+
+/// An eye: open when what it names is shown, struck through when hidden.
+pub fn eye<'a>(visible: bool, ink: Color) -> Element<'a, Message> {
+    iced::widget::canvas(Eye { visible, ink }).width(22).height(18).boxed()
+}
+
+struct Eye {
+    visible: bool,
+    ink: Color,
+}
+
+impl canvas::Program<Message> for Eye {
+    type State = ();
+
+    fn draw(&self, _: &(), renderer: &Renderer, _: &Theme, bounds: Rectangle, _: Cursor) -> Vec<Geometry> {
+        let mut frame = Frame::new(renderer, bounds.size());
+        let c = Point::new(bounds.width / 2.0, bounds.height / 2.0);
+        let at = |x: f32, y: f32| Point::new(c.x + x, c.y + y);
+        let outline = Path::new(|b| {
+            b.move_to(at(-8.0, 0.0));
+            [(-4.0, -4.0), (0.0, -5.0), (4.0, -4.0), (8.0, 0.0), (4.0, 4.0), (0.0, 5.0), (-4.0, 4.0)]
+                .into_iter()
+                .for_each(|(x, y)| b.line_to(at(x, y)));
+            b.close();
+        });
+        let line = |w: f32| canvas::Stroke::default().with_width(w).with_color(self.ink);
+        frame.stroke(&outline, line(1.2));
+        frame.fill(&Path::circle(c, 2.0), self.ink);
+        if !self.visible {
+            frame.stroke(&Path::line(at(-7.0, 6.0), at(7.0, -6.0)), line(1.4));
+        }
+        vec![frame.into_geometry()]
+    }
+}

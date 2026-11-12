@@ -384,6 +384,7 @@ pub fn keys(event: iced::Event, status: iced::event::Status, _: iced::window::Id
         Event::KeyReleased { key, .. } if arrow(&key).is_some() => Some(Message::Key3d(Nav::Released)),
         _ if status == iced::event::Status::Captured => None,
         Event::KeyPressed { key: Key::Named(Named::Escape), .. } => Some(Message::Escape),
+        Event::KeyPressed { key: Key::Named(Named::Delete), .. } => Some(Message::DeleteKey),
         // `/` searches the commands.
         Event::KeyPressed { key: Key::Character(c), modifiers, .. } if c.as_str() == "/" && !modifiers.command() => Some(Message::FocusSearch),
         // Digits typed while a grip is held (the window takes them only then), Enter as '\n'.
