@@ -1,6 +1,7 @@
-//! The model page: a bar of what the 3D view puts forward, its fit and standard views, and the
-//! commands that mesh and solve the model; under it the 3D view ([`crate::view3d`]) and its
-//! labels and legend. A solve runs on the worker ([`crate::run`]); its progress shows in the window's bar.
+//! The model page: a bar of what the 3D view puts forward, its fit and standard views and the
+//! measuring tool (the mesh and the run are the tree's ▶); under it the 3D view
+//! ([`crate::view3d`]) and its labels and legend. A solve runs on the worker ([`crate::run`]); its
+//! progress shows in the window's bar.
 
 use emcraft_engine::view::{Component, Plane};
 use emcraft_render::view3d::StandardView;
@@ -33,9 +34,6 @@ const OVERLAYS: [(Overlay, emcraft_ui_core::lang::Text); 5] = [
 const VIEWS: [(StandardView, emcraft_ui_core::lang::Text); 4] =
     [(StandardView::Iso, t!("Iso")), (StandardView::Front, t!("Front")), (StandardView::Top, t!("Top")), (StandardView::Right, t!("Right"))];
 
-/// The commands the bar runs, and each one's name: the mesh made, the confirmed job run.
-const COMMANDS: [(&str, emcraft_ui_core::lang::Text); 2] = [("mesh.generate", t!("Generate mesh")), ("solve.run", t!("Run"))];
-
 /// A button of the bar: `label`, lit when `on`, sending `message` (none: greyed).
 fn tool<'a>(t: Tokens, label: &str, on: bool, message: Option<Message>) -> Element<'a, Message> {
     iced::widget::button(text(label.to_owned()).size(t.font_button)).style(look::button(t, on)).on_press_maybe(message).boxed()
@@ -65,14 +63,14 @@ fn bar(app: &App) -> Element<'_, Message> {
         .chain(std::iter::once(sectioning))
         .chain(VIEWS.iter().map(|(v, label)| tool(t, tr(*label), false, Some(Message::View3d(Nav::Goal(Goal::standard(*v)))))));
     let idle = app.job.is_none();
-    // The tools: each lit while on, a second press turns it off.
-    let tools = Tool::ALL.into_iter().map(|k| {
+    // The tools: each lit while on, a second press turns it off; the port tools (Excitation's
+    // ＋) only while on.
+    let tools = Tool::ALL.into_iter().filter(|k| *k == Tool::Measure || app.tool == Some(*k)).map(|k| {
         let on = app.tool == Some(k);
         tool(t, lookup(k.label()), on, idle.then_some(Message::Tool((!on).then_some(k))))
     });
-    let commands = COMMANDS.iter().map(|(id, label)| tool(t, tr(*label), *id == "solve.run", idle.then(|| Message::Start((*id).to_owned()))));
     let gap = || Space::new().width(16).boxed();
-    row(overlays.chain(std::iter::once(gap())).chain(views).chain(std::iter::once(gap())).chain(tools).chain(std::iter::once(gap())).chain(commands))
+    row(overlays.chain(std::iter::once(gap())).chain(views).chain(std::iter::once(gap())).chain(tools))
         .spacing(6)
         .align_y(Alignment::Center)
         .wrap()

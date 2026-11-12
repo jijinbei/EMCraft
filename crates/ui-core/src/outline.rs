@@ -83,6 +83,115 @@ pub fn outline(sections: Vec<(&'static str, Vec<Row>)>, kind: Analysis) -> Vec<P
     apart.into_iter().map(own).chain(steps).collect()
 }
 
+/// What each step's ＋ adds (docs/adr/0009-model-tree-window.md: every command the ribbon had,
+/// each in one place), in the workflow's order.
+const STEP_ADDS: &[(Step, &[&str])] = &[
+    (Step::Geometry, &["geometry.import", "geometry.waveguide", "geometry.body", "model.background", "model.material.create"]),
+    (Step::Excitation, &["model.port.create", "model.port.lumped", "model.element.create", "source.dipole", "source.plane_wave", "source.clear"]),
+    (Step::Setup, &["units.set"]),
+    (Step::Boundaries, &["model.region", "model.walls", "model.open", "model.symmetry.auto", "model.symmetry", "model.rotation", "model.periodic"]),
+    (Step::Mesh, &["mesh.adapt"]),
+    (Step::Run, &["solve.dispersion", "project.variable", "study.sweep", "study.optimize", "study.tolerance"]),
+    (
+        Step::Results,
+        &[
+            "view.sparameters",
+            "view.field",
+            "view.animation",
+            "view.pattern",
+            "view.dispersion",
+            "results.import",
+            "results.measured",
+            "results.network",
+            "results.mixed_mode",
+            "results.equivalent",
+            "circuit.cascade",
+            "filter.synthesize",
+            "results.coupling",
+        ],
+    ),
+];
+
+/// What the ＋ of a section of its own adds: the variables', a board's and a system chain's.
+const SECTION_ADDS: &[(&str, &[&str])] = &[
+    ("Variables", &["project.variable"]),
+    ("PCB", &["pcb.import", "pcb.sample", "pcb.segment", "pcb.via", "pcb.pour", "pcb.element", "units.set"]),
+    ("Source", &["system.source", "units.set"]),
+    ("Receiver", &["system.receiver"]),
+    ("Measurements", &["results.import"]),
+];
+
+/// What a part's ＋ offers: its commands that belong to a job of kind `kind`, then the 3D view's
+/// tools that add to it (the ports made by pointing at a face or a gap).
+///
+/// ```
+/// use emcraft_engine::workflow::{Analysis, Step};
+/// use emcraft_ui_core::outline::{Head, adds};
+/// use emcraft_ui_core::tools::Tool;
+/// let (commands, tools) = adds(Head::Step(Step::Excitation), Analysis::Frequency);
+/// assert!(commands.contains(&"model.port.create") && !commands.contains(&"source.dipole"));
+/// assert_eq!(tools, [Tool::Port, Tool::Lumped]);
+/// // Nothing drives a resonator.
+/// assert!(adds(Head::Step(Step::Excitation), Analysis::Eigenmodes).1.is_empty());
+/// ```
+pub fn adds(head: Head, kind: Analysis) -> (Vec<&'static str>, Vec<crate::tools::Tool>) {
+    let listed: &[&str] = match head {
+        Head::Step(step) => STEP_ADDS.iter().find(|(s, _)| *s == step).map_or(&[], |(_, ids)| ids),
+        Head::Section(name) => SECTION_ADDS.iter().find(|(n, _)| *n == name).map_or(&[], |(_, ids)| ids),
+    };
+    let commands = listed.iter().copied().filter(|id| fits(kind, id)).collect();
+    let tools = match head {
+        Head::Step(Step::Excitation) if fits(kind, "model.port.create") => vec![crate::tools::Tool::Port, crate::tools::Tool::Lumped],
+        _ => Vec::new(),
+    };
+    (commands, tools)
+}
+
+/// The command a step's ▶ runs: the mesh made, the confirmed run.
+///
+/// ```
+/// use emcraft_engine::workflow::Step;
+/// assert_eq!(emcraft_ui_core::outline::play(Step::Mesh), Some("mesh.generate"));
+/// assert_eq!(emcraft_ui_core::outline::play(Step::Geometry), None);
+/// ```
+pub fn play(step: Step) -> Option<&'static str> {
+    match step {
+        Step::Mesh => Some("mesh.generate"),
+        Step::Run => Some("solve.run"),
+        _ => None,
+    }
+}
+
+/// Whether a command belongs to a job of this kind of analysis: those of the other kinds are left
+/// out of the ＋ lists once a kind is chosen (the search still finds them).
+pub fn fits(kind: Analysis, id: &str) -> bool {
+    use Analysis::{Eigenmodes, Frequency, Pcb, Radiation, System, TimeDomain};
+    if kind == Pcb {
+        return id.starts_with("pcb.") || id.starts_with("file.") || matches!(id, "project.variable" | "project.analysis" | "units.set");
+    }
+    if kind == System {
+        return id.starts_with("system.")
+            || id.starts_with("file.")
+            || matches!(id, "solve.system" | "results.import" | "project.variable" | "project.analysis" | "units.set");
+    }
+    if id.starts_with("pcb.") || id.starts_with("system.") || id == "solve.system" {
+        return false;
+    }
+    match id {
+        "solve.frequency" => kind == Frequency,
+        "solve.eigenmodes" | "solve.dispersion" | "view.dispersion" => kind == Eigenmodes,
+        "solve.radiation" => kind == Radiation,
+        "solve.time_domain" => kind == TimeDomain,
+        // Open problems: the layer, sources and the far field.
+        "model.open" | "view.pattern" | "source.dipole" | "source.plane_wave" | "source.clear" => matches!(kind, Radiation | TimeDomain),
+        // S-parameters between ports.
+        "results.touchstone" | "view.sparameters" | "results.tdr" | "results.compare" | "results.check" => matches!(kind, Frequency | TimeDomain),
+        // Nothing drives a resonator.
+        "model.port.create" | "model.port.lumped" | "solve.port_modes" | "model.element.create" => kind != Eigenmodes,
+        _ => true,
+    }
+}
+
 /// How a step's node looks: the run under way, a step the kind of analysis does without (done:
 /// skipped; else with its status), or its status.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -172,6 +281,25 @@ mod tests {
         let sections = vec![("Source", Vec::new()), ("Stages", Vec::new())];
         let parts = outline(sections, Analysis::System);
         assert_eq!(heads(&parts), [Head::Section("Source"), Head::Section("Stages")]);
+    }
+
+    /// Every command a ＋ offers is a command with a glyph and a label, each in one place; every
+    /// kind of analysis has something to add to its geometry or its board or chain.
+    #[test]
+    fn every_command_added_is_one_with_a_glyph_in_one_place() {
+        let all: Vec<&str> =
+            STEP_ADDS.iter().flat_map(|(_, ids)| ids.iter()).chain(SECTION_ADDS.iter().flat_map(|(_, ids)| ids.iter())).copied().collect();
+        for id in &all {
+            let c = crate::commands::find(id).unwrap_or_else(|| panic!("{id}: no command"));
+            assert!(c.glyph.is_some() && !crate::commands::button_label(id).is_empty(), "{id}");
+        }
+        let stepped: Vec<&str> = STEP_ADDS.iter().flat_map(|(_, ids)| ids.iter()).copied().collect();
+        let once = stepped.iter().all(|id| stepped.iter().filter(|x| *x == id).count() == 1);
+        assert!(once, "a command on two steps' ＋");
+        for kind in Analysis::ALL {
+            let heads = [Head::Step(Step::Geometry), Head::Section("PCB"), Head::Section("Source")];
+            assert!(heads.iter().any(|h| !adds(*h, kind).0.is_empty()), "{kind:?}");
+        }
     }
 
     /// A blank project asks for its kind; one chosen shows it; a model that says it shows it as

@@ -1,7 +1,8 @@
 //! The browser: the model and its results as a tree at the window's left, the workflow's steps its
 //! nodes ([`emcraft_ui_core::outline`] over [`emcraft_ui_core::browser`]'s rows; docs/adr/0009):
 //! the kind of analysis at its head, each step's node its status's mark, number and name (a
-//! click opens its panel), each node and section folding and unfolding (an empty one stays
+//! click opens its panel), ▶ for what it runs and ＋ for what can be added to it (a list under
+//! it: the commands that were the ribbon's, the 3D view's port tools), each node and section folding and unfolding (an empty one stays
 //! folded), each row its glyph — a port its role's mark,
 //! ⇄ the input whose reflection is S11, ➜ an output — its name and its detail dimmer (symbols
 //! set as Unicode mathematics), a port's role in a pill of its colour, an eye that shows or hides
@@ -15,7 +16,7 @@ use emcraft_ui_core::lang::{lookup, shown, tr};
 use emcraft_ui_core::outline::{Head, Mark, Part};
 use emcraft_ui_core::steps::{Solver, kinds};
 use emcraft_ui_core::system::gesture::Command;
-use iced::widget::{Column, Space, button, column, container, pick_list, row, scrollable, text};
+use iced::widget::{Column, Space, button, container, pick_list, row, scrollable, text};
 use iced::{Alignment, Color, Element, Fill, Widget};
 
 use crate::app::{App, Message};
@@ -142,11 +143,57 @@ fn step_head<'a>(app: &App, t: Tokens, step: Step, part: &Part, folded: bool) ->
     .spacing(6)
     .align_y(Alignment::Center);
     let pick = button(face).width(Fill).padding([3, 6]).style(look::row(t, open)).on_press(Message::Step((!open).then_some(step)));
-    row![fold, pick].spacing(0).align_y(Alignment::Center).boxed()
+    row([fold.boxed(), pick.boxed()].into_iter().chain(ends(app, t, part))).spacing(2).align_y(Alignment::Center).boxed()
+}
+
+/// A node's buttons at its end: ▶ for what its step runs (the mesh, the run), ＋ for what can be
+/// added to it.
+fn ends<'a>(app: &App, t: Tokens, part: &Part) -> Vec<Element<'a, Message>> {
+    let idle = app.job.is_none();
+    let small = |label: &'static str, on: bool, message: Option<Message>| {
+        button(text(label).size(t.font_body).color(if on { t.on_accent } else { t.accent }))
+            .style(look::button(t, on))
+            .padding([1, 7])
+            .on_press_maybe(message)
+            .boxed()
+    };
+    let play = match part.head {
+        Head::Step(step) => emcraft_ui_core::outline::play(step).map(|id| {
+            let message = if id == "solve.run" { Message::StepAct(crate::step_panel::Act::Run) } else { Message::Start(id.to_owned()) };
+            let b = small("▶", false, idle.then_some(message));
+            crate::search::tip(t, b, id)
+        }),
+        Head::Section(_) => None,
+    };
+    let (commands, tools) = emcraft_ui_core::outline::adds(part.head, app.solver());
+    let open = app.adding == Some(part.key());
+    let add = (!commands.is_empty() || !tools.is_empty()).then(|| small("＋", open, Some(Message::Add((!open).then_some(part.key())))));
+    play.into_iter().chain(add).collect()
+}
+
+/// A node's ＋ list, while it is shown: its commands (a click opens its dialog in the properties
+/// panel, or runs it) and the 3D view's tools that add to it.
+fn add_list<'a>(app: &App, t: Tokens, part: &Part) -> Option<Element<'a, Message>> {
+    if app.adding != Some(part.key()) {
+        return None;
+    }
+    let idle = app.job.is_none();
+    let (commands, tools) = emcraft_ui_core::outline::adds(part.head, app.solver());
+    let entry = |glyph, label: String, message: Message| {
+        let face = row![crate::icons::view(glyph, 16.0, t.icon, t.accent), text(label).size(t.font_body)].spacing(8).align_y(Alignment::Center);
+        button(face).width(Fill).padding([3, 8]).style(look::row(t, false)).on_press_maybe(idle.then_some(message))
+    };
+    let commands = commands.into_iter().map(|id| {
+        let b = entry(emcraft_ui_core::commands::glyph(id), emcraft_ui_core::commands::button_label(id).to_owned(), Message::Command(id.to_owned()));
+        crate::search::tip(t, b.boxed(), id)
+    });
+    let tools = tools.into_iter().map(|k| entry(k.glyph(), lookup(k.label()).to_owned(), Message::Tool(Some(k))).boxed());
+    let list = Column::with_children(commands.chain(tools)).spacing(1);
+    Some(container(list).padding(iced::Padding { top: 2.0, right: 0.0, bottom: 4.0, left: 22.0 }).boxed())
 }
 
 /// A section's heading of its own (the variables, a system's): its fold, name and count.
-fn section_head<'a>(t: Tokens, part: &Part, name: &str, folded: bool) -> Element<'a, Message> {
+fn section_head<'a>(app: &App, t: Tokens, part: &Part, name: &str, folded: bool) -> Element<'a, Message> {
     let count = part.count();
     let ink = if count == 0 { t.text_dim } else { t.text };
     let head = row![
@@ -157,7 +204,9 @@ fn section_head<'a>(t: Tokens, part: &Part, name: &str, folded: bool) -> Element
     ]
     .spacing(6)
     .align_y(Alignment::Center);
-    button(head).style(look::quiet(t)).width(Fill).padding([2, 4]).on_press_maybe((count > 0).then(|| Message::Fold(part.key().to_owned()))).boxed()
+    let head =
+        button(head).style(look::quiet(t)).width(Fill).padding([2, 4]).on_press_maybe((count > 0).then(|| Message::Fold(part.key().to_owned())));
+    row(std::iter::once(head.boxed()).chain(ends(app, t, part))).spacing(2).align_y(Alignment::Center).boxed()
 }
 
 /// The browser: the kind of analysis, then the tree — a node a step (its rows under it, the
@@ -169,7 +218,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         let folded = part.count() == 0 || app.folded.iter().any(|f| f == part.key());
         let head = match part.head {
             Head::Step(step) => step_head(app, t, step, part, folded),
-            Head::Section(name) => section_head(t, part, name, folded),
+            Head::Section(name) => section_head(app, t, part, name, folded),
         };
         let headed = part.groups.len() > 1;
         let groups = part.groups.iter().filter(|(_, rows)| !rows.is_empty()).map(|(name, rows)| {
@@ -178,7 +227,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
             Column::with_children(heading.into_iter().chain(lines)).spacing(1).boxed()
         });
         let body = (!folded).then(|| Column::with_children(groups).spacing(4).boxed());
-        column![head].push(body.unwrap_or_else(|| Space::new().boxed())).spacing(2).boxed()
+        Column::with_children([head].into_iter().chain(add_list(app, t, part)).chain(body)).spacing(2).boxed()
     });
     let list = Column::with_children(std::iter::once(kind(app)).chain(parts))
         .spacing(6)

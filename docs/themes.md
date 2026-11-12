@@ -24,7 +24,7 @@ them.
 The one-hue themes (`mono` … `forest`) are tints of `light` or `dark` (below): they keep the
 lightness of every colour there (so the same contrasts) in their own hue. What has to stay told apart keeps its own hue,
 softened: errors, warnings and success, the x, y and z axes, ports, sources and materials in 3D,
-and the curves of a chart. The ribbon's tabs share the theme's hue.
+and the curves of a chart.
 
 ## Making one
 
@@ -99,7 +99,7 @@ steps look equal:
 | `hue` | the hue neutral colours and accents take (degrees) | 0 | 0–360 |
 | `chroma` | neutral colours' chroma at middle lightness (less towards black and white: `chroma · 4L(1 − L)`) | 0 (greys) | 0–0.37 |
 | `lightness` | neutral colours' and accents' lightness scaled by it | 1 | 0.5–1.5 |
-| `accent` | accents' chroma at most (the accent, selections, the ribbon's tabs, the kinds of analysis) | 0 (grey) | 0–0.37 |
+| `accent` | accents' chroma at most (the accent, selections, the kinds of analysis) | 0 (grey) | 0–0.37 |
 | `soften` | colours told apart keep their hue and lightness, their chroma scaled by it: errors, warnings and success, the axes, ports, sources, periodic and symmetry planes, materials, the H arrows and a chart's curves | 1 | 0–1 |
 
 Alpha is kept. The tinted theme is checked like any other (the contrasts above).
@@ -109,7 +109,7 @@ Alpha is kept. The tinted theme is checked like any other (the contrasts above).
 | Names | What |
 |---|---|
 | `app_bar`, `app_bar_text`, `app_bar_hover`, `app_bar_active` | the application bar, its text, a hovered button's tint and the open page's (see-through) |
-| `toolbar`, `panel`, `panel_header`, `border` | the ribbon's ground, the panels', their headers and edges |
+| `toolbar`, `panel`, `panel_header`, `border` | the window's ground, the panels', their headers and edges |
 | `text`, `text_dim`, `icon` | text, secondary text, the glyphs |
 | `accent`, `accent_soft`, `on_accent` | the accent (selection, links, the active control), its soft tint, ink on it |
 | `selected_ink`, `selected_bg`, `hover` | a selected row's ink and ground, a hovered row |
@@ -119,7 +119,7 @@ Alpha is kept. The tinted theme is checked like any other (the contrasts above).
 | `control_fill`, `control_border` | text fields and buttons |
 | `viewport_top`, `viewport_bottom` | the 3D view's ground (a gradient) |
 | `axis_x`, `axis_y`, `axis_z`, `axis_label` | the 3D view's axes navigator and the letters on it |
-| `tab_<tab>_fill`, `tab_<tab>_ink`, `tab_<tab>_soft` | each ribbon tab's accent (`<tab>`: `model`, `materials`, `ports`, `boundaries`, `mesh`, `simulate`, `results`): fill, ink and soft tint |
+| `tab_<tab>_fill`, `tab_<tab>_ink`, `tab_<tab>_soft` | each tab's accent of the former ribbon, kept in themes made then (`<tab>`: `model`, `materials`, `ports`, `boundaries`, `mesh`, `simulate`, `results`): fill, ink and soft tint |
 | `kind_<kind>_ink`, `kind_<kind>_soft` | each kind of analysis's card (`<kind>`: `frequency`, `eigenmodes`, `radiation`, `time_domain`), on the start page and the step bar's switch: its picture's ink and ground |
 
 ### `scene`

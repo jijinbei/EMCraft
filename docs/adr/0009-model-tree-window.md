@@ -1,6 +1,6 @@
 # ADR 0009: One model tree, a properties panel and the 3D view
 
-Status: accepted (2026-11-13); G1 and G2 done.
+Status: accepted (2026-11-13); G1–G3 done.
 
 ## Context
 
@@ -46,8 +46,10 @@ later, an agent are shortcuts over the same commands.
   there, over the window elsewhere; a row selected (in the tree or the 3D view) shows its item's
   form (`Dialog::item`), Apply keeping it open on the new values; a step's node gives the column
   back to the step's panel.
-- **G3 ＋ and ▶; the ribbon goes:** each step's commands in `emcraft_ui_core::outline` (the
-  ribbon's `TABS` folded in), the search in the app bar.
+- **G3 ＋ and ▶; the ribbon goes** (done): each step's commands in `emcraft_ui_core::outline`
+  (the ribbon's `TABS` folded in; `RibbonTab` kept for old recordings and themes), the search in
+  the app bar, the 3D view's bar without the mesh and run buttons and the port tools (Excitation's
+  ＋ turns them on).
 - **G4 Results in the tree; the page tabs go.**
 - **G5 Direct manipulation:** the port tool from Excitation's ＋, grips on a waveguide's
   sections and box with the panel following.

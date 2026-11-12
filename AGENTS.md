@@ -109,7 +109,7 @@ People trust EMCraft with their models; a crash loses their work. **This outrank
   `~/.local/share/emcraft/control/PORT.token`, or start the app with
   `EMCRAFT_CONTROL_TOKEN=$(openssl rand -hex 32)` and send that.
   - `{"id":1,"method":"engine.execute","params":{"command":"solve.frequency","params":{"start":6,"stop":9}}}`
-  - `{"id":2,"method":"ui.click","params":{"handle":"toolbar:mesh.generate"}}` (`ui.handles` lists them)
+  - `{"id":2,"method":"ui.click","params":{"handle":"play:mesh"}}` (`ui.handles` lists them)
   - `{"id":3,"method":"ui.render","params":{"path":"/tmp/shot.png"}}` then read the PNG.
 - **For UI work, look at the result.** `ui.render` draws the whole window on the CPU (tiny-skia;
   the 3D view offscreen on the GPU), no window or display needed; `ui.screenshot` captures the

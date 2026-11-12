@@ -9,7 +9,6 @@ use std::sync::Arc;
 
 use emcraft_control::ControlRequest;
 use emcraft_ui_core::files::{Answer, FileAction, Then};
-use emcraft_ui_core::ribbon::{self, TABS};
 use emcraft_ui_core::scene3d::Overlay;
 use emcraft_ui_core::view::View;
 use iced::Task;
@@ -30,7 +29,7 @@ fn err(e: impl std::fmt::Display) -> Value {
 }
 
 /// Every handle the window shows now, with the message pressing it sends: the bar's pages and
-/// buttons, the ribbon's tabs and commands, the model page's overlays, views and commands, the
+/// buttons, the tree's ▶ and ＋ (and the commands of the ＋ list shown), the model page's overlays, views and tools, the
 /// browser's rows, the selection's card, the open dialog's and question's buttons.
 pub fn handles(app: &App) -> Vec<(String, Message)> {
     let replies = &app.replies;
@@ -45,14 +44,30 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         ("edit:undo".to_owned(), Message::Start("edit.undo".into())),
         ("edit:redo".to_owned(), Message::Start("edit.redo".into())),
     ];
-    let kind = app.session.model().analysis();
-    let tabs = ribbon::tabs(kind).into_iter().map(|t| (format!("tab:{}", t.id()), Message::Tab(t)));
-    let commands = TABS
+    // The tree's ▶ and ＋ (the open list's commands too).
+    let kind = app.solver();
+    let parts: Vec<&emcraft_ui_core::outline::Part> = app.tree.iter().flat_map(|(_, t)| t).filter(|_| !app.home && !app.settings).collect();
+    let plays = parts.iter().filter_map(|p| match p.head {
+        emcraft_ui_core::outline::Head::Step(s) => emcraft_ui_core::outline::play(s).map(|id| {
+            let m = if id == "solve.run" { Message::StepAct(crate::step_panel::Act::Run) } else { Message::Start(id.to_owned()) };
+            (format!("play:{}", s.id()), m)
+        }),
+        emcraft_ui_core::outline::Head::Section(_) => None,
+    });
+    let offers = |p: &&&emcraft_ui_core::outline::Part| {
+        let (commands, tools) = emcraft_ui_core::outline::adds(p.head, kind);
+        !commands.is_empty() || !tools.is_empty()
+    };
+    let adds = parts.iter().filter(offers).map(|p| {
+        let open = app.adding == Some(p.key());
+        (format!("add:{}", p.key()), Message::Add((!open).then_some(p.key())))
+    });
+    let commands = parts
         .iter()
-        .filter(|(t, _)| *t == app.tab)
-        .flat_map(|(_, panels)| panels.iter().flat_map(|(_, ids)| ids.iter()))
-        .filter(|id| ribbon::fits(kind, id))
-        .map(|id| (format!("command:{id}"), Message::Command((*id).to_owned())));
+        .filter(|p| app.adding == Some(p.key()))
+        .flat_map(|p| emcraft_ui_core::outline::adds(p.head, kind).0)
+        .map(|id| (format!("command:{id}"), Message::Command(id.to_owned())));
+    let tabs = plays.chain(adds).collect::<Vec<_>>();
     let model = (app.page == View::Model).then(|| {
         let overlays = Overlay::ALL.into_iter().map(|o| (format!("overlay:{}", o.id()), Message::View3d(Nav::Overlay(o))));
         let views = emcraft_render::view3d::StandardView::ALL
@@ -64,8 +79,6 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
             ("view3d:section".to_owned(), Message::View3d(Nav::Section(app.view3d.section.map_or(section, |_| None)))),
             ("view3d:section:look".to_owned(), Message::View3d(Nav::LookAtCut)),
             ("view3d:section:dims".to_owned(), Message::View3d(Nav::Dims(!app.view3d.section_dims))),
-            ("toolbar:mesh.generate".to_owned(), Message::Start("mesh.generate".into())),
-            ("toolbar:solve.run".to_owned(), Message::Start("solve.run".into())),
         ];
         // Each tool turned on, or off when on.
         let tools =
@@ -149,7 +162,7 @@ pub fn inspect(app: &App) -> Value {
         "page": app.page.id(),
         "settings": app.settings,
         "start": app.home,
-        "tab": app.tab.id(),
+        "adding": app.adding,
         "error": app.error,
         "font": app.font.text(),
         "recording": app.recorder.on.as_ref().map(|r| r.entries.len()),
@@ -322,7 +335,7 @@ impl App {
         None
     }
 
-    /// `ui.set`: the page, the overlay, the ribbon's tab, the settings or start page shown.
+    /// `ui.set`: the page, the overlay, the settings or start page shown.
     fn set(&mut self, p: &Value) -> Value {
         let named = |k: &str| p.get(k).and_then(Value::as_str);
         if let Some(v) = named("page") {
@@ -335,12 +348,6 @@ impl App {
             match Overlay::parse(o) {
                 Some(o) => self.update(Message::View3d(Nav::Overlay(o))),
                 None => return err(format!("no overlay `{}`", emcraft_engine::text::clip(o, 40))),
-            }
-        }
-        if let Some(t) = named("tab") {
-            match ribbon::RibbonTab::parse(t) {
-                Some(t) => self.update(Message::Tab(t)),
-                None => return err(format!("no tab `{}`", emcraft_engine::text::clip(t, 40))),
             }
         }
         // A band picked on the S-parameter chart (display units), and a frequency clicked there.

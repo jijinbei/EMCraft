@@ -3,8 +3,8 @@
 //! knows on top (settings not confirmed, a refused Run, a failed run), each status's mark — ✔
 //! done, ○ to do, ⋯ waiting on an earlier step, ! a warning, ✕ needs attention, ↻ out of date,
 //! ◌ while a run goes on, ⊖ not needed for the kind chosen — drawn on its node in the tree
-//! ([`crate::browser`]). A step opened shows its panel at the right, the ribbon's tab and the 3D
-//! view's overlay for it.
+//! ([`crate::browser`]). A step opened shows its panel at the right and the 3D view's overlay
+//! for it.
 
 use emcraft_engine::workflow::{Status, Step, StepState};
 use emcraft_ui_core::lang::tr;
@@ -271,7 +271,7 @@ impl App {
         emcraft_ui_core::steps::run::shown(states, window, self.solver())
     }
 
-    /// Opens `step` (none: closes the one open): its panel, the ribbon's tab and the view it
+    /// Opens `step` (none: closes the one open): its panel and the view it
     /// calls for; a board's steps are its PCB page, a system's its chain, the kind (step 0) the
     /// model with no panel. A dialog of another step closes.
     pub(crate) fn open_step(&mut self, step: Option<Step>) {
@@ -292,7 +292,6 @@ impl App {
             }
             (_, Some(step)) => {
                 self.workflow.step = Some(step);
-                self.tab = emcraft_ui_core::steps::tab(step);
                 self.page = if step == Step::Results { emcraft_ui_core::after::results_view(&self.session) } else { View::Model };
                 if self.page == View::Model {
                     let overlay = emcraft_ui_core::steps::overlay(step);

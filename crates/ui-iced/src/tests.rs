@@ -456,16 +456,18 @@ fn a_dialog_edits_an_item_and_delete_takes_one_away() {
     }
 }
 
-/// The ribbon: Materials' "new material" opens its dialog; filled in and confirmed, the material
-/// is in the model. A system's ribbon opens on its own tab.
+/// The tree's ＋: Geometry's list offers a new material, whose dialog opens in the properties
+/// panel; filled in and confirmed, the material is in the model and its row in the tree. A
+/// resonator's Excitation offers nothing to add; a system's chain adds its source.
 #[test]
-fn the_ribbon_opens_a_commands_dialog_and_runs_it() {
+fn a_steps_plus_opens_a_commands_dialog_and_runs_it() {
     use crate::dialog::Edit;
-    use emcraft_ui_core::ribbon::RibbonTab;
     let mut app = App::new(Some("highpass"));
-    assert_eq!(app.tab, RibbonTab::Model);
-    app.update(Message::Tab(RibbonTab::Materials));
+    app.update(Message::Add(Some("geometry")));
+    let handles: Vec<String> = crate::control::handles(&app).into_iter().map(|(h, _)| h).collect();
+    assert!(handles.iter().any(|h| h == "command:model.material.create") && handles.iter().any(|h| h == "play:mesh"), "{handles:?}");
     app.update(Message::Command("model.material.create".into()));
+    assert_eq!(app.adding, None, "the list closes");
     let at = |app: &App, name: &str| app.dialog.as_ref().and_then(|d| d.fields.iter().position(|f| f.name == name));
     let (Some(name), Some(eps)) = (at(&app, "name"), at(&app, "eps_r")) else { panic!("the material's dialog") };
     app.update(Message::Dialog(Edit::Text(name, "alumina".into())));
@@ -474,7 +476,10 @@ fn the_ribbon_opens_a_commands_dialog_and_runs_it() {
     assert!(app.dialog.is_none(), "{:?}", app.dialog.as_ref().map(|d| d.error.clone()));
     assert!(app.session.model().materials.iter().any(|m| m.name == "alumina" && m.eps_r.get() == 9.8));
     assert!(app.rows().any(|r| r.id == "material:alumina"), "its row in the browser");
-    assert_eq!(App::new(Some("adsb-receiver")).tab, RibbonTab::System);
+    let cavity = App::new(Some("cavity"));
+    let offers = |app: &App, h: &str| crate::control::handles(app).into_iter().any(|(name, _)| name == h);
+    assert!(!offers(&cavity, "add:excitation") && offers(&cavity, "add:geometry"));
+    assert!(offers(&App::new(Some("adsb-receiver")), "add:Source"));
 }
 
 /// Projects as files: a change marks the project unsaved; New asks first, Cancel keeps it,

@@ -229,16 +229,7 @@ mod tests {
     }
 
     #[test]
-    fn every_ribbon_command_has_a_glyph_and_a_label() {
-        for (tab, panels) in crate::ribbon::TABS {
-            for (_, items) in *panels {
-                for id in *items {
-                    let c = find(id).unwrap_or_else(|| panic!("{} › {id}: no row", tab.id()));
-                    assert!(c.glyph.is_some(), "{id}: no glyph");
-                    assert!(!button_label(id).is_empty(), "{id}");
-                }
-            }
-        }
+    fn commands_have_their_labels_glyphs_and_lengths() {
         assert!(is_long("solve.frequency") && is_long("mesh.generate") && !is_long("units.set") && !is_long("no.such"));
         assert_eq!((button_label("geometry.solid"), button_label("results.probe")), ("Region", "Probe fields"));
         assert_eq!((glyph("mesh.adapt"), glyph("model.summary"), glyph("project.status")), (Glyph::Mesh, Glyph::Summary, Glyph::Blank));

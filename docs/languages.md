@@ -22,7 +22,7 @@ changes at once and the choice is kept with the preferences (`language` in `pref
   - `lang::shown(x)` for a `named_enum!`'s label (views, tabs, steps, statuses, settings
     sections, solvers);
   - commands by id: `crate::label(id)` (`lang::command_label`), `lang::command_doc`,
-    `lang::param_doc` — the ribbon, the search, the dialogs and the messages that name a
+    `lang::param_doc` — the tree's ＋ lists, the search, the dialogs and the messages that name a
     command; samples by name (`lang::sample_label`);
   - messages the window writes itself: `app.info_with(template, args)` / `app.error_with`.
 - **The translations are data**: `locales/ja.json` at the workspace's root, compiled in:

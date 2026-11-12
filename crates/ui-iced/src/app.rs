@@ -139,9 +139,9 @@ pub enum Message {
     Row(String),
     /// The selection's edit dialog opened.
     Edit,
-    /// The ribbon's tab shown.
-    Tab(emcraft_ui_core::ribbon::RibbonTab),
-    /// A ribbon command: its dialog opened, or (without parameters) run.
+    /// A part's ＋ list shown (its key), or none.
+    Add(Option<&'static str>),
+    /// A command: its dialog opened, or (without parameters) run.
     Command(String),
     /// The items selected deleted.
     Delete,
@@ -248,8 +248,8 @@ pub struct App {
     pub(crate) replies: Replies,
     /// The command's dialog open over the window.
     pub(crate) dialog: Option<Dialog>,
-    /// The ribbon's tab shown.
-    pub(crate) tab: emcraft_ui_core::ribbon::RibbonTab,
+    /// The tree's part whose ＋ list is shown (its key).
+    pub(crate) adding: Option<&'static str>,
     /// The host's file dialog, when it has one.
     pub(crate) picker: Option<std::sync::Arc<dyn emcraft_ui_core::files::Picker>>,
     /// What "save the changes?" is asked before, and what waits for a save.
@@ -355,7 +355,7 @@ impl App {
             followed: None,
             replies: Replies::default(),
             dialog: None,
-            tab: Default::default(),
+            adding: None,
             picker: None,
             asking: None,
             after_save: None,
@@ -388,7 +388,6 @@ impl App {
         };
         app.read();
         app.settle();
-        app.tab = crate::ribbon::first_tab(&app);
         app
     }
 
@@ -412,7 +411,7 @@ impl App {
     }
 
     /// On the PCB page, a net picked in 3D: the command that makes it the route.
-    /// A command picked from the search: opened as its ribbon button would (`None`: Enter — a
+    /// A command picked from the search: opened as its ＋ entry would (`None`: Enter — a
     /// command written with its parameters runs, else the first match opens); the query cleared.
     fn search_pick(&mut self, pick: Option<&'static str>) {
         let query = std::mem::take(&mut self.search);
@@ -664,7 +663,7 @@ impl App {
         };
     }
 
-    /// Command `id` from the ribbon: its dialog on the model's values, or (without parameters) run.
+    /// Command `id` from a ＋ list or the search: its dialog on the model's values, or (without parameters) run.
     fn command(&mut self, id: &str) {
         match emcraft_engine::find_command(id) {
             Some(spec) if spec.params.is_empty() => self.start(id, serde_json::json!({})),
@@ -812,7 +811,7 @@ impl App {
                 self.settle();
                 task
             }
-            Message::FocusSearch => iced::widget::operation::focus(crate::ribbon::SEARCH),
+            Message::FocusSearch => iced::widget::operation::focus(crate::search::SEARCH),
             Message::Reports(a) => {
                 let task = self.report_act(a);
                 self.settle();
@@ -898,6 +897,9 @@ impl App {
         // A narrow window (or a longer language) wraps the bar instead of squeezing its pages.
         .wrap()
         .vertical_spacing(6);
+        // The command search at the bar's right (on the project's pages).
+        let search = (!self.settings && !self.home).then(|| crate::search::field(self));
+        let bar = row(std::iter::once(container(bar).width(Fill).boxed()).chain(search)).spacing(12).align_y(Alignment::Center);
         let bar = container(bar).padding([6, 14]).width(Fill).style(look::app_bar(t));
         let page = match self.page {
             _ if self.settings => crate::settings::view(self),
@@ -910,9 +912,9 @@ impl App {
             v if v.chart().is_some() => crate::results::view(self, v),
             _ => crate::system::view(self),
         };
-        // The ribbon's commands are the project's: not over the settings or the start page.
         let project = !self.settings && !self.home;
-        let ribbon = project.then(|| crate::ribbon::view(self));
+        // What the search finds, under the bar.
+        let found = project.then(|| crate::search::results(self)).flatten();
         // The tree at the page's left; at its right the properties panel: the open dialog (an
         // item's form), else the open step's panel.
         let docked = self.dialog.as_ref().filter(|_| project).map(|d| crate::dialog::panel(self, d));
@@ -921,7 +923,7 @@ impl App {
             true => row(std::iter::once(crate::browser::view(self)).chain(std::iter::once(page)).chain(panel)).spacing(8).height(Fill).boxed(),
             false => page,
         };
-        let parts = std::iter::once(bar.boxed()).chain(ribbon).chain(crate::files::recoveries(self)).chain([page, crate::messages::view(self)]);
+        let parts = std::iter::once(bar.boxed()).chain(found).chain(crate::files::recoveries(self)).chain([page, crate::messages::view(self)]);
         let window = container(iced::widget::Column::with_children(parts)).width(Fill).height(Fill).style(look::window(t));
         let over = self
             .dialog
@@ -987,11 +989,12 @@ impl App {
                 self.edit();
                 None
             }
-            Message::Tab(tab) => {
-                self.tab = tab;
+            Message::Add(key) => {
+                self.adding = key;
                 None
             }
             Message::Command(id) => {
+                self.adding = None;
                 self.command(&id);
                 None
             }

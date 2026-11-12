@@ -70,19 +70,6 @@ pub fn overlay(step: Step) -> Overlay {
     }
 }
 
-/// The ribbon's tab a step shows.
-pub fn tab(step: Step) -> crate::ribbon::RibbonTab {
-    use crate::ribbon::RibbonTab;
-    match step {
-        Step::Intent | Step::Geometry => RibbonTab::Model,
-        Step::Boundaries => RibbonTab::Boundaries,
-        Step::Excitation => RibbonTab::PortsSources,
-        Step::Mesh => RibbonTab::Mesh,
-        Step::Setup | Step::Run => RibbonTab::Simulate,
-        Step::Results => RibbonTab::Results,
-    }
-}
-
 /// Whether command `id` is a run (a solve or a study, as step 6 starts one): what a failure
 /// marks on Run and what Run shows running.
 pub fn is_run(id: &str) -> bool {

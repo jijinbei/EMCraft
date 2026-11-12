@@ -8,8 +8,9 @@
 //! - [`commands`]: each command's button label, glyph and whether it runs long;
 //! - [`param_labels`]: the names dialogs show for command parameters;
 //! - the window's names for what it shows: [`glyph`]s, [`page`]s and settings sections, the
-//!   [`ribbon`]'s tabs and panels, the 3D view's [`tools`], the [`view`]s and where each shows,
-//!   and the [`handle`]s scenarios and the control channel find things on screen by;
+//!   former [`ribbon`]'s tabs (in old recordings), the 3D view's [`tools`], the [`view`]s and
+//!   where each shows, and the [`handle`]s scenarios and the control channel find things on
+//!   screen by;
 //! - what a frame asks of the window ([`action`]: each `Action` a click, a key or a request
 //!   makes, performed by each window its own way) and what those carry: a [`pick`] in the 3D
 //!   view, a [`selection`] click, the window's [`layer`]s, the [`files`] actions, a browser item

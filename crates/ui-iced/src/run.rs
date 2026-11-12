@@ -82,7 +82,7 @@ impl App {
             self.dialog = None;
             (self.home, self.settings) = (false, false);
             self.page = crate::app::first_page(&self.session);
-            self.tab = crate::ribbon::first_tab(self);
+            self.adding = None;
         } else if emcraft_ui_core::after::leaves_start(id) {
             self.home = false;
         }

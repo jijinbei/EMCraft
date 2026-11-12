@@ -74,7 +74,7 @@ fn tour() -> Record {
 }
 
 /// The texts looked up by name rather than written where they are shown: the views', tabs',
-/// steps' and sections' labels, the ribbon's panels, the navigation's words, the view cube's
+/// steps' and sections' labels, the navigation's words, the view cube's
 /// faces, the window's own commands, the values' words, the built-in themes.
 fn named() -> BTreeSet<String> {
     use emcraft_ui_core::*;
@@ -83,7 +83,6 @@ fn named() -> BTreeSet<String> {
         out.insert(s.to_owned());
     };
     view::View::ALL.iter().for_each(|v| add(v.label()));
-    ribbon::RibbonTab::ALL.iter().for_each(|v| add(v.label()));
     page::Section::ALL.iter().for_each(|v| add(v.label()));
     steps::Step::ALL.iter().for_each(|v| add(v.label()));
     steps::Status::ALL.iter().for_each(|v| add(v.label()));
@@ -96,9 +95,6 @@ fn named() -> BTreeSet<String> {
     navigation::OrbitAround::ALL.iter().for_each(|v| add(v.label()));
     navigation::Navigator::ALL.iter().for_each(|v| add(v.label()));
     ["RIGHT", "LEFT", "TOP", "BOTTOM", "FRONT", "BACK"].iter().for_each(|n| add(n));
-    for (_, panels) in ribbon::TABS {
-        panels.iter().for_each(|(p, _)| add(p));
-    }
     commands::UI_COMMANDS.iter().filter_map(|c| c.label).for_each(&mut add);
     param_labels::VALUE_LABELS.iter().for_each(|(_, l)| add(l));
     for b in emcraft_engine::theme::Base::ALL {

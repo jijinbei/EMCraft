@@ -7,10 +7,10 @@
 //! [`app::App`], [`app::Message`], [`app::App::update`] and [`app::App::view`]. Every change to
 //! the project is an engine command.
 //!
-//! - [`app`]: the window's state and messages; [`run`]: commands on the worker; [`ribbon`]:
-//!   every command by its tab and panel;
-//! - [`browser`]: the model and its results as a tree beside the 3D view; [`dialog`]: a
-//!   command's parameters over the window; [`files`]: projects opened and saved;
+//! - [`app`]: the window's state and messages; [`run`]: commands on the worker; [`search`]:
+//!   every command by its name;
+//! - [`browser`]: the model tree, the workflow's steps its nodes, each with what it adds (＋)
+//!   and runs (▶); [`dialog`]: a command's parameters in the properties panel; [`files`]: projects opened and saved;
 //! - [`model`]: the model in 3D ([`view3d`], drawn by the GPU in iced's shader widget), meshed
 //!   and solved from its bar; [`results`]: the result pages that are charts;
 //!   [`eigenmodes`]: the modes a cavity resonates in; [`port_modes`]: each port's modes;
@@ -57,8 +57,8 @@ pub mod port_modes;
 pub mod record;
 pub mod reports;
 pub mod results;
-pub mod ribbon;
 pub mod run;
+pub mod search;
 pub mod settings;
 pub mod sparameters;
 pub mod start;
