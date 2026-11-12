@@ -107,6 +107,9 @@ pub enum Message {
     /// What the template card asks for; what the job is for, chosen on the start page.
     Template(crate::template_dialog::TemplateAct),
     Purpose(Option<emcraft_ui_core::steps::Solver>),
+    /// A design's parameter typed in the import dialog: its name, its text and its value as
+    /// saved.
+    ImportParameter(String, String, String),
     /// A browser section folded or unfolded; Delete pressed (the selected items deleted).
     Fold(String),
     DeleteKey,
@@ -461,6 +464,7 @@ impl App {
             self.view3d = std::mem::take(&mut self.view3d).navigated(Nav::Overlay(overlay));
         }
         self.refresh_steps();
+        self.probe_import();
         self.sync_planes();
         self.own_pulse();
         self.sync_style();
@@ -659,6 +663,7 @@ impl App {
             frames,
             closing,
             iced::event::listen_with(crate::files::shortcut),
+            iced::event::listen_with(crate::files::dropped),
             iced::event::listen_with(crate::view3d::shader::keys),
             control,
         ])
@@ -936,6 +941,10 @@ impl App {
             Message::Template(a) => {
                 // Without iced's runtime (the tests): the preview is not drawn.
                 let _ = self.template_act(a);
+                None
+            }
+            Message::ImportParameter(name, value, saved) => {
+                self.import_parameter(name, value, saved);
                 None
             }
             Message::Purpose(p) => {

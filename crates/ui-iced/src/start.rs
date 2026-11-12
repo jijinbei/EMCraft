@@ -88,7 +88,15 @@ pub fn view(app: &App) -> Element<'_, Message> {
         |label, action| button(text(tr(label)).size(t.font_heading)).padding([10, 18]).style(look::button(t, false)).on_press(Message::File(action));
     let head = column![
         row![text("EMCraft").size(30), text(tr(t!("Start"))).size(30).color(t.text_dim)].spacing(12),
-        row![big(t!("New project"), FileAction::Request(Then::New)), big(t!("Open…"), FileAction::Request(Then::Open))].spacing(10),
+        row![
+            big(t!("New project"), FileAction::Request(Then::New)),
+            big(t!("Open…"), FileAction::Request(Then::Open)),
+            big(
+                if app.purpose == Some(emcraft_ui_core::steps::Solver::Pcb) { t!("Import PCB…") } else { t!("Import a SolidCraft design…") },
+                FileAction::Request(Then::Import)
+            )
+        ]
+        .spacing(10),
     ]
     .spacing(12);
     let recent = (!app.prefs.recent.is_empty()).then(|| {

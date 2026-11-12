@@ -82,10 +82,11 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
     // The start page's purposes and templates, and the template card's buttons.
     use crate::template_dialog::TemplateAct;
     let start = app.home.then(|| {
+        let import = ("home:import".to_owned(), Message::File(FileAction::Request(Then::Import)));
         let purposes = emcraft_ui_core::steps::Solver::ALL.into_iter().map(|k| (format!("purpose:{}", k.id()), Message::Purpose(Some(k))));
         let templates =
             emcraft_engine::templates::TEMPLATES.iter().map(|s| (format!("template:{}", s.name), Message::Template(TemplateAct::Open(Some(s.name)))));
-        purposes.chain(templates).collect::<Vec<_>>()
+        std::iter::once(import).chain(purposes).chain(templates).collect::<Vec<_>>()
     });
     let card_buttons = app.template.card.is_some().then(|| {
         [
@@ -103,6 +104,9 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
             ("dialog:ok".to_owned(), Message::Dialog(crate::dialog::Edit::Ok)),
             ("dialog:cancel".to_owned(), Message::Dialog(crate::dialog::Edit::Cancel)),
         ]
+        .into_iter()
+        .chain(crate::import::handles(app))
+        .collect::<Vec<_>>()
     });
     let asking = app.asking.is_some().then(|| {
         [Answer::Save, Answer::Discard, Answer::Cancel]
@@ -147,6 +151,9 @@ pub fn inspect(app: &App) -> Value {
         "dialog": app.dialog.as_ref().map(|d| json!({
             "command": d.command.id,
             "error": d.error,
+            "options": d.options,
+            "help": d.help,
+            "detected": crate::import::inspect(app, d),
             "fields": d.fields.iter().map(|f| (f.name.to_owned(), json!({"text": f.text, "on": f.on, "parts": f.parts, "error": f.error}))).collect::<serde_json::Map<_, _>>(),
         })),
         "asking": app.asking.as_ref().map(|t| format!("{t:?}")),
@@ -207,6 +214,14 @@ impl App {
             "ui.set" => Some(self.set(p)),
             "ui.point" => Some(self.point(p)),
             "ui.dialog" => Some(self.dialog_request(p)),
+            "ui.drop" => match p.get("path").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()) {
+                Some(path) => {
+                    let later = self.react(Message::File(FileAction::Dropped(emcraft_engine::text::clip(path, 4096))));
+                    let _ = req.reply.send(ok(Value::Null));
+                    return later;
+                }
+                None => Some(err("give `path`: the file dropped on the window")),
+            },
             "ui.cancel" => {
                 self.cancel();
                 Some(ok(Value::Null))
@@ -366,6 +381,12 @@ impl App {
                     return err(e);
                 }
             }
+        }
+        // A design's parameters typed in their rows (the import's), each as its text.
+        for (k, v) in p.get("parameters").and_then(Value::as_object).into_iter().flatten() {
+            let typed = v.as_str().map_or_else(|| v.to_string(), str::to_owned);
+            let saved = crate::import::saved(self, k).unwrap_or_default();
+            self.update(Message::ImportParameter(k.clone(), typed, saved));
         }
         if p.get("ok").and_then(Value::as_bool) == Some(true) {
             self.update(Message::Dialog(crate::dialog::Edit::Ok));

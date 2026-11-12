@@ -45,6 +45,7 @@ pub mod field_panel;
 pub mod files;
 pub mod geom;
 pub mod icons;
+pub mod import;
 pub mod look;
 pub mod model;
 pub mod pcb;

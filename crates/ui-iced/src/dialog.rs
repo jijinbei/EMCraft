@@ -14,7 +14,7 @@ use crate::app::{App, Message};
 use crate::look::{self, Tokens};
 
 /// What changes the open dialog: a field typed, ticked, chosen; a table's row added or taken
-/// away; OK; Cancel.
+/// away; its options or its description unfolded or folded; OK; Cancel.
 #[derive(Clone, Debug)]
 pub enum Edit {
     Text(usize, String),
@@ -23,6 +23,8 @@ pub enum Edit {
     Cell(usize, usize, usize, String),
     AddRow(usize),
     RemoveRow(usize, usize),
+    Options,
+    Help,
     Ok,
     Cancel,
 }
@@ -61,14 +63,18 @@ pub fn edited(d: Dialog, edit: &Edit) -> Dialog {
             _ => {}
         }
     }
-    Dialog { fields, ..d }
+    match edit {
+        Edit::Options => Dialog { fields, options: !d.options, ..d },
+        Edit::Help => Dialog { fields, help: !d.help, ..d },
+        _ => Dialog { fields, ..d },
+    }
 }
 
 /// The field an edit changes.
 fn field_of(edit: &Edit) -> Option<usize> {
     match edit {
         Edit::Text(i, _) | Edit::On(i, _) | Edit::Part(i, ..) | Edit::Cell(i, ..) | Edit::AddRow(i) | Edit::RemoveRow(i, _) => Some(*i),
-        Edit::Ok | Edit::Cancel => None,
+        Edit::Options | Edit::Help | Edit::Ok | Edit::Cancel => None,
     }
 }
 
@@ -132,7 +138,8 @@ fn editor<'a>(t: Tokens, i: usize, f: &'a Field) -> Element<'a, Message> {
 pub fn view<'a>(app: &'a App, d: &'a Dialog) -> Element<'a, Message> {
     let t = app.look.tokens;
     let id = d.command.id;
-    let fields = d.fields.iter().enumerate().map(|(i, f)| {
+    let shown = crate::import::shown(app, d);
+    let fields = d.fields.iter().enumerate().filter(|(_, f)| shown(f.name)).map(|(i, f)| {
         let name = format!("{}{}", lang::lookup(param_label(id, f.name)), if f.required { " *" } else { "" });
         let unit = dialogs::unit(f.quantity, &app.session);
         let head = row![text(name).size(t.font_body).color(t.form_dim), text(unit).size(t.font_small).color(t.text_dim)].spacing(6);
@@ -147,7 +154,12 @@ pub fn view<'a>(app: &'a App, d: &'a Dialog) -> Element<'a, Message> {
     let title = text(lang::command_label(id).to_owned()).size(t.font_heading).boxed();
     let list = scrollable(Column::with_children(fields).spacing(10).padding([0, 8])).height(iced::Length::Shrink).boxed();
     let footer = row![Space::new().width(Fill), cancel, ok].spacing(8).boxed();
-    let body = Column::with_children([title, list].into_iter().chain(error).chain(std::iter::once(footer))).spacing(12);
+    // The import's head: the formats, Choose file…, what the file holds (crate::import).
+    let head = crate::import::head(app, d);
+    let (fold, help) = (crate::import::fold(app, d), crate::import::help(app, d));
+    let body =
+        Column::with_children(std::iter::once(title).chain(head).chain(fold).chain([list]).chain(help).chain(error).chain(std::iter::once(footer)))
+            .spacing(12);
     let card = container(body).padding(18).width(WIDTH).style(look::ground(t));
     let veil = container(center(card))
         .width(Fill)

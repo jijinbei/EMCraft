@@ -763,7 +763,12 @@ fn scenarios() {
     let failed: Vec<String> = files
         .iter()
         .filter_map(|f| {
-            let steps: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(f).ok()?).ok()?;
+            // A scenario that does not read fails as one that fails.
+            let steps: Vec<serde_json::Value> =
+                match std::fs::read_to_string(f).map_err(|e| e.to_string()).and_then(|s| serde_json::from_str(&s).map_err(|e| e.to_string())) {
+                    Ok(steps) => steps,
+                    Err(e) => return Some(format!("{}: does not read: {e}", f.display())),
+                };
             let mut app = App::new(None);
             crate::scenario::run(&mut app, &steps).err().map(|e| format!("{}: {e}", f.display()))
         })

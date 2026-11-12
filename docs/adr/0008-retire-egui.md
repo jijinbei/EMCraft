@@ -25,7 +25,7 @@ lines against 7 000). Keeping two windows doubles every UI change.
   - **B Results in depth** (done): the S-parameters page (curves, table, a band dragged to solve more
     finely, runs kept and compared, Touchstone), the field's side panel (probes, power), TDR,
     pulse, far-field cuts, dispersion and the study's table, grid and optimisation, chart styles.
-  - **C Model input**: import (files and dropped files), the templates' dialog with its
+  - **C Model input** (done): import (files and dropped files), the templates' dialog with its
     parameters, the browser's eyes, folds and role marks, the dialogs' guidance, the ribbon's
     search, icons (the egui glyphs as shared shapes, `emcraft_render::shapes`), tooltips with the
     command id, the purpose-first start page.
@@ -50,7 +50,7 @@ lines against 7 000). Keeping two windows doubles every UI change.
 | `purpose_and_kind` | purpose_first, home_analysis_setup, analysis_kind, setup_device |
 | `pcb` (two) | pcb_board, pcb_edit, pcb_fem, pcb_fem_model, pcb_region, pcb_route, pcb_templates, pcb_workflow |
 | `fields` | field_view, field_probes, field_context, field_plot_zoom, dipole_fields, view3d_field_arrows |
-| `import` | import_bodies, import_cavity, import_design |
+| `import` (C, done) | import_bodies, import_cavity, import_design |
 | `hostile_input` | hostile_dialog_input, hostile_step_input (a unit test today), errors_in_place |
 | `sparameters` (B, done) | sparameter_display, refine_and_planes, run_history, network_views, chart_style |
 | `result_views` (B, done) | tdr_view, pulse_view, far_field_cuts, dispersion_diagram |

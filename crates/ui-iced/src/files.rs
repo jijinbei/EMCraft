@@ -29,7 +29,13 @@ impl App {
             FileAction::SaveAs => self.pick(Purpose::SaveAs),
             FileAction::Chosen(purpose, path) => self.chosen(purpose, path),
             FileAction::Confirm(answer) => self.answered(answer),
-            FileAction::PickPart | FileAction::Dropped(_) => Task::none(),
+            FileAction::PickPart => self.pick(Purpose::Import),
+            // A part dropped is imported; anything else is opened as a project.
+            FileAction::Dropped(path) if emcraft_ui_core::files::is_part(&path) => {
+                self.import_part(&path);
+                Task::none()
+            }
+            FileAction::Dropped(path) => self.file(FileAction::Request(Then::OpenPath(path))),
         }
     }
 
@@ -66,7 +72,16 @@ impl App {
                     self.autosave.file = Some(file.into());
                 }
             }
-            Then::Import => {}
+            // A new project with a part to import: a board chosen at once, else the import's
+            // dialog open on the geometry's step.
+            Then::Import => {
+                self.opened("file.new", &json!({}));
+                self.home = false;
+                if self.purpose == Some(emcraft_ui_core::steps::Solver::Pcb) {
+                    return self.pick(Purpose::Import);
+                }
+                self.step_act(crate::step_panel::Act::Fix(crate::import::ID.into()));
+            }
         }
         Task::none()
     }
@@ -143,6 +158,10 @@ impl App {
                 self.opened("file.open", &json!({ "path": p }));
                 Task::none()
             }
+            (Purpose::Import, Some(p)) => {
+                self.import_part(&p);
+                Task::none()
+            }
             (Purpose::SaveAs, Some(p)) => {
                 self.run_now("file.save", &json!({ "path": p }));
                 self.saved();
@@ -206,6 +225,12 @@ pub fn shortcut(event: iced::Event, status: iced::event::Status, _: iced::window
         ("z", true) | ("y", false) => Message::Start("edit.redo".into()),
         _ => return None,
     })
+}
+
+/// A file dropped on the window: a part imported, a project opened.
+pub fn dropped(event: iced::Event, _: iced::event::Status, _: iced::window::Id) -> Option<Message> {
+    let iced::Event::Window(iced::window::Event::FileDropped(path)) = event else { return None };
+    Some(Message::File(FileAction::Dropped(path.to_string_lossy().into_owned())))
 }
 
 /// Undo and Redo in the window's bar, each while there is something to take back or do again.
