@@ -1549,3 +1549,16 @@ fn crash_reports_are_kept_shown_and_deleted() {
     off.update(Message::Reports(ReportAct::Bug));
     assert!(off.error.as_deref().is_some_and(|e| e.contains("no folder")), "{:?}", off.error);
 }
+
+/// A language no font shows is said once (the window stays in English), with what to install;
+/// said again only after the language or the font file changes.
+#[test]
+fn a_missing_font_is_said_once() {
+    use emcraft_ui_core::fonts::State;
+    let app = App::new(None).with_font(State::Missing(12)).with_font(State::Missing(12));
+    let said: Vec<_> = app.log.lines().iter().filter(|l| l.text.contains("12 characters missing")).collect();
+    assert_eq!((said.len(), said.first().map(|l| (l.error, l.count))), (1, Some((true, 1))));
+    assert_eq!(app.font.text(), "missing (12 characters)");
+    let fine = App::new(None).with_font(State::Found("Noto Sans CJK JP".into()));
+    assert!(fine.log.lines().is_empty() && fine.font.text() == "Noto Sans CJK JP");
+}

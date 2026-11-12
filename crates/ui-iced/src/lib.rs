@@ -47,6 +47,7 @@ pub mod files;
 pub mod geom;
 pub mod icons;
 pub mod import;
+pub mod language;
 pub mod look;
 pub mod messages;
 pub mod model;
@@ -69,7 +70,7 @@ pub mod template_dialog;
 pub mod tools;
 pub mod view3d;
 
-use emcraft_ui_core::{lang, prefs, theme};
+use emcraft_ui_core::{prefs, theme};
 
 /// Runs the window, on sample `sample` when one is named, in the preferences the egui window
 /// keeps: its language, its theme (the user's themes too), the font the language is shown with
@@ -88,10 +89,11 @@ pub fn run(
     // The control channel's queue goes to the first window made.
     let control = std::sync::Mutex::new(control);
     let prefs = prefs::default_path().map(|p| prefs::Prefs::load(&p)).unwrap_or_default();
-    lang::set(prefs.language());
+    // The language shown when a font shows it (else English), the pictures' text with its face.
+    let (font_state, found) = language::chosen(prefs.language(), prefs.font_file.as_deref());
+    let font = found.filter(|_| prefs.font_file.is_some()).map(|f| f.bytes);
     let themes = theme::Themes::load(theme::default_dir().as_deref());
     let theme = themes.get(&prefs.theme);
-    let font = prefs.font_file.as_deref().and_then(|f| std::fs::read(f).ok());
     // A picture of the window is taken without copying or offering work.
     let autosave = emcraft_ui_core::autosave::default_dir().filter(|_| shoot.is_none());
     let crashes = emcraft_ui_core::crash::default_dir().filter(|_| shoot.is_none());
@@ -105,7 +107,8 @@ pub fn run(
             .shooting(shoot.clone())
             .with_picker(picker.clone())
             .serving(control.lock().ok().and_then(|mut c| c.take()))
-            .with_crash_reports(crashes.clone(), true);
+            .with_crash_reports(crashes.clone(), true)
+            .with_font(font_state.clone());
         if let Some(path) = &replay
             && let Err(e) = emcraft_ui_core::record::Recording::read(path).and_then(|r| app.play(r))
         {

@@ -8,7 +8,7 @@ use emcraft_ui_core::action::Pref;
 use emcraft_ui_core::lang::{self, Text, lookup, tr};
 use emcraft_ui_core::navigation::{NAV_PRESETS, TOUCHPAD};
 use emcraft_ui_core::prefs::GpuLook;
-use iced::widget::{Column, button, column, container, pick_list, row, scrollable, text};
+use iced::widget::{Column, button, column, container, pick_list, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Fill, Widget};
 
 use crate::app::{App, Message};
@@ -38,6 +38,46 @@ fn theme_label(name: &str) -> String {
 }
 
 /// The settings page.
+/// The font the language is shown with, or why it is not; a font file to choose (committed on
+/// Enter), and the fonts looked for again.
+fn font(app: &App) -> Element<'_, Message> {
+    use emcraft_ui_core::fonts::State;
+    use emcraft_ui_core::lang::{args, trf};
+    let t = app.look.tokens;
+    let standing = match &app.font {
+        State::Found(family) => Some(text(trf(t!("Font: {family}"), args!(family = family))).size(t.font_small).color(t.text_dim)),
+        State::Missing(n) => {
+            let wanted = app.prefs.language();
+            let name = lang::find(wanted).map_or(wanted, |l| l.name.as_str());
+            let said = trf(
+                t!(
+                    "No font shows {language} ({n} characters missing): the window stays in English. Install one (Linux: fonts-noto-cjk) or choose a font file."
+                ),
+                args!(language = name, n = n),
+            );
+            Some(text(said).size(t.font_small).color(t.error))
+        }
+        State::NotNeeded => None,
+    };
+    let file = app.drafts_font.clone().unwrap_or_else(|| app.prefs.font_file.clone().unwrap_or_default());
+    let committed = Message::Pref(Pref::FontFile(Some(file.trim().to_owned()).filter(|f| !f.is_empty())));
+    let typed = text_input(tr(t!("the system's fonts")), file)
+        .size(t.font_body)
+        .width(320)
+        .padding([3, 6])
+        .style(look::field(t))
+        .on_input(Message::FontFile)
+        .on_submit(committed);
+    let row = row![
+        text(tr(t!("Font file"))).size(t.font_small).color(t.text_dim),
+        typed,
+        button(text(tr(t!("Look again"))).size(t.font_button)).style(look::button(t, false)).on_press(Message::Pref(Pref::SearchFonts))
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center);
+    Column::with_children(standing.map(Widget::boxed).into_iter().chain(std::iter::once(row.boxed()))).spacing(4).boxed()
+}
+
 /// The crash reports' buttons: the card of them, and a report of the session as it is.
 fn reports(app: &App) -> Element<'_, Message> {
     use crate::record::ReportAct;
@@ -99,7 +139,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let drawing = row(switches.map(|(label, on, flip)| choice(t, tr(label), on, Pref::GpuLook(flip(l))))).spacing(6).wrap();
     let sections = [
         section(t, t!("Theme"), tr(t!("The colours of the window, the 3D view and the pictures. It changes at once.")), themes.boxed()),
-        section(t, t!("Language"), tr(t!("The language of the window. It changes at once.")), language.boxed()),
+        section(t, t!("Language"), tr(t!("The language of the window. It changes at once.")), column![language, font(app)].spacing(6).boxed()),
         section(
             t,
             t!("New projects"),

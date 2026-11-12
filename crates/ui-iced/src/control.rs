@@ -150,6 +150,7 @@ pub fn inspect(app: &App) -> Value {
         "start": app.home,
         "tab": app.tab.id(),
         "error": app.error,
+        "font": app.font.text(),
         "recording": app.recorder.on.as_ref().map(|r| r.entries.len()),
         "replaying": app.recorder.playing.as_ref().map(std::collections::VecDeque::len),
         "reports": app.crashes.shown.as_ref().map(Vec::len),

@@ -164,6 +164,8 @@ pub enum Message {
     Cancel,
     /// The earlier messages shown or folded.
     Log(bool),
+    /// The font file typed in the settings (committed as a preference on Enter).
+    FontFile(String),
     /// The crash reports' card asks for something.
     Reports(crate::record::ReportAct),
     /// A frame drawn (when): while a job runs (it is looked at), the field plays or a picture of
@@ -276,6 +278,13 @@ pub struct App {
     /// The recording being made or played, and the crash reports kept (crate::record).
     pub(crate) recorder: crate::record::Recorder,
     pub(crate) crashes: crate::record::Crashes,
+    /// The font the language is shown with (or why it is not), and the language whose missing
+    /// font was said (crate::language).
+    pub(crate) font: emcraft_ui_core::fonts::State,
+    pub(crate) font_said: Option<String>,
+    /// A face read from a chosen font file, still to give iced; the font file as typed.
+    pub(crate) font_load: Option<Vec<u8>>,
+    pub(crate) drafts_font: Option<String>,
     /// The 3D view's mouse mapping and drawing (the preferences').
     pub(crate) nav: &'static NavPreset,
     pub(crate) gpu_look: GpuLook,
@@ -356,6 +365,10 @@ impl App {
             log_open: false,
             recorder: Default::default(),
             crashes: Default::default(),
+            font: emcraft_ui_core::fonts::State::NotNeeded,
+            font_said: None,
+            font_load: None,
+            drafts_font: None,
             nav: prefs.nav(),
             gpu_look: prefs.gpu_look,
             playing: None,
@@ -443,16 +456,22 @@ impl App {
     /// The window after preference `p`: kept (and written where the preferences live), the
     /// theme, language, mouse mapping and drawing it changes in effect at once.
     fn prefer(&mut self, p: emcraft_ui_core::action::Pref) {
-        let reload = p == emcraft_ui_core::action::Pref::ReloadThemes;
+        use emcraft_ui_core::action::Pref;
+        let reload = p == Pref::ReloadThemes;
+        let fonts = matches!(p, Pref::Language(_) | Pref::FontFile(_) | Pref::SearchFonts);
         match self.prefs.clone().changed(p, &self.themes) {
             Ok(prefs) => {
                 if reload {
                     self.themes = Themes::load(self.themes.dir.as_deref());
                 }
-                emcraft_ui_core::lang::set(prefs.language());
                 (self.nav, self.gpu_look) = (prefs.nav(), prefs.gpu_look);
                 self.look = Look::of(self.themes.get(&prefs.theme));
                 self.prefs = prefs;
+                if fonts {
+                    self.drafts_font = None;
+                    self.font_said = None;
+                    self.font_load = self.use_language();
+                }
                 if let Some(path) = &self.prefs_path {
                     let _ = self.prefs.save(path);
                 }
@@ -750,7 +769,9 @@ impl App {
             // The start page (again in a new theme) draws the templates' pictures.
             m @ (Message::Home(true) | Message::Pref(_)) => {
                 self.update(m);
-                if self.home { self.draw_thumbs() } else { Task::none() }
+                // A face read from a chosen font file, given to iced.
+                let font = self.font_load.take().map_or_else(Task::none, |bytes| iced::font::load(bytes).discard());
+                font.chain(if self.home { self.draw_thumbs() } else { Task::none() })
             }
             m => {
                 self.update(m);
@@ -1074,6 +1095,10 @@ impl App {
             // Without its clipboard: copying is the window's (App::react).
             Message::Reports(a) => {
                 let _ = self.report_act(a);
+                None
+            }
+            Message::FontFile(s) => {
+                self.drafts_font = Some(emcraft_ui_core::dialogs::bounded(&s));
                 None
             }
             Message::Log(open) => {

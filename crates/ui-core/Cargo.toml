@@ -17,6 +17,9 @@ emcraft-model = { workspace = true }
 emcraft-render = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# The system's fonts, looked through for one that shows the window's language (crate::fonts).
+fontdb = "0.24"
+ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 rstest = { workspace = true }

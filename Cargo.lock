@@ -2514,9 +2514,11 @@ dependencies = [
  "emcraft-mesh",
  "emcraft-model",
  "emcraft-render",
+ "fontdb",
  "rstest",
  "serde",
  "serde_json",
+ "ttf-parser",
 ]
 
 [[package]]

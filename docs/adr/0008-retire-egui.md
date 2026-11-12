@@ -29,8 +29,11 @@ lines against 7 000). Keeping two windows doubles every UI change.
     parameters, the browser's eyes, folds and role marks, the dialogs' guidance, the ribbon's
     search, icons (the egui glyphs as shared shapes, `emcraft_render::shapes`), tooltips with the
     command id, the purpose-first start page.
-  - **D The window's shell**: the status line and the message log, Escape's layers, crash
-    reports, recording and replay, the Japanese fallback font, pictures written out.
+  - **D The window's shell** (done): the status line and the message log, Escape's layers, crash
+    reports, recording and replay (the iced window records the commands it was asked to run and
+    the pages looked at; an egui recording plays as far as its actions run commands), the
+    Japanese fallback font (`emcraft_ui_core::fonts`), pictures written out (the field's Picture…
+    and Animation…, landed with B).
   - **E Tests and tools**: the iced scenarios' pointer, key, text and shot steps; the
     translations' coverage over `ui-iced` and `ui-core`; `ui.render` without a GPU (iced's
     tiny-skia renderer).
