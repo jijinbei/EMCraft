@@ -91,8 +91,9 @@ pub enum Message {
     Boxed(bool),
     /// The 3D view's tool turned on, or off.
     Tool(Option<emcraft_ui_core::tools::Tool>),
-    /// Escape: what the tool picked dropped; with nothing picked, the tool off.
-    Escape,
+    /// Escape (`true`: a field took it first): a grip's drag let go, else the top layer closed
+    /// ([`crate::escape`]).
+    Escape(bool),
     /// A step of the workflow opened (or the one open closed), and what its panel's controls
     /// ask for.
     Step(Option<emcraft_engine::workflow::Step>),
@@ -918,7 +919,7 @@ impl App {
                 self.tools.reset(tool);
                 None
             }
-            Message::Escape if self.body_drag.is_some() => {
+            Message::Escape(_) if self.body_drag.is_some() => {
                 self.body_drag = None;
                 None
             }
@@ -1003,13 +1004,22 @@ impl App {
                 self.typed(key);
                 None
             }
-            Message::Escape => {
-                if self.tools.escape() {
-                    self.tool = None;
-                    self.tools.reset(None);
+            Message::Escape(captured) => match crate::escape::target(self, captured) {
+                // What the tool picked goes first, then the tool.
+                Some(emcraft_ui_core::layer::Layer::Tool) => {
+                    if self.tools.escape() {
+                        self.tool = None;
+                        self.tools.reset(None);
+                    }
+                    None
                 }
-                None
-            }
+                Some(emcraft_ui_core::layer::Layer::Selection) => {
+                    self.selection.clear();
+                    None
+                }
+                Some(l) => crate::escape::close(l).and_then(|m| self.next(m)),
+                None => None,
+            },
             Message::Grip(m) => {
                 self.grip(m);
                 None

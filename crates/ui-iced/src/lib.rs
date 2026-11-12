@@ -41,6 +41,7 @@ pub mod charts;
 pub mod control;
 pub mod dialog;
 pub mod eigenmodes;
+pub mod escape;
 pub mod field_panel;
 pub mod files;
 pub mod geom;

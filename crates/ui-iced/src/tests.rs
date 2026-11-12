@@ -905,9 +905,9 @@ fn the_tools_measure_select_ports_and_move_the_reference_plane() {
     let got = reply["distance"].as_f64().unwrap_or(f64::NAN);
     assert!((got - mm).abs() < 1e-6 * mm.max(1.0), "{got} mm against the corners' {mm} mm");
     // Escape drops the measurement, again turns the tool off.
-    app.update(Message::Escape);
+    app.update(Message::Escape(false));
     assert!(app.tools.measured.is_none() && app.tool == Some(Tool::Measure));
-    app.update(Message::Escape);
+    app.update(Message::Escape(false));
     assert_eq!(app.tool, None);
     // The port tool on an end with a port selects it.
     app.update(Message::Tool(Some(Tool::Port)));
@@ -1000,7 +1000,7 @@ fn a_bodys_grips_resize_it() {
     // Escape lets a drag go with nothing changed.
     app.update(Message::Grip(GripMove::Start(grip(&app))));
     app.update(Message::Grip(GripMove::By(ux * 80.0, uy * 80.0)));
-    app.update(Message::Escape);
+    app.update(Message::Escape(false));
     app.update(Message::Grip(GripMove::End));
     assert!((size_x(&app) - 15.0).abs() < 1e-9, "Escape kept it");
 }
@@ -1435,4 +1435,37 @@ fn a_templates_card_builds_it_with_its_parameters() {
     app.update(Message::Template(TemplateAct::Build));
     assert_eq!(app.solver(), emcraft_ui_core::steps::Solver::Eigenmodes);
     assert_eq!(app.session.model().job.chosen(), Some(emcraft_ui_core::steps::Solver::Eigenmodes));
+}
+
+/// Escape closes the top layer open, one a press: the dialog over the settings, then the
+/// settings, the tool, the selection; a field outside them that took the key closes nothing.
+#[test]
+fn escape_closes_the_top_layer_first() {
+    use emcraft_ui_core::layer::Layer;
+    use emcraft_ui_core::tools::Tool;
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::Row("port:1".into()));
+    app.update(Message::Tool(Some(Tool::Measure)));
+    app.update(Message::Settings(true));
+    app.update(Message::Command("model.material.create".into()));
+    let top = |app: &App| crate::escape::stack(app).first().copied();
+    assert_eq!(crate::escape::stack(&app), [Layer::Dialog, Layer::Settings, Layer::Tool, Layer::Selection]);
+    // The dialog's own field took the key: the dialog closes all the same.
+    app.update(Message::Escape(true));
+    assert_eq!((app.dialog.is_none(), top(&app)), (true, Some(Layer::Settings)));
+    app.update(Message::Escape(false));
+    assert_eq!(top(&app), Some(Layer::Tool));
+    // A field elsewhere let go of the key: the tool stays.
+    app.update(Message::Escape(true));
+    assert_eq!(app.tool, Some(Tool::Measure));
+    app.update(Message::Escape(false));
+    assert_eq!(top(&app), Some(Layer::Selection));
+    app.update(Message::Escape(false));
+    assert_eq!(crate::escape::stack(&app), []);
+    // The search typed in clears; nothing open, Escape does nothing.
+    app.update(Message::Search("mesh".into()));
+    app.update(Message::Escape(true));
+    assert_eq!(app.search, "");
+    app.update(Message::Escape(false));
+    assert_eq!(app.error, None);
 }

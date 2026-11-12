@@ -55,7 +55,8 @@ lines against 7 000). Keeping two windows doubles every UI change.
 | `sparameters` (B, done) | sparameter_display, refine_and_planes, run_history, network_views, chart_style |
 | `result_views` (B, done) | tdr_view, pulse_view, far_field_cuts, dispersion_diagram |
 | `study` (B, done) | study_grid, study_optimize, study_surrogate, study_sweep |
-| dropped (egui only) | chart_packing, small_window, view3d_gpu, wgsl_port_directions, escape_layers |
+| `escape_closes_the_top_layer_first` (D, a unit test) | escape_layers |
+| dropped (egui only) | chart_packing, small_window, view3d_gpu, wgsl_port_directions |
 
   The rest (results views, templates, the shell's) are mapped as their stages land.
 
