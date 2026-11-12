@@ -115,7 +115,7 @@ impl EmcraftApp {
             Action::AskExport => self.ui_state.set_ask(crate::files::Ask::Export("emcraft-history.json".into())),
             Action::ExportHistory(path) => self.export_history(path),
             Action::ConfirmSetup => return crate::steps::confirm_setup(self),
-            Action::ProposeSetup(v) => self.workflow.fields.load(&v),
+            Action::ProposeSetup(v) => self.workflow.fields = std::mem::take(&mut self.workflow.fields).load(&v),
             Action::StartRun => return crate::steps::start_run(self),
             Action::PreviewPortModes => return self.preview_port_modes(),
             Action::CheckResults => return self.check_results(),

@@ -10,30 +10,17 @@
 //! checks them.
 
 use egui::{Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
-use emcraft_engine::{Device, Precision};
 use serde_json::{Value, json};
 
 use crate::handle::{Fixed, Handle};
 use crate::ribbon::RibbonTab;
-use crate::scene3d::Overlay;
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, UiError, UiExt, View, dialogs, scenario, ui_kit};
 
 pub use emcraft_engine::workflow::{Check, Status, Step, StepState};
-
-/// A step's check as the window shows it: its template translated, its values filled in (the
-/// steps it names by their shown names); the English text when it has no template.
-pub fn check_text(c: &Check) -> String {
-    if c.template.is_empty() {
-        return crate::lang::lookup(&c.text).to_owned();
-    }
-    let steps = |ids: &str| {
-        ids.split(", ").map(|id| Step::ALL.iter().find(|s| s.id() == id).map_or(id, |s| crate::lang::shown(*s))).collect::<Vec<_>>().join("、")
-    };
-    let values: Vec<String> = c.args.iter().map(|(k, v)| if k == "steps" { steps(v) } else { v.clone() }).collect();
-    let args: Vec<(&str, &dyn std::fmt::Display)> = c.args.iter().zip(&values).map(|((k, _), v)| (k.as_str(), v as &dyn std::fmt::Display)).collect();
-    crate::lang::fill(crate::lang::lookup(&c.template), &args)
-}
+pub use emcraft_ui_core::steps::devices::{DeviceRow, DeviceSelection, recommended as recommended_device, rows as device_rows};
+pub use emcraft_ui_core::steps::form::{Fields, integer, positive};
+pub use emcraft_ui_core::steps::{ESTIMATED, check_text, is_run, overlay};
 
 mod bar;
 mod panel;
@@ -43,18 +30,6 @@ pub use bar::bar;
 pub(crate) use bar::{Look, Pill, pills};
 pub use panel::{export_touchstone, not_needed, panel};
 pub use run::{Preflight, confirm_setup, preflight, setup_params, start_run};
-
-/// What the 3D view puts forward in a step.
-pub fn overlay(step: Step) -> Overlay {
-    match step {
-        // The bodies drawn in their materials' colours, the step listing the materials.
-        Step::Geometry => Overlay::Materials,
-        Step::Excitation => Overlay::Ports,
-        Step::Boundaries => Overlay::Boundaries,
-        Step::Mesh => Overlay::Mesh,
-        _ => Overlay::Plain,
-    }
-}
 
 /// A status's colour in the step bar and panels: green done, neutral to do and waiting, amber
 /// warning, red needs attention, blue out of date.
@@ -67,12 +42,6 @@ fn status_color(status: Status) -> Color32 {
         Status::Missing => t.error,
         Status::Stale => t.info,
     }
-}
-
-/// Whether command `id` is a run (a solve or a study, as step 6 starts one): what a failure
-/// marks on Run and what Run shows running.
-pub fn is_run(id: &str) -> bool {
-    is_solve(id) || id.starts_with("study.")
 }
 
 /// Whether command `id` is a solve ([`emcraft_engine::CommandSpec::solves`]).
@@ -104,136 +73,6 @@ pub const fn command(solver: Solver) -> &'static str {
 /// The analysis chosen on Home, or Home's inferred choice. Setup never overrides it.
 pub fn solver(app: &EmcraftApp) -> Solver {
     app.session.model().analysis()
-}
-
-/// The text fields of the step panels, with each one's error. The Setup step's are a form of
-/// the run's settings: loaded from the confirmed ones (`project.setup`) whenever those change,
-/// confirmed by its button.
-#[derive(Clone, Debug, Default)]
-pub struct Fields {
-    pub start: String,
-    pub stop: String,
-    pub points: String,
-    pub order: String,
-    pub count: String,
-    pub frequency: String,
-    pub cell: String,
-    /// The time domain's ports to excite, as confirmed (no field: kept through the form).
-    pub excite: Vec<String>,
-    /// The confirmed settings the form was last loaded from (`project.values`).
-    pub seen: Option<Value>,
-    pub touchstone: String,
-    pub format: String,
-    pub errors: Vec<(&'static str, String)>,
-    /// Confirm was pressed: an empty field's error shows too (before, only a field typed in).
-    pub tried: bool,
-    /// What the Setup panel's band diagram last drew: the cut-offs' labels and the solve's
-    /// frequencies.
-    pub diagram: Option<Value>,
-}
-
-impl Fields {
-    /// Empty fields take their defaults, as the Setup panel shows them.
-    fn fill_defaults(&mut self) {
-        for (field, default) in [(&mut self.points, "101"), (&mut self.order, "2"), (&mut self.count, "5"), (&mut self.cell, "1")] {
-            if field.is_empty() {
-                default.clone_into(field);
-            }
-        }
-    }
-
-    pub(crate) fn error(&self, name: &str) -> Option<&str> {
-        self.errors.iter().find(|(n, _)| *n == name).map(|(_, e)| e.as_str())
-    }
-
-    /// [`Fields::error`] as the form shows it: an empty field's only once Confirm was pressed.
-    pub(crate) fn shown_error(&self, name: &str) -> Option<&str> {
-        let text = match name {
-            "start" => &self.start,
-            "stop" => &self.stop,
-            "points" => &self.points,
-            "order" => &self.order,
-            "count" => &self.count,
-            "frequency" => &self.frequency,
-            "cell" => &self.cell,
-            _ => return self.error(name),
-        };
-        self.error(name).filter(|_| self.tried || !text.trim().is_empty())
-    }
-
-    fn set_error(&mut self, name: &'static str, e: Option<String>) {
-        self.errors.retain(|(n, _)| *n != name);
-        if let Some(e) = e {
-            self.errors.push((name, e));
-        }
-    }
-
-    /// The form filled from settings as `project.setup` takes them (a confirmed run's, or a
-    /// proposal's: the band a PCB route's model is made for).
-    pub fn load(&mut self, v: &Value) {
-        let text = |k: &str| v.get(k).map(dialogs::value_text);
-        for (field, key) in [
-            (&mut self.start, "start"),
-            (&mut self.stop, "stop"),
-            (&mut self.points, "points"),
-            (&mut self.order, "order"),
-            (&mut self.count, "count"),
-            (&mut self.frequency, "frequency"),
-            (&mut self.cell, "cell"),
-        ] {
-            if let Some(t) = text(key) {
-                *field = t;
-            }
-        }
-        if let Some(list) = v.get("excite").and_then(Value::as_array) {
-            self.excite = list.iter().filter_map(Value::as_str).map(str::to_owned).collect();
-        }
-        self.fill_defaults();
-        self.errors.clear();
-    }
-
-    /// The fields as typed, for a recording (crate::record).
-    pub fn drafts(&self) -> Value {
-        serde_json::json!({
-            "start": self.start, "stop": self.stop, "points": self.points, "order": self.order, "count": self.count,
-            "frequency": self.frequency, "cell": self.cell, "touchstone": self.touchstone, "format": self.format, "excite": self.excite,
-        })
-    }
-
-    /// The fields typed as [`Fields::drafts`] wrote them (a text missing or not one left as it is).
-    pub fn set_drafts(&mut self, v: &Value) {
-        let text = |k: &str| v.get(k).and_then(Value::as_str).map(dialogs::bounded);
-        for (field, key) in [
-            (&mut self.start, "start"),
-            (&mut self.stop, "stop"),
-            (&mut self.points, "points"),
-            (&mut self.order, "order"),
-            (&mut self.count, "count"),
-            (&mut self.frequency, "frequency"),
-            (&mut self.cell, "cell"),
-            (&mut self.touchstone, "touchstone"),
-            (&mut self.format, "format"),
-        ] {
-            if let Some(t) = text(key) {
-                *field = t;
-            }
-        }
-        if let Some(list) = v.get("excite").and_then(Value::as_array) {
-            self.excite = list.iter().filter_map(Value::as_str).take(1024).map(dialogs::bounded).collect();
-        }
-    }
-}
-
-emcraft_macros::named_enum! {
-    /// Device choice progresses once from Pending to Automatic; any user command makes it
-    /// Explicit. Opening another project preserves the choice for this machine.
-    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-    pub enum DeviceSelection {
-        #[default]
-        Pending = "pending",
-        Automatic = "automatic",
-        Explicit = "explicit",
-    }
 }
 
 /// The workflow's state in the app.
@@ -373,19 +212,6 @@ pub fn prepare(app: &mut EmcraftApp) {
     }
 }
 
-/// The commands whose dialogs show how long their run will take (`project.estimate`).
-pub const ESTIMATED: [&str; 9] = [
-    "solve.frequency",
-    "solve.refine",
-    "solve.eigenmodes",
-    "solve.radiation",
-    "solve.dispersion",
-    "solve.time_domain",
-    "mesh.adapt",
-    "study.sweep",
-    "study.optimize",
-];
-
 pub use emcraft_ui_core::job::duration;
 
 /// A run's estimate (`project.estimate`'s reply) in a line — its time, `ref.` when it is the
@@ -433,39 +259,27 @@ pub fn statuses_now(app: &EmcraftApp) -> std::borrow::Cow<'_, [StepState; 8]> {
     {
         return std::borrow::Cow::Borrowed(states);
     }
-    let mut states = match &app.workflow.status {
+    let states = match &app.workflow.status {
         Some((k, v)) if *k == app.revision => v.clone(),
         _ => emcraft_engine::workflow::steps(&app.session),
     };
-    // Settings changed in the form but not confirmed: Setup is to do again, and Run waits.
-    if app.session.model().job.setup().is_some() && unconfirmed(app) {
-        let text = t!("the settings changed: confirm them again").en();
-        if let Some(setup) = states.get_mut(Step::Setup.index()) {
-            setup.status = setup.status.min(Status::Todo);
-            setup.messages.push(Check::new(text, &[], Some("project.setup")));
-        }
-        if let Some(run) = states.get_mut(Step::Run.index()).filter(|r| r.status > Status::Waiting) {
-            run.status = Status::Waiting;
-            run.messages = vec![Check::new(t!("waits for {steps}").en(), &[("steps", Step::Setup.id().to_owned())], None)];
-        }
-    }
-    if app.workflow.refusal.is_some() {
-        let solver = app.session.model().analysis();
-        for s in states.iter_mut().filter(|s| run::required(s.step, solver) && s.status == Status::Todo) {
-            s.status = Status::Missing;
-        }
-    }
-    if run_failure(app).is_some()
-        && let Some(run) = states.get_mut(Step::Run.index())
-    {
-        run.status = run.status.min(Status::Missing);
-    }
+    let window = emcraft_ui_core::steps::run::Window { unconfirmed: now.unconfirmed, refused: now.refused, failed: now.failed };
+    let states = emcraft_ui_core::steps::run::shown(states, window, app.session.model().analysis());
     std::borrow::Cow::Owned(states)
 }
 
 /// Why the last run failed, while that is the last word (the Run panel shows it in full).
 pub fn run_failure(app: &EmcraftApp) -> Option<&str> {
     app.failure.as_ref().filter(|f| is_run(&f.command) && app.job.is_none()).map(|f| f.error.as_str())
+}
+
+/// What the Setup panel's band diagram draws, for `ui.inspect`: the cut-offs' labels and the
+/// solve's frequencies.
+fn diagram(app: &EmcraftApp) -> Option<Value> {
+    use emcraft_ui_core::steps::band;
+    let f = band::with_proposal(app.workflow.fields.clone().with_defaults(), &app.session);
+    let solves = band::solves(solver(app), &f, app.session.limits().frequencies as u64);
+    (app.place.step() == Some(Step::Setup)).then(|| band::diagram(&app.session, &f, solves).map(|d| d.inspect())).flatten()
 }
 
 /// The workflow's state for `ui.inspect`.
@@ -491,7 +305,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "setup": {"start": f.start, "stop": f.stop, "points": f.points, "order": f.order, "count": f.count, "frequency": f.frequency, "cell": f.cell},
         "confirmed": !unconfirmed(app),
         "check": app.workflow.check.as_ref().map(|c| c.1.clone()),
-        "diagram": f.diagram,
+        "diagram": diagram(app),
         "device": app.session.compute().device().id(),
         "device_selection": app.workflow.device_selection.id(),
         "precision": app.session.compute().precision.id(),
@@ -504,16 +318,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
 /// opened); settings taken back (another kind chosen) leave the form as typed.
 pub fn sync_setup(app: &mut EmcraftApp) {
     let confirmed = app.session.execute("project.values", &json!({"command": "project.setup"})).unwrap_or_else(|_| json!({}));
-    let f = &mut app.workflow.fields;
-    if f.seen.as_ref() == Some(&confirmed) {
-        return;
-    }
-    if confirmed.as_object().is_some_and(|o| !o.is_empty()) {
-        f.load(&confirmed);
-    } else {
-        f.fill_defaults();
-    }
-    f.seen = Some(confirmed);
+    app.workflow.fields = std::mem::take(&mut app.workflow.fields).synced(confirmed);
 }
 
 /// Whether the form differs from the confirmed settings (or none are confirmed), as of the
@@ -607,85 +412,8 @@ pub fn fix(app: &mut EmcraftApp, command: &str) -> Result<(), UiError> {
     Ok(())
 }
 
-/// A positive finite number from a field, or why not.
-fn positive(text: &str) -> Result<f64, String> {
-    let v = dialogs::parse_number(text)?;
-    if !(v > 0.0) {
-        return Err(crate::lang::tr(t!("must be greater than 0")).into());
-    }
-    Ok(v)
-}
-
-/// An integer within `lo..=hi`.
-fn integer(text: &str, lo: u64, hi: u64) -> Result<u64, String> {
-    let s = text.trim();
-    let range = crate::lang::args!(lo = lo, hi = hi);
-    let v: u64 = s.parse().map_err(|_| crate::lang::trf(t!("must be a whole number from {lo} to {hi}"), range))?;
-    if !(lo..=hi).contains(&v) {
-        return Err(crate::lang::trf(t!("must be from {lo} to {hi}"), range));
-    }
-    Ok(v)
-}
-
 /// The band (display units) the session holds.
 fn band(s: &emcraft_engine::Session) -> Option<(f64, f64)> {
     let f = s.display().frequency;
     s.model().job.range().map(|b| (f.from_si(b.start.get()), f.from_si(b.stop.get())))
-}
-
-/// Prefer the available CUDA accelerator with double precision, preserving an explicit user
-/// choice elsewhere. The CubeCL CPU runtime is a verification backend, not an upgrade.
-fn recommended_device(list: &Value, solver: Solver) -> (Device, Precision) {
-    use {Device::*, Precision::*};
-    let candidates: &[(Device, Precision)] = match solver {
-        Solver::TimeDomain => &[(Cuda, Double), (Cuda, Single), (Cpu, Double)],
-        _ => &[(Cuda, Double), (Cpu, Double)],
-    };
-    let rows = device_rows(list);
-    candidates.iter().copied().find(|&(device, p)| rows.iter().any(|r| r.device == device && r.available && r.runs(p))).unwrap_or((Cpu, Double))
-}
-
-/// A device as `solve.devices` lists it.
-pub(crate) struct DeviceRow {
-    pub device: Device,
-    /// Whether this machine runs it.
-    pub available: bool,
-    /// The precisions it runs, in [`Precision::ALL`]'s order.
-    pub precisions: Vec<Precision>,
-    /// Why it cannot run here.
-    pub problem: Option<String>,
-}
-
-impl DeviceRow {
-    pub fn runs(&self, p: Precision) -> bool {
-        self.precisions.contains(&p)
-    }
-}
-
-/// The devices of a `solve.devices` reply (names this build does not know are left out).
-pub(crate) fn device_rows(list: &Value) -> Vec<DeviceRow> {
-    let rows = list.get("devices").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
-    rows.iter()
-        .filter_map(|d| {
-            let device = d.get("name").and_then(Value::as_str).and_then(Device::parse)?;
-            let listed = d.get("precisions").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
-            let precisions = Precision::ALL.into_iter().filter(|p| listed.iter().any(|v| v == p.id())).collect();
-            let problem = d.get("problem").and_then(Value::as_str).map(str::to_owned);
-            Some(DeviceRow { device, available: d.get("available").and_then(Value::as_bool) == Some(true), precisions, problem })
-        })
-        .collect()
-}
-#[cfg(test)]
-mod device_preference_tests {
-    use super::*;
-    #[test]
-    fn advanced_available_device_wins_and_unsupported_double_falls_back() {
-        let mut list = json!({"devices":[{"name":"cpu","available":true,"precisions":["double"]},{"name":"cuda","available":true,"precisions":["single","double"]}]});
-        assert_eq!(recommended_device(&list, Solver::Frequency), (Device::Cuda, Precision::Double));
-        list["devices"][1]["precisions"] = json!(["single"]);
-        assert_eq!(recommended_device(&list, Solver::Frequency), (Device::Cpu, Precision::Double));
-        assert_eq!(recommended_device(&list, Solver::TimeDomain), (Device::Cuda, Precision::Single));
-        list["devices"][1]["available"] = json!(false);
-        assert_eq!(recommended_device(&list, Solver::TimeDomain), (Device::Cpu, Precision::Double));
-    }
 }

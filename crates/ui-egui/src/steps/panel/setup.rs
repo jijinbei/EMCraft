@@ -9,21 +9,12 @@ pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, out: &m
     let fu = app.session.display().frequency.symbol();
     // Home is the sole authority for the analysis, including its inferred (auto) choice.
     let solver = app.session.model().analysis();
-    f.fill_defaults();
-    // No band yet: the ports' guide's (a standard guide's band, else 1.25 to 1.9 times its TE10
-    // cut-off), to confirm or change.
-    if f.start.trim().is_empty()
-        && f.stop.trim().is_empty()
-        && app.session.model().job.range().is_none()
-        && let Some((start, stop)) = proposed_band(app)
-    {
-        let unit = app.session.display().frequency;
-        f.start = format!("{}", unit.from_si(start));
-        f.stop = format!("{}", unit.from_si(stop));
-    }
+    *f = emcraft_ui_core::steps::band::with_proposal(std::mem::take(f).with_defaults(), &app.session);
     ui_kit::section(ui, t!("Settings"));
-    let solves = solve_frequencies(app, f, solver);
-    f.diagram = band_diagram(app, f, ui, &solves);
+    let limit = app.session.limits().frequencies as u64;
+    if let Some(d) = emcraft_ui_core::steps::band::diagram(&app.session, f, emcraft_ui_core::steps::band::solves(solver, f, limit)) {
+        band_diagram(app, ui, &d);
+    }
     let e = |f: &Fields, k: &str| f.shown_error(k).map(str::to_owned);
     let lu = app.session.display().length.symbol();
     match solver {
@@ -177,42 +168,17 @@ fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, out: &mut Actions
     }
 }
 
-/// The frequencies (display units) the solve will work at, as the panel's fields stand: the
-/// sweep's points over the band, or the one frequency of an eigenmode or radiation solve.
-fn solve_frequencies(app: &EmcraftApp, f: &Fields, solver: Solver) -> Vec<f64> {
-    match solver {
-        Solver::Frequency | Solver::TimeDomain | Solver::System => {
-            let Some((a, z)) = form_band(f) else { return Vec::new() };
-            let Ok(n) = integer(&f.points, 1, app.session.limits().frequencies as u64) else { return Vec::new() };
-            (0..n).map(|k| if n == 1 { a } else { a + (z - a) * k as f64 / (n - 1) as f64 }).collect()
-        }
-        Solver::Pcb => Vec::new(),
-        Solver::Eigenmodes | Solver::Radiation => positive(&f.frequency).map(|v| vec![v]).unwrap_or_default(),
-    }
-}
-
 /// Most ticks the diagram draws for the solve's frequencies (beyond, they fill the band).
 const MAX_SOLVE_TICKS: usize = 400;
 
-/// The band as a small diagram: a frequency axis over the band (shaded), the cut-offs of the
-/// ports' modes and the guide's sections near it as dashed lines (a port's first mode in the
+/// The band as a small diagram ([`emcraft_ui_core::steps::band::diagram`]): a frequency axis
+/// over the band (shaded), the cut-offs near it as dashed lines (a port's first mode in the
 /// warning colour: below it no power enters), and the frequencies the solve will work at as
-/// ticks. What it drew, for `ui.inspect`.
-fn band_diagram(app: &EmcraftApp, f: &Fields, ui: &mut egui::Ui, solves: &[f64]) -> Option<Value> {
+/// ticks.
+fn band_diagram(app: &EmcraftApp, ui: &mut egui::Ui, d: &emcraft_ui_core::steps::band::Diagram) {
     let t = &Tokens::get();
-    let unit = app.session.display().frequency;
-    let fu = unit.symbol();
-    let (a, z) = form_band(f).or_else(|| solves.first().map(|x| (*x, *x)))?;
-    let span = (z - a).max(z.abs() * 1e-3).max(1e-12);
-    let cuts: Vec<(f64, String, bool)> = emcraft_engine::workflow::cutoffs(&app.session)
-        .into_iter()
-        .map(|c| (unit.from_si(c.frequency), crate::chart_words::translate(&c.label), c.first))
-        .filter(|(f, _, _)| *f >= a - 0.35 * span && *f <= z + 0.35 * span)
-        .collect();
-    let lo = cuts.iter().map(|c| c.0).fold(a, f64::min);
-    let hi = cuts.iter().map(|c| c.0).fold(z, f64::max);
-    let pad = 0.04 * (hi - lo).max(span);
-    let (lo, hi) = (lo - pad, hi + pad);
+    let fu = app.session.display().frequency.symbol();
+    let ((lo, hi), (a, z)) = (d.span, d.band);
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 64.0), Sense::hover());
     scenario::publish_target(Fixed::SetupBand, rect);
     let p = ui.painter_at(rect);
@@ -223,66 +189,28 @@ fn band_diagram(app: &EmcraftApp, f: &Fields, ui: &mut egui::Ui, solves: &[f64])
     // The band, shaded, with the solve's frequencies as ticks in it.
     let band_rect = Rect::from_min_max(pos2(x(a), base - 16.0), pos2(x(z).max(x(a) + 1.0), base));
     p.rect_filled(band_rect, 2.0, t.accent_soft);
-    if solves.len() > MAX_SOLVE_TICKS {
+    if d.solves.len() > MAX_SOLVE_TICKS {
         p.rect_filled(band_rect.shrink2(vec2(0.0, 3.0)), 0.0, t.accent.gamma_multiply(0.6));
     } else {
-        for f in solves.iter().filter(|f| f.is_finite()) {
+        for f in d.solves.iter().filter(|f| f.is_finite()) {
             p.vline(x(*f), (base - 13.0)..=base, Stroke::new(1.0, t.accent));
         }
     }
     // The axis and its ticks.
     p.hline(left..=right, base, Stroke::new(1.0, t.text_dim));
-    let raw = (hi - lo) / 6.0;
-    let mag = 10f64.powf(raw.log10().floor());
-    let step = [1.0, 2.0, 5.0, 10.0].into_iter().map(|k| k * mag).find(|s| *s >= raw).unwrap_or(10.0 * mag);
-    let mut v = (lo / step).ceil() * step;
-    for _ in 0..12 {
-        if v > hi || !v.is_finite() {
-            break;
-        }
-        p.vline(x(v), base..=(base + 3.0), Stroke::new(1.0, t.text_dim));
-        p.text(pos2(x(v), base + 4.0), egui::Align2::CENTER_TOP, fmt((v / step).round() * step), small.clone(), t.text_dim);
-        v += step;
+    for v in &d.ticks {
+        p.vline(x(*v), base..=(base + 3.0), Stroke::new(1.0, t.text_dim));
+        p.text(pos2(x(*v), base + 4.0), egui::Align2::CENTER_TOP, fmt(*v), small.clone(), t.text_dim);
     }
     p.text(pos2(right, base + 4.0), egui::Align2::RIGHT_TOP, fu, small, t.text_dim);
     // The cut-offs, labelled on two staggered rows.
-    for (i, (f, label, first)) in cuts.iter().enumerate() {
-        let color = if *first { t.warning } else { t.text_dim };
+    for (i, c) in d.cuts.iter().enumerate() {
+        let color = if c.first { t.warning } else { t.text_dim };
         let top = rect.top() + 1.0 + 12.0 * (i % 2) as f32;
-        let xf = x(*f);
+        let xf = x(c.at);
         p.extend(egui::Shape::dashed_line(&[pos2(xf, top + 2.0), pos2(xf, base)], Stroke::new(1.2, color), 3.0, 2.0));
         let (anchor, at) = if xf > rect.center().x { (egui::Align2::RIGHT_TOP, xf - 3.0) } else { (egui::Align2::LEFT_TOP, xf + 3.0) };
-        p.text(pos2(at, top), anchor, label, FontId::proportional(t.font_small - 1.0), color);
+        p.text(pos2(at, top), anchor, &c.label, FontId::proportional(t.font_small - 1.0), color);
     }
-    let n = solves.len();
-    let template = if n == 1 {
-        t!("band {a} to {z} {unit}; the solve works at {n} frequency")
-    } else {
-        t!("band {a} to {z} {unit}; the solve works at {n} frequencies")
-    };
-    let mut tip = trf(template, args!(a = fmt(a), z = fmt(z), unit = fu, n = n));
-    for (f, label, _) in &cuts {
-        tip.push('\n');
-        tip.push_str(&trf(t!("cut-off {mode}: {f} {unit}"), args!(mode = label, f = fmt((f * 1e4).round() / 1e4), unit = fu)));
-    }
-    resp.on_hover_text(tip);
-    Some(json!({"cutoffs": cuts.iter().map(|c| c.1.clone()).collect::<Vec<_>>(), "solves": n}))
-}
-
-/// The band (display units) the form's start and stop give, when they do.
-fn form_band(f: &Fields) -> Option<(f64, f64)> {
-    let (a, z) = (positive(&f.start).ok()?, positive(&f.stop).ok()?);
-    (a <= z).then_some((a, z))
-}
-
-/// The band the model's first port with a rectangular guide asks for: a standard guide's
-/// (`emcraft_engine::guides::standard`, air), else its TE10 band in its filling (Hz).
-fn proposed_band(app: &EmcraftApp) -> Option<(f64, f64)> {
-    let m = app.session.model();
-    m.ports.iter().find_map(|p| {
-        let (a, _) = m.port_shape_of(p).ok()?.sides()?;
-        let n = m.port_material(p.end).map_or(1.0, |x| (x.eps_r.get() * x.mu_r.get()).sqrt());
-        let band = if (n - 1.0).abs() < 1e-9 { emcraft_engine::guides::standard(a) } else { None };
-        band.or_else(|| emcraft_engine::guides::te10_band(a, n)).map(|b| (b.start, b.stop))
-    })
+    resp.on_hover_text(&d.tip);
 }

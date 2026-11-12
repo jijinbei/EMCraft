@@ -92,7 +92,7 @@ impl EmcraftApp {
             self.restore_dialog(&id, values);
         }
         if let Some(f) = fields {
-            self.workflow.fields.set_drafts(&f);
+            self.workflow.fields = std::mem::take(&mut self.workflow.fields).with_drafts(&f);
         }
         let report = action.reports_errors();
         if let Err(e) = self.apply(action)

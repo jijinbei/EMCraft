@@ -52,11 +52,11 @@ pub fn export_touchstone(app: &mut EmcraftApp) {
     let f = &mut app.workflow.fields;
     let (path, format) = (f.touchstone.trim().to_owned(), f.format.clone());
     if path.is_empty() {
-        f.set_error("touchstone", Some(crate::lang::tr(t!("give a file")).into()));
+        *f = std::mem::take(f).with_error("touchstone", Some(crate::lang::tr(t!("give a file")).into()));
         return;
     }
-    f.set_error("touchstone", None);
+    *f = std::mem::take(f).with_error("touchstone", None);
     if let Err(e) = app.run("results.touchstone", json!({"path": path, "format": format})) {
-        app.workflow.fields.set_error("touchstone", Some(e.to_string()));
+        app.workflow.fields = std::mem::take(&mut app.workflow.fields).with_error("touchstone", Some(e.to_string()));
     }
 }
