@@ -28,6 +28,7 @@ use serde_json::{Value, json};
 
 use crate::control::{ControlRequest, Outcome, handle};
 use crate::{EmcraftApp, Handle};
+pub use emcraft_ui_core::scenario::{at_path, compare};
 
 /// Something drawn this frame under a name (a button, a row, a field): a point to click (a
 /// handle) and the rectangle it covers, either or both. Scenarios and the control channel's
@@ -339,14 +340,6 @@ impl Harness {
     }
 }
 
-/// `v` at a dotted path (`model.mesh.tetrahedra`, `dialog.errors.width`, `ports.0.name`).
-pub fn at_path<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
-    path.split('.').filter(|k| !k.is_empty()).try_fold(v, |v, k| match k.parse::<usize>() {
-        Ok(i) if v.is_array() => v.get(i),
-        _ => v.get(k),
-    })
-}
-
 /// Checks:
 /// - `view`, `tab`: the viewport's view id, the ribbon tab
 /// - `dialog`: null (none open) or the open dialog's command id
@@ -428,43 +421,6 @@ pub fn check(h: &mut Harness, e: &Value) -> Result<(), String> {
                 }
             }
             other => return Err(format!("unknown check `{other}`")),
-        }
-    }
-    Ok(())
-}
-
-fn compare(got: &Value, want: &Value) -> Result<(), String> {
-    match want {
-        Value::String(s) if s == "*" => {
-            if got.is_null() {
-                return Err("missing".into());
-            }
-        }
-        Value::Array(a) if a.len() == 2 && a.iter().all(Value::is_number) && got.is_number() => {
-            let (w, tol, g) = (a[0].as_f64().unwrap_or(f64::NAN), a[1].as_f64().unwrap_or(1e-3), got.as_f64().unwrap_or(f64::NAN));
-            if !((g - w).abs() <= tol * w.abs().max(1.0)) {
-                return Err(format!("got {g}, want {w} (±{tol} rel)"));
-            }
-        }
-        Value::Object(o) if o.contains_key("includes") || o.contains_key("excludes") => {
-            let g = got.as_str().ok_or_else(|| format!("got {got}, want a text"))?;
-            if let Some(w) = o.get("includes").and_then(Value::as_str).filter(|w| !g.contains(w)) {
-                return Err(format!("`{g}` does not contain `{w}`"));
-            }
-            if let Some(w) = o.get("excludes").and_then(Value::as_str).filter(|w| g.contains(w)) {
-                return Err(format!("`{g}` contains `{w}`"));
-            }
-        }
-        Value::Object(o) if o.contains_key("min") || o.contains_key("max") => {
-            let g = got.as_f64().ok_or_else(|| format!("got {got}, want a number"))?;
-            if o.get("min").and_then(Value::as_f64).is_some_and(|m| g < m) || o.get("max").and_then(Value::as_f64).is_some_and(|m| g > m) {
-                return Err(format!("got {g}, want within {want}"));
-            }
-        }
-        _ => {
-            if got != want {
-                return Err(format!("got {got}, want {want}"));
-            }
         }
     }
     Ok(())

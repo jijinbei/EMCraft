@@ -746,3 +746,22 @@ fn a_boards_route_is_diagnosed() {
         assert!(shot.matches_image(std::path::Path::new(&dir).join("pcb")).unwrap_or(false));
     }
 }
+
+/// Every scenario in `tests/scenarios/`, each on a window opened on nothing, driven through the
+/// control channel as an agent drives it; the failures listed together.
+#[test]
+fn scenarios() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios");
+    let mut files: Vec<_> = std::fs::read_dir(&dir).map(|d| d.flatten().map(|e| e.path()).collect()).unwrap_or_default();
+    files.sort();
+    assert!(!files.is_empty(), "no scenarios in {}", dir.display());
+    let failed: Vec<String> = files
+        .iter()
+        .filter_map(|f| {
+            let steps: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(f).ok()?).ok()?;
+            let mut app = App::new(None);
+            crate::scenario::run(&mut app, &steps).err().map(|e| format!("{}: {e}", f.display()))
+        })
+        .collect();
+    assert!(failed.is_empty(), "{}", failed.join("\n"));
+}

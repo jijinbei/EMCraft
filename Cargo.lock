@@ -2266,10 +2266,10 @@ dependencies = [
 name = "emcraft"
 version = "0.1.0"
 dependencies = [
+ "emcraft-control",
  "emcraft-engine",
  "emcraft-picker",
  "emcraft-ui-egui",
- "getrandom 0.3.4",
  "serde_json",
  "winresource",
 ]
@@ -2279,6 +2279,14 @@ name = "emcraft-cli"
 version = "0.1.0"
 dependencies = [
  "emcraft-engine",
+ "serde_json",
+]
+
+[[package]]
+name = "emcraft-control"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.3.4",
  "serde_json",
 ]
 
@@ -2365,6 +2373,7 @@ dependencies = [
 name = "emcraft-iced"
 version = "0.1.0"
 dependencies = [
+ "emcraft-control",
  "emcraft-picker",
  "emcraft-ui-core",
  "emcraft-ui-iced",
@@ -2517,6 +2526,7 @@ dependencies = [
  "approx",
  "eframe",
  "egui",
+ "emcraft-control",
  "emcraft-engine",
  "emcraft-gpu",
  "emcraft-gpu3d",
@@ -2539,6 +2549,7 @@ dependencies = [
 name = "emcraft-ui-iced"
 version = "0.1.0"
 dependencies = [
+ "emcraft-control",
  "emcraft-engine",
  "emcraft-gpu3d",
  "emcraft-i18n",

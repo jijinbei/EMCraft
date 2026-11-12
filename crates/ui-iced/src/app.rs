@@ -126,6 +126,9 @@ pub enum Message {
     Play(bool),
     /// The picture of the window taken ([`App::shoot`]).
     Shot(iced::window::Screenshot),
+    /// A control channel's request ([`crate::control`]), and its reply once it is made.
+    Control(std::sync::Arc<emcraft_control::ControlRequest>),
+    Replied(std::sync::Arc<emcraft_control::ControlRequest>, serde_json::Value),
 }
 
 /// Frames drawn before the window's picture is taken: its first frames settled.
@@ -166,6 +169,8 @@ pub struct App {
     /// What "save the changes?" is asked before, and what waits for a save.
     pub(crate) asking: Option<emcraft_ui_core::files::Then>,
     pub(crate) after_save: Option<emcraft_ui_core::files::Then>,
+    /// The control channel's queue of requests, when the window serves one.
+    inbox: Option<Inbox>,
     /// The preferences (the recent projects among them) and where they are kept.
     pub(crate) prefs: Prefs,
     pub(crate) prefs_path: Option<std::path::PathBuf>,
@@ -224,6 +229,7 @@ impl App {
             picker: None,
             asking: None,
             after_save: None,
+            inbox: None,
             prefs: Prefs::default(),
             prefs_path: None,
             autosave: Default::default(),
@@ -309,6 +315,11 @@ impl App {
             }
             Err(e) => self.error = Some(e),
         }
+    }
+
+    /// The window serving the control channel's requests from `rx`.
+    pub fn serving(self, rx: Option<std::sync::mpsc::Receiver<emcraft_control::ControlRequest>>) -> App {
+        App { inbox: rx.map(|rx| Inbox(std::sync::Arc::new(std::sync::Mutex::new(Some(rx))))), ..self }
     }
 
     /// The window with the host's file dialog.
@@ -504,7 +515,8 @@ impl App {
         } else {
             Subscription::none()
         };
-        Subscription::batch([frames, closing, iced::event::listen_with(crate::files::shortcut)])
+        let control = self.inbox.clone().map_or_else(Subscription::none, |inbox| Subscription::run_with(inbox, requests));
+        Subscription::batch([frames, closing, iced::event::listen_with(crate::files::shortcut), control])
     }
 
     /// The window after `message`, and what iced does next: the picture of the window taken
@@ -522,13 +534,21 @@ impl App {
                 Task::none()
             }
             Message::Shot(shot) => {
-                let canvas = emcraft_render::Canvas { w: shot.size.width as usize, h: shot.size.height as usize, rgba: shot.rgba.to_vec() };
-                if let (Some((path, _)), Some(png)) = (self.shoot.take(), canvas.png())
-                    && let Err(e) = std::fs::write(&path, png)
+                if let Some((path, _)) = self.shoot.take()
+                    && let Some(e) = save_screenshot(&shot, path.to_str()).get("error")
                 {
-                    eprintln!("emcraft-iced: {}: {e}", path.display());
+                    eprintln!("emcraft-iced: {e}");
                 }
                 iced::exit()
+            }
+            Message::Control(req) => {
+                let task = self.control(req);
+                self.settle();
+                task
+            }
+            Message::Replied(req, v) => {
+                let _ = req.reply.send(v);
+                Task::none()
             }
             Message::File(a) => {
                 let task = self.file(a);
@@ -733,7 +753,12 @@ impl App {
                 self.playing = on.then_some(None);
                 None
             }
-            Message::Shot(_) => None,
+            Message::Shot(_) | Message::Replied(..) => None,
+            Message::Control(req) => {
+                // Without iced's runtime (the scenarios): what a request leaves to do later is not awaited.
+                let _ = self.control(req);
+                None
+            }
             Message::Settings(on) => {
                 self.settings = on;
                 self.home &= !on;
@@ -819,5 +844,44 @@ impl App {
         } else {
             self.session.execute("solve.system", &json!({})).err().map(|e| e.to_string())
         };
+    }
+}
+
+/// The control channel's queue, taken once by the subscription that reads it.
+#[derive(Clone)]
+pub struct Inbox(std::sync::Arc<std::sync::Mutex<Option<std::sync::mpsc::Receiver<emcraft_control::ControlRequest>>>>);
+
+impl std::hash::Hash for Inbox {
+    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+        "emcraft.control".hash(h);
+    }
+}
+
+/// The requests of `inbox` as messages: a thread waits on the queue and passes each one on.
+fn requests(inbox: &Inbox) -> iced::futures::channel::mpsc::UnboundedReceiver<Message> {
+    let (tx, out) = iced::futures::channel::mpsc::unbounded();
+    if let Some(rx) = inbox.0.lock().ok().and_then(|mut q| q.take()) {
+        std::thread::spawn(move || {
+            for req in rx {
+                if tx.unbounded_send(Message::Control(std::sync::Arc::new(req))).is_err() {
+                    break;
+                }
+            }
+        });
+    }
+    out
+}
+
+/// A picture of the window written as a PNG at `path` (none: nowhere): what was written, or why
+/// not.
+pub(crate) fn save_screenshot(shot: &iced::window::Screenshot, path: Option<&str>) -> serde_json::Value {
+    let canvas = emcraft_render::Canvas { w: shot.size.width as usize, h: shot.size.height as usize, rgba: shot.rgba.to_vec() };
+    let Some(png) = canvas.png() else { return serde_json::json!({"ok": false, "error": "the picture could not be encoded"}) };
+    match path {
+        Some(p) => match std::fs::write(p, png) {
+            Ok(()) => serde_json::json!({"ok": true, "result": {"path": p, "width": canvas.w, "height": canvas.h}}),
+            Err(e) => serde_json::json!({"ok": false, "error": format!("{p}: {e}")}),
+        },
+        None => serde_json::json!({"ok": true, "result": {"width": canvas.w, "height": canvas.h}}),
     }
 }

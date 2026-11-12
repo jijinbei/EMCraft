@@ -10,10 +10,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Duration;
 
-use emcraft_ui_egui::ControlRequest;
+use crate::ControlRequest;
 use serde_json::{Value, json};
 
-use crate::control_auth;
+use crate::auth as control_auth;
 
 /// Longest request line (bytes).
 pub const MAX_LINE: usize = 16 * 1024 * 1024;
@@ -27,31 +27,32 @@ const LONG: Duration = Duration::from_secs(3600);
 
 static OPEN: AtomicUsize = AtomicUsize::new(0);
 
-/// Listens on 127.0.0.1:`port`; requests go to the returned queue, each answered through its
-/// sender. `wake` repaints the window when a request arrives. The token file is removed when the
-/// returned guard is dropped.
-pub fn start(port: u16, wake: impl Fn() + Send + Sync + 'static) -> Result<(Receiver<ControlRequest>, Option<control_auth::TokenFile>), String> {
+/// A started control channel: its requests, its token file (removed when dropped) and where
+/// clients find the token, for the app to tell.
+pub struct Started {
+    pub requests: Receiver<ControlRequest>,
+    pub token_file: Option<control_auth::TokenFile>,
+    pub note: String,
+}
+
+/// Listens on 127.0.0.1:`port`; requests go to [`Started::requests`], each answered through its
+/// sender. `wake` repaints the window when a request arrives.
+pub fn start(port: u16, wake: impl Fn() + Send + Sync + 'static) -> Result<Started, String> {
     let token = control_auth::env_token().or_else(control_auth::new_token).ok_or("no random token available")?;
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| format!("cannot listen on 127.0.0.1:{port}: {e}"))?;
     let port = listener.local_addr().map_or(port, |a| a.port());
-    let guard = match control_auth::token_path(port) {
+    let (token_file, note) = match control_auth::token_path(port) {
         Some(path) => match control_auth::write_token_file(&path, &token) {
-            Ok(()) => {
-                eprintln!("emcraft: control channel on 127.0.0.1:{port} (token in {})", path.display());
-                Some(control_auth::TokenFile(path))
-            }
-            Err(e) => {
-                eprintln!(
-                    "emcraft: control channel on 127.0.0.1:{port}, but the token file {} could not be written ({e}); clients need EMCRAFT_CONTROL_TOKEN",
+            Ok(()) => (Some(control_auth::TokenFile(path.clone())), format!("control channel on 127.0.0.1:{port} (token in {})", path.display())),
+            Err(e) => (
+                None,
+                format!(
+                    "control channel on 127.0.0.1:{port}, but the token file {} could not be written ({e}); clients need EMCRAFT_CONTROL_TOKEN",
                     path.display()
-                );
-                None
-            }
+                ),
+            ),
         },
-        None => {
-            eprintln!("emcraft: control channel on 127.0.0.1:{port}; no data folder for its token, clients need EMCRAFT_CONTROL_TOKEN");
-            None
-        }
+        None => (None, format!("control channel on 127.0.0.1:{port}; no data folder for its token, clients need EMCRAFT_CONTROL_TOKEN")),
     };
     let (tx, rx) = channel::<ControlRequest>();
     let token = std::sync::Arc::new(token);
@@ -71,7 +72,7 @@ pub fn start(port: u16, wake: impl Fn() + Send + Sync + 'static) -> Result<(Rece
             });
         }
     });
-    Ok((rx, guard))
+    Ok(Started { requests: rx, token_file, note })
 }
 
 /// One line without its newline, or `None` at the end; a line longer than `max` is refused as

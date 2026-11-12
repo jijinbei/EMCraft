@@ -1,0 +1,16 @@
+[
+  {"note": "The 3D view turned to the standard views, fitted, cut by the section view and put on another overlay, by their handles"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"click": "view3d:std:front"},
+  {"expect": {"inspect": {"view3d.yaw": [0, 1e-9], "view3d.pitch": [0, 1e-9]}}},
+  {"click": "view3d:std:top"},
+  {"expect": {"inspect": {"view3d.pitch": [90, 1e-6]}}},
+  {"click": "view3d:std:iso"},
+  {"expect": {"inspect": {"view3d.pitch": [35.264, 1e-3]}}},
+  {"click": "view3d:section"},
+  {"expect": {"inspect": {"view3d.section.axis": "x", "view3d.section.keep": "low"}}},
+  {"click": "view3d:section"},
+  {"expect": {"inspect": {"view3d.section": null}}},
+  {"click": "overlay:materials"},
+  {"expect": {"inspect": {"view3d.overlay": "materials"}}}
+]

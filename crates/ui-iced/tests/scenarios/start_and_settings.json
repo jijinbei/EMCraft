@@ -1,0 +1,10 @@
+[
+  {"note": "A window opened on nothing shows the start page; the settings and a page leave it"},
+  {"expect": {"inspect": {"start": true, "settings": false}, "handles": ["start", "settings", "file:new"]}},
+  {"click": "settings"},
+  {"expect": {"inspect": {"start": false, "settings": true}}},
+  {"call": "ui.set", "params": {"settings": false, "start": true}},
+  {"expect": {"inspect": {"start": true}}},
+  {"call": "engine.commands"},
+  {"call": "ui.nowhere", "fail": true}
+]

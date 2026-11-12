@@ -61,22 +61,13 @@ impl App {
         Task::none()
     }
 
-    /// Runs `id` (a project opened or begun) and shows it as a new window would: nothing
-    /// selected, on its first page ([`crate::app::first_page`]).
+    /// Runs `id` (a project opened or begun; it shows as a new window would, [`App::after`]).
     fn opened(&mut self, id: &str, params: &Value) {
         // The changes before were saved or let go: their copy goes.
         self.autosave.drop_copy();
         self.run_now(id, params);
         if let Some(path) = params.get("path").and_then(Value::as_str).filter(|_| self.error.is_none() && id == "file.open") {
             self.remember(path);
-        }
-        if self.error.is_none() {
-            self.home = false;
-            self.settings = false;
-            self.selection = Default::default();
-            self.dialog = None;
-            self.page = crate::app::first_page(&self.session);
-            self.tab = crate::ribbon::first_tab(self);
         }
     }
 

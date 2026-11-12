@@ -93,6 +93,25 @@ handle or [x, y], "double"?}`, `{"move": …}`, `{"drag": [a, b]}`, `{"widget": 
 `[value, rel tol]` or `{"min", "max"}`, `"*"` for present), `query` (a quick command's reply)
 and `picture`. With `EMCRAFT_SCENARIO_SHOTS=DIR` each `shot` writes the frame there as PNG.
 
+## The iced window
+
+`emcraft-iced --control PORT` serves the same channel (`crates/control`, `emcraft-control`: the
+server, the token, the request and where its reply goes, shared by both windows). Requests
+arrive as messages of the window (`crates/ui-iced/src/control.rs`), so each is handled as a
+click or a key would be. It answers `engine.execute` (a long command runs on the worker and is
+answered when its job ends), `engine.script`, `engine.commands`, `ui.inspect` (the project, the
+page, the dialog's fields, the selection, the 3D view, the results kept), `ui.handles` and
+`ui.click` (`page:<id>`, `tab:<id>`, `command:<id>`, `overlay:<id>`, `view3d:std:<id>`,
+`view3d:fit`, `row:<id>`, `card:edit`, `dialog:ok`, `file:save`, `edit:undo`, …), `ui.set`
+(`page`, `overlay`, `tab`, `settings`, `start`), `ui.dialog` (`open`, `set`, `ok`, `cancel`),
+`ui.cancel`, `ui.messages` and `ui.screenshot` / `ui.render` (the window's own picture). Pointer
+events are the egui window's only.
+
+Its scenarios, `crates/ui-iced/tests/scenarios/*.json`, run headless by `cargo test -p
+emcraft-ui-iced` (`crate::scenario`): steps `call`, `click` (a handle), `frames`, `until`,
+`expect` (`inspect`, `handles`, `hidden`) and `note`, the checks compared as the egui window's
+are (`emcraft_ui_core::scenario`).
+
 ## Example
 
 ```text

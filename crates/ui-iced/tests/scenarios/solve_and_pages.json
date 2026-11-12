@@ -1,0 +1,12 @@
+[
+  {"note": "A sample opened and solved through the control channel; the result pages it offers, clicked by their handles"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"expect": {"inspect": {"page": "model", "results.sweep": false}, "handles": ["toolbar:solve.run", "row:material:ptfe-like"], "hidden": ["page:tdr"]}},
+  {"call": "engine.execute", "params": {"command": "solve.run"}},
+  {"expect": {"inspect": {"results.sweep": true, "page": "sparameters", "note": {"includes": " s"}}, "handles": ["page:tdr", "page:pulse", "page:analyses"]}},
+  {"click": "page:tdr"},
+  {"expect": {"inspect": {"page": "tdr"}}},
+  {"call": "ui.set", "params": {"page": "model", "overlay": "field"}},
+  {"expect": {"inspect": {"view3d.overlay": "field", "view3d.field.error": null}}},
+  {"call": "ui.set", "params": {"page": "nowhere"}, "fail": true}
+]

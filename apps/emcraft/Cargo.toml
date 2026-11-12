@@ -18,12 +18,11 @@ workspace = true
 cubecl-cpu = ["emcraft-engine/cubecl-cpu"]
 
 [dependencies]
+emcraft-control = { workspace = true }
 emcraft-engine = { workspace = true }
 emcraft-picker = { workspace = true }
 emcraft-ui-egui = { workspace = true }
 serde_json = { workspace = true }
-# The control channel's per-launch token (docs/adr/0001-libraries.md).
-getrandom = "0.3"
 
 [build-dependencies]
 # The icon and version resource of emcraft.exe (build.rs, docs/adr/0001-libraries.md).

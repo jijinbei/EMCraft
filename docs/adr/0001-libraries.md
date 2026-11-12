@@ -20,7 +20,7 @@ FieldCraft, so its behaviour is deterministic and fully verified.
 | `rfd` (with its xdg-portal backend) | MIT | the system's file dialog for opening and saving projects (`emcraft-picker` only, which both apps use; the windows take it through `emcraft_ui_core::files::Picker`, so the UI crates and the headless harness need none) |
 | `cubecl` (with its bundled LLVM, and `cudarc` for the `cuda` feature) | MIT OR Apache-2.0 | the time domain's kernels on GPUs (`emcraft-gpu`, [ADR 0002](0002-gpu.md)); the CPU runtime (`cubecl-cpu` feature) only in the tests; the Windows GNU build (the installer, docs/install-windows.md) links neither runtime, as the bundled LLVM has no build for it |
 | `winresource` (build dependency, no default features) | MIT | the icon and version resource of `emcraft.exe` on Windows (`apps/emcraft/build.rs`; calls the toolchain's `windres` or `rc.exe`) |
-| `getrandom` | MIT OR Apache-2.0 | the control channel's per-launch token (`apps/emcraft` only; already in the tree through eframe) |
+| `getrandom` | MIT OR Apache-2.0 | the control channel's per-launch token (`crates/control` only; already in the tree through eframe) |
 | `fontdb` | MIT | the system's fonts for the window's language (`emcraft-ui-egui::fonts::system`: the font folders, fontconfig's on Linux, each face's families, weight and style; nothing embedded in the app) |
 | `ttf-parser` (direct) | MIT OR Apache-2.0 | whether a face shows the language's characters (its character map; already in the tree through `ab_glyph` and `fontdb`) |
 | `winit` (direct, Linux) | Apache-2.0 | the window opened on X11 under a Wayland desktop, where dropped files arrive (`emcraft-ui-egui::window_system`; already in the tree through eframe, the same version) |

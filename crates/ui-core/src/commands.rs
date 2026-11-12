@@ -202,6 +202,21 @@ pub fn glyph(id: &str) -> Glyph {
     find(id).and_then(|c| c.glyph).unwrap_or(Glyph::Blank)
 }
 
+/// Every command with its parameters and whether it runs long, for agents (`engine.commands`).
+pub fn catalogue() -> serde_json::Value {
+    emcraft_engine::COMMANDS
+        .iter()
+        .map(|c| {
+            let params: Vec<serde_json::Value> = c
+                .params
+                .iter()
+                .map(|q| serde_json::json!({"name": q.name, "kind": q.kind.id(), "required": q.required, "doc": q.doc, "choices": q.choices}))
+                .collect();
+            serde_json::json!({"id": c.id, "label": c.label, "doc": c.doc, "params": params, "long": is_long(c.id)})
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

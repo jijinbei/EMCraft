@@ -1,0 +1,9 @@
+[
+  {"note": "A board's route diagnosed through the control channel: the PCB page, the route and conditions, the inspection kept"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "pcb-split-ground"}}},
+  {"expect": {"inspect": {"page": "pcb"}, "handles": ["page:pcb"], "hidden": ["page:model"]}},
+  {"call": "engine.execute", "params": {"command": "view.pcb", "params": {"net": "DATA", "stage": "settings"}}},
+  {"call": "engine.execute", "params": {"command": "pcb.conditions", "params": {"ground": "GND", "reference": 50, "stop": 1}}},
+  {"call": "engine.execute", "params": {"command": "pcb.inspect", "params": {"net": "DATA"}}},
+  {"expect": {"inspect": {"results.pcb": true}}}
+]

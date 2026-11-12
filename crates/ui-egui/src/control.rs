@@ -4,8 +4,6 @@
 //! lines on 127.0.0.1 with a per-launch token) lives in the `emcraft` app; the scenarios call
 //! [`handle`] directly. Methods are listed in docs/control-protocol.md.
 
-use std::sync::mpsc::Sender;
-
 use serde_json::{Value, json};
 
 use emcraft_engine::text::clip;
@@ -13,19 +11,7 @@ use emcraft_engine::text::clip;
 use crate::action::Pref;
 use crate::{Action, EmcraftApp, View, scenario};
 
-/// A request from the control channel, with where its reply goes.
-pub struct ControlRequest {
-    pub method: String,
-    pub params: Value,
-    pub reply: Sender<Value>,
-}
-
-impl ControlRequest {
-    pub fn new(method: impl Into<String>, params: Value) -> (ControlRequest, std::sync::mpsc::Receiver<Value>) {
-        let (tx, rx) = std::sync::mpsc::channel();
-        (ControlRequest { method: method.into(), params, reply: tx }, rx)
-    }
-}
+pub use emcraft_control::ControlRequest;
 
 /// What handling a request gave.
 pub enum Outcome {
@@ -455,7 +441,7 @@ pub fn handle(app: &mut EmcraftApp, ctx: &egui::Context, req: &ControlRequest) -
     let handled = match req.method.as_str() {
         "engine.execute" => engine_execute(app, req, a),
         "engine.script" => engine_script(app, req, a),
-        "engine.commands" => Ok(ok(commands())),
+        "engine.commands" => Ok(ok(emcraft_ui_core::commands::catalogue())),
         "ui.inspect" => Ok(ok(inspect(app))),
         "ui.set" => ui_set(app, a),
         "ui.start" => ui_start(app, a),
@@ -604,21 +590,6 @@ fn engine_script(app: &mut EmcraftApp, req: &ControlRequest, a: Args) -> Handled
     }
     app.run_script(Value::Array(steps.clone())).map_err(|e| e.to_string())?;
     Ok(if a.bool("wait").unwrap_or(true) { after_job(app, req, Value::Null) } else { ok(Value::Null) })
-}
-
-/// Every command with its parameters, for agents.
-fn commands() -> Value {
-    emcraft_engine::COMMANDS
-        .iter()
-        .map(|c| {
-            let params: Vec<Value> = c
-                .params
-                .iter()
-                .map(|q| json!({"name": q.name, "kind": q.kind.id(), "required": q.required, "doc": q.doc, "choices": q.choices}))
-                .collect();
-            json!({"id": c.id, "label": c.label, "doc": c.doc, "params": params, "long": crate::commands::is_long(c.id)})
-        })
-        .collect()
 }
 
 /// Sets what the window shows: tab, view, theme, language, docking, the field's plane

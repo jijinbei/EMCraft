@@ -8,9 +8,6 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
-mod control_auth;
-mod control_server;
-
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -41,10 +38,11 @@ fn main() -> ExitCode {
     let result = emcraft_ui_egui::run_with(sample, host, |ctx| {
         let port = control?;
         let ctx = ctx.clone();
-        match control_server::start(port, move || ctx.request_repaint()) {
-            Ok((rx, guard)) => {
-                token_file = guard;
-                Some(rx)
+        match emcraft_control::server::start(port, move || ctx.request_repaint()) {
+            Ok(started) => {
+                eprintln!("emcraft: {}", started.note);
+                token_file = started.token_file;
+                Some(started.requests)
             }
             Err(e) => {
                 eprintln!("emcraft: control channel not started: {e}");

@@ -1,0 +1,14 @@
+[
+  {"note": "An item edited through its dialog: the browser's row selected, the card's Edit, a field set and refused, then set and confirmed"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"click": "row:material:ptfe-like"},
+  {"expect": {"inspect": {"selection.0": "Material(1)"}, "handles": ["card:edit", "card:delete"]}},
+  {"click": "card:edit"},
+  {"expect": {"inspect": {"dialog.command": "model.material.edit", "dialog.fields.eps_r.text": "2"}}},
+  {"call": "ui.dialog", "params": {"set": {"eps_r": -3}, "ok": true}},
+  {"expect": {"inspect": {"dialog.command": "model.material.edit"}}},
+  {"call": "ui.dialog", "params": {"set": {"eps_r": 2.5}, "ok": true}},
+  {"expect": {"inspect": {"dialog": null, "project.dirty": true}}},
+  {"click": "edit:undo"},
+  {"expect": {"handles": ["edit:redo"]}}
+]

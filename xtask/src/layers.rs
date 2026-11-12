@@ -59,6 +59,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("engine", Class::Layer(6)),
     // L6, after the engine: what every window shares, no GUI toolkit (egui, iced) below it.
     ("ui-core", Class::Layer(6)),
+    // L6: the control channel either window serves (docs/control-protocol.md), no GUI toolkit.
+    ("control", Class::Layer(6)),
     // L7: the desktop UI, and its second window in iced (docs/adr/0007-iced-window.md).
     ("ui-egui", Class::Layer(7)),
     ("ui-iced", Class::Layer(7)),

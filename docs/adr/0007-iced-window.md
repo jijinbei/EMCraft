@@ -46,3 +46,6 @@ code to be written. iced is that toolkit in pure Rust (MIT).
 - `emcraft-iced --shot PNG` writes a picture of its own window once it has drawn, for looking at
   a change in the real window (never the desktop). iced's picture leaves the text fields' values
   out (they show in the window itself): the headless snapshots show them.
+- The control channel is one crate both windows serve (`emcraft-control`), so agents and
+  scenarios drive the iced window with the same requests; its scenarios live in
+  `crates/ui-iced/tests/scenarios/` and check `ui.inspect` as the egui window's do.

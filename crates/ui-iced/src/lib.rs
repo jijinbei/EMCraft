@@ -37,6 +37,7 @@ pub mod app;
 pub mod browser;
 pub mod chart;
 pub mod charts;
+pub mod control;
 pub mod dialog;
 pub mod eigenmodes;
 pub mod files;
@@ -59,12 +60,15 @@ use emcraft_ui_core::{lang, prefs, theme};
 /// keeps: its language, its theme (the user's themes too), the font the language is shown with
 /// and the 3D view's mouse mapping and drawing. With `shoot`, a picture of the window is written
 /// there once it has drawn (a running job ended first) and the window closes. `picker`: the
-/// host's file dialog.
+/// host's file dialog; `control`: the control channel's requests (docs/control-protocol.md).
 pub fn run(
     sample: Option<String>,
     shoot: Option<std::path::PathBuf>,
     picker: Option<std::sync::Arc<dyn emcraft_ui_core::files::Picker>>,
+    control: Option<std::sync::mpsc::Receiver<emcraft_control::ControlRequest>>,
 ) -> iced::Result {
+    // The control channel's queue goes to the first window made.
+    let control = std::sync::Mutex::new(control);
     let prefs = prefs::default_path().map(|p| prefs::Prefs::load(&p)).unwrap_or_default();
     lang::set(prefs.language());
     let themes = theme::Themes::load(theme::default_dir().as_deref());
@@ -80,7 +84,8 @@ pub fn run(
             .with_prefs(&prefs, prefs::default_path())
             .with_autosave(autosave.clone())
             .shooting(shoot.clone())
-            .with_picker(picker.clone());
+            .with_picker(picker.clone())
+            .serving(control.lock().ok().and_then(|mut c| c.take()));
         let thumbs = if app.home { app.draw_thumbs() } else { iced::Task::none() };
         (app, thumbs)
     };
@@ -96,5 +101,7 @@ pub fn run(
         .run()
 }
 
+#[cfg(test)]
+mod scenario;
 #[cfg(test)]
 mod tests;

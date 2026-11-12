@@ -61,6 +61,17 @@ impl App {
     pub(crate) fn after(&mut self, id: &str, params: &Value, reply: &Value) {
         self.replies = std::mem::take(&mut self.replies).after(id, params, reply, &self.session);
         self.generation += 1;
+        // A project opened or begun shows as a new window would: nothing selected, on its first
+        // page, the start page and the settings left.
+        if matches!(id, "file.new" | "file.open" | "file.sample" | "pcb.sample") {
+            self.selection = Default::default();
+            self.dialog = None;
+            (self.home, self.settings) = (false, false);
+            self.page = crate::app::first_page(&self.session);
+            self.tab = crate::ribbon::first_tab(self);
+        } else if emcraft_ui_core::after::leaves_start(id) {
+            self.home = false;
+        }
         self.read();
         if job::is_solve(id) {
             let results = emcraft_ui_core::after::results_view(&self.session);
