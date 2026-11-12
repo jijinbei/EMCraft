@@ -1,6 +1,6 @@
 # ADR 0009: One model tree, a properties panel and the 3D view
 
-Status: accepted (2026-11-13); G1–G5 done.
+Status: accepted (2026-11-13); done (2026-11-13): G1–G6 landed.
 
 ## Context
 
@@ -57,8 +57,8 @@ later, an agent are shortcuts over the same commands.
   waveguide's broad and narrow walls and on each section's far end, letting go running
   `geometry.waveguide` again with the new dimension; an item's form not edited follows the model
   when it changes under it (a grip let go, undo).
-- **G6 Docs and tests:** docs/ux/workflow.md §2–3, docs/control-protocol.md's handles, the
-  scenarios moved over, ROADMAP.md.
+- **G6 Docs and tests** (done): docs/ux/workflow.md §2–3, docs/control-protocol.md's handles
+  (with each stage), the scenarios moved over as each stage removed a handle, ROADMAP.md.
 
 Each stage keeps the scenarios and the Japanese tour passing; a stage that removes a handle
 moves the scenarios using it in the same change.

@@ -36,8 +36,9 @@ and the UI should make the same habits easy for the user's own models.
 
 ## 2. UX principles
 
-1. **The workflow is visible.** A step bar shows steps 0–8 in order, each with a status of its
-   own look, told apart by shape as well as colour, each mark meaning one thing so none is
+1. **The workflow is visible.** The model tree at the window's left is the workflow
+   (docs/adr/0009-model-tree-window.md): its nodes are the steps in order, each with a status of
+   its own look, told apart by shape as well as colour, each mark meaning one thing so none is
    learned to be ignored:
 
    | Status | Look | Means |
@@ -51,8 +52,9 @@ and the UI should make the same habits easy for the user's own models.
    | not needed | grey ring, dash; the name dimmed | a step the chosen kind of analysis does without (a resonator's excitation, the time domain's mesh) |
 
    Run turns (an arc) while a run goes on. A to-do that only matters before a run (the band)
-   ends with the run. Clicking a step opens its panel and puts the 3D view in that step's mode.
-   Users can work in any order; the bar only tells them what is left.
+   ends with the run. Clicking a step's node opens its panel and puts the 3D view in that step's
+   mode; its ＋ lists what can be added to it, its ▶ (Mesh, Run) runs it. Users can work in any
+   order; the marks only tell them what is left.
 2. **One model, one 3D view.** The geometry is always on screen; each step overlays what it is
    about: materials coloured (2), ports and their faces highlighted with their modes'
    arrows (3), walls and the PML shaded (4), the mesh's edges and its size (5), fields and
@@ -99,33 +101,39 @@ and the UI should make the same habits easy for the user's own models.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
-│ EMCraft   File  Edit  View  Help                              [search commands  /]   │
-│ [Analysis ▾]─[1 Geometry ✓]─[2 Excitation !]─[3 Setup ✓]─[4 Region ✓]─[5 Mesh ✓]─    │
-│ [6 Run ▶]─[7 Results ⟳ stale]                                                        │
-├──────────────┬───────────────────────────────────────────────────┬───────────────────┤
-│ Browser      │                                                   │ Step panel        │
-│  Geometry    │                 3D view                           │  (the active      │
-│  Materials   │      (the active step's overlay; view cube,       │   step's settings │
-│  Ports       │       standard views, fit)                        │   and checks;     │
-│  Boundaries  │                                                   │   dialogs dock    │
-│  Mesh        │                                                   │   here)           │
-│  Results     │                                                   │                   │
-├──────────────┴───────────────────────────────────────────────────┴───────────────────┤
-│ Messages · progress · timings                                         [Cancel]       │
+│ EMCraft  project •  New  Open  Save  Save as  Undo  Redo  Start  Settings  [search /]│
+├──────────────────┬───────────────────────────────────────────────┬───────────────────┤
+│ [S-parameters ▾] │  overlays · views · Measure                   │ Properties        │
+│ ✔ 1 Geometry   ＋│                                               │ the selected      │
+│    Bodies …      │                3D view                        │ item's form       │
+│    Materials …   │     (the open step's overlay; view cube,      │ (Apply, Delete),  │
+│ ! 2 Excitation ＋│      standard views, fit; grips on what is    │ a command's       │
+│ ✔ 3 Setup      ＋│      selected)                                │ dialog, or the    │
+│ ✔ 4 Region     ＋│                                               │ open step's       │
+│ ○ 5 Mesh     ▶ ＋│       (a result's page in its place)          │ panel             │
+│ ○ 6 Run      ▶ ＋│                                               │                   │
+│ ⋯ 7 Results    ＋│                                               │                   │
+├──────────────────┴───────────────────────────────────────────────┴───────────────────┤
+│ Messages · progress · timings                                              [Cancel]  │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The ribbon of phase 1 stays as the way to every command; the step bar is the way through a job,
-and the ribbon's tabs follow it (MODEL, MATERIALS, PORTS & SOURCES, BOUNDARIES, MESH, SIMULATE,
-RESULTS). A result view of a model changed after its run carries a band — ↻ "Out of date" (why
-on hover) and Re-run — its picture dimmed; the browser marks those results too. A running job
-shows its count ("Frequency sweep · 3/11 · 4 s") in the messages, at the top of the open step's
-panel (or where the docked dialog that started it was) with Cancel, and left of the settings in
-the app bar; the right column stays put while it runs.
-What was built is changed where it is listed: a browser row of a material, a port, a body or a
-source has a right-click menu (Edit, Delete, Show in 3D); a double-click edits, Delete deletes the
-selected row's item (undoable; a refusal is an error message). Every dialog of something the
-model already has opens on its values (`project.values`), and OK with them unchanged runs
+One structure holds the job (docs/adr/0009-model-tree-window.md): the tree's nodes are the
+steps, its rows what each step made (bodies and materials under Geometry, the ports under
+Excitation, the walls under Region, the mesh, the results); each command is on the ＋ of the
+step it belongs to (the ribbon of phase 1 is gone), the command search in the bar finds every
+command by name. A result's row opens its page in the view's place (the S-parameters, TDR, pulse,
+analyses, far field, eigenmodes, the study), a row of the model brings the model back. What is
+selected — in the tree or the 3D view — is edited in the properties panel at the right, not over
+the model: its form opens on its values, Apply sets them and the form stays; a dialog from ＋ or
+the search docks there too; a step's node gives the column back to its panel. A result view of a
+model changed after its run carries a band — ↻ "Out of date" (why on hover) and Re-run — its
+picture dimmed; the tree marks those results too. A running job shows its count ("Frequency
+sweep · 3/11 · 4 s") in the messages and at the top of the open step's panel with Cancel.
+What was built is changed where it is listed: a row of a material, a port, a body or a source
+selected shows its form in the properties panel, Delete deletes the selected row's item
+(undoable; a refusal is an error message). Every dialog of something the model already has opens
+on its values (`project.values`), and OK with them unchanged runs
 nothing. An opened project's Setup step shows its confirmed settings; Run and Re-run run them
 (`solve.run`).
 Work is not lost: closing the window with unsaved changes asks Save / Don't save / Cancel (with a
@@ -136,12 +144,12 @@ kept, the cut faces left open with their outlines drawn; in the Mesh step the cu
 are one click each, a button turns the camera straight at the cut (orthographic), and the cut
 carries its dimensions (the outline's extents, the irises' and steps' apertures) and the ports
 where they meet it, named and sized. There is no separate 2D outline view: the section view is it.
-Each control is in one place: opening a step switches the ribbon to that step's tab (its
-commands), so the step panel holds only the step's checks, its own settings (the band, the
-sweep, Run) and the dialog docked there; the views over the viewport are switched by its view
-tabs, which list only views with something to show; files and samples are in the File menu and
-on the start page; the 3D view's tools are icons (fit, home, face the field's plane, projection)
-and a view cube (or the six signed axes, Settings ▸ 3D view ▸ Navigator).
+Each control is in one place: a step's commands on its ＋, its checks and own settings (the
+band, the device, Run's preflight) in its panel, the views of the 3D view in the bar over it, files
+and samples in the bar and on the start page; the 3D view's orientation is a view cube (or the six
+signed axes, Settings ▸ 3D view ▸ Navigator). A waveguide or a body selected carries grips: its
+walls, a section's far end, a box's faces, a cylinder's radius and length, dragged or typed while
+held, one edit when let go, the form beside following.
 
 **Navigating the 3D view** works as in SolidCraft, so the sibling apps feel alike
 (`crates/ui-core/src/navigation.rs`, `cube.rs`, `crates/ui-iced/src/view3d/`; scenario `navigation`):
@@ -168,7 +176,7 @@ port's reference-plane grip drags them, as SolidCraft's in-view handles take a p
 mapping's left-button navigation applies on empty space or with its keys held; a left drag no
 mapping binds draws the selection box. Several parts selected are highlighted in 3D and in the
 browser (Shift or Ctrl on a row adds or takes out its part), the card at the top says how many
-and deletes the items among them; Edit is for one. View changes
+and deletes the items among them; one is edited in the properties panel. View changes
 (standard views, fit, home, face the plane, the cube) animate for 0.5 s, up to 1 s for turns past
 a quarter turn, eased, the short way round, stepped by the frame's clock (the scenarios' clock is
 their frames', and `Harness::settle` waits for the end).
@@ -202,7 +210,8 @@ their frames', and `Harness::settle` waits for the end).
 
 ## 5. Phase 2 of the UI
 
-1. The step bar and step panels, driven by `project.status`, with links to fixes.
+1. The step bar (since ADR 0009 the model tree's step nodes) and step panels, driven by
+   `project.status`, with links to fixes.
 2. The 3D view: a CPU renderer of triangles and lines with a depth buffer in `emcraft-render`
    (so the same pictures render headless for scenario tests and `ui.render`, deterministically),
    shown as a texture; orbit, pan, zoom, fit, standard views; per-step overlays (materials,
