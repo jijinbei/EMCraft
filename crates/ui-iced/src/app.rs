@@ -178,7 +178,14 @@ impl App {
     /// What is drawn from the project made again where it changed: the 3D view's scene and the
     /// charts, in the window's theme.
     fn settle(&mut self) {
-        self.view3d = std::mem::take(&mut self.view3d).refreshed(&self.session, self.generation, &self.selection, &self.look.theme);
+        let src = crate::view3d::Source {
+            session: &self.session,
+            generation: self.generation,
+            selected: &self.selection,
+            theme: &self.look.theme,
+            gpu_field: self.gpu_look.field,
+        };
+        self.view3d = std::mem::take(&mut self.view3d).refreshed(&src);
         let key = (self.generation, self.selection.clone());
         if self.picked.as_ref().is_none_or(|(k, _)| *k != key) {
             let rows = browser::rows_of(&self.session, &Replies::default(), &self.selection).into_iter().map(|(_, r)| r).collect();
@@ -197,6 +204,12 @@ impl App {
             camera: self.view3d.camera,
             ground: (t.viewport_top.rgb(), t.viewport_bottom.rgb()),
             look: emcraft_gpu3d::Look { edges: g.edges, ao: g.ao, outline: false, pick: false },
+            field: shown.field.as_ref().map(|(grid, scale)| emcraft_gpu3d::FieldFrame {
+                grid: grid.clone(),
+                phase: self.view3d.field.phase,
+                scale: *scale,
+                contours: self.view3d.field.contours,
+            }),
             moving: false,
         }
     }

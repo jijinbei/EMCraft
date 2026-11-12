@@ -8,7 +8,9 @@
 //! The scene keeps the plane as one quad (its tag, for picking and the outline); the packer marks
 //! its triangles ([`Packed::with_field`](super::Packed::with_field)) and the shader colours them.
 
-use emcraft_render::colormap;
+use emcraft_engine::Session;
+use emcraft_engine::view::{FieldView, PlaneSamples};
+use emcraft_render::colormap::{self, ColourScale};
 
 /// The plane's phasors and where it lies.
 #[derive(Clone, Debug, PartialEq)]
@@ -143,5 +145,37 @@ impl FieldFrame {
             }
         }
         out
+    }
+}
+
+impl FieldGrid {
+    /// The field view's plane as the GPU colours it: `samples`' phasors of `view`'s component on
+    /// the plane's frame in a model whose low corner is `lo` (m); `id` names it, so it is
+    /// uploaded once.
+    pub fn of(session: &Session, samples: &PlaneSamples, view: &FieldView, lo: [f64; 3], id: u64) -> FieldGrid {
+        let emcraft_engine::view::Phasors { nx, ny, grid } = samples.phasors(view.component);
+        let (x, y) = samples.axes();
+        let frame = emcraft_ui_core::scene3d::field_frame_of(session, samples.plane, samples.at, x.span(), y.span(), lo);
+        FieldGrid::new(id, view.component.axis(samples.normal_axis()), (nx, ny, &grid), frame)
+    }
+
+    /// The colour scale when the scene gives none: signed for a component, a magnitude's (in
+    /// decibels when `view` asks) for a length, to the peak over the period.
+    pub fn scale(&self, view: &FieldView) -> ColourScale {
+        let peak = self.period_peak();
+        if self.axis < 3 {
+            ColourScale::signed(peak)
+        } else {
+            let s = ColourScale::magnitude(peak);
+            view.db.map_or(s, |floor| s.in_db(floor))
+        }
+    }
+
+    /// The plane as the packer marks it ([`Packed::with_field`](super::Packed::with_field)): the
+    /// field plane's tag, the axis across it and where it lies along that axis (m).
+    pub fn mark(&self) -> (u32, usize, f64) {
+        let n = [self.u_end, self.v_end].map(|e| [e[0] - self.corner[0], e[1] - self.corner[1], e[2] - self.corner[2]]);
+        let axis = (0..3).find(|&k| n[0][k] == 0.0 && n[1][k] == 0.0).unwrap_or(0);
+        (emcraft_ui_core::scene3d::Pick::Plane(0).tag(), axis, self.corner[axis])
     }
 }

@@ -249,3 +249,40 @@ fn the_field_overlay_draws_the_plane_with_its_colour_bar() {
     let again = samples(&app);
     assert!(again.as_ref().is_some_and(|s| s.plane == Plane::E), "sampled anew on the E-plane");
 }
+
+/// The GPU colours the field's plane (the preferences' default): the scene keeps the plane as
+/// one quad and its phasors go with the frame, so a phase changes the picture without building
+/// the scene again; with the GPU's colouring off the scene holds the plane's coloured cells.
+/// Analytic evidence: a standing TE10 wave's Ey at ωt and ωt + π/2 differ (Re(F e^{jωt}) of a
+/// phasor with both parts non-zero), so the two pictures do.
+#[test]
+fn the_gpu_colours_the_field_and_a_phase_moves_only_the_frame() {
+    use crate::view3d::Nav;
+    use emcraft_ui_core::scene3d::Overlay;
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::Start("solve.run".into()));
+    finish(&mut app);
+    app.update(Message::View3d(Nav::Overlay(Overlay::Field)));
+    let shown = |app: &App| app.view3d.shown.clone().unwrap_or_else(|| panic!("no scene"));
+    let gpu = shown(&app);
+    assert!(gpu.field.is_some(), "the GPU colours the plane");
+    app.update(Message::View3d(Nav::Phase(std::f64::consts::FRAC_PI_2)));
+    assert_eq!(shown(&app).packed.id, gpu.packed.id, "a phase builds nothing again");
+    let picture = |app: &App| {
+        let frame = crate::view3d::shader::frame(&app.shot(&shown(app)), [480, 320], 1.0);
+        emcraft_gpu3d::picture(0, &frame)
+    };
+    let quarter = picture(&app);
+    app.update(Message::View3d(Nav::Phase(0.0)));
+    match (picture(&app), quarter) {
+        (Ok(a), Ok(b)) => assert_ne!(a.rgba, b.rgba, "the phase moves the picture"),
+        (Err(emcraft_gpu3d::Gpu3dError::NoAdapter(e)), _) => eprintln!("skipped the pictures: {e}"),
+        (a, b) => panic!("{:?} {:?}", a.err(), b.err()),
+    }
+    // Off: the CPU colours the cells, and the scene carries them.
+    app.gpu_look.field = false;
+    app.update(Message::View3d(Nav::Fit));
+    let cpu = shown(&app);
+    assert!(cpu.field.is_none());
+    assert!(cpu.built.scene.tris.len() > gpu.built.scene.tris.len(), "the plane's cells in the scene");
+}

@@ -13,8 +13,9 @@ use std::sync::Arc;
 
 use emcraft_engine::Session;
 use emcraft_engine::view::{Component, FieldView, Plane};
-use emcraft_gpu3d::Packed;
+use emcraft_gpu3d::{FieldGrid, Packed};
 use emcraft_render::Rgb;
+use emcraft_render::colormap::ColourScale;
 use emcraft_render::view3d::{Camera, StandardView};
 use emcraft_ui_core::scene3d::{self, Colours, Overlay, Pick};
 use emcraft_ui_core::theme::Theme;
@@ -45,6 +46,8 @@ pub enum Nav {
     Component(Component),
     Frequency(f64),
     At(f64),
+    /// The field's phase ωt (rad): the picture shows Re(F e^{jωt}).
+    Phase(f64),
 }
 
 /// A click on the view: where (points from its corner), whether Shift or Ctrl was held, whether
@@ -63,8 +66,10 @@ struct Key {
     generation: u64,
     overlay: Overlay,
     selected: Vec<Pick>,
-    /// The field view, on the field overlay.
+    /// The field view, on the field overlay (its phase left out when the GPU colours the plane:
+    /// a phase then changes only the frame).
     field: Option<FieldView>,
+    gpu_field: bool,
     theme: String,
     language: &'static str,
 }
@@ -81,6 +86,19 @@ pub struct Shown {
     pub legend: Vec<(String, Rgb)>,
     /// The field's colour bar, on the field overlay.
     pub bar: Option<field::Bar>,
+    /// The field plane's phasors and colour scale when the GPU colours it.
+    pub field: Option<(Arc<FieldGrid>, ColourScale)>,
+}
+
+/// What the scene is built from besides the view's own state: the project and the window's
+/// generation of it (raised by every command that ends well), what is selected (lit), the theme,
+/// and whether the GPU colours the field's plane (the preferences').
+pub struct Source<'a> {
+    pub session: &'a Session,
+    pub generation: u64,
+    pub selected: &'a [Pick],
+    pub theme: &'a Theme,
+    pub gpu_field: bool,
 }
 
 /// The 3D view's state.
@@ -97,6 +115,8 @@ pub struct View3d {
     /// What the field overlay shows, its plane's samples and why it could not be drawn.
     pub field: FieldView,
     pub(crate) sampled: Option<field::Sampled>,
+    /// The plane's phasors as uploaded, for the generation and the view they were made from.
+    grid: Option<((u64, FieldView), Arc<FieldGrid>)>,
     pub field_error: Option<String>,
 }
 
@@ -110,52 +130,72 @@ impl Default for View3d {
             shown: None,
             field: field::start(),
             sampled: None,
+            grid: None,
             field_error: None,
         }
     }
 }
 
-/// The scene of `session` for `key` in `theme`'s colours with the field's `layers`, packed.
-fn built(session: &Session, theme: &Theme, key: Key, layers: &[scene3d::FieldLayer]) -> Shown {
+/// The scene of `session` for `key` in `theme`'s colours with the field's `layers`, packed, its
+/// plane marked for the GPU to colour from `grid` when it does (`view` its scale's).
+fn built(session: &Session, theme: &Theme, key: Key, layers: &[scene3d::FieldLayer], grid: Option<(Arc<FieldGrid>, &FieldView)>) -> Shown {
     let b = scene3d::build_with(session, key.overlay, &Colours::of(theme), layers, &key.selected);
-    let packed = Packed::with_arrows(b.gpu_scene.as_ref().unwrap_or(&b.scene), emcraft_gpu3d::next_id(), None, &b.arrows);
+    let mark = grid.as_ref().map(|(g, _)| g.mark());
+    let packed = Packed::with_arrows(b.gpu_scene.as_ref().unwrap_or(&b.scene), emcraft_gpu3d::next_id(), mark, &b.arrows);
     let bounds = b.bounds.or_else(|| b.scene.bounds());
     let (labels, legend, bar) = (b.labels.clone(), b.legend.clone(), b.colour_bar.as_ref().map(field::Bar::of));
-    Shown { key, built: Arc::new(b), packed: Arc::new(packed), bounds, labels, legend, bar }
+    // The scale the colour bar shows, so the plane and the bar agree.
+    let field = grid.map(|(g, v)| {
+        let scale = b.colour_bar.as_ref().map_or_else(|| g.scale(v), |c| c.scale);
+        (g, scale)
+    });
+    Shown { key, built: Arc::new(b), packed: Arc::new(packed), bounds, labels, legend, bar, field }
 }
 
 impl View3d {
     /// The view after the project or the theme changed: the scene built again when what it shows
     /// changed, a new box fitted.
-    /// `generation`: the window's, raised by every command that ends well; `selected`: what is
-    /// lit.
-    pub fn refreshed(self, session: &Session, generation: u64, selected: &[Pick], theme: &Theme) -> View3d {
+    pub fn refreshed(self, src: &Source) -> View3d {
+        let Source { session, generation, selected, theme, gpu_field } = *src;
+        let shown_field = |v: &FieldView| if gpu_field { FieldView { phase: 0.0, ..v.clone() } } else { v.clone() };
         let key = Key {
             generation,
             selected: selected.to_vec(),
             overlay: self.overlay,
-            field: (self.overlay == Overlay::Field).then(|| self.field.clone()),
+            field: (self.overlay == Overlay::Field).then(|| shown_field(&self.field)),
+            gpu_field,
             theme: theme.name.clone(),
             language: emcraft_ui_core::lang::current(),
         };
         if self.shown.as_ref().is_some_and(|s| s.key == key) {
             return self;
         }
-        let (sampled, plot) = match &key.field {
-            Some(v) => {
-                let (sampled, plot) = field::plot(session, generation, v, self.sampled.clone());
+        let (sampled, plot) = match key.field.is_some() {
+            true => {
+                let (sampled, plot) = field::plot(session, generation, &self.field, self.sampled.clone());
                 (sampled, Some(plot))
             }
-            None => (self.sampled.clone(), None),
+            false => (self.sampled.clone(), None),
         };
         let place = sampled.as_ref().map(field::Sampled::place);
+        // The plane's phasors for the GPU: made again only for new samples or another component.
+        let lo = session.model().bounds().map(|b| [b.min.x, b.min.y, b.min.z]);
+        let grid_key = (generation, FieldView { phase: 0.0, db: None, contours: false, ..self.field.clone() });
+        let grid = match (gpu_field, &plot, &sampled, lo) {
+            (true, Some(Ok(_)), Some(s), Some(lo)) => Some(match &self.grid {
+                Some((k, g)) if *k == grid_key => g.clone(),
+                _ => Arc::new(FieldGrid::of(session, s.samples(), &self.field, lo, emcraft_gpu3d::next_id())),
+            }),
+            _ => None,
+        };
         let layers: Vec<scene3d::FieldLayer> = match (&plot, place) {
-            (Some(Ok(plot)), Some((plane, at))) => vec![scene3d::FieldLayer { plot, plane, at, gpu: false }],
+            (Some(Ok(plot)), Some((plane, at))) => vec![scene3d::FieldLayer { plot, plane, at, gpu: grid.is_some() }],
             _ => Vec::new(),
         };
-        let shown = built(session, theme, key, &layers);
+        let shown = built(session, theme, key, &layers, grid.clone().map(|g| (g, &self.field)));
         let field_error = plot.and_then(Result::err);
-        let view = View3d { shown: Some(shown), sampled, field_error, ..self };
+        let grid = grid.map(|g| (grid_key, g)).or_else(|| self.grid.clone());
+        let view = View3d { shown: Some(shown), sampled, grid, field_error, ..self };
         match view.bounds() {
             Some(b) if view.fitted.is_none_or(|(f, _)| f != b) => view.fit(),
             _ => view,
@@ -218,6 +258,10 @@ impl View3d {
             Nav::Component(component) => View3d { field: FieldView { component, ..self.field.clone() }, ..self },
             Nav::Frequency(frequency) => View3d { field: FieldView { frequency, ..self.field.clone() }, ..self },
             Nav::At(at) => View3d { field: FieldView { at: Some(at), ..self.field.clone() }, ..self },
+            Nav::Phase(phase) if phase.is_finite() => {
+                View3d { field: FieldView { phase: phase.rem_euclid(std::f64::consts::TAU), ..self.field.clone() }, ..self }
+            }
+            Nav::Phase(_) => self,
             Nav::Size(w, h) if w.is_finite() && h.is_finite() && w >= 1.0 && h >= 1.0 => {
                 let unmoved = self.fitted.is_some_and(|(_, c)| c == self.camera);
                 let view = View3d { size: (w, h), ..self };

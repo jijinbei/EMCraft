@@ -116,12 +116,7 @@ pub(super) fn gpu_frame(
     let size = [out[0] * supersample, out[1] * supersample];
     let id = v.scene_gen();
     let mut cache = std::mem::take(&mut v.gpu);
-    let field_plane = v.field_frame.as_ref().map(|f| {
-        let g = &f.grid;
-        let n = [g.u_end, g.v_end].map(|e| [e[0] - g.corner[0], e[1] - g.corner[1], e[2] - g.corner[2]]);
-        let axis = (0..3).find(|&k| n[0][k] == 0.0 && n[1][k] == 0.0).unwrap_or(0);
-        (scene3d::Pick::Plane(0).tag(), axis, g.corner[axis])
-    });
+    let field_plane = v.field_frame.as_ref().map(|f| f.grid.mark());
     let packed = match v.shown() {
         // Offscreen (read back, often on a software adapter) a large scene moves as its coarser copy.
         Some(b) if b.gpu_scene.is_none() && moving && offscreen && !std::ptr::eq(b.moving(), &b.scene) => {
@@ -159,39 +154,21 @@ pub(super) fn field_frame(app: &EmcraftApp, v: &mut View3d, field: &FieldState) 
     use std::hash::{Hash, Hasher};
     let s = field.samples.as_ref()?;
     let lo = v.bounds()?.0;
-    let component = field.view.component;
     let mut h = std::collections::hash_map::DefaultHasher::new();
     (app.revision, format!("{:?}", FieldView { phase: 0.0, ..field.view.clone() }), s.at.to_bits(), lo.map(f64::to_bits)).hash(&mut h);
     let id = h.finish();
     let grid = match &v.field_grid {
         Some(g) if g.id == id => g.clone(),
         _ => {
-            let emcraft_engine::view::Phasors { nx, ny, grid: phasors } = s.phasors(component);
-            let (x, y) = s.axes();
-            let frame = scene3d::field_frame_of(&app.session, s.plane, s.at, x.span(), y.span(), lo);
-            let axis = component.axis(s.normal_axis());
-            let g = std::sync::Arc::new(crate::gpu3d::FieldGrid::new(id, axis, (nx, ny, &phasors), frame));
+            let g = std::sync::Arc::new(crate::gpu3d::FieldGrid::of(&app.session, s, &field.view, lo, id));
             v.field_grid = Some(g.clone());
             g
         }
     };
     // The scale the scene's colour bar shows (scene3d::field), so the plane and the bar agree.
     let bar = v.built.as_ref().and_then(|(_, b)| b.colour_bar.as_ref()).map(|b| b.scale);
-    let scale = bar.unwrap_or_else(|| field_scale(&grid, &field.view));
+    let scale = bar.unwrap_or_else(|| grid.scale(&field.view));
     Some(crate::gpu3d::FieldFrame { grid, phase: field.view.phase, scale, contours: field.view.contours })
-}
-
-/// The field plane's colour scale when the scene has none: signed for a component, a magnitude's (in decibels when the
-/// view asks) for a length, to the peak over the period.
-pub(super) fn field_scale(grid: &crate::gpu3d::FieldGrid, view: &emcraft_engine::view::FieldView) -> emcraft_render::colormap::ColourScale {
-    use emcraft_render::colormap::ColourScale;
-    let peak = grid.period_peak();
-    if grid.axis < 3 {
-        ColourScale::signed(peak)
-    } else {
-        let s = ColourScale::magnitude(peak);
-        view.db.map_or(s, |floor| s.in_db(floor))
-    }
 }
 
 /// The window pixel under `at` (points from the view's corner).
