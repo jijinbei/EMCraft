@@ -432,3 +432,24 @@ fn a_dialog_edits_an_item_and_delete_takes_one_away() {
         assert!(shot.matches_image(std::path::Path::new(&dir).join("dialog")).unwrap_or(false));
     }
 }
+
+/// The ribbon: Materials' "new material" opens its dialog; filled in and confirmed, the material
+/// is in the model. A system's ribbon opens on its own tab.
+#[test]
+fn the_ribbon_opens_a_commands_dialog_and_runs_it() {
+    use crate::dialog::Edit;
+    use emcraft_ui_core::ribbon::RibbonTab;
+    let mut app = App::new(Some("highpass"));
+    assert_eq!(app.tab, RibbonTab::Model);
+    app.update(Message::Tab(RibbonTab::Materials));
+    app.update(Message::Command("model.material.create".into()));
+    let at = |app: &App, name: &str| app.dialog.as_ref().and_then(|d| d.fields.iter().position(|f| f.name == name));
+    let (Some(name), Some(eps)) = (at(&app, "name"), at(&app, "eps_r")) else { panic!("the material's dialog") };
+    app.update(Message::Dialog(Edit::Text(name, "alumina".into())));
+    app.update(Message::Dialog(Edit::Text(eps, "9.8".into())));
+    app.update(Message::Dialog(Edit::Ok));
+    assert!(app.dialog.is_none(), "{:?}", app.dialog.as_ref().map(|d| d.error.clone()));
+    assert!(app.session.model().materials.iter().any(|m| m.name == "alumina" && m.eps_r.get() == 9.8));
+    assert!(app.rows().any(|r| r.id == "material:alumina"), "its row in the browser");
+    assert_eq!(App::new(Some("adsb-receiver")).tab, RibbonTab::System);
+}

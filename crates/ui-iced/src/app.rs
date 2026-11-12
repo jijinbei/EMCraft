@@ -82,6 +82,10 @@ pub enum Message {
     Row(String),
     /// The selection's edit dialog opened.
     Edit,
+    /// The ribbon's tab shown.
+    Tab(emcraft_ui_core::ribbon::RibbonTab),
+    /// A ribbon command: its dialog opened, or (without parameters) run.
+    Command(String),
     /// The items selected deleted.
     Delete,
     /// The open dialog changed, confirmed or cancelled.
@@ -125,6 +129,8 @@ pub struct App {
     pub(crate) tree: Option<(u64, Tree)>,
     /// The command's dialog open over the window.
     pub(crate) dialog: Option<Dialog>,
+    /// The ribbon's tab shown.
+    pub(crate) tab: emcraft_ui_core::ribbon::RibbonTab,
     /// The charts as drawn.
     pub(crate) charts: crate::charts::Charts,
     /// Raised by every command that ends well (the model's revision does not follow a solve's
@@ -165,6 +171,7 @@ impl App {
             selection: Selection::default(),
             tree: None,
             dialog: None,
+            tab: Default::default(),
             charts: crate::charts::Charts::default(),
             generation: 0,
             job: None,
@@ -176,6 +183,7 @@ impl App {
         };
         app.read();
         app.settle();
+        app.tab = crate::ribbon::first_tab(&app);
         app
     }
 
@@ -262,6 +270,18 @@ impl App {
         match opened {
             Ok(d) => self.dialog = Some(d),
             Err(e) => self.error = Some(e),
+        }
+    }
+
+    /// Command `id` from the ribbon: its dialog on the model's values, or (without parameters) run.
+    fn command(&mut self, id: &str) {
+        match emcraft_engine::find_command(id) {
+            Some(spec) if spec.params.is_empty() => self.start(id, serde_json::json!({})),
+            Some(_) => match self.open(id, &serde_json::json!({})) {
+                Ok(d) => self.dialog = Some(d),
+                Err(e) => self.error = Some(e),
+            },
+            None => self.error = Some(format!("no command `{id}`")),
         }
     }
 
@@ -425,7 +445,7 @@ impl App {
             View::SParameters => crate::sparameters::view(self),
             _ => crate::system::view(self),
         };
-        let window = container(column![bar, page]).width(Fill).height(Fill).style(look::window(t));
+        let window = container(column![bar, crate::ribbon::view(self), page]).width(Fill).height(Fill).style(look::window(t));
         match &self.dialog {
             Some(d) => iced::widget::stack![window, crate::dialog::view(self, d)].boxed(),
             None => window.boxed(),
@@ -466,6 +486,14 @@ impl App {
             Message::Row(id) => self.row(&id),
             Message::Edit => {
                 self.edit();
+                None
+            }
+            Message::Tab(tab) => {
+                self.tab = tab;
+                None
+            }
+            Message::Command(id) => {
+                self.command(&id);
                 None
             }
             Message::Delete => {

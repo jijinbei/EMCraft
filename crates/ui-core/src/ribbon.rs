@@ -88,6 +88,23 @@ pub const STAGES: &str = t!("STAGES").en();
 /// the model, beside the port commands.
 pub const TOOLS: &[(RibbonTab, &str, &[Tool])] = &[(RibbonTab::PortsSources, "PORTS", &[Tool::Port, Tool::Lumped])];
 
+/// The tabs a job of this kind of analysis shows: a system's own alone, else every other (each
+/// with a command that [`fits`]).
+///
+/// ```
+/// use emcraft_engine::workflow::Analysis;
+/// use emcraft_ui_core::ribbon::{RibbonTab, tabs};
+/// assert_eq!(tabs(Analysis::System), [RibbonTab::System]);
+/// assert!(!tabs(Analysis::Frequency).contains(&RibbonTab::System));
+/// ```
+pub fn tabs(kind: Analysis) -> Vec<RibbonTab> {
+    TABS.iter()
+        .map(|(tab, _)| *tab)
+        .filter(|tab| (*tab == RibbonTab::System) == (kind == Analysis::System))
+        .filter(|tab| TABS.iter().any(|(t, panels)| t == tab && panels.iter().any(|(_, ids)| ids.iter().any(|id| fits(kind, id)))))
+        .collect()
+}
+
 /// Whether a ribbon command belongs to a job of this kind of analysis: those of the other kinds
 /// are left out of the ribbon once a kind is chosen (the search still finds them).
 pub fn fits(kind: Analysis, id: &str) -> bool {
