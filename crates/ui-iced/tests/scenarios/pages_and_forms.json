@@ -1,0 +1,19 @@
+[
+  {"note": "A port's row keeps the model in view, its form beside it; an item's form waits unseen while the start page or the settings are open and is back after; the fields are the model's overlay, not a page of their own; there is no page for a comparison with theory (the oracle's)"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 6, "stop": 9, "points": 3, "order": 1}}},
+  {"click": "row:port:1"},
+  {"expect": {"inspect": {"page": "model", "dialog.command": "model.port.edit"}}},
+  {"call": "ui.set", "params": {"start": true}},
+  {"expect": {"inspect": {"start": true, "dialog.command": "model.port.edit"}}},
+  {"shot": "form-waits-on-start"},
+  {"key": "Escape"},
+  {"expect": {"inspect": {"dialog.command": "model.port.edit"}}},
+  {"call": "ui.set", "params": {"start": false}},
+  {"expect": {"inspect": {"start": false, "page": "model", "dialog.command": "model.port.edit"}}},
+  {"click": "dialog:cancel"},
+  {"call": "ui.set", "params": {"page": "sparameters"}},
+  {"call": "ui.set", "params": {"page": "field"}},
+  {"expect": {"inspect": {"page": "model", "view3d.overlay": "field"}}},
+  {"call": "ui.set", "params": {"page": "compare"}, "fail": true}
+]

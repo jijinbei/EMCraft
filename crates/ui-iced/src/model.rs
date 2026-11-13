@@ -36,7 +36,7 @@ const VIEWS: [(StandardView, emcraft_ui_core::lang::Text); 4] =
 
 /// A button of the bar: `label`, lit when `on`, sending `message` (none: greyed).
 fn tool<'a>(t: Tokens, label: &str, on: bool, message: Option<Message>) -> Element<'a, Message> {
-    iced::widget::button(text(label.to_owned()).size(t.font_button)).style(look::button(t, on)).on_press_maybe(message).boxed()
+    iced::widget::button(text(label.to_owned()).size(t.font_button)).style(look::toggle(t, on)).on_press_maybe(message).boxed()
 }
 
 /// The bar over the view.

@@ -11,14 +11,17 @@ use crate::app::{App, Message};
 
 /// The layers open now, top first.
 pub fn stack(app: &App) -> Vec<Layer> {
+    // The project's pages in view: the start page and the settings cover them.
+    let project = !(app.home || app.settings);
     let open = |l: Layer| match l {
         Layer::Ask => app.asking.is_some(),
         Layer::Template => app.template.card.is_some(),
         Layer::Search => !app.search.is_empty(),
-        Layer::Dialog => app.dialog.is_some(),
+        // An item's form waits unseen off the project's pages.
+        Layer::Dialog => app.dialog.as_ref().is_some_and(|d| d.item.is_none() || project),
         Layer::Settings => app.settings,
-        Layer::Tool => app.tool.is_some(),
-        Layer::Selection => !app.selection.is_clear(),
+        Layer::Tool => project && app.tool.is_some(),
+        Layer::Selection => project && !app.selection.is_clear(),
         Layer::Reports => app.crashes.shown.is_some(),
         // The pen and the box being dragged are not the iced window's (the box is the 3D view's
         // own, let go there).

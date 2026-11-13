@@ -59,7 +59,7 @@ fn analyses(app: &App) -> (Option<Element<'_, Message>>, Option<Element<'_, Mess
     let buttons = BUTTONS.iter().map(|(id, label, _)| {
         let on = shown.is_some_and(|a| a.command == *id);
         button(text(tr(*label)).size(t.font_button))
-            .style(look::button(t, on))
+            .style(look::toggle(t, on))
             .on_press_maybe(idle.then(|| Message::Command((*id).to_owned())))
             .boxed()
     });
@@ -140,7 +140,7 @@ impl App {
 }
 
 fn chip<'a>(t: crate::look::Tokens, label: &str, on: bool, choose: Message) -> Element<'a, Message> {
-    button(text(label.to_owned()).size(t.font_button)).style(look::button(t, on)).on_press(choose).boxed()
+    button(text(label.to_owned()).size(t.font_button)).style(look::toggle(t, on)).on_press(choose).boxed()
 }
 
 fn note<'a>(app: &App, s: emcraft_ui_core::lang::Text) -> Element<'a, Message> {

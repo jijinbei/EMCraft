@@ -242,7 +242,18 @@ impl App {
                 },
                 None => err("give `handle`: a name ui.handles lists"),
             }),
-            "ui.set" => Some(self.set(p)),
+            "ui.set" => {
+                // The start page and the settings as their buttons open them (the start page's
+                // pictures drawn), after the rest is set.
+                let reply = self.set(p);
+                let set = reply["ok"] == true;
+                let opened = ["settings", "start"].into_iter().filter(|_| set).filter_map(|k| Some((k, p.get(k)?.as_bool()?)));
+                let later: Vec<Task<Message>> =
+                    opened.map(|(k, on)| self.react(if k == "start" { Message::Home(on) } else { Message::Settings(on) })).collect();
+                let reply = if later.is_empty() { reply } else { ok(inspect(self)) };
+                let _ = req.reply.send(reply);
+                return Task::batch(later);
+            }
             "ui.point" => Some(self.point(p)),
             "ui.dialog" => Some(self.dialog_request(p)),
             "ui.record" => Some(self.record_request(p)),
@@ -386,11 +397,6 @@ impl App {
                 };
                 let text = v.as_str().map_or_else(|| v.to_string(), str::to_owned);
                 self.update(Message::StepAct(crate::step_panel::Act::Typed(name, text)));
-            }
-        }
-        for (k, m) in [("settings", Message::Settings as fn(bool) -> Message), ("start", Message::Home)] {
-            if let Some(on) = p.get(k).and_then(Value::as_bool) {
-                self.update(m(on));
             }
         }
         ok(inspect(self))

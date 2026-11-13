@@ -77,7 +77,7 @@ fn pills(app: &App) -> Element<'_, Message> {
         };
         let label = format!("{} {}", i + 1, lookup(stage.label()));
         button(text(label).size(t.font_button))
-            .style(look::button(t, stage == current))
+            .style(look::toggle(t, stage == current))
             .on_press_maybe((open && app.job.is_none()).then(|| run("view.pcb", json!({"stage": stage.id()}))))
             .boxed()
     });

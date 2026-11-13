@@ -186,7 +186,7 @@ pub fn fold<'a>(app: &'a App, d: &Dialog) -> Option<Element<'a, Message>> {
         let options = button(text(format!("{mark} {}", tr(t!("Options")))).size(t.font_body))
             .style(look::quiet(t))
             .on_press(Message::Dialog(crate::dialog::Edit::Options));
-        let help = button(text("?").size(t.font_button)).style(look::button(t, d.help)).on_press(Message::Dialog(crate::dialog::Edit::Help));
+        let help = button(text("?").size(t.font_button)).style(look::toggle(t, d.help)).on_press(Message::Dialog(crate::dialog::Edit::Help));
         row![options, iced::widget::Space::new().width(Fill), help].align_y(Alignment::Center).boxed()
     })
 }

@@ -1424,7 +1424,8 @@ fn escape_closes_the_top_layer_first() {
     app.update(Message::Settings(true));
     app.update(Message::Command("model.material.create".into()));
     let top = |app: &App| crate::escape::stack(app).first().copied();
-    assert_eq!(crate::escape::stack(&app), [Layer::Dialog, Layer::Settings, Layer::Tool, Layer::Selection]);
+    // The settings cover the model: its tool and selection wait under them.
+    assert_eq!(crate::escape::stack(&app), [Layer::Dialog, Layer::Settings]);
     // The dialog's own field took the key: the dialog closes all the same.
     app.update(Message::Escape(true));
     assert_eq!((app.dialog.is_none(), top(&app)), (true, Some(Layer::Settings)));

@@ -611,18 +611,22 @@ impl App {
         }
         self.selection = Selection::of(r.pick.into_iter().collect(), Some(r.id.clone()));
         match r.act {
-            Act::Show(v) if crate::run::PAGES.contains(&v) => self.page = v,
-            // The fields: the model, its field put forward.
-            Act::Show(View::Field) if self.session.results().sweep.is_some() || self.session.results().eigen.is_some() => {
-                self.page = View::Model;
-                self.view3d = std::mem::take(&mut self.view3d).navigated(Nav::Overlay(emcraft_ui_core::scene3d::Overlay::Field));
-            }
+            Act::Show(v) => self.show(v),
             // A row of the model shows the model (from a result's page).
             Act::None | Act::Edit(_) | Act::EditWith(..) | Act::Design(_) => self.page = first_page(&self.session),
             Act::Run(id, params) => self.start(id, params),
-            _ => {}
         }
         None
+    }
+
+    /// View `v` shown: a page of its own, or (the fields) the model with its field put forward.
+    fn show(&mut self, v: View) {
+        if v == View::Field {
+            self.page = View::Model;
+            self.view3d = std::mem::take(&mut self.view3d).navigated(Nav::Overlay(emcraft_ui_core::scene3d::Overlay::Field));
+        } else if crate::run::PAGES.contains(&v) {
+            self.page = v;
+        }
     }
 
     /// The one row selected: what is picked when one part is, else the row clicked.
@@ -899,13 +903,13 @@ impl App {
             .chain(crate::files::edits(self))
             .chain(std::iter::once(
                 button(text(emcraft_ui_core::lang::tr(t!("Start"))).size(t.font_button))
-                    .style(look::button(t, self.home))
+                    .style(look::bar_toggle(t, self.home))
                     .on_press(Message::Home(!self.home))
                     .boxed(),
             ))
             .chain(std::iter::once(
                 button(text(emcraft_ui_core::lang::tr(t!("Settings"))).size(t.font_button))
-                    .style(look::button(t, self.settings))
+                    .style(look::bar_toggle(t, self.settings))
                     .on_press(Message::Settings(!self.settings))
                     .boxed(),
             )))
@@ -946,7 +950,9 @@ impl App {
         let over = self
             .dialog
             .as_ref()
-            .filter(|_| !project)
+            // Off the project's pages only a command's dialog shows, over the page; an item's
+            // form waits for the project's pages (it is the properties panel's).
+            .filter(|d| !project && d.item.is_none())
             .map(|d| crate::dialog::view(self, d))
             .or_else(|| crate::template_dialog::view(self))
             .or_else(|| crate::reports::view(self))
@@ -982,7 +988,7 @@ impl App {
             }
             Message::Page(v) => {
                 self.note(emcraft_ui_core::action::Action::SetView(v));
-                self.page = v;
+                self.show(v);
                 self.settings = false;
                 self.home = false;
                 None

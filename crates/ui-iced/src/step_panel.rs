@@ -461,7 +461,7 @@ fn run<'a>(app: &'a App, states: &[StepState]) -> Vec<Element<'a, Message>> {
     let blocking = pre.blocking.iter().map(|f| finding(f, t.error));
     let warnings = pre.warnings.iter().map(|f| finding(f, t.warning));
     let solver = small(t, trf(t!("Solver: {solver}"), args!(solver = shown(app.solver()))), t.text);
-    let button = action(t, format!("▶ {}", pre.button()), true, app.job.is_none().then(|| send(Act::Run)));
+    let button = crate::search::busy(app, action(t, format!("▶ {}", pre.button()), true, app.job.is_none().then(|| send(Act::Run))));
     let refused = app.workflow.refusal.as_ref().filter(|_| !pre.blocking.is_empty()).map(|_| {
         let n = pre.blocking.len();
         small(t, plural(n, t!("Run refused: {n} problem to fix first"), t!("Run refused: {n} problems to fix first"), args!(n = n)), t.error)

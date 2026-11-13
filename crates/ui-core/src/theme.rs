@@ -370,7 +370,18 @@ impl Tokens<Colour> {
             ("text_dim", self.text_dim, "panel", self.panel, 3.0),
             ("on_accent", self.on_accent, "accent", self.accent, 3.0),
             ("form_error", self.form_error, "form_error_fill", self.form_error_fill, 4.5),
+            // A row's detail line where the row is lit, and a part that cannot be used.
+            ("text_dim", self.text_dim, "selected_bg", self.selected_bg, 3.0),
+            ("text_dim", self.text_dim, "hover", self.hover, 3.0),
+            ("text_dim", self.text_dim, "accent_soft", self.accent_soft, 3.0),
+            ("text_dim", self.text_dim, "panel_header", self.panel_header, 3.0),
         ];
+        // The states' colours carry small text (a warning, an error, out of date, done): on the
+        // panels and in the forms.
+        for (name, ink) in [("error", self.error), ("warning", self.warning), ("success", self.success), ("info", self.info)] {
+            pairs.push((name, ink, "panel", self.panel, 4.5));
+            pairs.push((name, ink, "dialog_body", self.dialog_body, if name == "info" { 3.0 } else { 4.5 }));
+        }
         for tab in RibbonTab::ALL {
             let [_, ink, soft] = self.tab(tab);
             pairs.push(("a tab's ink", ink, "its soft tint", soft, 4.5));

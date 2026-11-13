@@ -164,15 +164,15 @@ fn step_head<'a>(app: &App, t: Tokens, step: Step, part: &Part, folded: bool) ->
 fn ends<'a>(app: &App, t: Tokens, part: &Part) -> Vec<Element<'a, Message>> {
     let idle = app.job.is_none();
     let small = |label: &'static str, on: bool, message: Option<Message>| {
-        button(text(label).size(t.font_body).color(if on { t.on_accent } else { t.accent }))
-            .style(look::button(t, on))
-            .padding([1, 7])
-            .on_press_maybe(message)
-            .boxed()
+        // The accent's mark while it can be used and is off; else the style's ink (the
+        // selection's when on, the dim one when it cannot be used).
+        let mark = text(label).size(t.font_body);
+        let mark = if message.is_some() && !on { mark.color(t.accent) } else { mark };
+        button(mark).style(look::toggle(t, on)).padding([1, 7]).on_press_maybe(message).boxed()
     };
     let play = match part.head {
         Head::Step(step) => {
-            emcraft_ui_core::outline::play(step).map(|id| crate::search::tip(t, small("▶", false, idle.then(|| play_message(id))), id))
+            emcraft_ui_core::outline::play(step).map(|id| crate::search::command_tip(app, small("▶", false, idle.then(|| play_message(id))), id))
         }
         Head::Section(_) => None,
     };
@@ -213,10 +213,10 @@ fn add_list<'a>(app: &App, t: Tokens, part: &Part) -> Option<Element<'a, Message
     let entries = emcraft_ui_core::outline::adds(part.head, app.solver()).into_iter().map(|a| match a {
         Add::Command(id) => {
             let b = entry(emcraft_ui_core::commands::glyph(id), emcraft_ui_core::commands::button_label(id).to_owned(), add_message(a));
-            crate::search::tip(t, b.boxed(), id)
+            crate::search::command_tip(app, b.boxed(), id)
         }
-        Add::Tool(k) => entry(k.glyph(), lookup(k.label()).to_owned(), add_message(a)).boxed(),
-        Add::NewDesign => entry(Glyph::Import, tr(t!("New SolidCraft design")).to_owned(), add_message(a)).boxed(),
+        Add::Tool(k) => crate::search::busy(app, entry(k.glyph(), lookup(k.label()).to_owned(), add_message(a)).boxed()),
+        Add::NewDesign => crate::search::busy(app, entry(Glyph::Import, tr(t!("New SolidCraft design")).to_owned(), add_message(a)).boxed()),
     });
     let list = Column::with_children(entries).spacing(1);
     Some(container(list).padding(iced::Padding { top: 2.0, right: 0.0, bottom: 4.0, left: 22.0 }).boxed())

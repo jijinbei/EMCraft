@@ -21,7 +21,7 @@ fn titled<'a>(t: Tokens, title: Text, items: Vec<Element<'a, Message>>) -> Eleme
 }
 
 fn choice<'a>(t: Tokens, label: &str, on: bool, pref: Pref) -> Element<'a, Message> {
-    button(text(label.to_owned()).size(t.font_button)).style(look::button(t, on)).on_press(Message::Pref(pref)).boxed()
+    button(text(label.to_owned()).size(t.font_button)).style(look::toggle(t, on)).on_press(Message::Pref(pref)).boxed()
 }
 
 /// A section: its heading, what it is about, its choices.

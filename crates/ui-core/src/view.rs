@@ -18,7 +18,6 @@ emcraft_macros::named_enum! {
         Field = "field" => "Field",
         PortModes = "port_modes" => "Port modes",
         FarField = "far_field" => "Far field",
-        Compare = "compare" => "Compare with theory",
         Eigenmodes = "eigenmodes" => "Eigenmodes",
         /// The last parameter study: a sweep's curves or an optimization's progress.
         Study = "study" => "Study",
@@ -106,7 +105,6 @@ impl View {
             View::Field => Glyph::FieldLines,
             View::PortModes => Glyph::PortModes,
             View::FarField => Glyph::Pattern,
-            View::Compare => Glyph::Compare,
             View::Eigenmodes => Glyph::Eigen,
             View::Study => Glyph::ParamSweep,
             View::Dispersion => Glyph::Dispersion,
@@ -123,7 +121,7 @@ impl View {
     /// themselves, with a button that makes it).
     pub fn empty(self) -> Option<crate::lang::Text> {
         match self {
-            View::Model | View::Pcb | View::PortModes | View::Compare => None,
+            View::Model | View::Pcb | View::PortModes => None,
             View::SParameters => Some(t!("No S-parameters yet: Run (step 6).")),
             View::Tdr => Some(t!("No sweep yet: Run (step 6) (a harmonic sweep, f = k Δf, for low pass).")),
             View::Pulse => Some(t!("No sweep yet: Run (step 6), or a cell's Bloch wave (solve.bloch, solve.revolution.bloch).")),
@@ -170,7 +168,6 @@ impl View {
             View::Field => r.sweep.is_some() || r.eigen.is_some() || r.radiation.is_some(),
             View::PortModes => replies.port_modes.is_some() || (s.model().mesh.is_some() && !s.model().ports.is_empty()),
             View::FarField => r.radiation.is_some() || r.td_radiation.is_some(),
-            View::Compare => r.sweep.is_some(),
             View::Eigenmodes => r.eigen.is_some(),
             View::Study => r.study.is_some(),
             View::Dispersion => r.dispersion.is_some(),
@@ -240,6 +237,6 @@ mod tests {
         }
         assert_eq!(View::Tdr.label(), "TDR");
         assert_eq!(View::PortModes.id(), "port_modes");
-        assert_eq!(View::COUNT, 14);
+        assert_eq!(View::COUNT, 13);
     }
 }

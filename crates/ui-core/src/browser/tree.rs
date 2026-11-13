@@ -710,7 +710,9 @@ fn excitation(s: &emcraft_engine::Session, f: &Fmt) -> Vec<Row> {
             let item = Item::new("model.port.edit", "model.port.delete", "name", serde_json::json!(p.name));
             let name = words(t!("Port {name}"), args!(name = p.name));
             let detail = port_detail(p, l);
-            Row { role: roles.get(i).cloned(), ..node(format!("port:{}", p.name), name, Some(detail), Glyph::Port, Act::Show(View::PortModes)) }
+            // Selected, it stays on the model (where the port is drawn), its form beside it; its
+            // modes open from the Excitation step's table.
+            Row { role: roles.get(i).cloned(), ..node(format!("port:{}", p.name), name, Some(detail), Glyph::Port, Act::None) }
                 .picks(Pick::Port(i))
                 .item(item)
         })
@@ -850,9 +852,6 @@ fn results(session: &Session, replies: &Replies) -> Vec<Row> {
         rows.push(node("result:td_radiation", name(t!("Time-domain radiation")), None, Glyph::Radiation, Act::Show(View::FarField)));
     }
     // Port modes open from the Excitation step's table; no row of their own.
-    if replies.compare.is_some() {
-        rows.push(node("result:compare", name(t!("Comparison with theory")), None, Glyph::Compare, Act::Show(View::Compare)));
-    }
     if let Some(study) = &r.study {
         let (title, detail) = match study.kind {
             emcraft_engine::study::Kind::Sweep if study.is_grid() => (t!("Parameter sweep"), t!("{names} · {n} points")),

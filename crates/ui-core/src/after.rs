@@ -93,7 +93,6 @@ pub fn next_view(id: &str, s: &Session, replies: &Replies, now: View, step: Opti
         "results.import" | "results.import.delete" | "results.equivalent" | "circuit.cascade" => Some(View::SParameters),
         id if id.starts_with("system.") => Some(View::System),
         "filter.synthesize" | "results.coupling" => Some(View::SParameters),
-        "results.compare" => Some(View::Compare),
         "study.sweep" | "study.optimize" => Some(View::Study),
         "edit.undo" | "edit.redo" if s.model().pcb().is_some() => Some(View::Pcb),
         "edit.undo" | "edit.redo" => (now == View::Pcb).then_some(View::Model),

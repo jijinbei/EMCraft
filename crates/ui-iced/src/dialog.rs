@@ -169,7 +169,9 @@ fn body<'a>(app: &'a App, d: &'a Dialog, padding: iced::Padding) -> Element<'a, 
     let error = d.error.as_ref().map(|e| text(e.clone()).size(t.font_body).color(t.error).boxed());
     let title = text(lang::command_label(id).to_owned()).size(t.font_heading).boxed();
     let list = Column::with_children(fields).spacing(10).padding([0, 8]).boxed();
-    let footer = row(delete.into_iter().chain([Space::new().width(Fill).boxed(), cancel.boxed(), ok.boxed()])).spacing(8).boxed();
+    let delete = delete.map(|b| crate::search::busy(app, b));
+    let ok = crate::search::busy(app, ok.boxed());
+    let footer = row(delete.into_iter().chain([Space::new().width(Fill).boxed(), cancel.boxed(), ok])).spacing(8).boxed();
     // The import's head: the formats, Choose file…, what the file holds (crate::import).
     let head = crate::import::head(app, d);
     let (fold, help) = (crate::import::fold(app, d), crate::import::help(app, d));

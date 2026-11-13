@@ -64,11 +64,11 @@ pub fn gear(app: &App) -> Option<Element<'_, Message>> {
     let t = app.look.tokens;
     style::chart_of(app.page)?;
     let open = app.style.open.is_some();
-    Some(button(text("⚙").size(t.font_button)).style(look::button(t, open)).on_press(send(StyleAct::Toggle)).boxed())
+    Some(button(text("⚙").size(t.font_button)).style(look::toggle(t, open)).on_press(send(StyleAct::Toggle)).boxed())
 }
 
 fn chip<'a>(t: Tokens, label: &str, on: bool, msg: Message) -> Element<'a, Message> {
-    button(text(label.to_owned()).size(t.font_small)).style(look::button(t, on)).on_press(msg).boxed()
+    button(text(label.to_owned()).size(t.font_small)).style(look::toggle(t, on)).on_press(msg).boxed()
 }
 
 fn field<'a>(t: Tokens, f: Field, value: &'a str, hint: &'a str, width: f32) -> Element<'a, Message> {

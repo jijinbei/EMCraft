@@ -57,15 +57,17 @@ fn border(c: Color, radius: u8) -> Border {
     Border { color: c, width: 1.0, radius: f32::from(radius).into() }
 }
 
-/// A button: the primary one filled with the accent, the others on the controls' fill.
+/// A button: the primary one filled with the accent, the others on the controls' fill; one that
+/// cannot be used on the header's fill in the dim ink, whichever it is.
 pub fn button(t: Tokens, primary: bool) -> impl Fn(&iced::Theme, b::Status) -> b::Style {
     move |_, status| {
-        let (fill, ink, edge) = if primary { (t.accent, t.on_accent, t.accent) } else { (t.control_fill, t.text, t.control_border) };
-        let fill = match status {
-            b::Status::Hovered | b::Status::Pressed if !primary => t.hover,
-            b::Status::Hovered | b::Status::Pressed => t.selected_ink,
-            b::Status::Disabled => t.panel_header,
-            b::Status::Active => fill,
+        let lit = matches!(status, b::Status::Hovered | b::Status::Pressed);
+        let (fill, ink, edge) = match (status, primary) {
+            (b::Status::Disabled, _) => (t.panel_header, t.text_dim, t.control_border),
+            (_, true) if lit => (t.selected_ink, t.on_accent, t.accent),
+            (_, true) => (t.accent, t.on_accent, t.accent),
+            (_, false) if lit => (t.hover, t.text, t.control_border),
+            (_, false) => (t.control_fill, t.text, t.control_border),
         };
         b::Style {
             background: Some(Background::Color(fill)),
@@ -77,23 +79,61 @@ pub fn button(t: Tokens, primary: bool) -> impl Fn(&iced::Theme, b::Status) -> b
     }
 }
 
-/// A button that is only its text (a mark on a card, a link's ×), lit when hovered.
+/// A choice that is on or off (a chip, an overlay, a page): on, the selection's tint and ink
+/// within the accent's edge — told apart from a primary action's fill; off, a plain button.
+pub fn toggle(t: Tokens, on: bool) -> impl Fn(&iced::Theme, b::Status) -> b::Style {
+    move |theme, status| match (on, status) {
+        (true, b::Status::Disabled) | (false, _) => button(t, false)(theme, status),
+        (true, _) => b::Style {
+            background: Some(Background::Color(t.selected_bg)),
+            text_color: t.selected_ink,
+            border: border(t.accent, t.control_radius),
+            shadow: Shadow::default(),
+            snap: true,
+        },
+    }
+}
+
+/// How much of the dim ink a quiet part that cannot be used keeps: still there, plainly off.
+const UNUSABLE: f32 = 0.55;
+
+/// The dim ink faded, for a quiet part that cannot be used.
+fn unusable(t: Tokens) -> Color {
+    Color { a: t.text_dim.a * UNUSABLE, ..t.text_dim }
+}
+
+/// A button that is only its text (a mark on a card, a link's ×), lit when hovered, faded when
+/// it cannot be used.
 pub fn quiet(t: Tokens) -> impl Fn(&iced::Theme, b::Status) -> b::Style {
     move |_, status| {
-        let ink = if matches!(status, b::Status::Hovered | b::Status::Pressed) { t.accent } else { t.text_dim };
+        let ink = match status {
+            b::Status::Hovered | b::Status::Pressed => t.accent,
+            b::Status::Disabled => unusable(t),
+            b::Status::Active => t.text_dim,
+        };
         b::Style { background: None, text_color: ink, border: Border::default(), shadow: Shadow::default(), snap: true }
     }
 }
 
 /// A button on the window's bar: its text in the bar's ink, the bar's hover under the pointer.
 pub fn bar_button(t: Tokens) -> impl Fn(&iced::Theme, b::Status) -> b::Style {
+    bar_toggle(t, false)
+}
+
+/// A button on the window's bar that is on or off (the start page, the settings): on, the bar's
+/// own fill for what is open.
+pub fn bar_toggle(t: Tokens, on: bool) -> impl Fn(&iced::Theme, b::Status) -> b::Style {
     move |_, status| {
-        let fill = matches!(status, b::Status::Hovered | b::Status::Pressed).then_some(Background::Color(t.app_bar_hover));
+        let fill = match status {
+            _ if on => Some(t.app_bar_active),
+            b::Status::Hovered | b::Status::Pressed => Some(t.app_bar_hover),
+            _ => None,
+        };
         let ink = if status == b::Status::Disabled { t.text_dim } else { t.app_bar_text };
         b::Style {
-            background: fill,
+            background: fill.map(Background::Color),
             text_color: ink,
-            border: Border { radius: 4.0.into(), ..Border::default() },
+            border: Border { radius: f32::from(t.radius_sm).into(), ..Border::default() },
             shadow: Shadow::default(),
             snap: true,
         }
@@ -101,7 +141,7 @@ pub fn bar_button(t: Tokens) -> impl Fn(&iced::Theme, b::Status) -> b::Style {
 }
 
 /// A browser row: its text on nothing, the hover's fill under the pointer, the selection's when
-/// `selected`.
+/// `selected`; one that cannot be used in the dim ink.
 pub fn row(t: Tokens, selected: bool) -> impl Fn(&iced::Theme, b::Status) -> b::Style {
     move |_, status| {
         let fill = match (selected, status) {
@@ -109,10 +149,15 @@ pub fn row(t: Tokens, selected: bool) -> impl Fn(&iced::Theme, b::Status) -> b::
             (false, b::Status::Hovered | b::Status::Pressed) => Some(t.hover),
             _ => None,
         };
+        let ink = match (selected, status) {
+            (_, b::Status::Disabled) => t.text_dim,
+            (true, _) => t.selected_ink,
+            (false, _) => t.text,
+        };
         b::Style {
             background: fill.map(Background::Color),
-            text_color: if selected { t.selected_ink } else { t.text },
-            border: Border { radius: 4.0.into(), ..Border::default() },
+            text_color: ink,
+            border: Border { radius: f32::from(t.radius_sm).into(), ..Border::default() },
             shadow: Shadow::default(),
             snap: true,
         }
@@ -201,4 +246,27 @@ pub fn app_bar(t: Tokens) -> impl Fn(&iced::Theme) -> container::Style {
 /// The window's ground under everything: the ribbon's.
 pub fn window(t: Tokens) -> impl Fn(&iced::Theme) -> container::Style {
     move |_| container::Style { text_color: Some(t.text), background: Some(Background::Color(t.toolbar)), ..container::Style::default() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A button that cannot be used is drawn in the dim ink on the header's fill, primary or
+    /// not; a choice that is on is the selection's tint within the accent's edge, not the
+    /// primary action's fill; a quiet one that cannot be used is fainter than one that can.
+    #[test]
+    fn unusable_buttons_read_as_off_and_a_chosen_one_is_not_a_primary_one() {
+        let look = Look::of(emcraft_ui_core::theme::Themes::load(None).get("light"));
+        let (t, theme) = (look.tokens, look.iced());
+        for primary in [true, false] {
+            let off = button(t, primary)(&theme, b::Status::Disabled);
+            assert_eq!((off.text_color, off.background), (t.text_dim, Some(Background::Color(t.panel_header))));
+        }
+        let (chosen, primary) = (toggle(t, true)(&theme, b::Status::Active), button(t, true)(&theme, b::Status::Active));
+        assert_ne!(chosen.background, primary.background);
+        assert_eq!((chosen.text_color, chosen.border.color), (t.selected_ink, t.accent));
+        assert!(quiet(t)(&theme, b::Status::Disabled).text_color.a < quiet(t)(&theme, b::Status::Active).text_color.a);
+        assert_eq!(row(t, false)(&theme, b::Status::Disabled).text_color, t.text_dim);
+    }
 }

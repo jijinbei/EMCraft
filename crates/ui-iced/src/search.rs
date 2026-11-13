@@ -48,10 +48,28 @@ pub fn results(app: &App) -> Option<Element<'_, Message>> {
         ]
         .spacing(8)
         .align_y(Alignment::Center);
-        button(face).style(look::row(t, false)).width(Fill).on_press_maybe(app.job.is_none().then_some(Message::SearchPick(Some(c.id)))).boxed()
+        busy(
+            app,
+            button(face).style(look::row(t, false)).width(Fill).on_press_maybe(app.job.is_none().then_some(Message::SearchPick(Some(c.id)))).boxed(),
+        )
     });
     let list = Column::with_children(direct.into_iter().chain(none).chain(rows)).spacing(2).width(520);
     Some(container(list).padding([6, 14]).width(Fill).style(look::ground(t)).boxed())
+}
+
+/// `content` that a running job keeps from being used, with why on hover (the job; wait for it
+/// or cancel it); as it is while nothing runs.
+pub fn busy<'a>(app: &App, content: Element<'a, Message>) -> Element<'a, Message> {
+    let Some(job) = &app.job else { return content };
+    let t = app.look.tokens;
+    let said = emcraft_ui_core::lang::trf(t!("Busy: {job}. Wait for it, or Cancel."), emcraft_ui_core::lang::args!(job = job.text()));
+    let card = container(text(said).size(t.font_small).width(iced::Length::Shrink)).padding(8).style(look::ground(t));
+    iced::widget::tooltip(content, card, iced::widget::tooltip::Position::Bottom).gap(4).boxed()
+}
+
+/// `content` with command `id`'s tip on hover, or (a job running) why it cannot be used.
+pub fn command_tip<'a>(app: &App, content: Element<'a, Message>, id: &str) -> Element<'a, Message> {
+    if app.job.is_some() { busy(app, content) } else { tip(app.look.tokens, content, id) }
 }
 
 /// `content` with its command's tip on hover: what it does, first sentence, and its id.
