@@ -1,0 +1,412 @@
+{
+  "about": {
+    "design": "Circular corrugated cell",
+    "format": "solidcraft/51",
+    "replay": "solidcraft-cli eval script.json (timeline.add steps need a build that reads this design format)",
+    "version": "0.40.0-rc.2"
+  },
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "Circular corrugated cell"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "12",
+        "name": "r0",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "1",
+        "name": "h",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "16",
+        "name": "p",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "1",
+        "name": "n",
+        "unit": "none"
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "id": 1,
+          "name": "profile",
+          "plane": {
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "type": "placed",
+            "x_dir": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "y_dir": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          },
+          "sketch": {
+            "constraints": [],
+            "counters": {
+              "l": 3,
+              "p": 27,
+              "s": 1
+            },
+            "curves": [
+              {
+                "construction": false,
+                "degree": 3,
+                "id": "s1",
+                "pts": [
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13,
+                  14,
+                  15,
+                  16,
+                  17,
+                  18,
+                  19,
+                  20,
+                  21,
+                  22,
+                  23,
+                  24,
+                  25,
+                  26,
+                  27
+                ],
+                "type": "spline"
+              },
+              {
+                "a": 1,
+                "b": 2,
+                "construction": false,
+                "id": "l1",
+                "type": "line"
+              },
+              {
+                "a": 2,
+                "b": 27,
+                "construction": false,
+                "id": "l2",
+                "type": "line"
+              },
+              {
+                "a": 3,
+                "b": 1,
+                "construction": false,
+                "id": "l3",
+                "type": "line"
+              }
+            ],
+            "equations": [
+              {
+                "curve": "s1",
+                "end": "n * p",
+                "start": "0",
+                "tolerance": 0.0001,
+                "y": "r0 + h * sin(2 * pi * (x - 0 mm) / p)"
+              }
+            ],
+            "points": [
+              {
+                "fixed": true,
+                "id": "origin",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "0",
+                  "y": "0"
+                },
+                "fixed": true,
+                "id": "p1",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "n * p",
+                  "y": "0"
+                },
+                "fixed": true,
+                "id": "p2",
+                "pos": [
+                  16.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p3",
+                "pos": [
+                  0.0,
+                  12.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p4",
+                "pos": [
+                  0.6666666666666666,
+                  12.25881904510252
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p5",
+                "pos": [
+                  1.3333333333333333,
+                  12.5
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p6",
+                "pos": [
+                  2.0,
+                  12.707106781186548
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p7",
+                "pos": [
+                  2.6666666666666665,
+                  12.86602540378444
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p8",
+                "pos": [
+                  3.3333333333333335,
+                  12.965925826289068
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p9",
+                "pos": [
+                  4.0,
+                  13.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p10",
+                "pos": [
+                  4.666666666666667,
+                  12.965925826289068
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p11",
+                "pos": [
+                  5.333333333333333,
+                  12.86602540378444
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p12",
+                "pos": [
+                  6.0,
+                  12.707106781186548
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p13",
+                "pos": [
+                  6.666666666666667,
+                  12.5
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p14",
+                "pos": [
+                  7.333333333333333,
+                  12.258819045102522
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p15",
+                "pos": [
+                  8.0,
+                  12.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p16",
+                "pos": [
+                  8.666666666666666,
+                  11.74118095489748
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p17",
+                "pos": [
+                  9.333333333333334,
+                  11.5
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p18",
+                "pos": [
+                  10.0,
+                  11.292893218813452
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p19",
+                "pos": [
+                  10.666666666666666,
+                  11.133974596215563
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p20",
+                "pos": [
+                  11.333333333333334,
+                  11.034074173710932
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p21",
+                "pos": [
+                  12.0,
+                  11.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p22",
+                "pos": [
+                  12.666666666666666,
+                  11.034074173710932
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p23",
+                "pos": [
+                  13.333333333333334,
+                  11.13397459621556
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p24",
+                "pos": [
+                  14.0,
+                  11.292893218813452
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p25",
+                "pos": [
+                  14.666666666666666,
+                  11.5
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p26",
+                "pos": [
+                  15.333333333333334,
+                  11.74118095489748
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p27",
+                "pos": [
+                  16.0,
+                  12.0
+                ]
+              }
+            ]
+          },
+          "suppressed": false,
+          "type": "sketch"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "angle": "360 deg",
+          "axis": {
+            "axis": "x",
+            "type": "sketch_axis"
+          },
+          "body_names": [
+            "guide"
+          ],
+          "convention": "sketch_normal",
+          "id": 2,
+          "name": "guide",
+          "operation": "new_body",
+          "param_names": [
+            "d1"
+          ],
+          "profiles": {
+            "type": "all"
+          },
+          "sketch": 1,
+          "suppressed": false,
+          "type": "revolve"
+        }
+      }
+    }
+  ]
+}

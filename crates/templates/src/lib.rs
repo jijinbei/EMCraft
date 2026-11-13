@@ -766,8 +766,8 @@ pub struct Design {
 /// `results.import`'s `path`).
 pub const DESIGN_SCHEME: &str = "template:";
 
-/// The files templates are built from: SolidCraft designs, each written with SolidCraft's
-/// document API by the program kept beside it (`designs/make-<name>.rs.txt`), and Touchstone
+/// The files templates are built from: SolidCraft designs, each built by SolidCraft's command
+/// line from the command script beside it (`designs/<name>.script.json`, `cargo xtask designs`), and Touchstone
 /// files of templates' S as EMCraft solves them (`adsb-receiver`'s antenna and filter; each
 /// file's comment names the template and the solve that wrote it).
 pub const DESIGNS: &[Design] = &[

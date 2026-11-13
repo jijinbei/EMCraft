@@ -1,6 +1,6 @@
 # ADR 0010: Shapes are made in SolidCraft
 
-Status: accepted (2026-11-13); H1–H3 done.
+Status: accepted (2026-11-13); H1–H4 done.
 
 ## Context
 
@@ -32,8 +32,9 @@ copies what SolidCraft (the sibling CAD) does properly. The same commands also b
   variables (`geometry.import {parameters: {"a": "=a"}}`); those written in the electromagnetic
   structure itself (the waveguide's sections, layers, strips and vias: 16) and the boards and the
   system (15) stay scripts. A design's source is a SolidCraft command script
-  (`crates/templates/designs/<name>.json`), built by `solidcraft-cli run … --save` at the commit
-  EMCraft pins and checked by `cargo xtask designs`; EMCraft still depends on
+  (`<name>.script.json` beside it), built by `solidcraft-cli run … --save <name>.json` (the
+  design as JSON, without SolidCraft's evaluated cache) at the commit EMCraft pins and checked
+  by `cargo xtask designs --check`; EMCraft still depends on
   `solidcraft-exchange` alone (ADR 0003). Some templates keep a script twin: the two must agree
   with each other and with the closed form, which tests the import, its exact surfaces and the
   mesh. Moving the SolidCraft pin then runs every design template through open, mesh and solve.
@@ -56,8 +57,14 @@ copies what SolidCraft (the sibling CAD) does properly. The same commands also b
   `model.port.create {face_name}` spans the named face (flat across x, y or z; the guide's side
   where the model is unless `end` says), found again at every replay; the port tool records a
   named face by its name.
-- **H4** Designs from SolidCraft scripts: the six designs' Rust generators replaced,
-  `cargo xtask designs`.
+- **H4** (done) Designs from SolidCraft scripts: the templates' seven designs and the oracle's
+  post, each with the command script `solidcraft-cli script` wrote from it (`file.new {name}`
+  first, so the design keeps its name), their Rust generators gone; `cargo xtask designs` builds
+  them (an oracle case's copy of a template's design too) and `--check` compares bytes. Built
+  again by the pinned SolidCraft they are the same bytes run to run; against the files the
+  generators wrote, only the format's newer spelling moved (`solidcraft/51`, parameter names on
+  extrudes, the extent's convention written out), and the templates, the oracle and their
+  fixtures did not move.
 - **H5** A pilot: six templates moved (an H-plane bend, a cylindrical cavity, a coaxial line, an
   inductive post, a metal sphere's scattering, the cross-guide coupler), each with its script twin
   and the closed form.

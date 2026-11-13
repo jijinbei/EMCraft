@@ -1,0 +1,932 @@
+{
+  "about": {
+    "design": "Horn",
+    "format": "solidcraft/51",
+    "replay": "solidcraft-cli eval script.json (timeline.add steps need a build that reads this design format)",
+    "version": "0.40.0-rc.2"
+  },
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "Horn"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "22.86",
+        "name": "a",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "10.16",
+        "name": "b",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "40",
+        "name": "A",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "30",
+        "name": "B",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "5",
+        "name": "f",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "30",
+        "name": "h",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "2",
+        "name": "t",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "id": 1,
+          "name": "walls 1",
+          "plane": {
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "type": "placed",
+            "x_dir": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "y_dir": [
+              0.0,
+              1.0,
+              0.0
+            ]
+          },
+          "sketch": {
+            "constraints": [],
+            "counters": {
+              "l": 4,
+              "p": 4
+            },
+            "curves": [
+              {
+                "a": 1,
+                "b": 2,
+                "construction": false,
+                "id": "l1",
+                "type": "line"
+              },
+              {
+                "a": 2,
+                "b": 3,
+                "construction": false,
+                "id": "l2",
+                "type": "line"
+              },
+              {
+                "a": 3,
+                "b": 4,
+                "construction": false,
+                "id": "l3",
+                "type": "line"
+              },
+              {
+                "a": 4,
+                "b": 1,
+                "construction": false,
+                "id": "l4",
+                "type": "line"
+              }
+            ],
+            "points": [
+              {
+                "fixed": true,
+                "id": "origin",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t - (a / 2 + t)",
+                  "y": "B / 2 + t - (b / 2 + t)"
+                },
+                "fixed": true,
+                "id": "p1",
+                "pos": [
+                  8.57,
+                  9.92
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t + (a / 2 + t)",
+                  "y": "B / 2 + t - (b / 2 + t)"
+                },
+                "fixed": true,
+                "id": "p2",
+                "pos": [
+                  35.43,
+                  9.92
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t + (a / 2 + t)",
+                  "y": "B / 2 + t + (b / 2 + t)"
+                },
+                "fixed": true,
+                "id": "p3",
+                "pos": [
+                  35.43,
+                  24.08
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t - (a / 2 + t)",
+                  "y": "B / 2 + t + (b / 2 + t)"
+                },
+                "fixed": true,
+                "id": "p4",
+                "pos": [
+                  8.57,
+                  24.08
+                ]
+              }
+            ]
+          },
+          "suppressed": false,
+          "type": "sketch"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "id": 2,
+          "name": "walls 2",
+          "plane": {
+            "origin": [
+              0.0,
+              0.0,
+              "t + f"
+            ],
+            "type": "placed",
+            "x_dir": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "y_dir": [
+              0.0,
+              1.0,
+              0.0
+            ]
+          },
+          "sketch": {
+            "constraints": [],
+            "counters": {
+              "l": 4,
+              "p": 4
+            },
+            "curves": [
+              {
+                "a": 1,
+                "b": 2,
+                "construction": false,
+                "id": "l1",
+                "type": "line"
+              },
+              {
+                "a": 2,
+                "b": 3,
+                "construction": false,
+                "id": "l2",
+                "type": "line"
+              },
+              {
+                "a": 3,
+                "b": 4,
+                "construction": false,
+                "id": "l3",
+                "type": "line"
+              },
+              {
+                "a": 4,
+                "b": 1,
+                "construction": false,
+                "id": "l4",
+                "type": "line"
+              }
+            ],
+            "points": [
+              {
+                "fixed": true,
+                "id": "origin",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t - (a / 2 + t)",
+                  "y": "B / 2 + t - (b / 2 + t)"
+                },
+                "fixed": true,
+                "id": "p1",
+                "pos": [
+                  8.57,
+                  9.92
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t + (a / 2 + t)",
+                  "y": "B / 2 + t - (b / 2 + t)"
+                },
+                "fixed": true,
+                "id": "p2",
+                "pos": [
+                  35.43,
+                  9.92
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t + (a / 2 + t)",
+                  "y": "B / 2 + t + (b / 2 + t)"
+                },
+                "fixed": true,
+                "id": "p3",
+                "pos": [
+                  35.43,
+                  24.08
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t - (a / 2 + t)",
+                  "y": "B / 2 + t + (b / 2 + t)"
+                },
+                "fixed": true,
+                "id": "p4",
+                "pos": [
+                  8.57,
+                  24.08
+                ]
+              }
+            ]
+          },
+          "suppressed": false,
+          "type": "sketch"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "id": 3,
+          "name": "walls 3",
+          "plane": {
+            "origin": [
+              0.0,
+              0.0,
+              "t + f + h"
+            ],
+            "type": "placed",
+            "x_dir": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "y_dir": [
+              0.0,
+              1.0,
+              0.0
+            ]
+          },
+          "sketch": {
+            "constraints": [],
+            "counters": {
+              "l": 4,
+              "p": 4
+            },
+            "curves": [
+              {
+                "a": 1,
+                "b": 2,
+                "construction": false,
+                "id": "l1",
+                "type": "line"
+              },
+              {
+                "a": 2,
+                "b": 3,
+                "construction": false,
+                "id": "l2",
+                "type": "line"
+              },
+              {
+                "a": 3,
+                "b": 4,
+                "construction": false,
+                "id": "l3",
+                "type": "line"
+              },
+              {
+                "a": 4,
+                "b": 1,
+                "construction": false,
+                "id": "l4",
+                "type": "line"
+              }
+            ],
+            "points": [
+              {
+                "fixed": true,
+                "id": "origin",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t - (A / 2 + t)",
+                  "y": "B / 2 + t - (B / 2 + t)"
+                },
+                "fixed": true,
+                "id": "p1",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t + (A / 2 + t)",
+                  "y": "B / 2 + t - (B / 2 + t)"
+                },
+                "fixed": true,
+                "id": "p2",
+                "pos": [
+                  44.0,
+                  0.0
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t + (A / 2 + t)",
+                  "y": "B / 2 + t + (B / 2 + t)"
+                },
+                "fixed": true,
+                "id": "p3",
+                "pos": [
+                  44.0,
+                  34.0
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t - (A / 2 + t)",
+                  "y": "B / 2 + t + (B / 2 + t)"
+                },
+                "fixed": true,
+                "id": "p4",
+                "pos": [
+                  0.0,
+                  34.0
+                ]
+              }
+            ]
+          },
+          "suppressed": false,
+          "type": "sketch"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "body_names": [
+            "walls"
+          ],
+          "id": 4,
+          "name": "walls piece 1",
+          "operation": "new_body",
+          "sections": [
+            {
+              "profiles": {
+                "type": "all"
+              },
+              "sketch": 1
+            },
+            {
+              "profiles": {
+                "type": "all"
+              },
+              "sketch": 2
+            }
+          ],
+          "suppressed": false,
+          "type": "loft"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "id": 5,
+          "name": "walls piece 2",
+          "operation": "join",
+          "sections": [
+            {
+              "profiles": {
+                "type": "all"
+              },
+              "sketch": 2
+            },
+            {
+              "profiles": {
+                "type": "all"
+              },
+              "sketch": 3
+            }
+          ],
+          "suppressed": false,
+          "targets": [
+            "walls"
+          ],
+          "type": "loft"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "id": 6,
+          "name": "inside 1",
+          "plane": {
+            "origin": [
+              0.0,
+              0.0,
+              "t"
+            ],
+            "type": "placed",
+            "x_dir": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "y_dir": [
+              0.0,
+              1.0,
+              0.0
+            ]
+          },
+          "sketch": {
+            "constraints": [],
+            "counters": {
+              "l": 4,
+              "p": 4
+            },
+            "curves": [
+              {
+                "a": 1,
+                "b": 2,
+                "construction": false,
+                "id": "l1",
+                "type": "line"
+              },
+              {
+                "a": 2,
+                "b": 3,
+                "construction": false,
+                "id": "l2",
+                "type": "line"
+              },
+              {
+                "a": 3,
+                "b": 4,
+                "construction": false,
+                "id": "l3",
+                "type": "line"
+              },
+              {
+                "a": 4,
+                "b": 1,
+                "construction": false,
+                "id": "l4",
+                "type": "line"
+              }
+            ],
+            "points": [
+              {
+                "fixed": true,
+                "id": "origin",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t - (a / 2)",
+                  "y": "B / 2 + t - (b / 2)"
+                },
+                "fixed": true,
+                "id": "p1",
+                "pos": [
+                  10.57,
+                  11.92
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t + (a / 2)",
+                  "y": "B / 2 + t - (b / 2)"
+                },
+                "fixed": true,
+                "id": "p2",
+                "pos": [
+                  33.43,
+                  11.92
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t + (a / 2)",
+                  "y": "B / 2 + t + (b / 2)"
+                },
+                "fixed": true,
+                "id": "p3",
+                "pos": [
+                  33.43,
+                  22.08
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t - (a / 2)",
+                  "y": "B / 2 + t + (b / 2)"
+                },
+                "fixed": true,
+                "id": "p4",
+                "pos": [
+                  10.57,
+                  22.08
+                ]
+              }
+            ]
+          },
+          "suppressed": false,
+          "type": "sketch"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "id": 7,
+          "name": "inside 2",
+          "plane": {
+            "origin": [
+              0.0,
+              0.0,
+              "t + f"
+            ],
+            "type": "placed",
+            "x_dir": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "y_dir": [
+              0.0,
+              1.0,
+              0.0
+            ]
+          },
+          "sketch": {
+            "constraints": [],
+            "counters": {
+              "l": 4,
+              "p": 4
+            },
+            "curves": [
+              {
+                "a": 1,
+                "b": 2,
+                "construction": false,
+                "id": "l1",
+                "type": "line"
+              },
+              {
+                "a": 2,
+                "b": 3,
+                "construction": false,
+                "id": "l2",
+                "type": "line"
+              },
+              {
+                "a": 3,
+                "b": 4,
+                "construction": false,
+                "id": "l3",
+                "type": "line"
+              },
+              {
+                "a": 4,
+                "b": 1,
+                "construction": false,
+                "id": "l4",
+                "type": "line"
+              }
+            ],
+            "points": [
+              {
+                "fixed": true,
+                "id": "origin",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t - (a / 2)",
+                  "y": "B / 2 + t - (b / 2)"
+                },
+                "fixed": true,
+                "id": "p1",
+                "pos": [
+                  10.57,
+                  11.92
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t + (a / 2)",
+                  "y": "B / 2 + t - (b / 2)"
+                },
+                "fixed": true,
+                "id": "p2",
+                "pos": [
+                  33.43,
+                  11.92
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t + (a / 2)",
+                  "y": "B / 2 + t + (b / 2)"
+                },
+                "fixed": true,
+                "id": "p3",
+                "pos": [
+                  33.43,
+                  22.08
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t - (a / 2)",
+                  "y": "B / 2 + t + (b / 2)"
+                },
+                "fixed": true,
+                "id": "p4",
+                "pos": [
+                  10.57,
+                  22.08
+                ]
+              }
+            ]
+          },
+          "suppressed": false,
+          "type": "sketch"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "id": 8,
+          "name": "inside 3",
+          "plane": {
+            "origin": [
+              0.0,
+              0.0,
+              "t + f + h + 1"
+            ],
+            "type": "placed",
+            "x_dir": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "y_dir": [
+              0.0,
+              1.0,
+              0.0
+            ]
+          },
+          "sketch": {
+            "constraints": [],
+            "counters": {
+              "l": 4,
+              "p": 4
+            },
+            "curves": [
+              {
+                "a": 1,
+                "b": 2,
+                "construction": false,
+                "id": "l1",
+                "type": "line"
+              },
+              {
+                "a": 2,
+                "b": 3,
+                "construction": false,
+                "id": "l2",
+                "type": "line"
+              },
+              {
+                "a": 3,
+                "b": 4,
+                "construction": false,
+                "id": "l3",
+                "type": "line"
+              },
+              {
+                "a": 4,
+                "b": 1,
+                "construction": false,
+                "id": "l4",
+                "type": "line"
+              }
+            ],
+            "points": [
+              {
+                "fixed": true,
+                "id": "origin",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t - (A / 2 + (A - a) / (2 * h))",
+                  "y": "B / 2 + t - (B / 2 + (B - b) / (2 * h))"
+                },
+                "fixed": true,
+                "id": "p1",
+                "pos": [
+                  1.7143333333333324,
+                  1.6693333333333342
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t + (A / 2 + (A - a) / (2 * h))",
+                  "y": "B / 2 + t - (B / 2 + (B - b) / (2 * h))"
+                },
+                "fixed": true,
+                "id": "p2",
+                "pos": [
+                  42.28566666666667,
+                  1.6693333333333342
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t + (A / 2 + (A - a) / (2 * h))",
+                  "y": "B / 2 + t + (B / 2 + (B - b) / (2 * h))"
+                },
+                "fixed": true,
+                "id": "p3",
+                "pos": [
+                  42.28566666666667,
+                  32.330666666666666
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "A / 2 + t - (A / 2 + (A - a) / (2 * h))",
+                  "y": "B / 2 + t + (B / 2 + (B - b) / (2 * h))"
+                },
+                "fixed": true,
+                "id": "p4",
+                "pos": [
+                  1.7143333333333324,
+                  32.330666666666666
+                ]
+              }
+            ]
+          },
+          "suppressed": false,
+          "type": "sketch"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "body_names": [
+            "inside"
+          ],
+          "id": 9,
+          "name": "inside piece 1",
+          "operation": "new_body",
+          "sections": [
+            {
+              "profiles": {
+                "type": "all"
+              },
+              "sketch": 6
+            },
+            {
+              "profiles": {
+                "type": "all"
+              },
+              "sketch": 7
+            }
+          ],
+          "suppressed": false,
+          "type": "loft"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "id": 10,
+          "name": "inside piece 2",
+          "operation": "join",
+          "sections": [
+            {
+              "profiles": {
+                "type": "all"
+              },
+              "sketch": 7
+            },
+            {
+              "profiles": {
+                "type": "all"
+              },
+              "sketch": 8
+            }
+          ],
+          "suppressed": false,
+          "targets": [
+            "inside"
+          ],
+          "type": "loft"
+        }
+      }
+    }
+  ]
+}

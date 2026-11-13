@@ -3,7 +3,7 @@
 WR-90 whose narrow wall waves sinusoidally, b(z) = 10.16 + 2 sin(2π(z − 10)/10) mm, for four
 periods between two straight leads 10 mm long (60 mm in all): the `corrugated-guide`
 template's guide. A SolidCraft design compiled into EMCraft
-(`crates/templates/designs/corrugated-e.solidcraft`, written by `make-corrugated.rs.txt`), its
+(`crates/templates/designs/corrugated-e.solidcraft`, built from `corrugated-e.script.json` by `cargo xtask designs`), its
 waving side an equation curve; imported as the region, meshed with 2 mm tetrahedra, solved at
 order 2.
 

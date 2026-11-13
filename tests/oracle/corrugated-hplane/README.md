@@ -2,8 +2,8 @@
 
 WR-90 whose broad wall waves sinusoidally, a(z) = 22.86 + 2 sin(2π(z − 10)/10) mm, for four
 periods between two straight leads 10 mm long (60 mm in all). The guide is a SolidCraft design
-compiled into EMCraft (`crates/templates/designs/corrugated-h.solidcraft`, written by
-`make-corrugated.rs.txt`): the air as one body, a profile extruded across the narrow wall, its
+compiled into EMCraft (`crates/templates/designs/corrugated-h.solidcraft`, built from
+`corrugated-h.script.json` by `cargo xtask designs`): the air as one body, a profile extruded across the narrow wall, its
 waving side an equation curve fitted within 1e-4 mm and placed again from the formula when a
 parameter changes. Imported as the region (`interior`), meshed with 2 mm tetrahedra, ports on
 its end faces, solved at order 2.

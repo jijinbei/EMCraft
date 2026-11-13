@@ -1,0 +1,104 @@
+{
+  "about": {
+    "design": "Guide",
+    "format": "solidcraft/51",
+    "replay": "solidcraft-cli eval script.json (timeline.add steps need a build that reads this design format)",
+    "version": "0.40.0-rc.2"
+  },
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "Guide"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "22.86",
+        "name": "a",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "10.16",
+        "name": "b",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "30",
+        "name": "l",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "3",
+        "name": "d",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "body_names": [
+            "Body1"
+          ],
+          "corner": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "height": "l",
+          "id": 1,
+          "length": "a",
+          "name": "Box1",
+          "operation": "new_body",
+          "param_names": [
+            "d1",
+            "d2",
+            "d3"
+          ],
+          "suppressed": false,
+          "type": "box",
+          "width": "b"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "axis": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "base": [
+            "a/2",
+            0.0,
+            "l/2"
+          ],
+          "height": "b",
+          "id": 2,
+          "name": "Cylinder1",
+          "operation": "cut",
+          "param_names": [
+            "d4",
+            "d5"
+          ],
+          "radius": "d/2",
+          "suppressed": false,
+          "type": "cylinder"
+        }
+      }
+    }
+  ]
+}

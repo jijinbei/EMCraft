@@ -8,6 +8,7 @@
 mod bench;
 mod changed;
 mod colours;
+mod designs;
 mod dupes;
 #[cfg(feature = "fonts")]
 mod fonts;
@@ -41,6 +42,11 @@ commands:
                   --against compares with one (times as ratios, results bit for bit; fails
                   when a result moved); --runs keeps the fastest of N
   features        write docs/features.md (every command with its parameters)
+  designs [--check]
+                  build the templates' SolidCraft designs from their command scripts
+                  (crates/templates/designs/<name>.script.json) with solidcraft-cli at the commit
+                  EMCraft pins ($SOLIDCRAFT_CLI, else on the PATH); --check builds them aside and
+                  fails when one differs from the committed file
   dupes [--min LINES] [--loose] [--fail]
                   list code copied between production sources (runs of LINES normalised lines,
                   default 10; tests and the ported tetmesh left out); --loose matches lines by
@@ -80,6 +86,7 @@ fn main() -> ExitCode {
         }
         Some("bench") => bench::run(&root(), &rest),
         Some("features") => cmd_features(),
+        Some("designs") => designs::run(&root(), &rest),
         Some("dupes") => cmd_dupes(&rest),
         Some("colours" | "colors") => colours::run(&root()),
         Some("style") => style::run(&root()),

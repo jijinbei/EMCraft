@@ -1,7 +1,7 @@
 # A linear taper from a template's SolidCraft design
 
 The `taper` template is a SolidCraft design compiled into EMCraft
-(`crates/templates/designs/taper.solidcraft`, written by `make-taper.rs.txt`): the air of a
+(`crates/templates/designs/taper.solidcraft`, built from `taper.script.json` by `cargo xtask designs`): the air of a
 guide whose sides go linearly from WR-90 (22.86 × 10.16 mm) at z = 0 to WR-75 (19.05 ×
 9.525 mm) at z = l, one ruled loft. The template's script opens it with
 `geometry.import {path: "template:taper.solidcraft"}` and passes its parameters to the

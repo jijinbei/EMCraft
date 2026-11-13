@@ -1,0 +1,333 @@
+{
+  "about": {
+    "design": "Taper",
+    "format": "solidcraft/51",
+    "replay": "solidcraft-cli eval script.json (timeline.add steps need a build that reads this design format)",
+    "version": "0.40.0-rc.2"
+  },
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "Taper"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "22.86",
+        "name": "a1",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "10.16",
+        "name": "b1",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "19.05",
+        "name": "a2",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "9.525",
+        "name": "b2",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "40",
+        "name": "l",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "id": 1,
+          "name": "Start",
+          "plane": {
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "type": "placed",
+            "x_dir": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "y_dir": [
+              0.0,
+              1.0,
+              0.0
+            ]
+          },
+          "sketch": {
+            "constraints": [],
+            "counters": {
+              "l": 4,
+              "p": 4
+            },
+            "curves": [
+              {
+                "a": 1,
+                "b": 2,
+                "construction": false,
+                "id": "l1",
+                "type": "line"
+              },
+              {
+                "a": 2,
+                "b": 3,
+                "construction": false,
+                "id": "l2",
+                "type": "line"
+              },
+              {
+                "a": 3,
+                "b": 4,
+                "construction": false,
+                "id": "l3",
+                "type": "line"
+              },
+              {
+                "a": 4,
+                "b": 1,
+                "construction": false,
+                "id": "l4",
+                "type": "line"
+              }
+            ],
+            "points": [
+              {
+                "fixed": true,
+                "id": "origin",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "0",
+                  "y": "0"
+                },
+                "fixed": true,
+                "id": "p1",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "a1",
+                  "y": "0"
+                },
+                "fixed": true,
+                "id": "p2",
+                "pos": [
+                  22.86,
+                  0.0
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "a1",
+                  "y": "b1"
+                },
+                "fixed": true,
+                "id": "p3",
+                "pos": [
+                  22.86,
+                  10.16
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "0",
+                  "y": "b1"
+                },
+                "fixed": true,
+                "id": "p4",
+                "pos": [
+                  0.0,
+                  10.16
+                ]
+              }
+            ]
+          },
+          "suppressed": false,
+          "type": "sketch"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "id": 2,
+          "name": "End",
+          "plane": {
+            "origin": [
+              0.0,
+              0.0,
+              "l"
+            ],
+            "type": "placed",
+            "x_dir": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "y_dir": [
+              0.0,
+              1.0,
+              0.0
+            ]
+          },
+          "sketch": {
+            "constraints": [],
+            "counters": {
+              "l": 4,
+              "p": 4
+            },
+            "curves": [
+              {
+                "a": 1,
+                "b": 2,
+                "construction": false,
+                "id": "l1",
+                "type": "line"
+              },
+              {
+                "a": 2,
+                "b": 3,
+                "construction": false,
+                "id": "l2",
+                "type": "line"
+              },
+              {
+                "a": 3,
+                "b": 4,
+                "construction": false,
+                "id": "l3",
+                "type": "line"
+              },
+              {
+                "a": 4,
+                "b": 1,
+                "construction": false,
+                "id": "l4",
+                "type": "line"
+              }
+            ],
+            "points": [
+              {
+                "fixed": true,
+                "id": "origin",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "(a1 - a2) / 2",
+                  "y": "(b1 - b2) / 2"
+                },
+                "fixed": true,
+                "id": "p1",
+                "pos": [
+                  1.905,
+                  0.3175
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "(a1 + a2) / 2",
+                  "y": "(b1 - b2) / 2"
+                },
+                "fixed": true,
+                "id": "p2",
+                "pos": [
+                  20.955,
+                  0.3175
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "(a1 + a2) / 2",
+                  "y": "(b1 + b2) / 2"
+                },
+                "fixed": true,
+                "id": "p3",
+                "pos": [
+                  20.955,
+                  9.8425
+                ]
+              },
+              {
+                "exprs": {
+                  "x": "(a1 - a2) / 2",
+                  "y": "(b1 + b2) / 2"
+                },
+                "fixed": true,
+                "id": "p4",
+                "pos": [
+                  1.905,
+                  9.8425
+                ]
+              }
+            ]
+          },
+          "suppressed": false,
+          "type": "sketch"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "body_names": [
+            "Body1"
+          ],
+          "id": 3,
+          "name": "Taper",
+          "operation": "new_body",
+          "sections": [
+            {
+              "profiles": {
+                "type": "all"
+              },
+              "sketch": 1
+            },
+            {
+              "profiles": {
+                "type": "all"
+              },
+              "sketch": 2
+            }
+          ],
+          "suppressed": false,
+          "type": "loft"
+        }
+      }
+    }
+  ]
+}

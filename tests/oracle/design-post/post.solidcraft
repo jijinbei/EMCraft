@@ -1,5 +1,16 @@
 {
-  "format": "solidcraft/43",
+  "format": "solidcraft/51",
+  "format_pending": [
+    "bridged-counterbore",
+    "embedded-surface-textures",
+    "fillet-turn",
+    "hole-direction-own-faces",
+    "intersection-curve-sketch-curves",
+    "point-cloud-segments-and-triangles",
+    "revolve-axis-origin-expressions",
+    "transferred-profile-frame",
+    "two-sided-extrude-fixed-sides"
+  ],
   "name": "Guide",
   "units": "mm",
   "params": [
@@ -33,6 +44,9 @@
       "id": 1,
       "name": "Box1",
       "suppressed": false,
+      "body_names": [
+        "Body1"
+      ],
       "param_names": [
         "d1",
         "d2",
@@ -74,5 +88,8 @@
     }
   ],
   "next_id": 3,
+  "reserved_body_names": [
+    "Body1"
+  ],
   "next_component_color_index": 0
 }
