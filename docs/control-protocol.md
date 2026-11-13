@@ -64,6 +64,7 @@ Commands never open dialogs when run this way.
 | `ui.point` | `at` (`[x, y]` points from the 3D view's corner, within `view3d.size`), `click?`, `double?`, `add?` | the pointer there: what is under it (a tool's face and snap, the field's values), and a click |
 | `ui.dialog` | `open?` (a command id), `set?` (`{param: value}`), `parameters?` (an import's design parameters as typed), `ok?`, `cancel?` | a dialog opened, its fields set as typing would, OK (the refusal stays under its field) or Cancel |
 | `ui.drop` | `path` | a file dropped on the window: a part (`.solidcraft`, `.sc`, `.3mf`, `.stl`) opens the import dialog in step 1 on it (or goes into the open one), a board (`.kicad_pcb`) the PCB import, anything else is opened as a project |
+| `ui.new_design` | `path` | a new SolidCraft design made at `path` (`.solidcraft` added when it has no extension) without the file dialog `new:design` opens: written empty, opened in SolidCraft, imported once it is saved there; the reply's `error` says why not |
 | `ui.cancel` | — | cancels the running job: the session stays as it was before it |
 | `ui.messages` | — | the message area's lines (`text`, `error`, `count`) and the last refusal |
 | `ui.record` | `on`, `path?` | `on: true` starts recording what the window is asked to run (commands and their parameters, pages looked at) from the project as it is; `on: false` stops, replying with the recording (written to `path` when given) |

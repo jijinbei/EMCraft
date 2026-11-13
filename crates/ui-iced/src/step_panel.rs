@@ -328,11 +328,19 @@ fn field<'a>(app: &'a App, name: &'static str, label: Text, unit: &'a str) -> El
 
 /// The run's settings for the kind chosen, over the band's diagram; the run's estimate; the
 /// button that confirms them; the device it runs on.
-fn setup(app: &App) -> Vec<Element<'_, Message>> {
+pub(crate) fn setup(app: &App) -> Vec<Element<'_, Message>> {
     let t = app.look.tokens;
     let solver = app.solver();
     let (fu, lu) = (app.session.display().frequency.symbol(), app.session.display().length.symbol());
-    let diagram = app.band_diagram().map(|d| canvas(crate::band::Band { diagram: d, tokens: t, unit: fu }).width(Fill).height(64).boxed());
+    // Always in its place, empty while the band is wrong: a part that came and went would move
+    // the fields after it in the widget tree, and the field being typed in would lose the
+    // keyboard to the next one (typing 12 over 8.2's stop: the 1 empties the band, the 2 went
+    // into the points).
+    let diagram = container(match app.band_diagram() {
+        Some(d) => canvas(crate::band::Band { diagram: d, tokens: t, unit: fu }).width(Fill).height(64).boxed(),
+        None => Space::new().boxed(),
+    })
+    .boxed();
     let fields: Vec<Element<Message>> = match solver {
         Solver::Frequency => {
             vec![field(app, "start", t!("start"), fu), field(app, "stop", t!("stop"), fu), field(app, "points", t!("Frequency points"), "")]
@@ -376,7 +384,7 @@ fn setup(app: &App) -> Vec<Element<'_, Message>> {
     };
     let device = (solver != Solver::System).then(|| device(app));
     std::iter::once(section(t, t!("Settings")))
-        .chain(diagram)
+        .chain(std::iter::once(diagram))
         .chain(fields)
         .chain(order.into_iter().flatten())
         .chain(estimate)

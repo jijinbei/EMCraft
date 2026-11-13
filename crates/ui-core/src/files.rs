@@ -107,6 +107,8 @@ pub trait Picker: Send + Sync {
     fn save(&self, suggested: &str, done: Box<dyn FnOnce(Option<String>) + Send>);
     /// A part to import: a SolidCraft design, a 3MF package or an STL file.
     fn import(&self, done: Box<dyn FnOnce(Option<String>) + Send>);
+    /// Where to make a new SolidCraft design, `suggested` the file name offered.
+    fn design(&self, suggested: &str, done: Box<dyn FnOnce(Option<String>) + Send>);
 }
 
 /// The extensions of the parts `geometry.import` reads.

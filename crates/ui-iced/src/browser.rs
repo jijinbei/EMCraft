@@ -166,7 +166,7 @@ fn ends<'a>(app: &App, t: Tokens, part: &Part) -> Vec<Element<'a, Message>> {
     };
     let play = match part.head {
         Head::Step(step) => {
-            emcraft_ui_core::outline::play(step).map(|id| crate::search::command_tip(app, small("▶", false, idle.then(|| play_message(id))), id))
+            emcraft_ui_core::outline::play(step).map(|id| crate::search::command_tip(app, small("▶", false, idle.then(|| play_message(app, id))), id))
         }
         Head::Section(_) => None,
     };
@@ -177,9 +177,14 @@ fn ends<'a>(app: &App, t: Tokens, part: &Part) -> Vec<Element<'a, Message>> {
 }
 
 /// What a step's ▶ sends for command `id`: the confirmed run through Run's preflight, any other
-/// command run as it is.
-pub(crate) fn play_message(id: &str) -> Message {
-    if id == "solve.run" { Message::StepAct(crate::step_panel::Act::Run) } else { Message::Start(id.to_owned()) }
+/// command run with what its dialog would start with (the mesh: six elements per wavelength at
+/// the band's top, as its form offers; with nothing it was refused for want of a size).
+pub(crate) fn play_message(app: &App, id: &'static str) -> Message {
+    if id == "solve.run" {
+        Message::StepAct(crate::step_panel::Act::Run)
+    } else {
+        Message::Run(emcraft_ui_core::system::gesture::Command { id, params: emcraft_ui_core::dialogs::initial(id, &app.session) })
+    }
 }
 
 /// What an entry of a ＋ list sends: a command's dialog (or its run), a tool turned on, a new

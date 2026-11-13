@@ -1151,6 +1151,59 @@ fn hostile_setup_input_is_refused_in_place() {
     assert!(!app.workflow.fields.errors.is_empty());
 }
 
+/// A Setup field typed into keeps the keyboard while the band is wrong: the panel's parts stay
+/// in their places (a part that came and went moved the fields after it, and typing 12 over the
+/// stop of 8.2 put the 2 into the points). Evidence: the stop typed as 1, below the start, gives
+/// a band with no frequencies in it, and the panel has as many parts as with the band whole.
+#[test]
+fn the_setup_panel_keeps_its_parts_while_the_band_is_wrong() {
+    use crate::step_panel::Act;
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::Step(Some(emcraft_engine::workflow::Step::Setup)));
+    let whole = crate::step_panel::setup(&app).len();
+    app.update(Message::StepAct(Act::Typed("stop", "1".to_owned())));
+    assert!(app.band_diagram().is_none(), "a stop below the start is no band");
+    assert_eq!(crate::step_panel::setup(&app).len(), whole);
+    app.update(Message::StepAct(Act::Typed("stop", "12".to_owned())));
+    assert!(app.band_diagram().is_some());
+    assert_eq!(crate::step_panel::setup(&app).len(), whole);
+}
+
+/// The mesh step's ▶ meshes with what its form starts with, not with nothing: it was refused
+/// for want of a size. Evidence: the high-pass filter's band is confirmed, so the form offers six
+/// elements per wavelength at its top, and that is the mesh.generate the history records.
+#[test]
+fn the_mesh_steps_play_meshes_with_its_forms_defaults() {
+    let mut app = App::new(Some("highpass"));
+    finish(&mut app);
+    let (_, play) = crate::control::handles(&app).into_iter().find(|(h, _)| h == "play:mesh").unwrap_or_else(|| panic!("no play:mesh"));
+    app.update(play);
+    finish(&mut app);
+    assert!(app.error.is_none(), "{:?}", app.error);
+    let last = app.session.history().iter().rev().find(|s| s.command == "mesh.generate").map(|s| s.params.clone());
+    assert_eq!(last.as_ref().and_then(|p| p.get("per_wavelength")).and_then(serde_json::Value::as_f64), Some(6.0), "{last:?}");
+    assert!(app.session.model().mesh.is_some());
+}
+
+/// An agent makes a new SolidCraft design where it says, with no file dialog (which a window on
+/// a display of its own cannot answer): the empty design is written there, `.solidcraft` added,
+/// and watched for the save that imports it; no path is refused.
+#[test]
+fn an_agent_makes_a_new_design_without_the_file_dialog() {
+    let dir = std::env::var_os("EMCRAFT_SCRATCH").map_or_else(std::env::temp_dir, std::path::PathBuf::from).join("new-design");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("pillbox");
+    let mut app = App::new(None);
+    app.prefs.solidcraft = "/nonexistent/solidcraft".into();
+    let reply = crate::scenario::call(&mut app, "ui.new_design", json!({ "path": path.to_string_lossy() })).unwrap_or_else(|e| panic!("{e}"));
+    let made = dir.join("pillbox.solidcraft");
+    assert_eq!(std::fs::read_to_string(&made).ok().as_deref(), Some(crate::designs::EMPTY), "{reply}");
+    assert_eq!(app.watch.new.as_ref().map(|(p, _)| p.as_str()), Some(made.to_string_lossy().as_ref()));
+    let refused = crate::scenario::call(&mut app, "ui.new_design", json!({ "path": " " })).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(refused["ok"], false, "{refused}");
+    let _ = std::fs::remove_file(made);
+}
+
 /// The Boundaries step finds the model's mirror planes. Analytic evidence: the high-pass
 /// filter's rectangular guide, filled section by section across its whole width and height, is
 /// mirror symmetric across x = a/2 and y = b/2 (its ports' TE10 too).

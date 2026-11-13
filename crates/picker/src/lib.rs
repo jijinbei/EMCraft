@@ -28,6 +28,18 @@ impl Picker for SystemPicker {
         });
     }
 
+    fn design(&self, suggested: &str, done: Box<dyn FnOnce(Option<String>) + Send>) {
+        let name = suggested.to_owned();
+        std::thread::spawn(move || {
+            let path = rfd::FileDialog::new()
+                .set_title("New SolidCraft design")
+                .add_filter("SolidCraft design", &["solidcraft"])
+                .set_file_name(name)
+                .save_file();
+            done(path.map(|p| p.to_string_lossy().into_owned()));
+        });
+    }
+
     fn import(&self, done: Box<dyn FnOnce(Option<String>) + Send>) {
         std::thread::spawn(move || {
             let path = rfd::FileDialog::new()

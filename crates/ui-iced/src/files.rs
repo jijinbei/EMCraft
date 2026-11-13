@@ -216,7 +216,8 @@ async fn asked(picker: Arc<dyn Picker>, purpose: Purpose, suggested: String) -> 
     });
     match purpose {
         Purpose::Open => picker.open(done),
-        Purpose::SaveAs | Purpose::NewDesign => picker.save(&suggested, done),
+        Purpose::SaveAs => picker.save(&suggested, done),
+        Purpose::NewDesign => picker.design(&suggested, done),
         Purpose::Import => picker.import(done),
     }
     rx.await.ok().flatten()

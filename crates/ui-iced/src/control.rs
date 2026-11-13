@@ -50,7 +50,7 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
     let parts: Vec<&emcraft_ui_core::outline::Part> = app.tree.iter().flat_map(|(_, t)| t).filter(|_| !app.home && !app.settings).collect();
     let plays = parts.iter().filter_map(|p| match p.head {
         emcraft_ui_core::outline::Head::Step(s) => {
-            emcraft_ui_core::outline::play(s).map(|id| (format!("play:{}", s.id()), crate::browser::play_message(id)))
+            emcraft_ui_core::outline::play(s).map(|id| (format!("play:{}", s.id()), crate::browser::play_message(app, id)))
         }
         emcraft_ui_core::outline::Head::Section(_) => None,
     });
@@ -293,6 +293,17 @@ impl App {
                     return later;
                 }
                 None => Some(err("give `path`: the file dropped on the window")),
+            },
+            // A new design where the agent says, without the system's file dialog that
+            // `new:design` opens.
+            "ui.new_design" => match p.get("path").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()) {
+                Some(path) => {
+                    let path = emcraft_engine::text::clip(path, 4096);
+                    let later = self.react(Message::File(FileAction::Chosen(emcraft_ui_core::files::Purpose::NewDesign, Some(path))));
+                    let _ = req.reply.send(ok(json!({ "error": self.error })));
+                    return later;
+                }
+                None => Some(err("give `path`: where the new SolidCraft design is made")),
             },
             "ui.cancel" => {
                 self.cancel();
