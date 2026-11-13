@@ -37,7 +37,7 @@ pub(super) fn chart(app: &App) -> Element<'_, Message> {
         Some(Err(e)) => text(e.clone()).boxed(),
         None => space().boxed(),
     };
-    column![row(choices.chain(at)).spacing(6), picture].spacing(6).boxed()
+    column![row(choices.chain(at)).spacing(t.space_6), picture].spacing(t.space_6).boxed()
 }
 
 /// The budget, a row a stage, and what the receiver reads under it.
@@ -51,5 +51,5 @@ pub(super) fn sheet(app: &App) -> Element<'_, Message> {
     let notes = budget::summary(&app.session, p)
         .into_iter()
         .map(|(line, dim)| text(line).size(t.font_body).color(if dim { t.text_dim } else { t.text }).boxed());
-    Column::with_children(std::iter::once(table(columns, rows).boxed()).chain(notes)).spacing(6).boxed()
+    Column::with_children(std::iter::once(table(columns, rows).boxed()).chain(notes)).spacing(t.space_6).boxed()
 }

@@ -5,7 +5,7 @@
 use emcraft_ui_core::crash::{Kind, Report};
 use emcraft_ui_core::lang::{args, tr, trf};
 use iced::widget::{Column, button, center, column, container, opaque, row, scrollable, text};
-use iced::{Alignment, Color, Element, Fill, Widget};
+use iced::{Alignment, Element, Fill, Widget};
 
 use crate::app::{App, Message};
 use crate::look;
@@ -41,20 +41,20 @@ pub fn view(app: &App) -> Option<Element<'_, Message>> {
         let times = if r.count > 1 { format!("  ·  ×{}", r.count) } else { String::new() };
         let head =
             row![text(kind).size(t.font_body), text(format!("{}{times}  ·  EMCraft {}", when(r), r.emcraft)).size(t.font_small).color(t.text_dim)]
-                .spacing(10)
+                .spacing(t.space_8)
                 .align_y(Alignment::Center);
         let first = emcraft_engine::text::clip(r.message.lines().next().unwrap_or_default(), 160);
         let buttons = row![
             button(text(tr(t!("Copy"))).size(t.font_button)).style(look::button(t, false)).on_press(send(ReportAct::Copy(i))),
             button(text(tr(t!("Delete"))).size(t.font_button)).style(look::quiet(t)).on_press(send(ReportAct::Delete(r.id.clone())))
         ]
-        .spacing(8);
-        column![head, text(first).size(t.font_small), buttons].spacing(4).boxed()
+        .spacing(t.space_8);
+        column![head, text(first).size(t.font_small), buttons].spacing(t.space_4).boxed()
     });
     let none = reports.is_empty().then(|| text(tr(t!("No reports."))).size(t.font_small).boxed());
     // More than a few scroll.
     let height = if reports.len() > 3 { iced::Length::Fixed(320.0) } else { iced::Length::Shrink };
-    let list = scrollable(Column::with_children(none.into_iter().chain(rows)).spacing(12).width(Fill)).height(height);
+    let list = scrollable(Column::with_children(none.into_iter().chain(rows)).spacing(t.space_12).width(Fill)).height(height);
     let folder = app.crashes.dir.as_ref().map(|d| text(d.display().to_string()).size(t.font_small).color(t.text_dim).boxed());
     let body = Column::with_children(
         [
@@ -68,13 +68,10 @@ pub fn view(app: &App) -> Option<Element<'_, Message>> {
             button(text(tr(t!("Close"))).size(t.font_button)).style(look::button(t, true)).on_press(send(ReportAct::Show(false))).boxed(),
         )),
     )
-    .spacing(10)
+    .spacing(t.space_8)
     .width(520);
-    let card = container(body).padding(16).style(look::ground(t));
-    let veil = container(center(card))
-        .width(Fill)
-        .height(Fill)
-        .style(|_: &iced::Theme| container::Style { background: Some(Color { a: 0.35, ..Color::BLACK }.into()), ..container::Style::default() });
+    let card = container(body).padding(t.space_16).style(look::ground(t));
+    let veil = container(center(card)).width(Fill).height(Fill).style(look::veil);
     Some(opaque(veil).boxed())
 }
 

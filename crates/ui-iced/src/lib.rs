@@ -53,6 +53,7 @@ pub mod language;
 pub mod look;
 pub mod messages;
 pub mod model;
+pub mod parts;
 pub mod pcb;
 pub mod port_modes;
 pub mod record;

@@ -11,7 +11,7 @@ use emcraft_ui_core::files::{Answer, FileAction, Picker, Purpose, Then};
 use emcraft_ui_core::glyph::Glyph;
 use emcraft_ui_core::lang::{args, tr, trf};
 use iced::widget::{Space, button, center, column, container, opaque, row, text};
-use iced::{Color, Element, Fill, Task, Widget};
+use iced::{Element, Fill, Task, Widget};
 use serde_json::{Value, json};
 
 use crate::app::{App, Message};
@@ -317,16 +317,16 @@ pub fn recoveries(app: &App) -> Option<Element<'_, Message>> {
             };
             let then = Then::Recover { file: f.file.display().to_string(), original: f.original.clone() };
             row![
-                column![text(f.name.clone()).size(t.font_body), text(what).size(t.font_small).color(t.text_dim)].spacing(2).width(Fill),
+                column![text(f.name.clone()).size(t.font_body), text(what).size(t.font_small).color(t.text_dim)].spacing(t.space_2).width(Fill),
                 text(autosave::ago(f.modified)).size(t.font_small).color(t.text_dim),
                 button(text(tr(t!("Recover"))).size(t.font_button)).style(look::button(t, true)).on_press(Message::File(FileAction::Request(then))),
-                button(text("×").size(t.font_button)).style(look::quiet(t)).on_press(Message::Dismiss(i)),
+                crate::parts::close(t, t!("Dismiss"), Message::Dismiss(i)),
             ]
-            .spacing(10)
+            .spacing(t.space_8)
             .align_y(iced::Alignment::Center)
             .boxed()
         });
-        container(iced::widget::Column::with_children(rows).spacing(6)).padding(10).width(Fill).style(look::ground(t)).boxed()
+        container(iced::widget::Column::with_children(rows).spacing(t.space_6)).padding(t.space_8).width(Fill).style(look::ground(t)).boxed()
     })
 }
 
@@ -345,13 +345,10 @@ pub fn question(app: &App) -> Option<Element<'_, Message>> {
             answer(t!("Don't save"), false, Answer::Discard),
             answer(t!("Save"), true, Answer::Save)
         ]
-        .spacing(8),
+        .spacing(t.space_8),
     ]
-    .spacing(16);
-    let card = container(card).padding(18).width(460).style(look::ground(t));
-    let veil = container(center(card))
-        .width(Fill)
-        .height(Fill)
-        .style(|_: &iced::Theme| container::Style { background: Some(Color { a: 0.35, ..Color::BLACK }.into()), ..container::Style::default() });
+    .spacing(t.space_16);
+    let card = container(card).padding(t.space_16).width(460).style(look::ground(t));
+    let veil = container(center(card)).width(Fill).height(Fill).style(look::veil);
     Some(opaque(veil).boxed())
 }

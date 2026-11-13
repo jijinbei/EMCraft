@@ -50,6 +50,6 @@ pub fn view<'a>(t: Tokens, table: &Table) -> Element<'a, Message> {
             .boxed()
     });
     let caption = table.caption.as_ref().map(|c| text(c.clone()).size(size).color(t.text_dim).boxed());
-    let body = Column::with_children(caption.into_iter().chain(std::iter::once(head)).chain(rows)).spacing(2);
+    let body = Column::with_children(caption.into_iter().chain(std::iter::once(head)).chain(rows)).spacing(t.space_2);
     scrollable(body).direction(scrollable::Direction::Horizontal(scrollable::Scrollbar::default())).boxed()
 }

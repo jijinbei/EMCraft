@@ -22,11 +22,11 @@ pub fn view(app: &App) -> Element<'_, Message> {
         let place = job.place().map(|w| {
             let on = w.gpu() && (w.stepped || w.fronts > 0);
             let chip = text(w.text()).size(t.font_small).color(if on { t.on_accent } else { t.text_dim });
-            container(chip).padding([2, 6]).style(look::chip(t, on)).boxed()
+            container(chip).padding([t.space_2, t.space_6]).style(look::chip(t, on)).boxed()
         });
         let bar = job.snapshot().fraction().map(|f| progress_bar(0.0..=1.0, f as f32).length(180).girth(8).boxed());
         let parts = [cancel.boxed()].into_iter().chain(place).chain(std::iter::once(text(job.text()).size(t.font_body).boxed())).chain(bar);
-        row(parts).spacing(10).align_y(Alignment::Center).boxed()
+        row(parts).spacing(t.space_8).align_y(Alignment::Center).boxed()
     });
     let n = app.log.lines().len();
     let toggle = (n > 0).then(|| {
@@ -35,12 +35,12 @@ pub fn view(app: &App) -> Element<'_, Message> {
     });
     let messages: Element<Message> = if app.log_open {
         let earlier = app.log.lines().iter().rev().take(SHOWN).rev().map(line);
-        scrollable(Column::with_children(earlier).spacing(2).width(Fill)).anchor_bottom().height(OPEN_HEIGHT).width(Fill).boxed()
+        scrollable(Column::with_children(earlier).spacing(t.space_2).width(Fill)).anchor_bottom().height(OPEN_HEIGHT).width(Fill).boxed()
     } else {
         let last = app.log.last().map_or_else(|| text("").size(t.font_body).boxed(), line);
         container(last).width(Fill).clip(true).boxed()
     };
-    let foot = row(std::iter::once(messages).chain(toggle)).spacing(8).align_y(if app.log_open { Alignment::End } else { Alignment::Center });
-    let body = Column::with_children(job.into_iter().chain(std::iter::once(foot.boxed()))).spacing(6);
-    container(body).padding([4, 12]).width(Fill).style(look::ground(t)).boxed()
+    let foot = row(std::iter::once(messages).chain(toggle)).spacing(t.space_8).align_y(if app.log_open { Alignment::End } else { Alignment::Center });
+    let body = Column::with_children(job.into_iter().chain(std::iter::once(foot.boxed()))).spacing(t.space_6);
+    container(body).padding([t.space_4, t.space_12]).width(Fill).style(look::ground(t)).boxed()
 }

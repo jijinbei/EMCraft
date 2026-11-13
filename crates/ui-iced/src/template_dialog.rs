@@ -9,7 +9,7 @@
 use emcraft_ui_core::lang::{parameter_label, sample_label, tr};
 use emcraft_ui_core::template_card::TemplateCard;
 use iced::widget::{Column, Space, button, center, column, container, image, opaque, row, text, text_input};
-use iced::{Alignment, Color, Element, Fill, Task, Widget};
+use iced::{Alignment, Element, Fill, Task, Widget};
 
 use crate::app::{App, Message};
 use crate::look;
@@ -116,9 +116,9 @@ pub fn view(app: &App) -> Option<Element<'_, Message>> {
     let t = app.look.tokens;
     let title = row![
         text(sample_label(&card.name).to_owned()).size(t.font_heading),
-        container(text(card.name.clone()).size(t.font_small).color(t.text_dim)).padding([1, 6]).style(look::ground(t))
+        container(text(card.name.clone()).size(t.font_small).color(t.text_dim)).padding([t.space_2, t.space_6]).style(look::ground(t))
     ]
-    .spacing(10)
+    .spacing(t.space_8)
     .align_y(Alignment::Center);
     let fields = card.fields.iter().enumerate().map(|(i, f)| {
         let bad = f.value().is_none();
@@ -132,18 +132,15 @@ pub fn view(app: &App) -> Option<Element<'_, Message>> {
         let input = text_input("", &f.text)
             .size(t.font_body)
             .width(90)
-            .padding([3, 6])
+            .padding([t.space_4, t.space_6])
             .style(look::field(t))
             .on_input(move |s| send(TemplateAct::Field(i, s)));
         let unit = text(f.unit).size(t.font_small).color(if bad { t.error } else { t.text_dim });
-        row![words.width(170), input, unit].spacing(6).align_y(Alignment::Center).boxed()
+        row![words.width(170), input, unit].spacing(t.space_6).align_y(Alignment::Center).boxed()
     });
     let none = card.fields.is_empty().then(|| text(tr(t!("none"))).size(t.font_small).color(t.text_dim).boxed());
-    let list = Column::with_children(
-        std::iter::once(text(tr(t!("Parameters")).to_uppercase()).size(t.font_small).color(t.text_dim).boxed()).chain(none).chain(fields),
-    )
-    .spacing(6)
-    .width(300);
+    let list =
+        Column::with_children(std::iter::once(crate::parts::heading(t, t!("Parameters"))).chain(none).chain(fields)).spacing(t.space_6).width(300);
     let picture: Element<Message> = match &app.template.picture {
         Some(h) => image(h.clone()).width(PREVIEW[0]).height(PREVIEW[1]).opacity(if card.error.is_some() { 0.45_f32 } else { 1.0_f32 }).boxed(),
         None => Space::new().width(PREVIEW[0]).height(PREVIEW[1]).boxed(),
@@ -155,15 +152,12 @@ pub fn view(app: &App) -> Option<Element<'_, Message>> {
         button(text(tr(t!("Cancel"))).size(t.font_button)).style(look::button(t, false)).on_press(send(TemplateAct::Open(None))),
         button(text(tr(t!("Reset"))).size(t.font_button)).style(look::quiet(t)).on_press(send(TemplateAct::Reset))
     ]
-    .spacing(8);
+    .spacing(t.space_8);
     let body = Column::with_children(
-        [title.boxed(), row![list, picture].spacing(16).boxed()].into_iter().chain(error).chain(std::iter::once(buttons.boxed())),
+        [title.boxed(), row![list, picture].spacing(t.space_16).boxed()].into_iter().chain(error).chain(std::iter::once(buttons.boxed())),
     )
-    .spacing(12);
-    let card = container(body).padding(18).style(look::ground(t));
-    let veil = container(center(card))
-        .width(Fill)
-        .height(Fill)
-        .style(|_: &iced::Theme| container::Style { background: Some(Color { a: 0.35, ..Color::BLACK }.into()), ..container::Style::default() });
+    .spacing(t.space_12);
+    let card = container(body).padding(t.space_16).style(look::ground(t));
+    let veil = container(center(card)).width(Fill).height(Fill).style(look::veil);
     Some(opaque(veil).boxed())
 }

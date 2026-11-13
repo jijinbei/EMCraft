@@ -17,7 +17,7 @@ pub fn field(app: &App) -> Element<'_, Message> {
         .id(SEARCH)
         .size(t.font_small)
         .width(240)
-        .padding([3, 8])
+        .padding([t.space_4, t.space_8])
         .style(look::field(t))
         .on_input(Message::Search)
         .on_submit(Message::SearchPick(None))
@@ -46,15 +46,15 @@ pub fn results(app: &App) -> Option<Element<'_, Message>> {
             text(emcraft_ui_core::lang::command_label(c.id).to_owned()).size(t.font_body),
             text(c.id).size(t.font_small).color(t.text_dim)
         ]
-        .spacing(8)
+        .spacing(t.space_8)
         .align_y(Alignment::Center);
         busy(
             app,
             button(face).style(look::row(t, false)).width(Fill).on_press_maybe(app.job.is_none().then_some(Message::SearchPick(Some(c.id)))).boxed(),
         )
     });
-    let list = Column::with_children(direct.into_iter().chain(none).chain(rows)).spacing(2).width(520);
-    Some(container(list).padding([6, 14]).width(Fill).style(look::ground(t)).boxed())
+    let list = Column::with_children(direct.into_iter().chain(none).chain(rows)).spacing(t.space_2).width(520);
+    Some(container(list).padding([t.space_6, t.space_12]).width(Fill).style(look::ground(t)).boxed())
 }
 
 /// `content` that a running job keeps from being used, with why on hover (the job; wait for it
@@ -63,8 +63,7 @@ pub fn busy<'a>(app: &App, content: Element<'a, Message>) -> Element<'a, Message
     let Some(job) = &app.job else { return content };
     let t = app.look.tokens;
     let said = emcraft_ui_core::lang::trf(t!("Busy: {job}. Wait for it, or Cancel."), emcraft_ui_core::lang::args!(job = job.text()));
-    let card = container(text(said).size(t.font_small).width(iced::Length::Shrink)).padding(8).style(look::ground(t));
-    iced::widget::tooltip(content, card, iced::widget::tooltip::Position::Bottom).gap(4).boxed()
+    crate::parts::hint_text(t, content, said)
 }
 
 /// `content` with command `id`'s tip on hover, or (a job running) why it cannot be used.
@@ -77,8 +76,7 @@ pub fn tip<'a>(t: look::Tokens, content: Element<'a, Message>, id: &str) -> Elem
     let doc = emcraft_ui_core::lang::command_doc(id);
     let first = doc.split_inclusive(". ").next().unwrap_or(doc).trim();
     let said = column![text(first.to_owned()).size(t.font_small).width(360), text(id.to_owned()).size(t.font_small).color(t.text_dim)]
-        .spacing(2)
+        .spacing(t.space_2)
         .width(iced::Length::Shrink);
-    let card = container(said).padding(8).style(look::ground(t));
-    iced::widget::tooltip(content, card, iced::widget::tooltip::Position::Bottom).gap(4).boxed()
+    crate::parts::hint(t, content, said.boxed())
 }

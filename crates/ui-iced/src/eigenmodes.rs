@@ -14,7 +14,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
     let Some(eigen) = app.session.results().eigen.as_ref() else {
         let missing = View::Eigenmodes.missing(&app.session, &app.replies).map_or("", tr);
-        return column![text(missing).size(t.font_heading).color(t.text_dim)].padding(16).boxed();
+        return crate::parts::empty(t, missing, None);
     };
     let fu = app.session.display().frequency;
     let rows: Vec<(usize, f64, Option<f64>)> = eigen.modes.iter().enumerate().map(|(i, m)| (i, m.frequency, m.q())).collect();
@@ -33,5 +33,5 @@ pub fn view(app: &App) -> Element<'_, Message> {
             button(text(tr(t!("Field"))).size(t.font_button)).style(look::button(t, false)).on_press(Message::Mode(i)).boxed()
         }),
     ];
-    scrollable(column![table(columns, rows)].padding(16)).boxed()
+    scrollable(column![table(columns, rows)].padding(t.space_16)).boxed()
 }

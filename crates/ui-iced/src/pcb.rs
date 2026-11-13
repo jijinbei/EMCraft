@@ -81,7 +81,7 @@ fn pills(app: &App) -> Element<'_, Message> {
             .on_press_maybe((open && app.job.is_none()).then(|| run("view.pcb", json!({"stage": stage.id()}))))
             .boxed()
     });
-    row(pills).spacing(6).wrap().boxed()
+    row(pills).spacing(t.space_6).wrap().boxed()
 }
 
 /// The stage's panel.
@@ -101,16 +101,16 @@ fn panel(app: &App) -> Element<'_, Message> {
                     .on_press_maybe(idle.then(|| run("view.pcb", json!({"net": n, "stage": Stage::Net.id()}))))
                     .boxed()
             });
-            vec![small(tr(t!("Choose a routed net")).to_owned()), Column::with_children(list).spacing(2).boxed()]
+            vec![small(tr(t!("Choose a routed net")).to_owned()), Column::with_children(list).spacing(t.space_2).boxed()]
         }
         (Some(_), Stage::Settings) => {
             let fields = FIELDS.iter().map(|(key, label, _)| {
                 let field = Field { node: CONDITIONS.to_owned(), key };
                 let typed = field.clone();
                 let value = condition(app, key);
-                let input = text_input("", value).size(t.font_body).padding([3, 6]).width(120).style(look::field(t));
+                let input = text_input("", value).size(t.font_body).padding([t.space_4, t.space_6]).width(120).style(look::field(t));
                 row![text(tr(*label)).size(t.font_body).width(200), input.on_input(move |s| Message::Typed(typed.clone(), s))]
-                    .spacing(8)
+                    .spacing(t.space_8)
                     .align_y(Alignment::Center)
                     .boxed()
             });
@@ -123,7 +123,7 @@ fn panel(app: &App) -> Element<'_, Message> {
                     b.on_press_maybe(idle.then(|| run("pcb.conditions", conditions(app)))),
                     small(tr(t!("Not confirmed: the diagnosis waits for these conditions.")).to_owned())
                 ]
-                .spacing(4)
+                .spacing(t.space_4)
                 .boxed()
             };
             fields.chain([small(app.session.display().frequency.symbol().to_owned()), confirm]).collect()
@@ -147,7 +147,8 @@ fn panel(app: &App) -> Element<'_, Message> {
     let error = app.error.as_ref().map(|e| text(e.clone()).size(t.font_small).color(t.error).boxed());
     let stackup = (stage != Stage::Results).then(|| stackup(app, selected));
     let head = text(lookup(stage.label()).to_owned()).size(t.font_heading).boxed();
-    let content = Column::with_children(std::iter::once(head).chain(body).chain(error).chain(stackup.flatten())).spacing(10).padding(12);
+    let content =
+        Column::with_children(std::iter::once(head).chain(body).chain(error).chain(stackup.flatten())).spacing(t.space_8).padding(t.space_12);
     container(scrollable(content)).width(PANEL_W).height(Fill).style(look::ground(t)).boxed()
 }
 
@@ -161,7 +162,7 @@ fn sources(app: &App) -> Vec<Element<'_, Message>> {
             .on_press(Message::File(FileAction::Request(open)))
             .boxed()
     });
-    vec![text(tr(t!("Templates"))).size(t.font_body).color(t.form_dim).boxed(), Column::with_children(templates).spacing(2).boxed()]
+    vec![crate::parts::heading(t, t!("Templates")), Column::with_children(templates).spacing(t.space_2).boxed()]
 }
 
 /// The layer stackup, top first: each copper layer and the dielectric under it.
@@ -191,8 +192,8 @@ fn stackup<'a>(app: &'a App, selected: &str) -> Option<Element<'a, Message>> {
         });
         std::iter::once(copper).chain(under)
     });
-    let head = text(tr(t!("Layer stackup (section)"))).size(t.font_body).color(t.form_dim).boxed();
-    Some(Column::with_children(std::iter::once(head).chain(rows)).spacing(3).boxed())
+    let head = crate::parts::heading(t, t!("Layer stackup (section)"));
+    Some(Column::with_children(std::iter::once(head).chain(rows)).spacing(t.space_4).boxed())
 }
 
 /// A chart of the ideal line: lines of `series` (key, label, points) over `x`, magnitudes on `y`.
@@ -218,7 +219,7 @@ fn results<'a>(app: &'a App, r: Option<&'a Inspection>) -> Vec<Element<'a, Messa
         return again.into_iter().collect();
     };
     let small = |s: String, ink| text(s).size(t.font_small).color(ink).boxed();
-    let heading = |s: emcraft_ui_core::lang::Text| text(tr(s)).size(t.font_body).color(t.form_dim).boxed();
+    let heading = |s: emcraft_ui_core::lang::Text| crate::parts::heading(t, s);
     let mut seen = BTreeSet::new();
     let findings = r.findings.iter().filter(|f| seen.insert((f.code.id(), f.detail.clone()))).flat_map(|f| {
         let ink = if f.code == emcraft_engine::pcb::Code::NearbySignal { t.warning } else { t.error };
@@ -286,7 +287,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
             // Drawn without a window, the board is a picture of it (crate::headless).
             if app.headless { crate::view3d::shader::picture(viewer.shot, t) } else { shader(viewer).width(Fill).height(Fill).boxed() }
         }
-        None => container(text(tr(t!("Prepare board"))).size(t.font_heading).color(t.text_dim)).center(Fill).boxed(),
+        None => crate::parts::empty(t, tr(t!("Prepare board")), None),
     };
-    column![pills(app), row![panel(app), picture].spacing(12).height(Fill)].spacing(10).padding(12).height(Fill).boxed()
+    column![pills(app), row![panel(app), picture].spacing(t.space_12).height(Fill)].spacing(t.space_8).padding(t.space_12).height(Fill).boxed()
 }

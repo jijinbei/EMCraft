@@ -6,25 +6,18 @@
 //! `view.animation`). The rules are the shared crate's ([`emcraft_ui_core::results::fields`]).
 
 use emcraft_model::geom::Point3;
-use emcraft_ui_core::lang::{Text, tr};
+use emcraft_ui_core::lang::tr;
 use emcraft_ui_core::results::fields;
-use iced::widget::{Column, button, container, row, scrollable, text};
+use iced::widget::{Column, container, row, scrollable, text};
 use iced::{Alignment, Element, Fill, Widget};
 use serde_json::json;
 
 use crate::app::{App, Message};
 use crate::look::{self, Tokens};
-
-fn heading<'a>(t: Tokens, title: Text) -> Element<'a, Message> {
-    text(tr(title).to_uppercase()).size(t.font_small).color(t.text_dim).boxed()
-}
+use crate::parts::{action, heading};
 
 fn line<'a>(t: Tokens, s: impl Into<String>) -> Element<'a, Message> {
     text(s.into()).size(t.font_small).color(t.text).boxed()
-}
-
-fn action<'a>(t: Tokens, label: impl Into<String>, on: Option<Message>) -> Element<'a, Message> {
-    button(text(label.into()).size(t.font_button)).style(look::button(t, false)).on_press_maybe(on).boxed()
 }
 
 fn run(id: &'static str, params: serde_json::Value) -> Message {
@@ -69,18 +62,21 @@ pub fn view(app: &App, width: f32) -> Option<Element<'_, Message>> {
     let power = (v.mode.is_none() && s.results().sweep.is_some()).then(|| match emcraft_engine::power::at(s, v.frequency, v.excitation) {
         Ok(report) => {
             let (table, rest) = fields::power(&report);
-            Column::with_children([heading(t, t!("POWER DISTRIBUTION")), crate::table::view(t, &table), line(t, rest)]).spacing(4).boxed()
+            Column::with_children([heading(t, t!("POWER DISTRIBUTION")), crate::table::view(t, &table), line(t, rest)]).spacing(t.space_4).boxed()
         }
-        Err(e) => Column::with_children([heading(t, t!("POWER DISTRIBUTION")), line(t, e.to_string())]).spacing(4).boxed(),
+        Err(e) => Column::with_children([heading(t, t!("POWER DISTRIBUTION")), line(t, e.to_string())]).spacing(t.space_4).boxed(),
     });
     // The probes.
-    let add = app.probe_point().map(|at| action(t, "+", idle.then(|| run("view.probe.add", json!({"at": at})))));
-    let head = row(std::iter::once(heading(t, t!("PROBES"))).chain(add)).spacing(8).align_y(Alignment::Center).boxed();
+    let add = app.probe_point().map(|at| action(t, "+", false, idle.then(|| run("view.probe.add", json!({"at": at})))));
+    let head = row(std::iter::once(heading(t, t!("PROBES"))).chain(add)).spacing(t.space_8).align_y(Alignment::Center).boxed();
     let values = app.probe_values();
     let probes = s.views().probes.iter().enumerate().map(|(i, p)| {
         let said = fields::probe_line(&p.name, values.get(i).copied().flatten(), v.component);
-        let delete = action(t, "✕", idle.then(|| run("view.probe.delete", json!({"name": p.name}))));
-        row![text(said).size(t.font_small).color(t.text).width(Fill), delete].spacing(6).align_y(Alignment::Center).boxed()
+        let delete = idle.then(|| crate::parts::close(t, t!("Delete"), run("view.probe.delete", json!({"name": p.name}))));
+        row(std::iter::once(text(said).size(t.font_small).color(t.text).width(Fill).boxed()).chain(delete))
+            .spacing(t.space_6)
+            .align_y(Alignment::Center)
+            .boxed()
     });
     // The pinned point's fields.
     let lu = s.display().length.symbol();
@@ -99,10 +95,10 @@ pub fn view(app: &App, width: f32) -> Option<Element<'_, Message>> {
     let picture = fields::save_params(v, at, s, "field.png", false);
     let animation = fields::save_params(v, at, s, "field-animation.png", true);
     let save = row![
-        action(t, tr(t!("Picture…")), idle.then(|| Message::Open("view.field", picture))),
-        action(t, tr(t!("Animation…")), idle.then(|| Message::Open("view.animation", animation)))
+        action(t, tr(t!("Picture…")), false, idle.then(|| Message::Open("view.field", picture))),
+        action(t, tr(t!("Animation…")), false, idle.then(|| Message::Open("view.animation", animation)))
     ]
-    .spacing(6)
+    .spacing(t.space_6)
     .boxed();
     let parts = power
         .into_iter()
@@ -111,5 +107,11 @@ pub fn view(app: &App, width: f32) -> Option<Element<'_, Message>> {
         .chain(std::iter::once(heading(t, t!("PINNED"))))
         .chain(pinned)
         .chain([heading(t, t!("SAVE")), save]);
-    Some(container(scrollable(Column::with_children(parts).spacing(8).padding(10))).width(width).height(Fill).style(look::ground(t)).boxed())
+    Some(
+        container(scrollable(Column::with_children(parts).spacing(t.space_8).padding(t.space_8)))
+            .width(width)
+            .height(Fill)
+            .style(look::ground(t))
+            .boxed(),
+    )
 }

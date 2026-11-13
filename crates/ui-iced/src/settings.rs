@@ -20,7 +20,7 @@ use crate::look::{self, Tokens};
 /// A choice among others: lit when it is the one kept.
 /// A row of choices under its title.
 fn titled<'a>(t: Tokens, title: Text, items: Vec<Element<'a, Message>>) -> Element<'a, Message> {
-    row![text(tr(title)).size(t.font_body).width(140)].extend(items).spacing(6).align_y(Alignment::Center).wrap().boxed()
+    row![text(tr(title)).size(t.font_body).width(t.form_label_width)].extend(items).spacing(t.space_6).align_y(Alignment::Center).wrap().boxed()
 }
 
 fn choice<'a>(t: Tokens, label: &str, on: bool, pref: Pref) -> Element<'a, Message> {
@@ -29,7 +29,7 @@ fn choice<'a>(t: Tokens, label: &str, on: bool, pref: Pref) -> Element<'a, Messa
 
 /// A section: its heading, what it is about, its choices.
 fn section<'a>(t: Tokens, title: Text, about: &str, body: Element<'a, Message>) -> Element<'a, Message> {
-    column![text(tr(title)).size(t.font_heading), text(about.to_owned()).size(t.font_small).color(t.text_dim), body].spacing(6).boxed()
+    column![text(tr(title)).size(t.font_heading), text(about.to_owned()).size(t.font_small).color(t.text_dim), body].spacing(t.space_6).boxed()
 }
 
 /// A theme's name as its button reads: a built-in one capitalised, in the window's language.
@@ -67,7 +67,7 @@ fn font(app: &App) -> Element<'_, Message> {
     let typed = text_input(tr(t!("the system's fonts")), file)
         .size(t.font_body)
         .width(320)
-        .padding([3, 6])
+        .padding([t.space_4, t.space_6])
         .style(look::field(t))
         .on_input(Message::FontFile)
         .on_submit(committed);
@@ -76,9 +76,9 @@ fn font(app: &App) -> Element<'_, Message> {
         typed,
         button(text(tr(t!("Look again"))).size(t.font_button)).style(look::button(t, false)).on_press(Message::Pref(Pref::SearchFonts))
     ]
-    .spacing(8)
+    .spacing(t.space_8)
     .align_y(Alignment::Center);
-    Column::with_children(standing.map(Widget::boxed).into_iter().chain(std::iter::once(row.boxed()))).spacing(4).boxed()
+    Column::with_children(standing.map(Widget::boxed).into_iter().chain(std::iter::once(row.boxed()))).spacing(t.space_4).boxed()
 }
 
 /// The crash reports' buttons: the card of them, and a report of the session as it is.
@@ -88,10 +88,10 @@ fn solidcraft(app: &App) -> Element<'_, Message> {
     let typed = text_input("solidcraft", &app.prefs.solidcraft)
         .size(t.font_body)
         .width(420)
-        .padding([3, 6])
+        .padding([t.space_4, t.space_6])
         .style(look::field(t))
         .on_input(|s| Message::Pref(Pref::SolidCraft(s)));
-    row![text(tr(t!("SolidCraft program"))).size(t.font_small).color(t.text_dim), typed].spacing(8).align_y(Alignment::Center).boxed()
+    row![text(tr(t!("SolidCraft program"))).size(t.font_small).color(t.text_dim), typed].spacing(t.space_8).align_y(Alignment::Center).boxed()
 }
 
 fn reports(app: &App) -> Element<'_, Message> {
@@ -101,33 +101,35 @@ fn reports(app: &App) -> Element<'_, Message> {
     let b = |label, a| {
         button(text(tr(label)).size(t.font_button)).style(look::button(t, false)).on_press_maybe(on.then_some(Message::Reports(a))).boxed()
     };
-    row([b(t!("Crash reports…"), ReportAct::Show(true)), b(t!("Report a bug…"), ReportAct::Bug)]).spacing(8).boxed()
+    row([b(t!("Crash reports…"), ReportAct::Show(true)), b(t!("Report a bug…"), ReportAct::Bug)]).spacing(t.space_8).boxed()
 }
 
 pub fn view(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
     let p = &app.prefs;
-    let themes =
-        row(app.themes.list.iter().map(|th| choice(t, &theme_label(&th.name), th.name == p.theme, Pref::Theme(th.name.clone())))).spacing(6).wrap();
+    let themes = row(app.themes.list.iter().map(|th| choice(t, &theme_label(&th.name), th.name == p.theme, Pref::Theme(th.name.clone()))))
+        .spacing(t.space_6)
+        .wrap();
     let current = p.language();
     let languages: Vec<(String, String)> = lang::languages().iter().map(|l| (l.id.to_owned(), l.name.clone())).collect();
     let language = pick_list(languages.iter().find(|(id, _)| id == current).cloned(), languages, |(_, name)| name.clone())
         .on_select(|(id, _)| Message::Pref(Pref::Language(id)))
+        .text_size(t.font_button)
         .style(look::choice(t));
     let lengths = [(Length::Millimetre, "mm"), (Length::Metre, "m")].map(|(u, s)| choice(t, s, p.length == u, Pref::Length(u)));
     let frequencies = [(Frequency::Gigahertz, "GHz"), (Frequency::Megahertz, "MHz"), (Frequency::Hertz, "Hz")]
         .map(|(u, s)| choice(t, s, p.frequency == u, Pref::Frequency(u)));
     let units = column![
-        row![text(tr(t!("Length"))).size(t.font_body).width(100)].extend(lengths).spacing(6).align_y(Alignment::Center),
-        row![text(tr(t!("Frequency"))).size(t.font_body).width(100)].extend(frequencies).spacing(6).align_y(Alignment::Center),
+        row![text(tr(t!("Length"))).size(t.font_body).width(t.form_label_width)].extend(lengths).spacing(t.space_6).align_y(Alignment::Center),
+        row![text(tr(t!("Frequency"))).size(t.font_body).width(t.form_label_width)].extend(frequencies).spacing(t.space_6).align_y(Alignment::Center),
     ]
-    .spacing(6);
+    .spacing(t.space_6);
     let nav = p.nav();
     let mappings = row(NAV_PRESETS.iter().map(|m| {
         let label = if m.id == TOUCHPAD { tr(t!("Touchpad")) } else { m.label };
         choice(t, label, m.id == nav.id, Pref::Navigation(m.id.to_owned()))
     }))
-    .spacing(6)
+    .spacing(t.space_6)
     .wrap();
     // What an orbit turns about, and the orientation control in the view's corner.
     use emcraft_ui_core::navigation::{Navigator, OrbitAround};
@@ -143,7 +145,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         titled(t, t!("Orbit around"), around),
         titled(t, t!("Navigator"), navigators),
     ]
-    .spacing(8);
+    .spacing(t.space_8);
     let l = p.gpu_look;
     let switches: [(Text, bool, fn(GpuLook) -> GpuLook); 4] = [
         (t!("Edges"), l.edges, |l| GpuLook { edges: !l.edges, ..l }),
@@ -151,10 +153,15 @@ pub fn view(app: &App) -> Element<'_, Message> {
         (t!("Outline"), l.outline, |l| GpuLook { outline: !l.outline, ..l }),
         (t!("GPU field"), l.field, |l| GpuLook { field: !l.field, ..l }),
     ];
-    let drawing = row(switches.map(|(label, on, flip)| choice(t, tr(label), on, Pref::GpuLook(flip(l))))).spacing(6).wrap();
+    let drawing = row(switches.map(|(label, on, flip)| choice(t, tr(label), on, Pref::GpuLook(flip(l))))).spacing(t.space_6).wrap();
     let sections = [
         section(t, t!("Theme"), tr(t!("The colours of the window, the 3D view and the pictures. It changes at once.")), themes.boxed()),
-        section(t, t!("Language"), tr(t!("The language of the window. It changes at once.")), column![language, font(app)].spacing(6).boxed()),
+        section(
+            t,
+            t!("Language"),
+            tr(t!("The language of the window. It changes at once.")),
+            column![language, font(app)].spacing(t.space_6).boxed(),
+        ),
         section(
             t,
             t!("New projects"),
@@ -174,6 +181,6 @@ pub fn view(app: &App) -> Element<'_, Message> {
         section(t, t!("Crash reports"), tr(t!("Kept on this computer only. Copy one to report it; nothing is sent.")), reports(app)),
     ];
     // The settings at most a reading width wide; the scroll bar at the window's edge.
-    let page = Column::with_children(sections).spacing(24).padding(24).width(READING_WIDTH);
+    let page = Column::with_children(sections).spacing(t.space_24).padding(t.space_24).width(READING_WIDTH);
     scrollable(container(page).width(Fill)).width(Fill).height(Fill).boxed()
 }

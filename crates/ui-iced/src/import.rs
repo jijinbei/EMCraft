@@ -144,13 +144,13 @@ pub fn head<'a>(app: &'a App, d: &'a Dialog) -> Option<Element<'a, Message>> {
             crate::icons::view(glyph, 22.0, t.text, t.accent),
             column![text(name).size(t.font_body), text(tr(what)).size(t.font_small).color(t.text_dim)]
         ]
-        .spacing(6)
+        .spacing(t.space_6)
         .align_y(Alignment::Center);
-        container(face).padding(6).width(Fill).style(look::card(t, lit)).boxed()
+        container(face).padding(t.space_6).width(Fill).style(look::card(t, lit)).boxed()
     });
     let pick = button(
         row![crate::icons::view(emcraft_ui_core::glyph::Glyph::OpenFile, 18.0, t.icon, t.accent), text(tr(t!("Choose file…"))).size(t.font_button)]
-            .spacing(6)
+            .spacing(t.space_6)
             .align_y(Alignment::Center),
     )
     .style(look::button(t, text_of(d, "path").is_empty()))
@@ -161,11 +161,11 @@ pub fn head<'a>(app: &'a App, d: &'a Dialog) -> Option<Element<'a, Message>> {
         Some(Err(e)) => Some(text(e.clone()).size(t.font_small).color(t.error).boxed()),
         None => None,
     };
-    let parts = [row(chips).spacing(6).boxed(), row![pick, dropped].spacing(10).align_y(Alignment::Center).boxed()]
+    let parts = [row(chips).spacing(t.space_6).boxed(), row![pick, dropped].spacing(t.space_8).align_y(Alignment::Center).boxed()]
         .into_iter()
         .chain(detected)
         .chain(std::iter::once(outcome(app, d)));
-    Some(Column::with_children(parts).spacing(8).boxed())
+    Some(Column::with_children(parts).spacing(t.space_8).boxed())
 }
 
 /// Which of dialog `d`'s fields its list shows: all, but for the import the path (and the
@@ -208,7 +208,7 @@ fn detected<'a>(app: &'a App, r: &'a emcraft_engine::ImportInspection) -> Elemen
         text(count).size(t.font_body),
         text(format!("{}{more}", names.iter().take(6).copied().collect::<Vec<_>>().join(", "))).size(t.font_small)
     ]
-    .spacing(8);
+    .spacing(t.space_8);
     let size = r.size.map(|size| {
         let v: Vec<String> = size.iter().map(|x| emcraft_ui_core::dialogs::value_text(&json!((x * 1e6).round() / 1e6))).collect();
         let units = if r.units == "display" { tr(t!("in display units (STL has none)")) } else { tr(t!("units from the file")) };
@@ -228,17 +228,17 @@ fn detected<'a>(app: &'a App, r: &'a emcraft_engine::ImportInspection) -> Elemen
         let input = text_input("", now)
             .size(t.font_body)
             .width(110)
-            .padding([3, 6])
+            .padding([t.space_4, t.space_6])
             .style(look::field(t))
             .on_input(move |s| Message::ImportParameter(name.clone(), s, saved_too.clone()));
-        row![text(q.name.clone()).size(t.font_small).width(140), input, text(q.unit.clone()).size(t.font_small).color(t.text_dim)]
-            .spacing(6)
+        row![text(q.name.clone()).size(t.font_small).width(t.form_label_width), input, text(q.unit.clone()).size(t.font_small).color(t.text_dim)]
+            .spacing(t.space_6)
             .align_y(Alignment::Center)
             .boxed()
     });
     let heading = (!r.parameters.is_empty()).then(|| text(tr(t!("Parameters"))).size(t.font_small).color(t.text_dim).boxed());
-    let body = Column::with_children([first.boxed()].into_iter().chain(size).chain(heading).chain(params)).spacing(4);
-    container(body).padding(8).width(Fill).style(look::ground(t)).boxed()
+    let body = Column::with_children([first.boxed()].into_iter().chain(size).chain(heading).chain(params)).spacing(t.space_4);
+    container(body).padding(t.space_8).width(Fill).style(look::ground(t)).boxed()
 }
 
 /// What importing makes of the file, in a line, by the region chosen.

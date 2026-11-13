@@ -15,6 +15,7 @@ use serde_json::Value;
 
 use crate::app::{App, Message};
 use crate::look::{self, Tokens};
+use crate::parts::{action, chip, heading as section, note as small};
 
 /// What the panel's controls ask of the window.
 #[derive(Clone, Debug)]
@@ -37,30 +38,12 @@ fn send(a: Act) -> Message {
     Message::StepAct(a)
 }
 
-fn small<'a>(t: Tokens, s: impl Into<String>, ink: Color) -> Element<'a, Message> {
-    text(s.into()).size(t.font_small).color(ink).boxed()
-}
-
-fn section<'a>(t: Tokens, title: Text) -> Element<'a, Message> {
-    text(tr(title).to_uppercase()).size(t.font_small).color(t.text_dim).boxed()
-}
-
 /// A name and its value on a line.
 fn kv<'a>(t: Tokens, k: Text, v: String) -> Element<'a, Message> {
     let v = emcraft_render::math::to_unicode(&v);
-    row![text(tr(k)).size(t.font_small).color(t.text_dim).width(120), text(v).size(t.font_small).color(t.text)].spacing(6).boxed()
-}
-
-fn action<'a>(t: Tokens, label: impl Into<String>, primary: bool, on: Option<Message>) -> Element<'a, Message> {
-    button(text(label.into()).size(t.font_button)).style(look::button(t, primary)).on_press_maybe(on).boxed()
-}
-
-/// A choice among several: the one chosen marked ✔ in the accent, the others buttons.
-fn chip<'a>(t: Tokens, label: &str, on: bool, choose: Option<Message>) -> Element<'a, Message> {
-    if on {
-        return container(text(format!("✔ {label}")).size(t.font_button).color(t.accent)).padding([4, 8]).boxed();
-    }
-    button(text(label.to_owned()).size(t.font_button)).style(look::button(t, false)).on_press_maybe(choose).boxed()
+    row![text(tr(k)).size(t.font_small).color(t.text_dim).width(t.form_label_width), text(v).size(t.font_small).color(t.text)]
+        .spacing(t.space_6)
+        .boxed()
 }
 
 /// A status's colour.
@@ -93,7 +76,7 @@ pub fn view(app: &App, width: f32) -> Option<Element<'_, Message>> {
         Step::Results => results(app, &states),
     };
     let parts = std::iter::once(head).chain(unneeded).chain(checks).chain(body);
-    let list = Column::with_children(parts).spacing(8).padding(12);
+    let list = Column::with_children(parts).spacing(t.space_8).padding(t.space_12);
     Some(container(scrollable(list).height(Fill)).width(width).height(Fill).style(look::ground(t)).boxed())
 }
 
@@ -105,7 +88,7 @@ fn header<'a>(app: &App, s: &StepState, running: bool) -> Element<'a, Message> {
     let said = if going { tr(t!("running")).to_owned() } else { shown(s.status).to_owned() };
     let title = trf(t!("Step {n} · {step}"), args!(n = s.step.index(), step = shown(s.step)));
     row![text(symbol).size(t.font_heading).color(ink), text(title).size(t.font_heading).color(t.text), text(said).size(t.font_small).color(ink)]
-        .spacing(8)
+        .spacing(t.space_8)
         .align_y(Alignment::Center)
         .boxed()
 }
@@ -118,9 +101,9 @@ fn checks<'a>(t: Tokens, s: &StepState) -> Element<'a, Message> {
     let ink = if s.status == Status::Done { t.text_dim } else { colour(t, s.status) };
     let rows = s.messages.iter().map(|m| {
         let fix = m.command.as_ref().and_then(|c| fix_label(c, s.step).map(|label| action(t, label, false, Some(send(Act::Fix(c.clone()))))));
-        column![text(check_text(m)).size(t.font_small).color(ink)].push(fix.unwrap_or_else(|| Space::new().boxed())).spacing(4).boxed()
+        column![text(check_text(m)).size(t.font_small).color(ink)].push(fix.unwrap_or_else(|| Space::new().boxed())).spacing(t.space_4).boxed()
     });
-    Column::with_children(rows).spacing(6).boxed()
+    Column::with_children(rows).spacing(t.space_6).boxed()
 }
 
 /// The geometry: the two ways to begin while there is none (a SolidCraft design, a template), the bodies, the extent, the
@@ -135,7 +118,7 @@ fn geometry(app: &App) -> Vec<Element<'_, Message>> {
             // A shape is a design's or a template's (docs/adr/0010-geometry-from-solidcraft.md).
             action(t, tr(t!("Templates")), false, Some(Message::Home(true)))
         ]
-        .spacing(6)
+        .spacing(t.space_6)
         .boxed()
     });
     let groups = app.tree.iter().flat_map(|(_, tree)| tree.iter().flat_map(|p| p.groups.iter()));
@@ -288,7 +271,7 @@ fn excitation(app: &App) -> Vec<Element<'_, Message>> {
                 idle.then(|| Message::Run(emcraft_ui_core::system::gesture::Command { id: "view.driven", params })),
             )
         });
-        row(std::iter::once(line).chain(drive)).spacing(6).align_y(Alignment::Center).wrap().boxed()
+        row(std::iter::once(line).chain(drive)).spacing(t.space_6).align_y(Alignment::Center).wrap().boxed()
     });
     let lumped =
         m.lumped.iter().map(move |p| small(t, trf(t!("Lumped port {name}: {impedance} Ω"), args!(name = p.name, impedance = p.impedance)), t.text));
@@ -330,12 +313,12 @@ fn field<'a>(app: &'a App, name: &'static str, label: Text, unit: &'a str) -> El
     let t = app.look.tokens;
     let f = &app.workflow.fields;
     let error = f.shown_error(name);
-    let input = text_input("", f.text(name)).size(t.font_body).padding([3, 6]).width(120).style(look::field(t));
+    let input = text_input("", f.text(name)).size(t.font_body).padding([t.space_4, t.space_6]).width(120).style(look::field(t));
     let input = input.on_input(move |s| send(Act::Typed(name, s))).on_submit(send(Act::Confirm));
     let line = row![text(tr(label)).size(t.font_small).color(t.text_dim).width(120), input, text(unit).size(t.font_small).color(t.text_dim)]
-        .spacing(6)
+        .spacing(t.space_6)
         .align_y(Alignment::Center);
-    column![line].push(error.map_or_else(|| Space::new().boxed(), |e| small(t, e, t.error))).spacing(2).boxed()
+    column![line].push(error.map_or_else(|| Space::new().boxed(), |e| small(t, e, t.error))).spacing(t.space_2).boxed()
 }
 
 /// The run's settings for the kind chosen, over the band's diagram; the run's estimate; the
@@ -381,7 +364,7 @@ fn setup(app: &App) -> Vec<Element<'_, Message>> {
             action(t, format!("✔ {}", tr(t!("Confirm settings"))), true, (ok && app.job.is_none()).then(|| send(Act::Confirm))),
             small(t, tr(t!("Not confirmed: the mesh and Run wait for these settings.")), t.warning)
         ]
-        .spacing(4)
+        .spacing(t.space_4)
         .boxed()
     } else {
         small(t, format!("✔ {}", tr(t!("Settings confirmed"))), t.success)
@@ -437,8 +420,8 @@ fn device(app: &App) -> Vec<Element<'_, Message>> {
     };
     vec![
         section(t, t!("Compute device")),
-        row(devices).spacing(6).boxed(),
-        row(precisions).spacing(6).boxed(),
+        row(devices).spacing(t.space_6).boxed(),
+        row(precisions).spacing(t.space_6).boxed(),
         small(t, trf(next, args!(device = current.id(), precision = lookup(precision.id()))), t.text),
     ]
 }
@@ -455,7 +438,7 @@ fn run<'a>(app: &'a App, states: &[StepState]) -> Vec<Element<'a, Message>> {
     let go = |step: Step| action(t, trf(t!("Go to {step}"), args!(step = shown(step))), false, Some(Message::Step(Some(step))));
     let finding = |(step, said): &(Step, String), ink: Color| {
         row![text(format!("{} · {said}", shown(*step))).size(t.font_small).color(ink).width(Fill), go(*step)]
-            .spacing(6)
+            .spacing(t.space_6)
             .align_y(Alignment::Center)
             .boxed()
     };
@@ -495,7 +478,7 @@ fn results<'a>(app: &'a App, states: &[StepState]) -> Vec<Element<'a, Message>> 
             small(t, tr(t!("The model changed after this run.")), t.text_dim),
             action(t, tr(t!("Re-run")), true, idle.then(|| send(Act::Run)))
         ]
-        .spacing(8)
+        .spacing(t.space_8)
         .align_y(Alignment::Center)
         .wrap()
         .boxed()
@@ -520,12 +503,15 @@ fn results<'a>(app: &'a App, states: &[StepState]) -> Vec<Element<'a, Message>> 
             ),
             kv(t, t!("max |S − S^T|"), format!("{:.3e}", n("reciprocity_error")))
         ]
-        .spacing(2)
+        .spacing(t.space_2)
         .boxed()
     });
     let f = &app.workflow.fields;
-    let path =
-        text_input("", f.text("touchstone")).size(t.font_body).padding([3, 6]).style(look::field(t)).on_input(|s| send(Act::Typed("touchstone", s)));
+    let path = text_input("", f.text("touchstone"))
+        .size(t.font_body)
+        .padding([t.space_4, t.space_6])
+        .style(look::field(t))
+        .on_input(|s| send(Act::Typed("touchstone", s)));
     let formats = [("ri", t!("real, imaginary")), ("ma", t!("magnitude, angle"))]
         .map(|(v, label)| chip(t, tr(label), f.text("format") == v, Some(send(Act::Format(v)))));
     let error = f.error("touchstone").map(|e| small(t, e, t.error));
@@ -538,8 +524,11 @@ fn results<'a>(app: &'a App, states: &[StepState]) -> Vec<Element<'a, Message>> 
             small(t, tr(t!("Physics checks, not the mesh's error: refine and compare.")), t.text_dim),
             action(t, tr(t!("Set up mesh convergence")), false, (!stale && idle).then(|| send(Act::Fix("mesh.adapt".into())))),
             section(t, t!("Touchstone")),
-            row![text(tr(t!("path"))).size(t.font_small).color(t.text_dim).width(Length::Shrink), path].spacing(6).align_y(Alignment::Center).boxed(),
-            row(formats).spacing(6).boxed(),
+            row![text(tr(t!("path"))).size(t.font_small).color(t.text_dim).width(Length::Shrink), path]
+                .spacing(t.space_6)
+                .align_y(Alignment::Center)
+                .boxed(),
+            row(formats).spacing(t.space_6).boxed(),
         ])
         .chain(error)
         .chain(std::iter::once(action(t, tr(t!("Export")), true, idle.then(|| send(Act::Export)))))

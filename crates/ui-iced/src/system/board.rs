@@ -7,7 +7,7 @@ use emcraft_ui_core::system::gesture::Command;
 use emcraft_ui_core::system::layout::{Kind, Layout};
 use iced::mouse::{self, Cursor};
 use iced::widget::canvas::{self, Frame, Geometry, Path, Stroke};
-use iced::widget::{Stack, button, container, mouse_area, pin, text};
+use iced::widget::{Stack, container, mouse_area, pin, text};
 use iced::{Element, Event, Fill, Rectangle, Renderer, Theme, Widget};
 use serde_json::json;
 
@@ -108,7 +108,7 @@ pub(super) fn board(app: &App) -> Element<'_, Message> {
         let (from, to) = (layout.nodes.get(a)?, layout.nodes.get(b)?);
         let mid = from.output().lerp(to.input(), 0.5);
         let unlink = Command { id: "system.unlink", params: json!({"from": from.name, "to": to.name}) };
-        let mark = button(text("×").size(t.font_small)).padding([0, 4]).style(look::button(t, false)).on_press(Message::Run(unlink));
+        let mark = crate::parts::close(t, t!("Unlink"), Message::Run(unlink));
         Some(pin(mark).x(mid.x - 8.0).y(mid.y - 9.0).boxed())
     });
     let cards = layout.nodes.iter().map(|n| pin(card::card(app, n)).x(n.rect.left()).y(n.rect.top()).boxed());

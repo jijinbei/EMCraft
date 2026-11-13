@@ -75,7 +75,7 @@ fn field<'a>(t: Tokens, f: Field, value: &'a str, hint: &'a str, width: f32) -> 
     text_input(hint, value)
         .size(t.font_small)
         .width(width)
-        .padding([2, 6])
+        .padding([t.space_2, t.space_6])
         .style(look::field(t))
         .on_input(move |s| send(StyleAct::Typed(f, s)))
         .on_submit(send(StyleAct::Commit(f)))
@@ -92,9 +92,9 @@ pub fn card(app: &App) -> Option<Element<'_, Message>> {
     let head = row![
         text(tr(t!("Axes and looks"))).size(t.font_body),
         chip(t, tr(t!("Reset")), false, p(json!({"reset": true}))),
-        chip(t, "✕", false, send(StyleAct::Toggle))
+        crate::parts::close(t, t!("Close"), send(StyleAct::Toggle))
     ]
-    .spacing(8)
+    .spacing(t.space_8)
     .align_y(Alignment::Center);
     let title = field(t, Field::Title, &s.title, tr(t!("title (automatic)")), 320.0);
     let axes = AxisId::ALL.into_iter().enumerate().map(|(k, a)| {
@@ -107,14 +107,15 @@ pub fn card(app: &App) -> Option<Element<'_, Message>> {
             field(t, Field::Max(k), s.text(Field::Max(k)), tr(t!("auto")), 64.0),
             chip(t, "log", log, p(scale))
         ]
-        .spacing(4)
+        .spacing(t.space_4)
         .align_y(Alignment::Center)
         .boxed()
     });
     let grid = shown["grid"].as_bool().unwrap_or(true);
     let legend = shown["legend"].as_str().and_then(LegendAt::parse).unwrap_or_default();
     let places = LEGENDS.iter().map(|(at, mark, _)| chip(t, mark, legend == *at, p(json!({"legend": at.id()}))));
-    let looks = row(std::iter::once(chip(t, tr(t!("grid")), grid, p(json!({"grid": !grid})))).chain(places)).spacing(4).align_y(Alignment::Center);
+    let looks =
+        row(std::iter::once(chip(t, tr(t!("grid")), grid, p(json!({"grid": !grid})))).chain(places)).spacing(t.space_4).align_y(Alignment::Center);
     // The curves the chart may add, and its own.
     let added = style::names(&shown, "added");
     let optional = emcraft_engine::views::optional_curves(&app.session, id);
@@ -157,12 +158,12 @@ pub fn card(app: &App) -> Option<Element<'_, Message>> {
             let on = width == Some(f64::from(*w));
             chip(t, &w.to_string(), on, p(json!({"curve": key, "width": if on { Value::Null } else { json!(w) }})))
         });
-        let line = row(std::iter::once(theirs).chain(colours).chain(widths)).spacing(2).align_y(Alignment::Center);
-        Column::with_children([show.boxed(), line.boxed()]).spacing(2).boxed()
+        let line = row(std::iter::once(theirs).chain(colours).chain(widths)).spacing(t.space_2).align_y(Alignment::Center);
+        Column::with_children([show.boxed(), line.boxed()]).spacing(t.space_2).boxed()
     });
-    let body =
-        Column::with_children([head.boxed(), title].into_iter().chain(axes).chain(std::iter::once(looks.boxed())).chain(adds).chain(rows)).spacing(6);
-    Some(container(body).padding(10).width(560).style(look::ground(t)).boxed())
+    let body = Column::with_children([head.boxed(), title].into_iter().chain(axes).chain(std::iter::once(looks.boxed())).chain(adds).chain(rows))
+        .spacing(t.space_6);
+    Some(container(body).padding(t.space_8).width(560).style(look::ground(t)).boxed())
 }
 
 /// The card's handles: `chart:style` opens or closes it; while open `style:reset`,

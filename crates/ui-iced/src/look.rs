@@ -164,6 +164,14 @@ pub fn row(t: Tokens, selected: bool) -> impl Fn(&iced::Theme, b::Status) -> b::
     }
 }
 
+/// How much the veil under a dialog over the window darkens it.
+const VEIL: f32 = 0.35;
+
+/// The veil a dialog over the window lies on: the window darkened under it.
+pub fn veil(_: &iced::Theme) -> container::Style {
+    container::Style { background: Some(Color { a: VEIL, ..Color::BLACK }.into()), ..container::Style::default() }
+}
+
 /// A text field: the controls' fill and edge, the accent's edge while typed in.
 pub fn field(t: Tokens) -> impl Fn(&iced::Theme, text_input::Status) -> text_input::Style {
     move |_, status| {

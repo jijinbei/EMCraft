@@ -21,6 +21,7 @@ use serde_json::{Value, json};
 
 use crate::app::{App, Message};
 use crate::look::{self, Tokens};
+use crate::parts::{action, note as small};
 
 /// The points a band may add, to choose from.
 const POINTS: [usize; 6] = [5, 11, 21, 51, 101, 201];
@@ -227,23 +228,18 @@ impl canvas::Program<Message> for SChart<'_> {
     }
 }
 
-fn small<'a>(t: Tokens, s: impl Into<String>, ink: Color) -> Element<'a, Message> {
-    text(s.into()).size(t.font_small).color(ink).boxed()
-}
-
-fn action<'a>(t: Tokens, label: impl Into<String>, primary: bool, on: Option<Message>) -> Element<'a, Message> {
-    button(text(label.into()).size(t.font_button)).style(look::button(t, primary)).on_press_maybe(on).boxed()
-}
-
 /// The page.
 pub fn view(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
     let s = &app.session;
     let v = &app.sview;
-    let display =
-        pick_list(Some(v.display), SDisplay::ALL, |d: &SDisplay| shown(*d).to_owned()).on_select(|d| send(SAct::Display(d))).style(look::choice(t));
+    let display = pick_list(Some(v.display), SDisplay::ALL, |d: &SDisplay| shown(*d).to_owned())
+        .on_select(|d| send(SAct::Display(d)))
+        .text_size(t.font_button)
+        .style(look::choice(t));
     let mixed = rules::pairs(s).then(|| action(t, tr(t!("Mixed mode")), v.mixed, Some(send(SAct::Mixed(!v.mixed)))));
-    let controls = row(std::iter::once(display.boxed()).chain(mixed).chain(crate::style_card::gear(app))).spacing(8).align_y(Alignment::Center);
+    let controls =
+        row(std::iter::once(display.boxed()).chain(mixed).chain(crate::style_card::gear(app))).spacing(t.space_8).align_y(Alignment::Center);
     let style = crate::style_card::card(app);
     let chart: Element<Message> = match app.charts.page.as_ref().map(|p| &p.shown) {
         Some(Ok(c)) => {
@@ -261,7 +257,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         }
         Some(Err(e)) => {
             let missing = emcraft_ui_core::view::View::SParameters.missing(s, &app.replies);
-            text(missing.map_or_else(|| e.clone(), |m| tr(m).to_owned())).size(t.font_heading).color(t.text_dim).boxed()
+            crate::parts::empty(t, missing.map_or_else(|| e.clone(), |m| tr(m).to_owned()), None)
         }
         None => Space::new().boxed(),
     };
@@ -275,11 +271,10 @@ pub fn view(app: &App) -> Element<'_, Message> {
         .is_some()
         .then(|| action(t, tr(if v.table { t!("Hide the table") } else { t!("Show the table") }), false, Some(send(SAct::Table(!v.table)))));
     let table = v.table.then(|| rules::table(s)).flatten().map(|tb| crate::table::view(t, &tb));
-    let coupling = app
-        .replies
-        .coupling
-        .as_ref()
-        .map(|r| column![text(tr(t!("Coupling matrix"))).size(t.font_body), crate::table::view(t, &rules::coupling(r))].spacing(4).boxed());
+    let coupling =
+        app.replies.coupling.as_ref().map(|r| {
+            column![text(tr(t!("Coupling matrix"))).size(t.font_body), crate::table::view(t, &rules::coupling(r))].spacing(t.space_4).boxed()
+        });
     let parts = std::iter::once(controls.boxed())
         .chain(style)
         .chain(std::iter::once(chart))
@@ -290,7 +285,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         .chain(coupling)
         .chain(toggle)
         .chain(table);
-    iced::widget::scrollable(Column::with_children(parts).spacing(10).padding(16)).boxed()
+    iced::widget::scrollable(Column::with_children(parts).spacing(t.space_8).padding(t.space_16)).boxed()
 }
 
 /// The band picked: its ends, the points to add, Refine and ✕.
@@ -299,7 +294,10 @@ fn refine_bar(app: &App) -> Option<Element<'_, Message>> {
     let (a, b) = app.sview.band?;
     let fu = app.session.display().frequency;
     let ends = format!("{} – {} {}", emcraft_render::axes::format(fu.from_si(a)), emcraft_render::axes::format(fu.from_si(b)), fu.symbol());
-    let points = pick_list(Some(app.sview.points), POINTS, |n: &usize| n.to_string()).on_select(|n| send(SAct::Points(n))).style(look::choice(t));
+    let points = pick_list(Some(app.sview.points), POINTS, |n: &usize| n.to_string())
+        .on_select(|n| send(SAct::Points(n)))
+        .text_size(t.font_button)
+        .style(look::choice(t));
     let idle = app.job.is_none();
     Some(
         row![
@@ -307,9 +305,9 @@ fn refine_bar(app: &App) -> Option<Element<'_, Message>> {
             points,
             small(t, "pts", t.text_dim),
             action(t, tr(t!("Refine")), true, idle.then_some(send(SAct::Refine))),
-            action(t, "✕", false, Some(send(SAct::Band(None))))
+            crate::parts::close(t, t!("Remove"), send(SAct::Band(None)))
         ]
-        .spacing(8)
+        .spacing(t.space_8)
         .align_y(Alignment::Center)
         .boxed(),
     )
@@ -330,10 +328,10 @@ fn planes(app: &App) -> Option<Element<'_, Message>> {
     let fields = ports.iter().filter_map(|p| {
         let (typed, _) = app.planes.get(&p.name)?;
         let name = p.name.clone();
-        let input = text_input("", typed).size(t.font_body).width(80).padding([3, 6]).style(look::field(t));
+        let input = text_input("", typed).size(t.font_body).width(80).padding([t.space_4, t.space_6]).style(look::field(t));
         let input =
             if idle { input.on_input(move |s| send(SAct::Plane(name.clone(), s))).on_submit(send(SAct::SetPlane(p.name.clone()))) } else { input };
-        Some(row![small(t, p.name.clone(), t.text), input, small(t, unit, t.text_dim)].spacing(4).align_y(Alignment::Center).boxed())
+        Some(row![small(t, p.name.clone(), t.text), input, small(t, unit, t.text_dim)].spacing(t.space_4).align_y(Alignment::Center).boxed())
     });
     let how = small(
         t,
@@ -341,7 +339,7 @@ fn planes(app: &App) -> Option<Element<'_, Message>> {
         t.text_dim,
     );
     let head = small(t, tr(t!("Ref. plane")), t.text_dim);
-    Some(row(std::iter::once(head).chain(fields).chain(std::iter::once(how))).spacing(10).align_y(Alignment::Center).wrap().boxed())
+    Some(row(std::iter::once(head).chain(fields).chain(std::iter::once(how))).spacing(t.space_8).align_y(Alignment::Center).wrap().boxed())
 }
 
 /// The kept solves, the newest first: a swatch (● the session's, two pens' colours when drawn
@@ -369,18 +367,22 @@ fn history(app: &App) -> Element<'_, Message> {
             small(t, what, t.text_dim),
             small(t, rules::history_tip(s, &r, stored), t.text_dim)
         ]
-        .spacing(2);
-        let pick = button(row![swatch, line].spacing(8).align_y(Alignment::Center))
+        .spacing(t.space_2);
+        let pick = button(row![swatch, line].spacing(t.space_8).align_y(Alignment::Center))
             .style(look::row(t, drawn.is_some()))
             .width(Fill)
             .on_press_maybe((!r.current).then(|| send(SAct::Compare(r.id))));
         let acts = rules::history_actions(r.id, r.pinned)
             .into_iter()
             .map(|(label, command, params)| action(t, tr(label), false, app.job.is_none().then(|| send(SAct::History(command, params)))));
-        column![pick, row(acts).spacing(6)].spacing(4).boxed()
+        column![pick, row(acts).spacing(t.space_6)].spacing(t.space_4).boxed()
     });
     let head = text(tr(t!("History"))).size(t.font_body).boxed();
-    container(Column::with_children(std::iter::once(head).chain(rows)).spacing(8)).padding(10).style(look::ground(t)).width(Fill).boxed()
+    container(Column::with_children(std::iter::once(head).chain(rows)).spacing(t.space_8))
+        .padding(t.space_8)
+        .style(look::ground(t))
+        .width(Fill)
+        .boxed()
 }
 
 /// The page's controls by their handles, for scenarios and agents: each display

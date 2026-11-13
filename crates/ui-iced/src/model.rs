@@ -90,10 +90,10 @@ fn bar(app: &App) -> Element<'_, Message> {
     });
     let gap = || Space::new().width(16).boxed();
     row(overlays.chain(std::iter::once(gap())).chain(views).chain(std::iter::once(gap())).chain(tools))
-        .spacing(6)
+        .spacing(t.space_6)
         .align_y(Alignment::Center)
         .wrap()
-        .vertical_spacing(6)
+        .vertical_spacing(t.space_6)
         .boxed()
 }
 
@@ -114,8 +114,12 @@ fn field_bar(app: &App) -> Element<'_, Message> {
         })
         .to_owned()
     };
-    let planes = pick_list(Some(v.plane), Plane::ALL, plane_name).on_select(move |p| nav(Nav::Plane(p)));
-    let components = pick_list(Some(v.component), Component::ALL, |c| c.label().to_owned()).on_select(move |c| nav(Nav::Component(c)));
+    let planes =
+        pick_list(Some(v.plane), Plane::ALL, plane_name).on_select(move |p| nav(Nav::Plane(p))).text_size(t.font_button).style(look::choice(t));
+    let components = pick_list(Some(v.component), Component::ALL, |c| c.label().to_owned())
+        .on_select(move |c| nav(Nav::Component(c)))
+        .text_size(t.font_button)
+        .style(look::choice(t));
     let solved: Vec<f64> = app.session.results().sweep.iter().flat_map(|s| s.results.iter().map(|r| r.frequency)).collect();
     let nearest = solved.iter().copied().min_by(|a, b| (a - v.frequency).abs().total_cmp(&(b - v.frequency).abs()));
     // An eigenmode's field: which mode; else the sweep's frequency.
@@ -125,10 +129,12 @@ fn field_bar(app: &App) -> Element<'_, Message> {
             format!("{} {} · {:.4} {}", tr(t!("Mode")), i + 1, fu.from_si(*f), fu.symbol())
         })
         .on_select(move |(i, _)| nav(Nav::Mode(Some(i))))
+        .text_size(t.font_button)
         .style(look::choice(t))
         .boxed(),
         None => pick_list(nearest, solved, move |f| format!("{:.4} {}", fu.from_si(*f), fu.symbol()))
             .on_select(move |f| nav(Nav::Frequency(f)))
+            .text_size(t.font_button)
             .style(look::choice(t))
             .boxed(),
     };
@@ -152,9 +158,9 @@ fn field_bar(app: &App) -> Element<'_, Message> {
     let h_arrows = tool(t, tr(t!("H arrows")), h, Some(nav(Nav::Arrows(e, !h))));
     row![
         label(tr(t!("Plane"))),
-        planes.style(look::choice(t)),
+        planes.text_size(t.font_button).style(look::choice(t)),
         label(tr(t!("Component"))),
-        components.style(look::choice(t)),
+        components.text_size(t.font_button).style(look::choice(t)),
         label(tr(t!("Frequency"))),
         frequencies,
         place,
@@ -168,10 +174,10 @@ fn field_bar(app: &App) -> Element<'_, Message> {
         e_arrows,
         h_arrows
     ]
-    .spacing(8)
+    .spacing(t.space_8)
     .align_y(Alignment::Center)
     .wrap()
-    .vertical_spacing(6)
+    .vertical_spacing(t.space_6)
     .boxed()
 }
 
@@ -199,10 +205,10 @@ fn section_bar(app: &App, cut: Cut) -> Element<'_, Message> {
     let dims = app.view3d.section_dims;
     let dims = tool(t, tr(if dims { t!("Dimensions: on") } else { t!("Dimensions: off") }), dims, Some(Message::View3d(Nav::Dims(!dims))));
     row(presets.chain(axes).chain([place.boxed(), shown.boxed(), flip, look, dims]))
-        .spacing(8)
+        .spacing(t.space_8)
         .align_y(Alignment::Center)
         .wrap()
-        .vertical_spacing(6)
+        .vertical_spacing(t.space_6)
         .boxed()
 }
 
@@ -213,7 +219,7 @@ fn colour_bar(t: Tokens, bar: &field::Bar) -> Element<'_, Message> {
         let gap = (k > 0).then(|| Space::new().width(Fill).boxed());
         gap.into_iter().chain(std::iter::once(text(tick.clone()).size(t.font_small).color(t.text_dim).boxed()))
     });
-    column![text(bar.title.clone()).size(t.font_body).color(t.text), gradient, row(ticks).width(BAR_W)].spacing(4).boxed()
+    column![text(bar.title.clone()).size(t.font_body).color(t.text), gradient, row(ticks).width(BAR_W)].spacing(t.space_4).boxed()
 }
 
 /// The colour bar's width (points).
@@ -229,17 +235,17 @@ fn legend(app: &App) -> Element<'_, Message> {
     let arrows = s.arrow_legend.iter().map(|(name, c)| {
         let ink = look::rgb(*c);
         row![text("➜").size(t.font_body).color(ink), text(name.clone()).size(t.font_small).color(t.text)]
-            .spacing(6)
+            .spacing(t.space_6)
             .align_y(Alignment::Center)
             .boxed()
     });
     let entries = s.legend.iter().map(|(name, c)| {
         let swatch = container(Space::new().width(12).height(12))
             .style(move |_: &iced::Theme| container::Style { background: Some(look::rgb(*c).into()), ..container::Style::default() });
-        row![swatch, text(name.clone()).size(t.font_small).color(t.text)].spacing(6).align_y(Alignment::Center).boxed()
+        row![swatch, text(name.clone()).size(t.font_small).color(t.text)].spacing(t.space_6).align_y(Alignment::Center).boxed()
     });
-    let list = column(s.bar.iter().map(|b| colour_bar(t, b)).chain(arrows).chain(entries)).spacing(4);
-    container(container(list).padding(8).style(look::ground(t))).padding(12).boxed()
+    let list = column(s.bar.iter().map(|b| colour_bar(t, b)).chain(arrows).chain(entries)).spacing(t.space_4);
+    container(container(list).padding(t.space_8).style(look::ground(t))).padding(t.space_12).boxed()
 }
 
 /// What is selected, on a card at the top of the view: its name and detail, or how many parts.
@@ -260,11 +266,11 @@ fn card(app: &App) -> Element<'_, Message> {
     let deletable = rows.iter().any(|r| r.item.as_ref().is_some_and(|i| !i.delete.is_empty()));
     let idle = app.job.is_none();
     let delete = deletable.then(|| tool(t, tr(t!("Delete")), false, idle.then_some(Message::Delete)));
-    let line = row(std::iter::once(text(line).size(t.font_body).color(t.text).boxed()).chain(delete)).spacing(10).align_y(Alignment::Center);
-    let card = container(line).padding([6, 12]).style(look::ground(t));
-    let reference = reference_field(app).map(|r| container(r).padding([4, 12]).style(look::ground(t)));
-    container(column(std::iter::once(card.boxed()).chain(reference.map(iced::Widget::boxed))).spacing(6).align_x(Alignment::Center))
-        .padding(12)
+    let line = row(std::iter::once(text(line).size(t.font_body).color(t.text).boxed()).chain(delete)).spacing(t.space_8).align_y(Alignment::Center);
+    let card = container(line).padding([t.space_6, t.space_12]).style(look::ground(t));
+    let reference = reference_field(app).map(|r| container(r).padding([t.space_4, t.space_12]).style(look::ground(t)));
+    container(column(std::iter::once(card.boxed()).chain(reference.map(iced::Widget::boxed))).spacing(t.space_6).align_x(Alignment::Center))
+        .padding(t.space_12)
         .center_x(Fill)
         .boxed()
 }
@@ -280,14 +286,14 @@ fn reference_field(app: &App) -> Option<Element<'_, Message>> {
     let field = iced::widget::text_input("", shown)
         .size(t.font_body)
         .width(80)
-        .padding([2, 6])
+        .padding([t.space_2, t.space_6])
         .style(look::field(t))
         .on_input_maybe(idle.then_some(Message::RefText as fn(String) -> Message))
         .on_submit_maybe(idle.then_some(Message::RefSet));
     let zero = tool(t, "0", false, (idle && now != 0.0).then_some(Message::RefZero));
     Some(
         row![text(tr(t!("Ref. plane"))).size(t.font_small).color(t.text_dim), field, text(l.symbol()).size(t.font_small).color(t.text_dim), zero]
-            .spacing(6)
+            .spacing(t.space_6)
             .align_y(Alignment::Center)
             .boxed(),
     )
@@ -301,7 +307,7 @@ fn probe_card(app: &App) -> Element<'_, Message> {
     let lines = emcraft_ui_core::scene3d::probe_lines(&probe, v.component, v.phase)
         .into_iter()
         .map(|l| text(emcraft_render::math::to_unicode(&l)).size(t.font_small).color(t.text).boxed());
-    let card = container(column(lines).spacing(2)).padding([5, 8]).style(look::ground(t));
+    let card = container(column(lines).spacing(t.space_2)).padding([t.space_4, t.space_8]).style(look::ground(t));
     iced::widget::pin(card).x(at.x + 16.0).y(at.y + 16.0).boxed()
 }
 
@@ -357,12 +363,10 @@ pub fn view(app: &App) -> Element<'_, Message> {
             ]
             .boxed()
         }
-        None => container(text(tr(t!("No geometry yet: open a sample or start at step 1, Geometry."))).size(t.font_heading).color(t.text_dim))
-            .center(Fill)
-            .boxed(),
+        None => crate::parts::empty(t, tr(t!("No geometry yet: open a sample or start at step 1, Geometry.")), None),
     };
     let field = (app.view3d.overlay == Overlay::Field).then(|| field_bar(app));
     let section = app.view3d.section.map(|c| section_bar(app, c));
-    let main = column(std::iter::once(bar(app)).chain(section).chain(field).chain(std::iter::once(picture))).spacing(8).height(Fill);
-    container(main).padding(12).height(Fill).boxed()
+    let main = column(std::iter::once(bar(app)).chain(section).chain(field).chain(std::iter::once(picture))).spacing(t.space_8).height(Fill);
+    container(main).padding(t.space_12).height(Fill).boxed()
 }

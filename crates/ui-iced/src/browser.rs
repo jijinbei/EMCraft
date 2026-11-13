@@ -56,11 +56,11 @@ fn line<'a>(app: &'a App, t: Tokens, r: &'a Row, stale: bool) -> Element<'a, Mes
     };
     let name = text(emcraft_render::math::to_unicode(&emcraft_ui_core::math::texify(&r.shown))).size(t.font_body).color(ink);
     let detail = (!r.detail.is_empty()).then(|| text(emcraft_render::math::to_unicode(&r.detail_tex())).size(t.font_small).color(t.text_dim).boxed());
-    let words = Column::with_children(std::iter::once(name.boxed()).chain(detail)).spacing(1).width(Fill);
+    let words = Column::with_children(std::iter::once(name.boxed()).chain(detail)).spacing(t.space_2).width(Fill);
     let pill = r.role.as_ref().map(|role| {
         let colour = role_colour(app, role.input);
         container(text(emcraft_render::math::to_unicode(&role.text())).size(t.font_small).color(t.text))
-            .padding([1, 6])
+            .padding([t.space_2, t.space_6])
             .style(move |_: &iced::Theme| container::Style {
                 background: Some(Color { a: 0.2, ..colour }.into()),
                 border: iced::Border { color: colour, width: 1.0, radius: 8.0.into() },
@@ -74,7 +74,7 @@ fn line<'a>(app: &'a App, t: Tokens, r: &'a Row, stale: bool) -> Element<'a, Mes
         let face = crate::icons::eye(visible, if visible { t.text } else { t.text_dim });
         button(face)
             .style(look::quiet(t))
-            .padding(2)
+            .padding(t.space_2)
             .on_press_maybe(app.job.is_none().then(|| Message::Run(emcraft_ui_core::system::gesture::Command { id: "view.visibility", params })))
             .boxed()
     });
@@ -82,19 +82,20 @@ fn line<'a>(app: &'a App, t: Tokens, r: &'a Row, stale: bool) -> Element<'a, Mes
     // A design of the user's opens in SolidCraft.
     let open = match &r.act {
         Act::Design(path) => {
-            let b =
-                button(text("↗").size(t.font_body).color(t.accent)).style(look::quiet(t)).padding([0, 4]).on_press(Message::OpenDesign(path.clone()));
-            let tip = container(text(tr(t!("Open in SolidCraft"))).size(t.font_small)).padding(6).style(look::ground(t));
-            Some(iced::widget::tooltip(b, tip, iced::widget::tooltip::Position::Bottom).boxed())
+            let b = button(text("↗").size(t.font_body).color(t.accent))
+                .style(look::quiet(t))
+                .padding([0.0, t.space_4])
+                .on_press(Message::OpenDesign(path.clone()));
+            Some(crate::parts::hint_text(t, b.boxed(), tr(t!("Open in SolidCraft"))))
         }
         _ => None,
     };
     let content =
         row([container(mark).padding([0.0, 12.0 * f32::from(r.depth)]).boxed(), words.boxed()].into_iter().chain(pill).chain(stale_mark).chain(open))
-            .spacing(6)
+            .spacing(t.space_6)
             .align_y(Alignment::Center);
-    let pick = button(content).width(Fill).padding([3, 6]).style(look::row(t, selected)).on_press(Message::Row(r.id.clone()));
-    row(std::iter::once(pick.boxed()).chain(eye)).spacing(2).align_y(Alignment::Center).boxed()
+    let pick = button(content).width(Fill).padding([t.space_4, t.space_6]).style(look::row(t, selected)).on_press(Message::Row(r.id.clone()));
+    row(std::iter::once(pick.boxed()).chain(eye)).spacing(t.space_2).align_y(Alignment::Center).boxed()
 }
 
 /// The kind of analysis at the tree's head: the job's, marked "auto" while the model infers it,
@@ -142,7 +143,7 @@ fn step_head<'a>(app: &App, t: Tokens, step: Step, part: &Part, folded: bool) ->
     };
     let fold = button(text(arrow).size(t.font_small).color(t.text_dim).width(10))
         .style(look::quiet(t))
-        .padding([2, 4])
+        .padding([t.space_2, t.space_4])
         .on_press_maybe((count > 0).then(|| Message::Fold(part.key().to_owned())));
     let face = row![
         text(symbol).size(t.font_body).color(ink).width(16),
@@ -150,10 +151,10 @@ fn step_head<'a>(app: &App, t: Tokens, step: Step, part: &Part, folded: bool) ->
         Space::new().width(Fill),
         text(if count > 0 { count.to_string() } else { String::new() }).size(t.font_small).color(t.text_dim)
     ]
-    .spacing(6)
+    .spacing(t.space_6)
     .align_y(Alignment::Center);
-    let pick = button(face).width(Fill).padding([3, 6]).style(look::row(t, open)).on_press(Message::Step((!open).then_some(step)));
-    row([fold.boxed(), pick.boxed()].into_iter().chain(ends(app, t, part))).spacing(2).align_y(Alignment::Center).boxed()
+    let pick = button(face).width(Fill).padding([t.space_4, t.space_6]).style(look::row(t, open)).on_press(Message::Step((!open).then_some(step)));
+    row([fold.boxed(), pick.boxed()].into_iter().chain(ends(app, t, part))).spacing(t.space_2).align_y(Alignment::Center).boxed()
 }
 
 /// A node's buttons at its end: ▶ for what its step runs (the mesh, the run), ＋ for what can be
@@ -165,7 +166,7 @@ fn ends<'a>(app: &App, t: Tokens, part: &Part) -> Vec<Element<'a, Message>> {
         // selection's when on, the dim one when it cannot be used).
         let mark = text(label).size(t.font_body);
         let mark = if message.is_some() && !on { mark.color(t.accent) } else { mark };
-        button(mark).style(look::toggle(t, on)).padding([1, 7]).on_press_maybe(message).boxed()
+        button(mark).style(look::toggle(t, on)).padding([t.space_2, t.space_6]).on_press_maybe(message).boxed()
     };
     let play = match part.head {
         Head::Step(step) => {
@@ -204,8 +205,9 @@ fn add_list<'a>(app: &App, t: Tokens, part: &Part) -> Option<Element<'a, Message
     }
     let idle = app.job.is_none();
     let entry = |glyph, label: String, message: Message| {
-        let face = row![crate::icons::view(glyph, 16.0, t.icon, t.accent), text(label).size(t.font_body)].spacing(8).align_y(Alignment::Center);
-        button(face).width(Fill).padding([3, 8]).style(look::row(t, false)).on_press_maybe(idle.then_some(message))
+        let face =
+            row![crate::icons::view(glyph, 16.0, t.icon, t.accent), text(label).size(t.font_body)].spacing(t.space_8).align_y(Alignment::Center);
+        button(face).width(Fill).padding([t.space_4, t.space_8]).style(look::row(t, false)).on_press_maybe(idle.then_some(message))
     };
     let entries = emcraft_ui_core::outline::adds(part.head, app.solver()).into_iter().map(|a| match a {
         Add::Command(id) => {
@@ -215,7 +217,7 @@ fn add_list<'a>(app: &App, t: Tokens, part: &Part) -> Option<Element<'a, Message
         Add::Tool(k) => crate::search::busy(app, entry(k.glyph(), lookup(k.label()).to_owned(), add_message(a)).boxed()),
         Add::NewDesign => crate::search::busy(app, entry(Glyph::Import, tr(t!("New SolidCraft design")).to_owned(), add_message(a)).boxed()),
     });
-    let list = Column::with_children(entries).spacing(1);
+    let list = Column::with_children(entries).spacing(t.space_2);
     Some(container(list).padding(iced::Padding { top: 2.0, right: 0.0, bottom: 4.0, left: 22.0 }).boxed())
 }
 
@@ -229,11 +231,14 @@ fn section_head<'a>(app: &App, t: Tokens, part: &Part, name: &str, folded: bool)
         Space::new().width(Fill),
         text(count.to_string()).size(t.font_small).color(t.text_dim)
     ]
-    .spacing(6)
+    .spacing(t.space_6)
     .align_y(Alignment::Center);
-    let head =
-        button(head).style(look::quiet(t)).width(Fill).padding([2, 4]).on_press_maybe((count > 0).then(|| Message::Fold(part.key().to_owned())));
-    row(std::iter::once(head.boxed()).chain(ends(app, t, part))).spacing(2).align_y(Alignment::Center).boxed()
+    let head = button(head)
+        .style(look::quiet(t))
+        .width(Fill)
+        .padding([t.space_2, t.space_4])
+        .on_press_maybe((count > 0).then(|| Message::Fold(part.key().to_owned())));
+    row(std::iter::once(head.boxed()).chain(ends(app, t, part))).spacing(t.space_2).align_y(Alignment::Center).boxed()
 }
 
 /// The browser: the kind of analysis, then the tree — a node a step (its rows under it, the
@@ -249,15 +254,16 @@ pub fn view(app: &App, width: f32) -> Element<'_, Message> {
         };
         let headed = part.groups.len() > 1;
         let groups = part.groups.iter().filter(|(_, rows)| !rows.is_empty()).map(|(name, rows)| {
-            let heading = headed.then(|| container(text(lookup(name).to_owned()).size(t.font_small).color(t.text_dim)).padding([2, 26]).boxed());
+            let heading = headed
+                .then(|| container(text(lookup(name).to_owned()).size(t.font_small).color(t.text_dim)).padding([t.space_2, t.space_24]).boxed());
             let lines = rows.iter().map(|r| line(app, t, r, stale && *name == "Results"));
-            Column::with_children(heading.into_iter().chain(lines)).spacing(1).boxed()
+            Column::with_children(heading.into_iter().chain(lines)).spacing(t.space_2).boxed()
         });
-        let body = (!folded).then(|| Column::with_children(groups).spacing(4).boxed());
-        Column::with_children([head].into_iter().chain(add_list(app, t, part)).chain(body)).spacing(2).boxed()
+        let body = (!folded).then(|| Column::with_children(groups).spacing(t.space_4).boxed());
+        Column::with_children([head].into_iter().chain(add_list(app, t, part)).chain(body)).spacing(t.space_2).boxed()
     });
     let list = Column::with_children(std::iter::once(kind(app)).chain(parts))
-        .spacing(6)
+        .spacing(t.space_6)
         .padding(iced::Padding { top: 8.0, right: 18.0, bottom: 8.0, left: 8.0 })
         .width(Fill);
     // The scroll bar beside the rows, not over their eyes.

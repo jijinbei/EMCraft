@@ -948,15 +948,15 @@ impl App {
                     .on_press(Message::Settings(!self.settings))
                     .boxed(),
             )))
-        .spacing(12)
+        .spacing(t.space_12)
         .align_y(Alignment::Center)
         // A narrow window (or a longer language) wraps the bar instead of squeezing its pages.
         .wrap()
-        .vertical_spacing(6);
+        .vertical_spacing(t.space_6);
         // The command search at the bar's right (on the project's pages).
         let search = (!self.settings && !self.home).then(|| crate::search::field(self));
-        let bar = row(std::iter::once(container(bar).width(Fill).boxed()).chain(search)).spacing(12).align_y(Alignment::Center);
-        let bar = container(bar).padding([6, 14]).width(Fill).style(look::app_bar(t));
+        let bar = row(std::iter::once(container(bar).width(Fill).boxed()).chain(search)).spacing(t.space_12).align_y(Alignment::Center);
+        let bar = container(bar).padding([t.space_6, t.space_12]).width(Fill).style(look::app_bar(t));
         let project = !self.settings && !self.home;
         // What the search finds, under the bar.
         let found = project.then(|| crate::search::results(self)).flatten();

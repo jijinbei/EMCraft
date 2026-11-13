@@ -17,6 +17,7 @@ use iced::{Alignment, Element, Fill, Widget};
 use crate::app::{App, Message};
 use crate::chart::Plot;
 use crate::look;
+use crate::parts::chip;
 
 /// The chart's height (points).
 const CHART_H: f32 = 520.0;
@@ -28,7 +29,7 @@ pub fn view(app: &App, page: View) -> Element<'_, Message> {
         Some(Ok(c)) => canvas(Plot { chart: std::borrow::Cow::Borrowed(c), palette: &app.look.theme.palette }).width(Fill).height(CHART_H).boxed(),
         Some(Err(e)) => {
             let missing = page.missing(&app.session, &app.replies);
-            text(missing.map_or_else(|| e.clone(), |m| tr(m).to_owned())).size(t.font_heading).color(t.text_dim).boxed()
+            crate::parts::empty(t, missing.map_or_else(|| e.clone(), |m| tr(m).to_owned()), None)
         }
         None => text("").boxed(),
     };
@@ -44,11 +45,14 @@ pub fn view(app: &App, page: View) -> Element<'_, Message> {
     };
     // The chart's style: its ⚙ beside the page's choices, its card under them.
     let above = match (above, crate::style_card::gear(app)) {
-        (Some(a), Some(g)) => Some(row![a, g].spacing(8).align_y(Alignment::Start).boxed()),
+        (Some(a), Some(g)) => Some(row![a, g].spacing(t.space_8).align_y(Alignment::Start).boxed()),
         (a, g) => a.or(g),
     };
     let style = crate::style_card::card(app);
-    scrollable(Column::with_children(above.into_iter().chain(style).chain(std::iter::once(picture)).chain(below)).spacing(10).padding(16)).boxed()
+    scrollable(
+        Column::with_children(above.into_iter().chain(style).chain(std::iter::once(picture)).chain(below)).spacing(t.space_8).padding(t.space_16),
+    )
+    .boxed()
 }
 
 /// The analyses' buttons, the one shown lit, and a line on its numbers.
@@ -64,7 +68,7 @@ fn analyses(app: &App) -> (Option<Element<'_, Message>>, Option<Element<'_, Mess
             .boxed()
     });
     let line = shown.and_then(|a| summary(&app.session, a)).map(|l| text(l).size(t.font_body).color(t.text).boxed());
-    (Some(row(buttons).spacing(6).wrap().boxed()), line)
+    (Some(row(buttons).spacing(t.space_6).wrap().boxed()), line)
 }
 
 /// What a result page's choices ask for.
@@ -139,10 +143,6 @@ impl App {
     }
 }
 
-fn chip<'a>(t: crate::look::Tokens, label: &str, on: bool, choose: Message) -> Element<'a, Message> {
-    button(text(label.to_owned()).size(t.font_button)).style(look::toggle(t, on)).on_press(choose).boxed()
-}
-
 fn note<'a>(app: &App, s: emcraft_ui_core::lang::Text) -> Element<'a, Message> {
     let t = app.look.tokens;
     text(tr(s)).size(t.font_small).color(t.text_dim).boxed()
@@ -159,32 +159,32 @@ fn study_choices(app: &App) -> Option<Element<'_, Message>> {
     let list = study::parameters(s);
     let parameters = (list.len() > 1).then(|| {
         let chips =
-            list.iter().map(|p| chip(t, &format!("|{}|", p.to_uppercase()), shown.as_ref() == Some(p), send(RAct::StudyParameter(p.clone()))));
+            list.iter().map(|p| chip(t, format!("|{}|", p.to_uppercase()), shown.as_ref() == Some(p), Some(send(RAct::StudyParameter(p.clone())))));
         row(std::iter::once(text(tr(t!("Show"))).size(t.font_small).color(t.text_dim).boxed()).chain(chips))
-            .spacing(6)
+            .spacing(t.space_6)
             .align_y(Alignment::Center)
             .wrap()
             .boxed()
     });
     let grid = s.is_grid().then(|| {
-        let along = s.variables.iter().enumerate().map(|(k, n)| chip(t, n, app.study.slice.free == k, send(RAct::Along(k))));
+        let along = s.variables.iter().enumerate().map(|(k, n)| chip(t, n, app.study.slice.free == k, Some(send(RAct::Along(k)))));
         let along = row(std::iter::once(text(tr(t!("Along"))).size(t.font_small).color(t.text_dim).boxed()).chain(along))
-            .spacing(6)
+            .spacing(t.space_6)
             .align_y(Alignment::Center)
             .wrap()
             .boxed();
         let held = study::held(s, &app.study.slice).into_iter().map(|(k, name, values, now)| {
             let label = emcraft_ui_core::lang::trf(t!("{name} at"), emcraft_ui_core::lang::args!(name = name));
-            let chips = values.into_iter().enumerate().map(move |(i, v)| chip(t, &v, now == i, send(RAct::Held(k, i))));
+            let chips = values.into_iter().enumerate().map(move |(i, v)| chip(t, &v, now == i, Some(send(RAct::Held(k, i)))));
             row(std::iter::once(text(label).size(t.font_small).color(t.text_dim).boxed()).chain(chips))
-                .spacing(6)
+                .spacing(t.space_6)
                 .align_y(Alignment::Center)
                 .wrap()
                 .boxed()
         });
-        Column::with_children(std::iter::once(along).chain(held)).spacing(4).boxed()
+        Column::with_children(std::iter::once(along).chain(held)).spacing(t.space_4).boxed()
     });
-    Some(Column::with_children(std::iter::once(line).chain(parameters).chain(grid)).spacing(6).boxed())
+    Some(Column::with_children(std::iter::once(line).chain(parameters).chain(grid)).spacing(t.space_6).boxed())
 }
 
 /// The TDR's port and transform.
@@ -192,10 +192,10 @@ fn tdr(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
     let ports: Vec<String> = app.session.sparameter_entries().into_iter().map(|e| e.name).collect();
     let shown = app.tdr.port.clone().or_else(|| ports.first().cloned());
-    let port = pick_list(shown, ports, String::clone).on_select(|p| send(RAct::TdrPort(p))).style(look::choice(t));
-    let modes = TDR_MODES.iter().map(|(m, label, _)| chip(t, tr(*label), app.tdr.mode == *m, send(RAct::TdrMode(*m))));
+    let port = pick_list(shown, ports, String::clone).on_select(|p| send(RAct::TdrPort(p))).text_size(t.font_button).style(look::choice(t));
+    let modes = TDR_MODES.iter().map(|(m, label, _)| chip(t, tr(*label), app.tdr.mode == *m, Some(send(RAct::TdrMode(*m)))));
     row(std::iter::once(text(tr(t!("port"))).size(t.font_body).boxed()).chain(std::iter::once(port.boxed())).chain(modes))
-        .spacing(8)
+        .spacing(t.space_8)
         .align_y(Alignment::Center)
         .wrap()
         .boxed()
@@ -205,17 +205,17 @@ fn tdr(app: &App) -> Element<'_, Message> {
 fn pattern(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
     let p = app.pattern;
-    let cuts = Cut::ALL.into_iter().map(|c| chip(t, lookup(c.label()), p.cut == c, send(RAct::Cut(c))));
+    let cuts = Cut::ALL.into_iter().map(|c| chip(t, lookup(c.label()), p.cut == c, Some(send(RAct::Cut(c)))));
     let (lo, hi, name) = p.range();
     let angle = slider(lo..=hi, p.angle.clamp(lo, hi), |a| send(RAct::Angle(a))).step(1.0).width(200);
     let said = text(format!("{name} {:.0}", p.angle)).size(t.font_body);
-    let quantities = FarQuantity::ALL.into_iter().map(|q| chip(t, lookup(q.label()), p.quantity == q, send(RAct::Quantity(q))));
-    let components = FarComponent::ALL.into_iter().map(|c| chip(t, lookup(c.label()), p.component == c, send(RAct::Component(c))));
+    let quantities = FarQuantity::ALL.into_iter().map(|q| chip(t, lookup(q.label()), p.quantity == q, Some(send(RAct::Quantity(q)))));
+    let components = FarComponent::ALL.into_iter().map(|c| chip(t, lookup(c.label()), p.component == c, Some(send(RAct::Component(c)))));
     row(cuts.chain([angle.boxed(), said.boxed()]).chain(quantities).chain(components))
-        .spacing(8)
+        .spacing(t.space_8)
         .align_y(Alignment::Center)
         .wrap()
-        .vertical_spacing(6)
+        .vertical_spacing(t.space_6)
         .boxed()
 }
 
@@ -229,10 +229,15 @@ fn pulse_field<'a>(
 ) -> Element<'a, Message> {
     row![
         text(tr(label)).size(t.font_body),
-        text_input("", value).size(t.font_body).width(80).padding([3, 6]).style(look::field(t)).on_input(move |s| send(RAct::Pulse(name, s))),
+        text_input("", value)
+            .size(t.font_body)
+            .width(80)
+            .padding([t.space_4, t.space_6])
+            .style(look::field(t))
+            .on_input(move |s| send(RAct::Pulse(name, s))),
         text(unit).size(t.font_small).color(t.text_dim)
     ]
-    .spacing(4)
+    .spacing(t.space_4)
     .align_y(Alignment::Center)
     .boxed()
 }
@@ -249,15 +254,15 @@ fn pulse<'a>(app: &'a App) -> Element<'a, Message> {
     let cell = bloch.then(|| field("length", t!("length"), &f.length, lu));
     let wave_chips = (waves.len() > 1).then(|| {
         let now = f.wave.unwrap_or(1);
-        waves.iter().enumerate().map(|(k, name)| chip(t, name, now == k + 1, send(RAct::Wave(k + 1)))).collect::<Vec<_>>()
+        waves.iter().enumerate().map(|(k, name)| chip(t, name, now == k + 1, Some(send(RAct::Wave(k + 1))))).collect::<Vec<_>>()
     });
-    let chirps = CHIRPS.iter().map(|(id, label, _)| chip(t, tr(*label), f.chirp() == *id, send(RAct::Chirp(id))));
+    let chirps = CHIRPS.iter().map(|(id, label, _)| chip(t, tr(*label), f.chirp() == *id, Some(send(RAct::Chirp(id)))));
     let band = (f.chirp() == "linear").then(|| field("bandwidth", t!("bandwidth"), &f.bandwidth, fu));
     let run = button(text(tr(t!("Run"))).size(t.font_button))
         .style(look::button(t, true))
         .on_press_maybe(app.job.is_none().then_some(send(RAct::PulseRun)));
-    let show =
-        [(false, t!("Power")), (true, t!("Frequency"))].map(|(on, label)| chip(t, tr(label), f.show_frequency == on, send(RAct::PulseShow(on))));
+    let show = [(false, t!("Power")), (true, t!("Frequency"))]
+        .map(|(on, label)| chip(t, tr(label), f.show_frequency == on, Some(send(RAct::PulseShow(on)))));
     let parts = [field("frequency", t!("carrier"), &f.frequency, fu), field("width", t!("width"), &f.width, "ns")]
         .into_iter()
         .chain(cell)
@@ -266,7 +271,7 @@ fn pulse<'a>(app: &'a App) -> Element<'a, Message> {
         .chain(band)
         .chain(std::iter::once(run.boxed()))
         .chain(show);
-    row(parts).spacing(8).align_y(Alignment::Center).wrap().vertical_spacing(6).boxed()
+    row(parts).spacing(t.space_8).align_y(Alignment::Center).wrap().vertical_spacing(t.space_6).boxed()
 }
 
 /// The result pages' choices by their handles, for scenarios and agents: `tdr:mode:<id>`

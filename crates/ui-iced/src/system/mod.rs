@@ -26,7 +26,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let head = [band_bar(app)].into_iter().chain(notes);
     let body: Vec<Element<Message>> =
         if chain.stages.is_empty() { vec![start(app)] } else { vec![adders(app), board::board(app), budget::chart(app), budget::sheet(app)] };
-    scrollable(Column::with_children(head.chain(body)).spacing(10).padding(16)).boxed()
+    scrollable(Column::with_children(head.chain(body)).spacing(t.space_8).padding(t.space_16)).boxed()
 }
 
 /// The command that adds a stage of `kind` at the end of the chain.
@@ -45,33 +45,37 @@ fn band_bar(app: &App) -> Element<'_, Message> {
         let shown = app.draft(&field, band::field(now, key));
         let typed = field.clone();
         let t = app.look.tokens;
-        let input = text_input("", shown).size(t.font_body).padding([3, 6]).width(80).style(look::field(t));
+        let input = text_input("", shown).size(t.font_body).padding([t.space_4, t.space_6]).width(80).style(look::field(t));
         row![
             text(tr(label)).size(t.font_body).color(t.form_dim),
             input.on_input(move |s| Message::Typed(typed.clone(), s)).on_submit(Message::Commit(field)),
             text(unit).size(t.font_body).color(t.text_dim),
         ]
-        .spacing(4)
+        .spacing(t.space_4)
         .align_y(Alignment::Center)
         .boxed()
     });
-    row(cells).spacing(16).boxed()
+    row(cells).spacing(app.look.tokens.space_16).boxed()
 }
 
 /// A chain with no stage yet: what a system is, and a button for each kind of stage.
 fn start(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
     let kinds = shared::KINDS.iter().map(|(kind, label, _)| {
-        button(text(format!("+ {}", tr(*label))).size(t.font_heading)).padding([10, 18]).style(look::button(t, false)).on_press(add(kind)).boxed()
+        button(text(format!("+ {}", tr(*label))).size(t.font_heading))
+            .padding([t.space_8, t.space_16])
+            .style(look::button(t, false))
+            .on_press(add(kind))
+            .boxed()
     });
     column![
         text(tr(t!("A chain from the antenna to the receiver"))).size(t.font_heading + 4.0),
         text(tr(t!("Add its stages in order: an LNA, a filter's S-parameters (a Touchstone file or a sweep), lines, more amplifiers.")))
             .size(t.font_body)
             .color(t.text_dim),
-        row(kinds).spacing(8),
+        row(kinds).spacing(t.space_8),
     ]
-    .spacing(10)
+    .spacing(t.space_8)
     .align_x(Alignment::Center)
     .boxed()
 }
@@ -82,7 +86,7 @@ fn adders(app: &App) -> Element<'_, Message> {
     let kinds = shared::KINDS.iter().map(|(kind, label, _)| {
         button(text(format!("+ {}", tr(*label))).size(t.font_button)).style(look::button(t, false)).on_press(add(kind)).boxed()
     });
-    row(kinds).spacing(6).boxed()
+    row(kinds).spacing(t.space_6).boxed()
 }
 
 /// "budget at 1.09 GHz", under the chart's choices.

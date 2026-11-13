@@ -75,20 +75,21 @@ fn card<'a>(app: &'a App, name: &'static str) -> Element<'a, Message> {
     let (title, rest) = title_and_rest(sample_label(name));
     let rest = if rest.is_empty() { name } else { rest };
     let body = column![picture, text(title.to_owned()).size(t.font_body), text(rest.to_owned()).size(t.font_small).color(t.text_dim)]
-        .spacing(4)
+        .spacing(t.space_4)
         .width(CARD[0]);
     // Its card opens: its parameters and its model, before it is built.
     let open = Message::Template(crate::template_dialog::TemplateAct::Open(Some(name)));
-    button(body).padding(8).style(look::row(t, false)).on_press(open).boxed()
+    button(body).padding(t.space_8).style(look::row(t, false)).on_press(open).boxed()
 }
 
 /// The start page.
 pub fn view(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
-    let big =
-        |label, action| button(text(tr(label)).size(t.font_heading)).padding([10, 18]).style(look::button(t, false)).on_press(Message::File(action));
+    let big = |label, action| {
+        button(text(tr(label)).size(t.font_heading)).padding([t.space_8, t.space_16]).style(look::button(t, false)).on_press(Message::File(action))
+    };
     let head = column![
-        row![text("EMCraft").size(30), text(tr(t!("Start"))).size(30).color(t.text_dim)].spacing(12),
+        row![text("EMCraft").size(30), text(tr(t!("Start"))).size(30).color(t.text_dim)].spacing(t.space_12),
         row![
             big(t!("Open…"), FileAction::Request(Then::Open)),
             big(
@@ -96,9 +97,9 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 FileAction::Request(Then::Import)
             )
         ]
-        .spacing(10),
+        .spacing(t.space_8),
     ]
-    .spacing(12);
+    .spacing(t.space_12);
     let recent = (!app.prefs.recent.is_empty()).then(|| {
         let paths = app.prefs.recent.iter().take(8).map(|p| {
             button(text(p.clone()).size(t.font_body))
@@ -106,7 +107,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 .on_press(Message::File(FileAction::Request(Then::OpenPath(p.clone()))))
                 .boxed()
         });
-        column![text(tr(t!("Recent projects"))).size(t.font_heading), Column::with_children(paths).spacing(2)].spacing(6).boxed()
+        column![text(tr(t!("Recent projects"))).size(t.font_heading), Column::with_children(paths).spacing(t.space_2)].spacing(t.space_6).boxed()
     });
     // What the job is for: a kind chosen shows its templates (again: every one), a blank
     // project for it beside them.
@@ -118,19 +119,20 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 text(tr(emcraft_ui_core::steps::kinds::card(k).name)).size(t.font_body),
                 text(tr(emcraft_ui_core::steps::kinds::card(k).plain)).size(t.font_small).color(t.text_dim)
             ]
-            .spacing(2)
+            .spacing(t.space_2)
         ]
-        .spacing(8)
+        .spacing(t.space_8)
         .align_y(iced::Alignment::Center);
-        button(face).padding(8).width(260).style(look::row(t, on)).on_press(Message::Purpose((!on).then_some(k))).boxed()
+        button(face).padding(t.space_8).width(260).style(look::row(t, on)).on_press(Message::Purpose((!on).then_some(k))).boxed()
     });
-    let purposes = column![text(tr(t!("Analysis"))).size(t.font_heading), row(kinds).spacing(10).wrap().vertical_spacing(10)].spacing(8);
+    let purposes =
+        column![text(tr(t!("Analysis"))).size(t.font_heading), row(kinds).spacing(t.space_8).wrap().vertical_spacing(t.space_8)].spacing(t.space_8);
     let shown = |s: &&emcraft_engine::templates::Template| app.purpose.is_none_or(|k| s.kinds.contains(&k));
     let groups = Group::ALL.into_iter().filter_map(|g| {
         let cards: Vec<Element<Message>> = TEMPLATES.iter().filter(|s| s.group == g).filter(shown).map(|s| card(app, s.name)).collect();
         (!cards.is_empty()).then(|| {
-            column![text(tr(group_title(g))).size(t.font_body).color(t.form_dim), row(cards).spacing(10).wrap().vertical_spacing(10)]
-                .spacing(6)
+            column![crate::parts::heading(t, group_title(g)), row(cards).spacing(t.space_8).wrap().vertical_spacing(t.space_8)]
+                .spacing(t.space_6)
                 .boxed()
         })
     });
@@ -140,12 +142,13 @@ pub fn view(app: &App) -> Element<'_, Message> {
             .on_press(Message::File(FileAction::Request(Then::Blank(k))))
             .boxed()
     });
-    let heading =
-        row(std::iter::once(text(tr(t!("Templates"))).size(t.font_heading).boxed()).chain(blank)).spacing(12).align_y(iced::Alignment::Center);
-    let templates = column![heading, Column::with_children(groups).spacing(18)].spacing(10);
+    let heading = row(std::iter::once(text(tr(t!("Templates"))).size(t.font_heading).boxed()).chain(blank))
+        .spacing(t.space_12)
+        .align_y(iced::Alignment::Center);
+    let templates = column![heading, Column::with_children(groups).spacing(t.space_16)].spacing(t.space_8);
     let page = Column::with_children([head.boxed()].into_iter().chain(recent).chain([purposes.boxed(), templates.boxed()]))
-        .spacing(24)
-        .padding(28)
+        .spacing(t.space_24)
+        .padding(t.space_24)
         .width(Fill);
     // The scroll bar at the window's edge.
     container(scrollable(page).width(Fill).height(Fill)).width(Fill).height(Fill).boxed()

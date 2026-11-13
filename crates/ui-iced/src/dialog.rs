@@ -10,7 +10,7 @@ use emcraft_ui_core::dialogs::{self, Dialog, Field, Kind};
 use emcraft_ui_core::lang::{self, args, tr, trf};
 use emcraft_ui_core::param_labels::{param_label, value_label};
 use iced::widget::{Column, Space, button, center, checkbox, container, opaque, pick_list, row, scrollable, text, text_input};
-use iced::{Alignment, Color, Element, Fill, Widget};
+use iced::{Alignment, Element, Fill, Widget};
 
 use crate::app::{App, Message};
 use crate::look::{self, Tokens};
@@ -86,7 +86,13 @@ fn send(edit: Edit) -> Message {
 
 /// A text field sending `edit` with what is typed; Enter is OK.
 fn input<'a>(t: Tokens, value: &'a str, edit: impl Fn(String) -> Edit + 'a) -> Element<'a, Message> {
-    text_input("", value).size(t.font_body).padding([3, 6]).style(look::field(t)).on_input(move |s| send(edit(s))).on_submit(send(Edit::Ok)).boxed()
+    text_input("", value)
+        .size(t.font_body)
+        .padding([t.space_4, t.space_6])
+        .style(look::field(t))
+        .on_input(move |s| send(edit(s)))
+        .on_submit(send(Edit::Ok))
+        .boxed()
 }
 
 /// A choice's word in the window's language.
@@ -102,17 +108,21 @@ fn editor<'a>(t: Tokens, i: usize, f: &'a Field) -> Element<'a, Message> {
             // Empty is the command's default.
             let options: Vec<String> = std::iter::once(String::new()).chain(list.iter().cloned()).collect();
             let shown = |v: &String| if v.is_empty() { tr(t!("default")).to_owned() } else { word(v) };
-            pick_list(Some(f.text.clone()), options, shown).on_select(move |v| send(Edit::Text(i, v))).style(look::choice(t)).boxed()
+            pick_list(Some(f.text.clone()), options, shown)
+                .on_select(move |v| send(Edit::Text(i, v)))
+                .text_size(t.font_button)
+                .style(look::choice(t))
+                .boxed()
         }
         Kind::Vector(names) => {
             let parts = names.iter().enumerate().map(|(k, n)| {
                 let value = f.parts.get(k).map_or("", String::as_str);
                 row![text(*n).size(t.font_small).color(t.text_dim), input(t, value, move |s| Edit::Part(i, k, s))]
-                    .spacing(4)
+                    .spacing(t.space_4)
                     .align_y(Alignment::Center)
                     .boxed()
             });
-            row(parts).spacing(8).boxed()
+            row(parts).spacing(t.space_8).boxed()
         }
         Kind::Table(cols) => {
             let head = row(cols.iter().map(|c| {
@@ -120,22 +130,22 @@ fn editor<'a>(t: Tokens, i: usize, f: &'a Field) -> Element<'a, Message> {
                 text(name).size(t.font_small).color(t.text_dim).width(Fill).boxed()
             }))
             .push(Space::new().width(24).boxed())
-            .spacing(4);
+            .spacing(t.space_4);
             let rows = f.rows.iter().enumerate().map(|(r, cells)| {
                 let cells = cells.iter().enumerate().map(|(c, v)| container(input(t, v, move |s| Edit::Cell(i, r, c, s))).width(Fill).boxed());
-                let x = button(text("×").size(t.font_small)).style(look::quiet(t)).on_press(send(Edit::RemoveRow(i, r)));
-                row(cells).push(x.boxed()).spacing(4).align_y(Alignment::Center).boxed()
+                let x = crate::parts::close(t, t!("Remove"), send(Edit::RemoveRow(i, r)));
+                row(cells).push(x).spacing(t.space_4).align_y(Alignment::Center).boxed()
             });
             let add = button(text(trf(t!("Add {row}"), args!(row = f.name.trim_end_matches('s')))).size(t.font_small))
                 .style(look::button(t, false))
                 .on_press(send(Edit::AddRow(i)));
-            Column::with_children(std::iter::once(head.boxed()).chain(rows).chain(std::iter::once(add.boxed()))).spacing(4).boxed()
+            Column::with_children(std::iter::once(head.boxed()).chain(rows).chain(std::iter::once(add.boxed()))).spacing(t.space_4).boxed()
         }
         // Its id names it (`dialog-<parameter>`), for scenarios and agents to find.
         Kind::Number | Kind::Integer | Kind::Text | Kind::Numbers | Kind::Json => text_input("", &f.text)
             .id(format!("dialog-{}", f.name))
             .size(t.font_body)
-            .padding([3, 6])
+            .padding([t.space_4, t.space_6])
             .style(look::field(t))
             .on_input(move |s| send(Edit::Text(i, s)))
             .on_submit(send(Edit::Ok))
@@ -152,9 +162,9 @@ fn body<'a>(app: &'a App, d: &'a Dialog, padding: iced::Padding) -> Element<'a, 
     let fields = d.fields.iter().enumerate().filter(|(_, f)| shown(f.name)).map(|(i, f)| {
         let name = format!("{}{}", lang::lookup(param_label(id, f.name)), if f.required { " *" } else { "" });
         let unit = dialogs::unit(f.quantity, &app.session);
-        let head = row![text(name).size(t.font_body).color(t.form_dim), text(unit).size(t.font_small).color(t.text_dim)].spacing(6);
+        let head = row![text(name).size(t.font_body).color(t.form_dim), text(unit).size(t.font_small).color(t.text_dim)].spacing(t.space_6);
         let error = f.error.as_ref().map(|e| text(e.clone()).size(t.font_small).color(t.error).boxed());
-        Column::with_children([head.boxed(), editor(t, i, f)].into_iter().chain(error)).spacing(3).boxed()
+        Column::with_children([head.boxed(), editor(t, i, f)].into_iter().chain(error)).spacing(t.space_4).boxed()
     });
     let busy = app.job.is_some();
     // An item's form applies its changes and stays.
@@ -168,15 +178,15 @@ fn body<'a>(app: &'a App, d: &'a Dialog, padding: iced::Padding) -> Element<'a, 
     });
     let error = d.error.as_ref().map(|e| text(e.clone()).size(t.font_body).color(t.error).boxed());
     let title = text(lang::command_label(id).to_owned()).size(t.font_heading).boxed();
-    let list = Column::with_children(fields).spacing(10).padding([0, 8]).boxed();
+    let list = Column::with_children(fields).spacing(t.space_8).padding([0.0, t.space_8]).boxed();
     let delete = delete.map(|b| crate::search::busy(app, b));
     let ok = crate::search::busy(app, ok.boxed());
-    let footer = row(delete.into_iter().chain([Space::new().width(Fill).boxed(), cancel.boxed(), ok])).spacing(8).boxed();
+    let footer = row(delete.into_iter().chain([Space::new().width(Fill).boxed(), cancel.boxed(), ok])).spacing(t.space_8).boxed();
     // The import's head: the formats, Choose file…, what the file holds (crate::import).
     let head = crate::import::head(app, d);
     let (fold, help) = (crate::import::fold(app, d), crate::import::help(app, d));
     Column::with_children(std::iter::once(title).chain(head).chain(fold).chain([list]).chain(help).chain(error).chain(std::iter::once(footer)))
-        .spacing(12)
+        .spacing(t.space_12)
         .padding(padding)
         .boxed()
 }
@@ -184,11 +194,9 @@ fn body<'a>(app: &'a App, d: &'a Dialog, padding: iced::Padding) -> Element<'a, 
 /// The open dialog `d` over the window (a page that is not the project's: the start page).
 pub fn view<'a>(app: &'a App, d: &'a Dialog) -> Element<'a, Message> {
     let t = app.look.tokens;
-    let card = container(scrollable(body(app, d, iced::Padding::ZERO)).height(iced::Length::Shrink)).padding(18).width(WIDTH).style(look::ground(t));
-    let veil = container(center(card))
-        .width(Fill)
-        .height(Fill)
-        .style(|_: &iced::Theme| container::Style { background: Some(Color { a: 0.35, ..Color::BLACK }.into()), ..container::Style::default() });
+    let card =
+        container(scrollable(body(app, d, iced::Padding::ZERO)).height(iced::Length::Shrink)).padding(t.space_16).width(WIDTH).style(look::ground(t));
+    let veil = container(center(card)).width(Fill).height(Fill).style(look::veil);
     opaque(veil).boxed()
 }
 

@@ -54,11 +54,10 @@ pub fn tool_button<'a>(t: crate::look::Tokens, face: ToolFace, message: Option<M
         On::Bar => crate::look::bar_toggle(t, on)(theme, status),
         On::Panel => crate::look::toggle(t, on)(theme, status),
     };
-    let face = iced::widget::button(view(glyph, TOOL_SIDE, ink, accent)).padding([4, 6]).style(style).on_press_maybe(message);
+    let face = iced::widget::button(view(glyph, TOOL_SIDE, ink, accent)).padding([t.space_4, t.space_6]).style(style).on_press_maybe(message);
     let key = key.map(|k| iced::widget::text(k.to_owned()).size(t.font_small).color(t.text_dim).boxed());
-    let said = iced::widget::row(std::iter::once(iced::widget::text(name).size(t.font_small).boxed()).chain(key)).spacing(8);
-    let card = iced::widget::container(said).padding(6).style(crate::look::ground(t));
-    iced::widget::tooltip(face, card, iced::widget::tooltip::Position::Bottom).gap(4).boxed()
+    let said = iced::widget::row(std::iter::once(iced::widget::text(name).size(t.font_small).boxed()).chain(key)).spacing(t.space_8);
+    crate::parts::hint(t, face.boxed(), said.boxed())
 }
 
 impl Icon {
