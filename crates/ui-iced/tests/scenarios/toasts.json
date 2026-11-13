@@ -1,0 +1,7 @@
+[
+  {"note": "Toasts: a long job's end is said on a card in the window's lower right corner too, beside the message area's line"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"expect": {"inspect": {"toasts": []}}},
+  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 6, "stop": 9, "points": 4, "order": 1}}},
+  {"shot": "toasts"}
+]

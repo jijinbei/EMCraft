@@ -65,6 +65,10 @@ impl App {
     pub(crate) fn after(&mut self, id: &str, params: &Value, reply: &Value) {
         let said = emcraft_ui_core::status::text(id, params, reply, &self.session);
         self.tell(&said);
+        // A file written (a project saved, a picture, a table), on a toast too.
+        if emcraft_ui_core::toast::wrote(id, reply) {
+            self.toasts = std::mem::take(&mut self.toasts).with(&said, false);
+        }
         self.replies = std::mem::take(&mut self.replies).after(id, params, reply, &self.session);
         self.generation += 1;
         // A project opened or begun shows as a new window would: nothing selected, on its first
@@ -116,8 +120,13 @@ impl App {
             Some(Poll::Lost) => None,
         };
         let Some(job) = self.job.take() else { return };
+        let toasted = emcraft_ui_core::toast::ends_aloud(&job.command);
         for step in job::finished(job, done, self.page, self.dialog.is_some()) {
             self.follow(step);
+        }
+        // How it ended, on a toast too.
+        if let Some(line) = self.log.last().filter(|_| toasted) {
+            self.toasts = std::mem::take(&mut self.toasts).with(&line.text, line.error);
         }
     }
 

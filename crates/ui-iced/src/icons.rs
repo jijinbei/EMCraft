@@ -36,6 +36,7 @@ pub enum On {
 pub struct ToolFace {
     pub glyph: Glyph,
     pub name: String,
+    /// What its key does, in [`emcraft_ui_core::shortcuts::KEYS`].
     pub key: Option<&'static str>,
     pub on: bool,
     pub place: On,
@@ -55,8 +56,10 @@ pub fn tool_button<'a>(t: crate::look::Tokens, face: ToolFace, message: Option<M
         On::Panel => crate::look::toggle(t, on)(theme, status),
     };
     let face = iced::widget::button(view(glyph, TOOL_SIDE, ink, accent)).padding([t.space_4, t.space_6]).style(style).on_press_maybe(message);
-    let key = key.map(|k| iced::widget::text(k.to_owned()).size(t.font_small).color(t.text_dim).boxed());
-    let said = iced::widget::row(std::iter::once(iced::widget::text(name).size(t.font_small).boxed()).chain(key)).spacing(t.space_8);
+    let key = key.and_then(|k| crate::parts::keys(t, k));
+    let said = iced::widget::row(std::iter::once(iced::widget::text(name).size(t.font_small).boxed()).chain(key))
+        .spacing(t.space_8)
+        .align_y(iced::Alignment::Center);
     crate::parts::hint(t, face.boxed(), said.boxed())
 }
 

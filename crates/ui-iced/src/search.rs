@@ -44,8 +44,9 @@ pub fn results(app: &App) -> Option<Element<'_, Message>> {
         let face = row![
             crate::icons::view(emcraft_ui_core::commands::glyph(c.id), 18.0, t.icon, t.accent),
             text(emcraft_ui_core::lang::command_label(c.id).to_owned()).size(t.font_body),
-            text(c.id).size(t.font_small).color(t.text_dim)
+            text(c.id).size(t.font_small).color(t.text_dim).width(Fill)
         ]
+        .push(crate::parts::keys(t, c.id).unwrap_or_else(|| text("").boxed()))
         .spacing(t.space_8)
         .align_y(Alignment::Center);
         busy(
@@ -71,12 +72,13 @@ pub fn command_tip<'a>(app: &App, content: Element<'a, Message>, id: &str) -> El
     if app.job.is_some() { busy(app, content) } else { tip(app.look.tokens, content, id) }
 }
 
-/// `content` with its command's tip on hover: what it does, first sentence, and its id.
+/// `content` with its command's tip on hover: what it does, first sentence, its id and its keys.
 pub fn tip<'a>(t: look::Tokens, content: Element<'a, Message>, id: &str) -> Element<'a, Message> {
     let doc = emcraft_ui_core::lang::command_doc(id);
     let first = doc.split_inclusive(". ").next().unwrap_or(doc).trim();
-    let said = column![text(first.to_owned()).size(t.font_small).width(360), text(id.to_owned()).size(t.font_small).color(t.text_dim)]
-        .spacing(t.space_2)
-        .width(iced::Length::Shrink);
+    let named = row(std::iter::once(text(id.to_owned()).size(t.font_small).color(t.text_dim).boxed()).chain(crate::parts::keys(t, id)))
+        .spacing(t.space_8)
+        .align_y(Alignment::Center);
+    let said = column![text(first.to_owned()).size(t.font_small).width(360), named].spacing(t.space_2).width(iced::Length::Shrink);
     crate::parts::hint(t, content, said.boxed())
 }

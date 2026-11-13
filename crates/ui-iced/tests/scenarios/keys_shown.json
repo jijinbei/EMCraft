@@ -1,0 +1,7 @@
+[
+  {"note": "A command's keys, from the one table the window answers to, on key caps: in the search's list (Save: Ctrl S), in the command tips and in the bar's buttons' names"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"field": "#emcraft-search", "text": "save"},
+  {"expect": {"inspect": {"search.query": "save"}}},
+  {"shot": "keys-in-search"}
+]

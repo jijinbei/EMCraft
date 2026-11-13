@@ -1,8 +1,10 @@
 //! The message area at the window's foot: the running job's row (Cancel,
 //! where it runs, what it does and how far it is), the last message on a line (an error in its
 //! colour, a message repeated counted), and the earlier ones a click away (▴ with how many there
-//! are opens the newest of them, scrolled to the end; ▾ folds them).
+//! are opens the newest of them, scrolled to the end; ▾ folds them); and the toasts over the
+//! window's corner, each gone after a few seconds or its ×.
 
+use iced::Task;
 use iced::widget::{Column, button, container, progress_bar, row, scrollable, text};
 use iced::{Alignment, Element, Fill, Widget};
 
@@ -43,4 +45,38 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let foot = row(std::iter::once(messages).chain(toggle)).spacing(t.space_8).align_y(if app.log_open { Alignment::End } else { Alignment::Center });
     let body = Column::with_children(job.into_iter().chain(std::iter::once(foot.boxed()))).spacing(t.space_6);
     container(body).padding([t.space_4, t.space_12]).width(Fill).style(look::ground(t)).boxed()
+}
+
+/// The toasts, newest at the bottom, over the window's lower right corner above the message
+/// area; none while there are none.
+pub fn toasts(app: &App) -> Option<Element<'_, Message>> {
+    let t = app.look.tokens;
+    let shown = app.toasts.shown();
+    if shown.is_empty() {
+        return None;
+    }
+    let cards = shown.iter().map(|toast| {
+        let said = text(toast.text.clone()).size(t.font_body).color(if toast.error { t.error } else { t.text }).width(Fill);
+        let close = crate::parts::close(t, t!("Close"), Message::Toast(toast.id));
+        let (mark, ink) = if toast.error { ("!", t.error) } else { ("✔", t.success) };
+        let face = row![text(mark).size(t.font_body).color(ink), said, close].spacing(t.space_8).align_y(Alignment::Center);
+        container(face).padding([t.space_8, t.space_12]).width(TOAST_W).style(look::toast(t, toast.error)).boxed()
+    });
+    let list = Column::with_children(cards).spacing(t.space_6);
+    Some(
+        container(list)
+            .align_right(Fill)
+            .align_bottom(Fill)
+            .padding(iced::Padding { top: 0.0, right: t.space_16, bottom: TOAST_FOOT, left: 0.0 })
+            .boxed(),
+    )
+}
+
+/// A toast's width, and its room above the window's foot (points).
+const TOAST_W: f32 = 340.0;
+const TOAST_FOOT: f32 = 52.0;
+
+/// Toast `id` taken away after its seconds (a pool thread waits them out).
+pub fn expire(id: u64) -> Task<Message> {
+    Task::perform(async { std::thread::sleep(std::time::Duration::from_secs(emcraft_ui_core::toast::SECONDS)) }, move |()| Message::Toast(id))
 }

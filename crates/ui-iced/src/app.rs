@@ -184,6 +184,8 @@ pub enum Message {
     Cancel,
     /// The earlier messages shown or folded.
     Log(bool),
+    /// A toast taken away (its time is up, or its × was pressed).
+    Toast(u64),
     /// The window resized (points).
     WindowSize(f32, f32),
     /// The font file typed in the settings (committed as a preference on Enter).
@@ -299,6 +301,8 @@ pub struct App {
     pub(crate) log: emcraft_ui_core::messages::Log,
     /// Whether the message area shows the earlier messages.
     pub(crate) log_open: bool,
+    /// What just ended, on cards in the window's corner for a few seconds.
+    pub(crate) toasts: emcraft_ui_core::toast::Toasts,
     /// The recording being made or played, and the crash reports kept (crate::record).
     pub(crate) recorder: crate::record::Recorder,
     pub(crate) crashes: crate::record::Crashes,
@@ -392,6 +396,7 @@ impl App {
             job: None,
             log,
             log_open: false,
+            toasts: Default::default(),
             recorder: Default::default(),
             crashes: Default::default(),
             font: emcraft_ui_core::fonts::State::NotNeeded,
@@ -845,6 +850,17 @@ impl App {
     /// The window after `message`, and what iced does next: the picture of the window taken
     /// and written, then the window closed.
     pub fn react(&mut self, message: Message) -> Task<Message> {
+        let before = self.toasts.newest();
+        let task = self.respond(message);
+        // A new toast goes after its seconds.
+        match self.toasts.newest().filter(|id| Some(*id) != before) {
+            Some(id) => Task::batch([task, crate::messages::expire(id)]),
+            None => task,
+        }
+    }
+
+    /// [`App::react`] without the toasts' time.
+    fn respond(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Tick(now) if self.shoot.is_some() => {
                 self.tick(now);
@@ -986,10 +1002,8 @@ impl App {
             .or_else(|| crate::template_dialog::view(self))
             .or_else(|| crate::reports::view(self))
             .or_else(|| crate::files::question(self));
-        match over {
-            Some(o) => iced::widget::stack![window, o].boxed(),
-            None => window.boxed(),
-        }
+        let layers = std::iter::once(window.boxed()).chain(over).chain(crate::messages::toasts(self));
+        iced::widget::Stack::with_children(layers).width(Fill).height(Fill).boxed()
     }
 
     /// The window after `message`, and the command it ends in.
@@ -1234,6 +1248,10 @@ impl App {
             }
             Message::Log(open) => {
                 self.log_open = open;
+                None
+            }
+            Message::Toast(id) => {
+                self.toasts = std::mem::take(&mut self.toasts).without(id);
                 None
             }
             Message::Cancel => {

@@ -1,6 +1,6 @@
 //! The window's small shared parts, each one look wherever it is: a panel's heading, a note in
 //! a colour, an action, a chip (a choice that is on or off), the × that closes or takes away,
-//! and what a page says while it has nothing to show.
+//! what a page says while it has nothing to show, and a shortcut's keys as key caps.
 
 use emcraft_ui_core::lang::{Text, tr};
 use iced::widget::{Column, button, container, text, tooltip};
@@ -50,4 +50,13 @@ pub fn close<'a>(t: Tokens, what: Text, message: Message) -> Element<'a, Message
 pub fn empty<'a>(t: Tokens, said: impl Into<String>, make: Option<Element<'a, Message>>) -> Element<'a, Message> {
     let said = text(said.into()).size(t.font_body).color(t.text_dim).boxed();
     container(Column::with_children(std::iter::once(said).chain(make)).spacing(t.space_12)).padding(t.space_16).boxed()
+}
+
+/// The keys that do `what` ([`emcraft_ui_core::shortcuts::keys`]), each on a key cap; none
+/// when no key does it.
+pub fn keys<'a>(t: Tokens, what: &str) -> Option<Element<'a, Message>> {
+    let caps = emcraft_ui_core::shortcuts::keys(what)?
+        .into_iter()
+        .map(|k| container(text(k).size(t.font_small - 1.0).color(t.text_dim)).padding([0.0, t.space_4]).style(look::keycap(t)).boxed());
+    Some(iced::widget::Row::with_children(caps).spacing(t.space_2).align_y(iced::Alignment::Center).boxed())
 }

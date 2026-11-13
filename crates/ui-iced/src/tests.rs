@@ -114,6 +114,23 @@ fn finish(app: &mut App) {
     assert!(app.job.is_none(), "the job ended");
 }
 
+/// A long job's end is said on a toast as in the message area, once; its × (or its time) takes
+/// it away; a quick command says nothing there.
+#[test]
+fn a_job_ends_on_a_toast() {
+    let mut app = App::new(Some("highpass"));
+    app.update(Message::Start("mesh.generate".into()));
+    assert!(app.toasts.shown().is_empty(), "a quick start says nothing yet");
+    finish(&mut app);
+    let said = app.log.last().map(|l| l.text.clone());
+    let shown: Vec<String> = app.toasts.shown().iter().map(|t| t.text.clone()).collect();
+    assert_eq!(shown.len(), 1, "{shown:?}");
+    assert_eq!(Some(shown[0].clone()), said);
+    let Some(id) = app.toasts.newest() else { panic!("a toast") };
+    app.update(Message::Toast(id));
+    assert!(app.toasts.shown().is_empty());
+}
+
 /// The model page: a sample without a chain opens on it, its scene built and fitted; a drag
 /// orbits, the wheel zooms, Fit frames it again, and a view resized keeps a moved camera but
 /// fits an unmoved one again.

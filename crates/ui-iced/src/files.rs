@@ -222,8 +222,9 @@ async fn asked(picker: Arc<dyn Picker>, purpose: Purpose, suggested: String) -> 
     rx.await.ok().flatten()
 }
 
-/// The window's keys (when no field takes them): Ctrl+N new, Ctrl+O open, Ctrl+S save
-/// (Shift: save as), Ctrl+Z undo, Ctrl+Shift+Z or Ctrl+Y redo (Cmd on macOS).
+/// The window's keys (when no field takes them; [`emcraft_ui_core::shortcuts::KEYS`] says
+/// them): Ctrl+N new, Ctrl+O open, Ctrl+S save (Shift: save as), Ctrl+Z undo, Ctrl+Shift+Z or
+/// Ctrl+Y redo (Cmd on macOS).
 pub fn shortcut(event: iced::Event, status: iced::event::Status, _: iced::window::Id) -> Option<Message> {
     use iced::keyboard::{Event, Key};
     let iced::Event::Keyboard(Event::KeyPressed { key: Key::Character(c), modifiers, .. }) = event else { return None };
@@ -252,16 +253,16 @@ pub fn dropped(event: iced::Event, _: iced::event::Status, _: iced::window::Id) 
 pub fn edits(app: &App) -> impl Iterator<Item = Element<'_, Message>> {
     let t = app.look.tokens;
     let idle = app.job.is_none();
-    [("edit.undo", Glyph::Undo, "Ctrl+Z", !app.session.undo().is_empty()), ("edit.redo", Glyph::Redo, "Ctrl+Y", !app.session.redo().is_empty())]
-        .into_iter()
-        .map(move |(id, glyph, key, can)| {
+    [("edit.undo", Glyph::Undo, !app.session.undo().is_empty()), ("edit.redo", Glyph::Redo, !app.session.redo().is_empty())].into_iter().map(
+        move |(id, glyph, can)| {
             let label = emcraft_ui_core::lang::command_label(id).to_owned();
             crate::icons::tool_button(
                 t,
-                crate::icons::ToolFace { glyph, name: label, key: Some(key), on: false, place: crate::icons::On::Bar },
+                crate::icons::ToolFace { glyph, name: label, key: Some(id), on: false, place: crate::icons::On::Bar },
                 (idle && can).then(|| Message::Start(id.to_owned())),
             )
-        })
+        },
+    )
 }
 
 /// The File buttons in the window's bar: New, Open, Save, Save As.
@@ -269,20 +270,20 @@ pub fn buttons(app: &App) -> impl Iterator<Item = Element<'_, Message>> {
     let t = app.look.tokens;
     let idle = app.job.is_none();
     [
-        ("file.new", Glyph::New, "Ctrl+N", FileAction::Request(Then::New)),
-        ("file.open", Glyph::OpenFile, "Ctrl+O", FileAction::Request(Then::Open)),
-        ("file.save", Glyph::Save, "Ctrl+S", FileAction::Save),
-        ("", Glyph::SaveAs, "Ctrl+Shift+S", FileAction::SaveAs),
+        ("file.new", Glyph::New, FileAction::Request(Then::New)),
+        ("file.open", Glyph::OpenFile, FileAction::Request(Then::Open)),
+        ("file.save", Glyph::Save, FileAction::Save),
+        ("file.save_as", Glyph::SaveAs, FileAction::SaveAs),
     ]
     .into_iter()
-    .map(move |(id, glyph, key, action)| {
+    .map(move |(id, glyph, action)| {
         let label = match id {
-            "" => tr(t!("Save as…")).to_owned(),
+            "file.save_as" => tr(t!("Save as…")).to_owned(),
             _ => emcraft_ui_core::lang::command_label(id).to_owned(),
         };
         crate::icons::tool_button(
             t,
-            crate::icons::ToolFace { glyph, name: label, key: Some(key), on: false, place: crate::icons::On::Bar },
+            crate::icons::ToolFace { glyph, name: label, key: Some(id), on: false, place: crate::icons::On::Bar },
             idle.then_some(Message::File(action)),
         )
     })

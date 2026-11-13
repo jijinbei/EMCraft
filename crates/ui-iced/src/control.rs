@@ -199,6 +199,7 @@ pub fn inspect(app: &App) -> Value {
         "tools": app.tools.inspect(app.tool, app.session.display().length),
         "template": app.template.card.as_ref().map(emcraft_ui_core::template_card::TemplateCard::inspect),
         "purpose": app.purpose.map(emcraft_model::Analysis::id),
+        "toasts": app.toasts.shown().iter().map(|t| json!({"text": t.text, "error": t.error})).collect::<Vec<_>>(),
         "search": {"query": app.search, "matches": emcraft_ui_core::search::matches(&app.search).iter().map(|c| c.id).collect::<Vec<_>>()},
         "workflow": crate::steps::inspect(app),
         "sparameters": crate::sparameters::inspect(app),

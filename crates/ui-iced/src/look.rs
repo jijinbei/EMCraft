@@ -246,6 +246,25 @@ pub fn chip(t: Tokens, on: bool) -> impl Fn(&iced::Theme) -> container::Style {
     }
 }
 
+/// A toast's card: the panel's with the accent's edge, the error's for a failure, and a shadow.
+pub fn toast(t: Tokens, error: bool) -> impl Fn(&iced::Theme) -> container::Style {
+    move |_| container::Style {
+        background: Some(Background::Color(t.panel)),
+        border: border(if error { t.error } else { t.accent }, t.radius_lg),
+        shadow: iced::Shadow { color: t.border, offset: iced::Vector::new(0.0, 2.0), blur_radius: 8.0 },
+        ..container::Style::default()
+    }
+}
+
+/// A key cap: a field's fill within the controls' edge.
+pub fn keycap(t: Tokens) -> impl Fn(&iced::Theme) -> container::Style {
+    move |_| container::Style {
+        background: Some(Background::Color(t.control_fill)),
+        border: border(t.control_border, t.radius_sm),
+        ..container::Style::default()
+    }
+}
+
 /// The application bar.
 pub fn app_bar(t: Tokens) -> impl Fn(&iced::Theme) -> container::Style {
     move |_| container::Style { text_color: Some(t.app_bar_text), background: Some(Background::Color(t.app_bar)), ..container::Style::default() }
