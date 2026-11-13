@@ -36,7 +36,7 @@ fn grid(n: [usize; 3], diag: C) -> (Csr, Vec<Point3>) {
             }
         }
     }
-    let mut a = Csr::from_groups(xyz.len(), groups.iter().map(std::vec::Vec::as_slice));
+    let mut a = Csr::from_groups(xyz.len(), groups.iter().map(std::vec::Vec::as_slice)).unwrap();
     for g in &groups {
         let v = C::new(next(), next());
         a.add(g[0], g[1], v);
@@ -93,7 +93,7 @@ fn fronts_on_cuda_factor_alike() {
 /// A dense complex symmetric matrix of order n (one front), diagonally dominant.
 fn dense(n: usize) -> (Csr, Vec<Point3>) {
     let all: Vec<usize> = (0..n).collect();
-    let mut a = Csr::from_groups(n, std::iter::once(all.as_slice()));
+    let mut a = Csr::from_groups(n, std::iter::once(all.as_slice())).unwrap();
     for i in 0..n {
         for j in 0..=i {
             let v = if i == j { C::new(n as f64, 1.0) } else { C::new(((i * 7 + j * 13) % 17) as f64 / 17.0 - 0.5, ((i + j) % 5) as f64 / 5.0) };

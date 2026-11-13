@@ -423,7 +423,7 @@ impl Reduced {
         let dispersive = d.dispersive_scales(frequency);
         // The layer at this k₀: its own matrix on the pattern, times the basis.
         let pv: Option<Vec<Vec<C>>> = if d.pml.is_some() {
-            let mut p = d.pattern.zeroed();
+            let mut p = d.pattern.zeroed()?;
             d.add_pml(&mut p, k0)?;
             Some(basis.v.iter().map(|v| p.mul(&v.iter().map(|x| C::new(*x, 0.0)).collect::<Vec<_>>())).collect())
         } else {

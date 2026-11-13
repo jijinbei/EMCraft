@@ -85,7 +85,7 @@ impl Scratch {
 
     fn write(&mut self, v: &[C]) -> Result<Columns, FactorError> {
         use std::io::{Seek, SeekFrom, Write};
-        let mut bytes = Vec::with_capacity(v.len() * 16);
+        let mut bytes = crate::memory::with_capacity(v.len().saturating_mul(16), "a factor's columns on their way to disk")?;
         for z in v {
             bytes.extend_from_slice(&z.re.to_le_bytes());
             bytes.extend_from_slice(&z.im.to_le_bytes());
@@ -99,21 +99,18 @@ impl Scratch {
 
     fn read(&self, offset: u64, len: usize) -> Result<Vec<C>, FactorError> {
         use std::io::{Read, Seek, SeekFrom};
-        let mut bytes = vec![0u8; len * 16];
+        let mut bytes: Vec<u8> = crate::memory::zeros(len.saturating_mul(16), "a factor's columns read back")?;
         let mut f = self.file.lock().map_err(poisoned)?;
         f.seek(SeekFrom::Start(offset)).and_then(|_| f.read_exact(&mut bytes)).map_err(|e| FactorError::Scratch(e.to_string()))?;
-        Ok(bytes
-            .as_chunks::<16>()
-            .0
-            .iter()
-            .map(|c| {
-                let mut re = [0u8; 8];
-                let mut im = [0u8; 8];
-                re.copy_from_slice(&c[..8]);
-                im.copy_from_slice(&c[8..]);
-                C::new(f64::from_le_bytes(re), f64::from_le_bytes(im))
-            })
-            .collect())
+        let mut out = crate::memory::with_capacity(len, "a factor's columns read back")?;
+        out.extend(bytes.as_chunks::<16>().0.iter().map(|c| {
+            let mut re = [0u8; 8];
+            let mut im = [0u8; 8];
+            re.copy_from_slice(&c[..8]);
+            im.copy_from_slice(&c[8..]);
+            C::new(f64::from_le_bytes(re), f64::from_le_bytes(im))
+        }));
+        Ok(out)
     }
 }
 

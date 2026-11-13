@@ -118,19 +118,20 @@ impl<'a> Space<'a> {
 
     /// The matrices' pattern: the element couplings and the `extra` groups of unknowns (the
     /// lumped ports' dense blocks).
-    pub(super) fn pattern(&self, extra: impl Iterator<Item = Vec<usize>>) -> Csr {
+    pub(super) fn pattern(&self, extra: impl Iterator<Item = Vec<usize>>) -> Result<Csr> {
         let mut groups: Vec<Vec<usize>> = (0..self.mesh.tets.len()).map(|t| self.dofs.of_tet(self.topo, t).filter_map(Slot::get).collect()).collect();
         groups.extend(extra);
-        Csr::from_groups(self.dofs.unknowns, groups.iter().map(std::vec::Vec::as_slice))
+        Ok(Csr::from_groups(self.dofs.unknowns, groups.iter().map(std::vec::Vec::as_slice))?)
     }
 
     /// K, M and each dispersive material's M_d over the tetrahedra `keep` admits (those of the
     /// layer are assembled with each frequency).
     pub(super) fn volume_matrices(&self, pattern: &Csr, media: &Media, keep: impl Fn(usize) -> bool) -> Result<VolumeMatrices> {
-        let mut kk = pattern.zeroed();
-        let mut mm = kk.clone();
-        let mut md: Vec<Csr> = media.dispersive_materials().iter().map(|_| kk.clone()).collect();
-        let mut kf: Vec<[Csr; 3]> = media.ferrites().iter().map(|_| [kk.clone(), kk.clone(), kk.clone()]).collect();
+        let mut kk = pattern.zeroed()?;
+        let mut mm = pattern.zeroed()?;
+        let mut md: Vec<Csr> = media.dispersive_materials().iter().map(|_| pattern.zeroed()).collect::<std::result::Result<_, _>>()?;
+        let three = || -> std::result::Result<[Csr; 3], crate::memory::OutOfMemory> { Ok([pattern.zeroed()?, pattern.zeroed()?, pattern.zeroed()?]) };
+        let mut kf: Vec<[Csr; 3]> = media.ferrites().iter().map(|_| three()).collect::<std::result::Result<_, _>>()?;
         let mut cache = ElementCache::default();
         for t in (0..self.mesh.tets.len()).filter(|t| keep(*t)) {
             let (s, m) = cache.matrices(self, t)?;
@@ -183,7 +184,7 @@ impl<'a> Space<'a> {
 
     /// The walls' tangential mass matrix ∫ N_i,t · N_j,t dS over the boundary faces `walls`.
     pub(super) fn wall_mass(&self, pattern: &Csr, walls: &[usize]) -> Result<Vec<f64>> {
-        let mut ww = pattern.zeroed();
+        let mut ww = pattern.zeroed()?;
         // A sheet's both faces: its tangential field is one, so twice the term.
         for b in walls.iter().filter_map(|&i| self.mesh.boundary.get(i)).flat_map(|b| self.sides(b)) {
             let face = self.face_rule(&b, rule_points(self.order()))?;

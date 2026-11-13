@@ -13,6 +13,7 @@ pub mod driven;
 pub mod eigen;
 pub mod ldlt;
 pub mod lu;
+pub mod memory;
 mod multifrontal;
 pub mod ordering;
 pub mod portmode;

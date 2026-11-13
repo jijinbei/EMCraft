@@ -449,7 +449,7 @@ impl Driven {
             );
         }
         let nb = points.len();
-        let mut m = crate::sparse::Csr::from_groups(nb, groups.iter().map(std::vec::Vec::as_slice));
+        let mut m = crate::sparse::Csr::from_groups(nb, groups.iter().map(std::vec::Vec::as_slice))?;
         let mut r = vec![C::new(0.0, 0.0); nb];
         for (&(t, lf), group) in faces.iter().zip(&groups) {
             let el = self.element_of(t)?;

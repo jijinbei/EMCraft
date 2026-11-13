@@ -279,11 +279,11 @@ mod tests {
         let d = Driven::open(&m, Order::One).unwrap();
         let k0 = 2.0 * PI * 10e9 / C0;
         let at = |k: f64| {
-            let mut a = d.pattern.zeroed();
+            let mut a = d.pattern.zeroed().unwrap();
             d.add_pml(&mut a, k).unwrap();
             a.val
         };
-        let mut dp = d.pattern.zeroed();
+        let mut dp = d.pattern.zeroed().unwrap();
         assert!(d.add_pml_derivative(&mut dp, k0).unwrap());
         // Central differences in k₀²: second order, h = 1e-4 k₀².
         let h = 1e-4 * k0 * k0;
@@ -304,7 +304,7 @@ mod tests {
         m.mesh = Some(emcraft_mesh::solid::solid(&m, metres(0.006)).unwrap().into());
         let d = Driven::open(&m, Order::One).unwrap();
         let Some(Layer { kind: LayerKind::Sphere { tets, .. }, .. }) = &d.pml else { panic!("no spherical layer") };
-        let mut a = d.pattern.zeroed();
+        let mut a = d.pattern.zeroed().unwrap();
         d.add_spherical_pml(&mut a, 2.0 * PI * f / C0, Shell { inner: 0.008, thickness: 0.004, sigma0: 100.0 }, tets).unwrap();
         a
     }
@@ -335,9 +335,9 @@ mod tests {
         assert!(!tets.is_empty() && tets.len() < d.mesh.tets.len());
         let all: Vec<usize> = (0..d.mesh.tets.len()).collect();
         let k0 = 2.0 * PI * 10e9 / C0;
-        let mut p = d.pattern.zeroed();
+        let mut p = d.pattern.zeroed().unwrap();
         d.add_spherical_pml(&mut p, k0, Shell { inner: 1.0, thickness: 0.004, sigma0: 100.0 }, &all).unwrap();
-        let mut q = d.pattern.zeroed();
+        let mut q = d.pattern.zeroed().unwrap();
         for t in all {
             let el = d.element_of(t).unwrap();
             let (s, mm) = (el.stiffness(1.0), el.mass(1.0));

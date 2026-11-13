@@ -139,6 +139,8 @@ pub enum SolveError {
     Model(#[from] emcraft_model::ModelError),
     #[error("{0}")]
     Factor(#[from] FactorError),
+    #[error(transparent)]
+    Memory(#[from] crate::memory::OutOfMemory),
     #[error(
         "{unknowns} unknowns exceed the limit of {limit}: use a larger element size, order 1, or for order 2 the iterative solver (`solver`: iterative)"
     )]
@@ -427,7 +429,7 @@ impl Driven {
         let elements = model.elements.iter().map(|e| lumped::prepare_element(e, &space)).collect::<Result<Vec<_>>>()?;
         // (The ports' rank-one terms border the matrix instead of filling it: see `system`.)
         let gaps = lumped.iter().map(|l| &l.c).chain(elements.iter().map(|e| &e.c));
-        let pattern = space.pattern(gaps.map(|c| c.iter().map(|(u, _)| *u).collect()));
+        let pattern = space.pattern(gaps.map(|c| c.iter().map(|(u, _)| *u).collect()))?;
         let in_pml = pml.as_ref().map_or_default(Layer::tets);
         let volume = space.volume_matrices(&pattern, &media, |t| !in_pml.contains(&t))?;
         let tie = match (&model.domain.periodic, &model.domain.rotation) {
@@ -527,7 +529,7 @@ impl Driven {
         // With a layer, ∂A/∂k₀² = −(M − ∂P/∂k₀²): the moments follow its stretch too.
         let layer = match &self.pml {
             Some(_) if moments > 0 => {
-                let mut d = self.pattern.zeroed();
+                let mut d = self.pattern.zeroed()?;
                 self.add_pml_derivative(&mut d, k2.sqrt())?.then_some(d)
             }
             _ => None,

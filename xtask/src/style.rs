@@ -38,6 +38,25 @@ const ORGANISATIONS: &[&str] = &["EIA", "IEC", "IBIS", "DLMF"];
 /// failing under a window's 3D view, a picture of the iced window that could not be written.
 const PRINTING_FILES: &[&str] = &["crates/gpu3d/src/headless.rs", "crates/ui-iced/src/app.rs", "crates/ui-iced/src/view3d/shader.rs"];
 
+/// The solver's factorization and assembly, where a buffer grows with the problem: a product-sized
+/// `vec!` there aborts when the memory runs out, so each is made by `emcraft_solver::memory`.
+const FALLIBLE: &[&str] = &[
+    "crates/solver/src/multifrontal/",
+    "crates/solver/src/ldlt/",
+    "crates/solver/src/lu.rs",
+    "crates/solver/src/sparse.rs",
+    "crates/solver/src/driven/assembly.rs",
+];
+
+/// Whether `code` makes a vector whose length is a product (`vec![x; a * b]`).
+fn product_vec(code: &str) -> bool {
+    code.match_indices("vec![").any(|(at, _)| {
+        let rest = &code[at + 5..];
+        let inside = rest.split(']').next().unwrap_or("");
+        inside.rsplit_once(';').is_some_and(|(_, n)| n.contains('*'))
+    })
+}
+
 /// The widest comment line (rustfmt's `max_width`).
 const MAX_COMMENT_WIDTH: usize = 150;
 
@@ -234,6 +253,9 @@ pub fn scan(path: &str, text: &str, surnames: &[String]) -> Vec<Breach> {
                 out.push(breach(i + 1, "width", format!("{} columns (at most {MAX_COMMENT_WIDTH})", width(line))));
             }
         }
+        if !in_tests && FALLIBLE.iter().any(|p| path.starts_with(p)) && product_vec(&code) {
+            out.push(breach(i + 1, "fallible", "a product-sized `vec!` aborts when memory runs out: use emcraft_solver::memory".into()));
+        }
         if code.contains("dbg!(") {
             out.push(breach(i + 1, "debugging", "`dbg!` left in".into()));
         }
@@ -355,5 +377,16 @@ mod tests {
         assert!(scan("crates/solver/src/a.rs", &doc, &names()).is_empty());
         // Prose ending in a semicolon is not code.
         assert!(scan("crates/solver/src/a.rs", "// The walls (PEC); the ports.\n", &names()).is_empty());
+    }
+
+    /// A product-sized `vec!` in the factorization is refused; one of a plain length, one in a
+    /// test, and one elsewhere in the solver are not.
+    #[test]
+    fn a_product_sized_buffer_in_the_factorization_is_refused() {
+        let rules = |path: &str, text: &str| scan(path, text, &names()).into_iter().map(|b| b.rule).collect::<Vec<_>>();
+        assert_eq!(rules("crates/solver/src/ldlt/a.rs", "fn f() { let f = vec![0.0; m * m]; }\n"), ["fallible"]);
+        assert!(rules("crates/solver/src/ldlt/a.rs", "fn f() { let f = vec![0.0; m]; }\n").is_empty());
+        assert!(rules("crates/solver/src/ldlt/a.rs", "#[cfg(test)]\nmod tests { fn f() { let f = vec![0.0; m * m]; } }\n").is_empty());
+        assert!(rules("crates/solver/src/eigen.rs", "fn f() { let f = vec![0.0; q * q]; }\n").is_empty());
     }
 }

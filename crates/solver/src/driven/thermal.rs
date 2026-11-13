@@ -82,7 +82,7 @@ impl Driven {
             }
         }
         let groups: Vec<Vec<usize>> = mesh.tets.iter().map(|t| t.iter().filter_map(|v| place.get(v).copied()).collect()).collect();
-        let mut a = crate::sparse::Csr::from_groups(n, groups.iter().map(Vec::as_slice));
+        let mut a = crate::sparse::Csr::from_groups(n, groups.iter().map(Vec::as_slice))?;
         let mut f = vec![C::new(0.0, 0.0); n];
         let rule = rule_points(self.order);
         let in_pml = self.pml_tets();

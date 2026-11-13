@@ -30,6 +30,9 @@ People trust EMCraft with their models; a crash loses their work. **This outrank
 - **Input-derived numbers are hostile** (command parameters, scripts, files): finite checks, caps
   on sizes (mesh tetrahedra, unknowns, frontal matrices, frequencies, picture sides).
 - **Bound every iterative algorithm** (iterative refinement, searches) with explicit caps.
+- **Large buffers are fallible:** a failed allocation aborts (no `catch_unwind` stops it), so a
+  buffer that grows with the problem is made by `emcraft_solver::memory` (`try_reserve_exact`,
+  weighed against the available memory) and refused as an error (docs/adr/0011).
 - **Last-resort guard:** `Session::execute` runs every command under `catch_unwind`; an error or
   an escaped panic restores the session and reports `EngineError`.
 - **Prove it:** every crash fix lands with a regression test (see

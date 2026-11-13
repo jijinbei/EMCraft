@@ -7,7 +7,7 @@
 //!
 //! // Two elements sharing unknown 1: the pattern couples 0–1 and 1–2, not 0–2.
 //! let elements: [&[usize]; 2] = [&[0, 1], &[1, 2]];
-//! let mut a = Csr::from_groups(3, elements.iter().copied());
+//! let mut a = Csr::from_groups(3, elements.iter().copied())?;
 //! for e in elements {
 //!     for &i in e {
 //!         for &j in e {
@@ -30,11 +30,14 @@
 //! let b = b.finish();
 //! assert_eq!(b.entries(0).count(), 2);
 //! assert_eq!(b.get(1, 0), C::new(0.0, 1.0));
+//! # Ok::<(), emcraft_solver::memory::OutOfMemory>(())
 //! ```
 
 use std::ops::Range;
 
 use num_complex::Complex64 as C;
+
+use crate::memory::OutOfMemory;
 
 #[derive(Clone, Debug, Default)]
 pub struct Csr {
@@ -45,8 +48,9 @@ pub struct Csr {
 }
 
 impl Csr {
-    /// The pattern of every pair of unknowns that appear together in one of `groups`.
-    pub fn from_groups<'a>(n: usize, groups: impl Iterator<Item = &'a [usize]> + Clone) -> Csr {
+    /// The pattern of every pair of unknowns that appear together in one of `groups`; refused
+    /// when its entries do not fit in memory.
+    pub fn from_groups<'a>(n: usize, groups: impl Iterator<Item = &'a [usize]> + Clone) -> Result<Csr, OutOfMemory> {
         let mut rows: Vec<Vec<usize>> = vec![Vec::new(); n];
         for g in groups {
             for &i in g {
@@ -55,18 +59,21 @@ impl Csr {
                 }
             }
         }
-        let mut ptr = Vec::with_capacity(n + 1);
-        ptr.push(0);
-        let mut col = Vec::new();
-        for (i, mut r) in rows.into_iter().enumerate() {
+        for (i, r) in rows.iter_mut().enumerate() {
             r.push(i);
             r.sort_unstable();
             r.dedup();
+        }
+        let entries = rows.iter().map(Vec::len).sum();
+        let mut ptr = crate::memory::with_capacity(n + 1, "a matrix's rows")?;
+        ptr.push(0);
+        let mut col = crate::memory::with_capacity(entries, "a matrix's pattern")?;
+        for r in rows {
             col.extend(r);
             ptr.push(col.len());
         }
-        let val = vec![C::new(0.0, 0.0); col.len()];
-        Csr { n, ptr, col, val }
+        let val = crate::memory::zeros(col.len(), "a matrix's entries")?;
+        Ok(Csr { n, ptr, col, val })
     }
 
     /// A matrix of `n` rows built row by row.
@@ -118,9 +125,11 @@ impl Csr {
         out.finish()
     }
 
-    /// The same pattern with every value zero.
-    pub fn zeroed(&self) -> Csr {
-        Csr { n: self.n, ptr: self.ptr.clone(), col: self.col.clone(), val: vec![C::new(0.0, 0.0); self.col.len()] }
+    /// The same pattern with every value zero; refused when it does not fit in memory.
+    pub fn zeroed(&self) -> Result<Csr, OutOfMemory> {
+        let ptr = crate::memory::copied(&self.ptr, "a matrix's rows")?;
+        let col = crate::memory::copied(&self.col, "a matrix's pattern")?;
+        Ok(Csr { n: self.n, ptr, col, val: crate::memory::zeros(self.col.len(), "a matrix's entries")? })
     }
 
     fn position(&self, i: usize, j: usize) -> Option<usize> {

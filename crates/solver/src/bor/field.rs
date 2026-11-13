@@ -32,7 +32,7 @@ pub fn field(p: &Profile, m: u32, ports: &[BorPort], frequency: f64, excitation:
         (b.0.min(q[0]), b.1.max(q[0]), b.2.min(q[1]), b.3.max(q[1]))
     });
     let at = |i: usize, j: usize| [r0 + (r1 - r0) * i as f64 / (nx - 1) as f64, z0 + (z1 - z0) * j as f64 / (ny - 1) as f64];
-    let mut e: Vec<Option<[C; 3]>> = vec![None; nx * ny];
+    let mut e: Vec<Option<[C; 3]>> = crate::memory::filled(nx * ny, None, "a field picture's samples")?;
     for t in &p.triangles {
         let q = t.map(|v| p.points.get(v as usize).copied().unwrap_or_default());
         let det = (q[1][0] - q[0][0]) * (q[2][1] - q[0][1]) - (q[2][0] - q[0][0]) * (q[1][1] - q[0][1]);

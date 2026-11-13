@@ -31,7 +31,7 @@ impl Ldlt {
             return Err(FactorError::Dimension(format!("right-hand sides for {} unknowns", self.n)));
         }
         // y[position · r + j].
-        let mut y = vec![C::new(0.0, 0.0); self.n * r];
+        let mut y = crate::memory::zeros(self.n * r, "the right-hand sides")?;
         for (pos, &u) in self.perm.iter().enumerate() {
             for (j, b) in bs.iter().enumerate() {
                 y[pos * r + j] = b[u] * self.scale[u];

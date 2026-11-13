@@ -62,6 +62,8 @@ pub enum FactorError {
     FactorTooLarge { needs: u64, budget: u64 },
     #[error("the factorization's threads: {0}")]
     Threads(String),
+    #[error(transparent)]
+    Memory(#[from] crate::memory::OutOfMemory),
 }
 
 /// A supernode's dense frontal matrix, column-major m × m.
@@ -231,7 +233,7 @@ fn node<K: FrontKernel>(kernel: &K, an: &Analysis, s: usize, rows: Vec<usize>, u
     if m > MAX_FRONT {
         return Err(FactorError::FrontTooLarge { rows: m, limit: MAX_FRONT });
     }
-    let mut front = Front { rows, k: columns.len(), f: vec![C::new(0.0, 0.0); m * m] };
+    let mut front = Front { rows, k: columns.len(), f: crate::memory::zeros(m * m, "a frontal matrix")? };
     kernel.assemble(columns, &mut front)?;
     for u in updates {
         let place = u.rows.iter().map(|&p| front.place(p)).collect::<Option<Vec<usize>>>();
@@ -437,7 +439,7 @@ pub(crate) mod testing {
                 }
             }
         }
-        let a = Csr::from_groups(n, edges.iter().map(<[usize; 2]>::as_slice));
+        let a = Csr::from_groups(n, edges.iter().map(<[usize; 2]>::as_slice)).unwrap();
         (a, edges, xyz)
     }
 }

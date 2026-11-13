@@ -104,7 +104,7 @@ fn scalings(a: &Csr) -> (Vec<f64>, Vec<f64>) {
 /// interchanging rows among the first k (`eqs` follows them). On return the first k columns
 /// hold L and U₁₁, rows 0..k of the rest U₁₂, and the trailing block the Schur complement.
 /// Returns how many pivots were below `tau` and raised to it.
-fn factor_front(f: &mut [C], m: usize, k: usize, eqs: &mut [usize], tau: f64) -> usize {
+fn factor_front(f: &mut [C], m: usize, k: usize, eqs: &mut [usize], tau: f64) -> Result<usize, crate::memory::OutOfMemory> {
     let mut perturbed = 0;
     let mut b0 = 0;
     while b0 < k {
@@ -114,10 +114,10 @@ fn factor_front(f: &mut [C], m: usize, k: usize, eqs: &mut [usize], tau: f64) ->
             break;
         }
         solve_u_rows(f, m, b0..b1);
-        update_trailing(f, m, b0..b1);
+        update_trailing(f, m, b0..b1)?;
         b0 = b1;
     }
-    perturbed
+    Ok(perturbed)
 }
 
 /// The panel: columns `block`, every row from its first, by rank-one updates, each column's
@@ -185,13 +185,13 @@ fn solve_u_rows(f: &mut [C], m: usize, block: Range<usize>) {
 }
 
 /// The trailing matrix: F[b1.., b1..] −= L[b1.., block] U[block, b1..], by one product.
-fn update_trailing(f: &mut [C], m: usize, block: Range<usize>) {
+fn update_trailing(f: &mut [C], m: usize, block: Range<usize>) -> Result<(), crate::memory::OutOfMemory> {
     let (b0, b1) = (block.start, block.end);
     let nb = b1 - b0;
     let below = m - b1;
-    let mut ublock = vec![C::new(0.0, 0.0); nb * below];
+    let mut ublock = crate::memory::with_capacity(nb * below, "a block's rows")?;
     for c in 0..below {
-        ublock[c * nb..(c + 1) * nb].copy_from_slice(&f[(b1 + c) * m + b0..(b1 + c) * m + b1]);
+        ublock.extend_from_slice(&f[(b1 + c) * m + b0..(b1 + c) * m + b1]);
     }
     let (left, right) = f.split_at_mut(b1 * m);
     let lm = MatRef::from_column_major_slice(&left[b0 * m..], m, nb).subrows(b1, below);
@@ -199,6 +199,7 @@ fn update_trailing(f: &mut [C], m: usize, block: Range<usize>) {
     let fm = MatMut::from_column_major_slice_mut(right, m, below);
     let par = products(below * below * nb, PARALLEL_WORK);
     matmul(fm.submatrix_mut(b1, 0, below, below), Accum::Add, lm, um, C::new(-1.0, 0.0), par);
+    Ok(())
 }
 
 /// R A C's entries by position (`inv[unknown] = position`): column j holds (row position,
@@ -269,24 +270,27 @@ impl FrontKernel for Kernel {
         let Front { rows, k, mut f } = front;
         let m = rows.len();
         let mut eqs: Vec<usize> = rows[..k].to_vec();
-        let perturbed = factor_front(&mut f, m, k, &mut eqs, self.tau);
+        let perturbed = factor_front(&mut f, m, k, &mut eqs, self.tau)?;
         let mu = m - k;
-        let update = (mu > 0).then(|| {
-            let mut u = Vec::with_capacity(mu * mu);
-            for j in 0..mu {
-                u.extend_from_slice(&f[(k + j) * m + k..(k + j + 1) * m]);
+        let update = match mu {
+            0 => None,
+            _ => {
+                let mut u = crate::memory::with_capacity(mu * mu, "an update matrix")?;
+                for j in 0..mu {
+                    u.extend_from_slice(&f[(k + j) * m + k..(k + j + 1) * m]);
+                }
+                Some(Update { rows: rows[k..].to_vec(), values: u })
             }
-            Update { rows: rows[k..].to_vec(), values: u }
-        });
-        let mut upart = Vec::with_capacity(k * mu);
+        };
+        let mut upart = crate::memory::with_capacity(k * mu, "the factor's rows")?;
         for j in 0..mu {
             upart.extend_from_slice(&f[(k + j) * m..(k + j) * m + k]);
         }
-        // The factor keeps k columns: the front's m × m freed (truncating keeps its allocation).
-        f.truncate(k * m);
-        f.shrink_to_fit();
+        // The factor keeps k columns in an allocation of their own: the front's m × m freed.
+        let l = crate::memory::copied(&f[..k * m], "the factor's columns")?;
+        drop(f);
         let counts = Counts { perturbed, two_by_two: 0, entries: k * m + k * mu, largest_front: 0 };
-        Ok(Eliminated { node: Node { rows, eqs, k, l: f, u: upart }, update, counts })
+        Ok(Eliminated { node: Node { rows, eqs, k, l, u: upart }, update, counts })
     }
 }
 
@@ -425,7 +429,7 @@ mod tests {
         // A zero diagonal with the large entries off it: [[0, 5], [3, 0]] blocks in one front.
         let n = 6;
         let groups = [(0..n).collect::<Vec<_>>()];
-        let mut a = Csr::from_groups(n, groups.iter().map(std::vec::Vec::as_slice));
+        let mut a = Csr::from_groups(n, groups.iter().map(std::vec::Vec::as_slice)).unwrap();
         let mut rng = Rng(11);
         for i in 0..n {
             for j in 0..n {

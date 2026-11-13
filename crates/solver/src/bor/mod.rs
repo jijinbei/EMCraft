@@ -226,8 +226,8 @@ fn assemble_with(
         locals.push(l);
     }
     groups.extend(extra.iter().cloned());
-    let pattern = Csr::from_groups(d.count, groups.iter().map(Vec::as_slice));
-    let (mut k, mut mm) = (pattern.zeroed(), pattern.zeroed());
+    let pattern = Csr::from_groups(d.count, groups.iter().map(Vec::as_slice))?;
+    let (mut k, mut mm) = (pattern.zeroed()?, pattern.zeroed()?);
     for (ti, t) in p.triangles.iter().enumerate() {
         let corner = |k: usize| p.points.get(t[k] as usize).copied().ok_or_else(|| invalid("profile", "a triangle's corner is not a point"));
         let q = [corner(0)?, corner(1)?, corner(2)?];

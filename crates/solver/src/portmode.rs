@@ -294,7 +294,7 @@ impl CrossSection {
                 vt.into_iter().chain(vz).filter_map(Slot::get).collect()
             })
             .collect();
-        self.pattern = Csr::from_groups(n, groups.iter().map(std::vec::Vec::as_slice));
+        self.pattern = Csr::from_groups(n, groups.iter().map(std::vec::Vec::as_slice))?;
         let mats = self.assemble_with(&|t| C::new(self.eps[t], 0.0), &|t| C::new(1.0 / self.mu[t], 0.0))?;
         let [curl, mass, b, tz] = mats.map(|m| m.into_iter().map(|c| c.re).collect::<Vec<f64>>());
         (self.curl, self.mass, self.b, self.t) = (curl, mass, b, tz);
@@ -304,7 +304,7 @@ impl CrossSection {
     /// ∫ μr⁻¹ curl curl, ∫ εr e·f, the k-free part of B and ∫ εr φ ξ on the pattern, with εr
     /// and μr⁻¹ of each triangle from `eps` and `inv_mu` (complex for lossy materials).
     fn assemble_with(&self, eps: &impl Fn(usize) -> C, inv_mu: &impl Fn(usize) -> C) -> Result<[Vec<C>; 4]> {
-        let mut mats: [Csr; 4] = std::array::from_fn(|_| self.pattern.zeroed());
+        let mut mats: [Csr; 4] = [self.pattern.zeroed()?, self.pattern.zeroed()?, self.pattern.zeroed()?, self.pattern.zeroed()?];
         for t in 0..self.tris.len() {
             let tri = self.triangle(t)?;
             let (vt, vz) = self.unknowns_of(t);
@@ -448,7 +448,7 @@ impl CrossSection {
         let nz = n - nt;
         let groups: Vec<Vec<usize>> =
             (nt..n).map(|i| p.row(i).map(|k| p.col[k]).filter(|&j| j >= nt).map(|j| j - nt).chain([i - nt]).collect()).collect();
-        let mut zz = Csr::from_groups(nz, groups.iter().map(std::vec::Vec::as_slice));
+        let mut zz = Csr::from_groups(nz, groups.iter().map(std::vec::Vec::as_slice))?;
         for i in nt..n {
             for k in p.row(i).filter(|&k| p.col[k] >= nt) {
                 zz.add(i - nt, p.col[k] - nt, value(k));

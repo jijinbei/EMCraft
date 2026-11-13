@@ -8,6 +8,7 @@ use faer::{Accum, MatMut, MatRef};
 use num_complex::Complex64 as C;
 
 use crate::accel::{Accelerator, DeviceError};
+use crate::memory::OutOfMemory;
 use crate::multifrontal::{FactorError, products};
 
 const ALPHA: f64 = 0.640_388_203_202_208; // (1 + √17)/8
@@ -74,16 +75,16 @@ const PANEL_PARALLEL: usize = 1 << 16;
 /// (W = L D), split by columns over threads. Each entry is summed in the same order on any
 /// number of threads, so the result is the same bit for bit. On return the first k columns hold
 /// L (unit diagonal) and the rest the Schur complement (lower); `rows` follows the interchanges.
-pub(super) fn factor_front(f: &mut [C], m: usize, k: usize, rows: &mut [usize], tau: f64) -> (Vec<Pivot>, PivotCounts) {
+pub(super) fn factor_front(f: &mut [C], m: usize, k: usize, rows: &mut [usize], tau: f64) -> Result<(Vec<Pivot>, PivotCounts), OutOfMemory> {
     let mut e = Elimination::new(m, k, rows, tau);
     let mut b0 = 0;
     while b0 < k {
         let be = (b0 + BLOCK).min(k);
         e.factor_block(f, b0..be);
-        update_below(f, m, k, b0..be, &e.pivots);
+        update_below(f, m, k, b0..be, &e.pivots)?;
         b0 = be;
     }
-    (e.pivots, e.counts)
+    Ok((e.pivots, e.counts))
 }
 
 /// [`factor_front`] with the front held by `device`: each block's columns are read back, its
@@ -110,8 +111,9 @@ pub(super) fn factor_front_on(
             front.swap_rows(be..k, &e.swaps).map_err(failed)?;
         }
         if be < m {
-            let w = block_w(f, m, b0..be, &e.pivots);
-            let l: Vec<C> = (b0..be).flat_map(|c| f[c * m + be..(c + 1) * m].iter().copied()).collect();
+            let w = block_w(f, m, b0..be, &e.pivots)?;
+            let mut l = crate::memory::with_capacity((be - b0) * (m - be), "a block's columns")?;
+            l.extend((b0..be).flat_map(|c| f[c * m + be..(c + 1) * m].iter().copied()));
             front.update(be, k, &w, &l).map_err(failed)?;
         }
         b0 = be;
@@ -276,10 +278,10 @@ fn panel_update(dst: MatMut<'_, C>, l: MatRef<'_, C>, c: MatRef<'_, C>) {
 
 /// W = L D of the block `block`: its columns' rows below it times their pivots (column-major,
 /// (m − be) × nb).
-fn block_w(f: &[C], m: usize, block: Range<usize>, pivots: &[Pivot]) -> Vec<C> {
+fn block_w(f: &[C], m: usize, block: Range<usize>, pivots: &[Pivot]) -> Result<Vec<C>, OutOfMemory> {
     let (b0, be) = (block.start, block.end);
     let (nb, below) = (be - b0, m - be);
-    let mut w = vec![C::new(0.0, 0.0); below * nb];
+    let mut w = crate::memory::zeros(below * nb, "a block's product")?;
     let col = |t: usize| &f[(b0 + t) * m + be..(b0 + t + 1) * m];
     let mut t = 0;
     while t < nb {
@@ -302,22 +304,22 @@ fn block_w(f: &[C], m: usize, block: Range<usize>, pivots: &[Pivot]) -> Vec<C> {
             Pivot::Second => t += 1,
         }
     }
-    w
+    Ok(w)
 }
 
 /// The block `block`'s update of every later column, F −= W Lᵀ, by a blocked matrix product
 /// (faer): the later panel columns over every row below the block (they pivot among
 /// themselves), the trailing block's lower part. Its sums run in an order that does not depend
 /// on the threads.
-fn update_below(f: &mut [C], m: usize, k: usize, block: Range<usize>, pivots: &[Pivot]) {
+fn update_below(f: &mut [C], m: usize, k: usize, block: Range<usize>, pivots: &[Pivot]) -> Result<(), OutOfMemory> {
     let (b0, be) = (block.start, block.end);
     let (nb, below) = (be - b0, m - be);
     if below == 0 {
-        return;
+        return Ok(());
     }
     // W = L D, column-major as the products take it best; the block's L below it is its
     // columns' lower part, in place.
-    let w = block_w(f, m, b0..be, pivots);
+    let w = block_w(f, m, b0..be, pivots)?;
     let (left, right) = f.split_at_mut(be * m);
     let lm = MatRef::from_column_major_slice(&left[b0 * m..], m, nb).subrows(be, below);
     let kp = k.saturating_sub(be).min(below);
@@ -355,4 +357,5 @@ fn update_below(f: &mut [C], m: usize, k: usize, block: Range<usize>, pivots: &[
             par,
         );
     }
+    Ok(())
 }

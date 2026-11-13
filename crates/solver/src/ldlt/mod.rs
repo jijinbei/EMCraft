@@ -143,20 +143,23 @@ impl FrontKernel for Kernel {
         let m = rows.len();
         let (pivots, pc) = match crate::accel::current().filter(|a| a.takes(m, k)) {
             Some(device) => factor_front_on(&*device, &mut f, m, k, &mut rows, self.tau)?,
-            None => factor_front(&mut f, m, k, &mut rows, self.tau),
+            None => factor_front(&mut f, m, k, &mut rows, self.tau)?,
         };
         // The update matrix U = F₂₂ − L₂₁ D L₂₁ᵀ (lower) for the parent: the trailing block.
         let mu = m - k;
-        let update = (mu > 0).then(|| {
-            let mut u = Vec::with_capacity(mu * (mu + 1) / 2);
-            for j in 0..mu {
-                u.extend_from_slice(&f[(k + j) * m + k + j..(k + j + 1) * m]);
+        let update = match mu {
+            0 => None,
+            _ => {
+                let mut u = crate::memory::with_capacity(mu * (mu + 1) / 2, "an update matrix")?;
+                for j in 0..mu {
+                    u.extend_from_slice(&f[(k + j) * m + k + j..(k + j + 1) * m]);
+                }
+                Some(Update { rows: rows[k..].to_vec(), values: u })
             }
-            Update { rows: rows[k..].to_vec(), values: u }
-        });
+        };
         // Keep the k factored columns only, in an allocation of their own (the front's m × m is
         // freed).
-        let l = f[..k * m].to_vec();
+        let l = crate::memory::copied(&f[..k * m], "the factor's columns")?;
         drop(f);
         let l = self.store.keep(l)?;
         let counts = Counts { perturbed: pc.perturbed, two_by_two: pc.two_by_two, entries: fill(k, m), largest_front: 0 };
@@ -351,7 +354,7 @@ mod tests {
         // coupled densely, all in one front.
         let n = 6;
         let groups = [(0..n).collect::<Vec<_>>()];
-        let mut a = Csr::from_groups(n, groups.iter().map(std::vec::Vec::as_slice));
+        let mut a = Csr::from_groups(n, groups.iter().map(std::vec::Vec::as_slice)).unwrap();
         let mut rng = Rng(7);
         for i in 0..n {
             for j in i + 1..n {
@@ -458,7 +461,7 @@ mod tests {
         // entry, √ε‖A‖ would replace every pivot of the small one; equilibrated, none.
         let n = 40;
         let groups: Vec<Vec<usize>> = (0..n - 1).map(|i| vec![i, i + 1]).collect();
-        let mut a = Csr::from_groups(n, groups.iter().map(std::vec::Vec::as_slice));
+        let mut a = Csr::from_groups(n, groups.iter().map(std::vec::Vec::as_slice)).unwrap();
         for i in 0..n {
             let s = if i < n / 2 { 1e12 } else { 1.0 };
             a.add(i, i, C::new(4.0 * s, 0.3));
@@ -481,7 +484,7 @@ mod tests {
     #[test]
     fn hostile_matrices_are_refused() {
         let groups = [vec![0, 1]];
-        let mut a = Csr::from_groups(2, groups.iter().map(std::vec::Vec::as_slice));
+        let mut a = Csr::from_groups(2, groups.iter().map(std::vec::Vec::as_slice)).unwrap();
         let xyz = [Point3::ORIGIN, Point3::new(1.0, 0.0, 0.0)];
         assert_eq!(Ldlt::factor(&a, &xyz).unwrap_err(), FactorError::Zero);
         a.add(0, 0, C::new(f64::NAN, 0.0));
@@ -516,7 +519,7 @@ mod tests {
         // A dense complex symmetric matrix, one front: the factorization's arithmetic rate.
         for n in [800usize, 1600] {
             let all: Vec<usize> = (0..n).collect();
-            let mut a = Csr::from_groups(n, std::iter::once(all.as_slice()));
+            let mut a = Csr::from_groups(n, std::iter::once(all.as_slice())).unwrap();
             let mut rng = Rng(0x1234_5678);
             for i in 0..n {
                 for j in 0..=i {
