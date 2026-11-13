@@ -19,6 +19,10 @@ pub struct Colours {
     pub wire: Rgb,
     pub route: Rgb,
     pub reference: Rgb,
+    /// Electrons that gained energy, and lost it (the field's own red and blue told apart from
+    /// them: the trajectories cross its plane).
+    pub gained: Rgb,
+    pub lost: Rgb,
 }
 
 impl Colours {
@@ -33,6 +37,8 @@ impl Colours {
             wire: if stands_out { edge } else { t.text.rgb() },
             route: t.warning.rgb(),
             reference: t.success.rgb(),
+            gained: t.warning.rgb(),
+            lost: t.success.rgb(),
         }
     }
 }

@@ -48,10 +48,7 @@ fn resonances(modes: &[Mode], fu: emcraft_model::units::Frequency) -> Option<Cha
 /// tracked on the modes solved now (the 3D view's trajectories go by the same rule).
 pub(crate) fn gains(app: &App) -> Option<Chart> {
     use serde_json::Value;
-    if emcraft_ui_core::scene3d::trajectories(&app.session).scene.lines.is_empty() {
-        return None;
-    }
-    let reply = app.session.views().tracked.as_deref()?;
+    let reply = emcraft_ui_core::scene3d::tracking(&app.session)?;
     let particles = reply.get("particles").and_then(Value::as_array)?;
     let tracked: Vec<[f64; 2]> = particles
         .iter()

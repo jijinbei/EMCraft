@@ -95,6 +95,33 @@ pub fn format(v: f64) -> String {
     if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_owned() } else { s }
 }
 
+/// Tick values' labels: [`format`]'s, unless two of them read the same (ticks a ten-thousandth
+/// apart on 11.47, one mode's chart) — then each with the decimals the ticks' spacing needs.
+///
+/// ```
+/// use emcraft_render::axes::tick_labels;
+/// assert_eq!(tick_labels(&[0.0, 0.5, 1.0]), ["0", "0.5", "1"]);
+/// assert_eq!(tick_labels(&[11.4735, 11.474, 11.4745]), ["11.4735", "11.474", "11.4745"]);
+/// ```
+pub fn tick_labels(ticks: &[f64]) -> Vec<String> {
+    let plain: Vec<String> = ticks.iter().map(|t| format(*t)).collect();
+    if plain.windows(2).all(|w| w[0] != w[1]) {
+        return plain;
+    }
+    let step = ticks.windows(2).map(|w| (w[1] - w[0]).abs()).filter(|d| *d > 0.0).fold(f64::INFINITY, f64::min);
+    if !step.is_finite() {
+        return plain;
+    }
+    let decimals = (-step.log10()).ceil().clamp(0.0, 12.0) as usize;
+    ticks
+        .iter()
+        .map(|t| {
+            let s = format!("{t:.decimals$}");
+            if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_owned() } else { s }
+        })
+        .collect()
+}
+
 /// Where a chart or a field plot drawn at some size puts its plot area: the picture's size, the
 /// area's rectangle in it (pixels) and the axes' ranges (`chart::layout`, `plot::layout_of`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -163,15 +190,19 @@ pub fn frame_shapes(area: [f64; 4], x: &Axis, y: &Axis, ink: Rgb, grid: Option<R
     let scale = 2;
     let line = |a: [f64; 2], b: [f64; 2], width: f64, color: Rgb| Shape::Line { a, b, width, color };
     let text = |at: [f64; 2], s: String, align: Align, up: bool| Shape::Text { at, text: s, scale, color: ink, align, up };
-    let along_x = marks(x, 6).into_iter().flat_map(|t| {
+    let labelled = |ts: Vec<f64>| {
+        let labels = tick_labels(&ts);
+        ts.into_iter().zip(labels).collect::<Vec<_>>()
+    };
+    let along_x = labelled(marks(x, 6)).into_iter().flat_map(|(t, label)| {
         let p = px(t);
         let ruled = grid.map(|g| line([p, y0], [p, y0 + h], 1.0, g));
-        ruled.into_iter().chain([line([p, y0 + h], [p, y0 + h + 5.0], 1.0, ink), text([p, y0 + h + 9.0], format(t), Align::Center, false)])
+        ruled.into_iter().chain([line([p, y0 + h], [p, y0 + h + 5.0], 1.0, ink), text([p, y0 + h + 9.0], label, Align::Center, false)])
     });
-    let along_y = marks(y, 5).into_iter().flat_map(|t| {
+    let along_y = labelled(marks(y, 5)).into_iter().flat_map(|(t, label)| {
         let p = py(t);
         let ruled = grid.map(|g| line([x0, p], [x0 + w, p], 1.0, g));
-        ruled.into_iter().chain([line([x0 - 5.0, p], [x0, p], 1.0, ink), text([x0 - 9.0, p - 7.0], format(t), Align::Right, false)])
+        ruled.into_iter().chain([line([x0 - 5.0, p], [x0, p], 1.0, ink), text([x0 - 9.0, p - 7.0], label, Align::Right, false)])
     });
     let sides = [([x0, y0], [x0 + w, y0]), ([x0 + w, y0], [x0 + w, y0 + h]), ([x0 + w, y0 + h], [x0, y0 + h]), ([x0, y0 + h], [x0, y0])]
         .map(|(a, b)| line(a, b, 1.2, ink));

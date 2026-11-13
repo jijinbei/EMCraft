@@ -110,6 +110,13 @@ impl App {
         if let Some(results) = results.filter(|r| PAGES.contains(r)) {
             self.page = results;
         }
+        // The electrons inside the cavity are seen through its walls with the mode they crossed
+        // shown: its field, as the eigenmodes page's Field shows it.
+        if id == "results.track"
+            && let Some(mode) = reply.get("mode").and_then(Value::as_u64).and_then(|m| usize::try_from(m).ok()).and_then(|m| m.checked_sub(1))
+        {
+            self.update(crate::app::Message::Mode(mode));
+        }
     }
 
     /// A frame at `now`: the field's phase moved on while it plays, the running job looked at.

@@ -156,7 +156,7 @@ impl App {
     pub(crate) fn own_track(&mut self) {
         let s = &self.session;
         let waiting = s.results().eigen.is_some()
-            && emcraft_ui_core::scene3d::trajectories(s).scene.lines.is_empty()
+            && emcraft_ui_core::scene3d::tracking(s).is_none()
             && self.job.is_none()
             && self.tracked_for != Some(self.generation);
         if let Some(own) = s.views().track.clone().filter(|_| waiting) {
