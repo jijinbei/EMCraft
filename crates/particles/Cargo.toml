@@ -1,0 +1,17 @@
+[package]
+name = "emcraft-particles"
+description = "EMCraft's charged particles: the relativistic Boris and Vay pushes and particles tracked through fields given as a trait (a solved eigenmode, a sweep's field, a static field; later the PIC grid's), with their trajectories and how each run ended (docs/adr/0012-particles.md)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+emcraft-model = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }

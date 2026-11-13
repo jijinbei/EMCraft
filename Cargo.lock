@@ -2173,6 +2173,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "emcraft-particles"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "emcraft-model",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "emcraft-picker"
 version = "0.1.0"
 dependencies = [

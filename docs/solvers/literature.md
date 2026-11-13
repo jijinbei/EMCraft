@@ -732,3 +732,17 @@ overlap tests).
 - G. P. Agrawal, *Nonlinear Fiber Optics*, 5th ed., Academic Press 2013, §3.2 — a chirped
   Gaussian pulse through a dispersive line, compressed when its chirp undoes the group-delay
   slope (`emcraft-engine::pulse`, `results.pulse`; the closed form its test checks).
+
+## Particles
+- J. P. Boris, *Relativistic plasma simulation — optimization of a hybrid code*, Proc. 4th
+  Conf. Numerical Simulation of Plasmas, NRL, 1970; C. K. Birdsall, A. B. Langdon, *Plasma
+  Physics via Computer Simulation*, IOP 1991, §15-4 — the relativistic push: half the electric
+  kick, the rotation about B, the other half (`emcraft-particles::push`).
+- J.-L. Vay, *Simulation of beams or plasmas crossing at relativistic velocity*, Phys. Plasmas
+  15:056701, 2008 — the push that keeps a particle in cancelling fields (E = −v×B) on its line
+  at any γ.
+- L. D. Landau, E. M. Lifshitz, *The Classical Theory of Fields*, 4th ed., §20 (hyperbolic
+  motion) and §48 (a charge in a plane wave); J. D. Jackson, *Classical Electrodynamics*, 3rd
+  ed., §12.2–12.3 (gyration, E×B drift) — the closed forms the pushes are checked against.
+- T. P. Wangler, *RF Linear Accelerators*, 2nd ed., Wiley 2008, §2.2–2.3 — the energy a particle
+  gains crossing a gap, qV₀T cos φ, that tracking through a pillbox's TM010 is checked against.

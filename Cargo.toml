@@ -14,6 +14,7 @@ license = "MIT OR Apache-2.0"
 emcraft-macros = { path = "crates/macros" }
 emcraft-i18n = { path = "crates/i18n" }
 emcraft-model = { path = "crates/model" }
+emcraft-particles = { path = "crates/particles" }
 emcraft-mesh = { path = "crates/mesh" }
 emcraft-tetmesh = { path = "crates/tetmesh" }
 emcraft-fem = { path = "crates/fem" }

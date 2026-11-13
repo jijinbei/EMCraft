@@ -48,6 +48,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("fem", Class::Layer(1)),
     ("theory", Class::Layer(1)),
     ("render", Class::Layer(1)),
+    // L1: charged particles pushed through fields (docs/adr/0012-particles.md).
+    ("particles", Class::Layer(1)),
     ("io", Class::Layer(1)),
     // L1: the templates (sample scripts and the builders they call).
     ("templates", Class::Layer(1)),
