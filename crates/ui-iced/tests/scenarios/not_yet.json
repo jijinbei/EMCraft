@@ -1,0 +1,8 @@
+[
+  {"note": "A result page with nothing to show yet says so on a NOT YET card: why, and what it needs — the steps that block a run, each with the way to it, else the run; pressed, the step's panel opens"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"call": "ui.set", "params": {"page": "sparameters"}},
+  {"shot": "not-yet-sparameters"},
+  {"press": "Run…"},
+  {"expect": {"inspect": {"workflow.step": "run"}}}
+]

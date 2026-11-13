@@ -71,9 +71,10 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             t!("The solvers run on {device} ({precision} precision in the time domain; factorization: {factorization})."),
             args!(device = r.text("device"), precision = crate::lang::lookup(r.text("precision")), factorization = r.text("factorization")),
         ),
-        "results.compare" => {
-            trf(t!("Worst |S − S_ref| = {worst} ({reference})."), args!(worst = format!("{:.3e}", r.num("worst")), reference = r.text("reference")))
-        }
+        "results.compare" => trf(
+            t!("Worst |S − S_ref| = {worst} ({reference})."),
+            args!(worst = crate::number::value(r.num("worst")), reference = r.text("reference")),
+        ),
         "edit.undo" | "edit.redo" => {
             let template =
                 if id == "edit.undo" { t!("Undone ({undo} to undo, {redo} to redo).") } else { t!("Redone ({undo} to undo, {redo} to redo).") };
@@ -158,7 +159,7 @@ fn symmetry_auto(r: Reply<'_>) -> String {
 
 /// solve.eigenmodes: the modes' frequencies.
 fn eigenmodes(r: Reply<'_>, unit: &str) -> String {
-    let list: Vec<String> = r.list("modes").iter().filter_map(|m| m.get("frequency")?.as_f64()).map(|x| format!("{x:.4}")).collect();
+    let list: Vec<String> = r.list("modes").iter().filter_map(|m| m.get("frequency")?.as_f64()).map(crate::number::frequency).collect();
     trf(t!("Found {n} eigenmodes: {list} {unit}."), args!(n = list.len(), list = list.join(", "), unit = unit))
 }
 
@@ -178,9 +179,9 @@ fn radiation(reply: &Value, length_unit: &str) -> String {
     match (sigma, power) {
         (Some(sigma), _) => trf(
             t!("Solved the scattering problem: scattering cross-section {sigma} {unit}²."),
-            args!(sigma = format!("{sigma:.4e}"), unit = length_unit),
+            args!(sigma = crate::number::value(sigma), unit = length_unit),
         ),
-        (None, Some(power)) => trf(t!("Solved the open problem: radiated power {power} W."), args!(power = format!("{power:.4e}"))),
+        (None, Some(power)) => trf(t!("Solved the open problem: radiated power {power} W."), args!(power = crate::number::value(power))),
         (None, None) => tr(t!("Solved the open problem.")).to_owned(),
     }
 }
@@ -188,7 +189,7 @@ fn radiation(reply: &Value, length_unit: &str) -> String {
 /// results.measured: the worst difference from the measurement and its entry.
 fn measured(r: Reply<'_>) -> String {
     let worst =
-        r.0.pointer("/compared/worst/max_difference").and_then(serde_json::Value::as_f64).map_or_else(|| "—".to_owned(), |v| format!("{v:.3e}"));
+        r.0.pointer("/compared/worst/max_difference").and_then(serde_json::Value::as_f64).map_or_else(|| "—".to_owned(), crate::number::value);
     let entry = r.0.pointer("/compared/worst/entry").and_then(serde_json::Value::as_str).unwrap_or("—").to_owned();
     trf(t!("Worst |S − S_measured| = {worst} ({entry})."), args!(worst = worst, entry = entry))
 }
@@ -196,7 +197,7 @@ fn measured(r: Reply<'_>) -> String {
 /// results.check: passivity and reciprocity.
 fn check(r: Reply<'_>) -> String {
     let passive = tr(if r.flag("passive") { t!("passive") } else { t!("not passive") });
-    let (largest, error) = (format!("{:.6}", r.num("largest_singular_value")), format!("{:.3e}", r.num("reciprocity_error")));
+    let (largest, error) = (format!("{:.6}", r.num("largest_singular_value")), crate::number::value(r.num("reciprocity_error")));
     trf(
         t!("Largest singular value of S {largest} ({passive}), reciprocity error {error}."),
         args!(largest = largest, passive = passive, error = error),
@@ -253,10 +254,10 @@ mod tests {
         assert_eq!(text("file.sample", &json!({"name": "highpass"}), &none, &s), "Opened sample highpass; Run (step 6) solves it.");
         // An open problem's: the power radiated, a plane wave's scattering cross-section (it
         // radiates nothing of its own: no NaN), or neither.
-        assert_eq!(text("solve.radiation", &none, &json!({"radiated_power": 0.00245}), &s), "Solved the open problem: radiated power 2.4500e-3 W.");
+        assert_eq!(text("solve.radiation", &none, &json!({"radiated_power": 0.00245}), &s), "Solved the open problem: radiated power 0.00245 W.");
         assert_eq!(
             text("solve.radiation", &none, &json!({"scattering_cross_section": 12.5}), &s),
-            "Solved the scattering problem: scattering cross-section 1.2500e1 mm²."
+            "Solved the scattering problem: scattering cross-section 12.5 mm²."
         );
         assert_eq!(text("solve.radiation", &none, &none, &s), "Solved the open problem.");
     }

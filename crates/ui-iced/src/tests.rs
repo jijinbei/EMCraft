@@ -114,6 +114,34 @@ fn finish(app: &mut App) {
     assert!(app.job.is_none(), "the job ended");
 }
 
+/// Every part's look is one of `look`'s (SolidCraft's ui_kit surfaces): no view builds a
+/// widget's style, an edge or a shadow of its own, so a theme's tokens reach everything and two
+/// parts that are the same kind look the same.
+#[test]
+fn every_look_is_looks() {
+    fn files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let entries = std::fs::read_dir(dir).map(|d| d.flatten().map(|e| e.path()).collect::<Vec<_>>()).unwrap_or_default();
+        entries.into_iter().flat_map(|p| if p.is_dir() { files(&p) } else { vec![p] }).filter(|p| p.extension().is_some_and(|e| e == "rs")).collect()
+    }
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let own = ["::Style {", "Border {", "Shadow {", "Style::default()"];
+    let found: Vec<String> = files(&src)
+        .into_iter()
+        .filter(|p| !p.ends_with("look.rs") && !p.ends_with("tests.rs"))
+        .flat_map(|p| {
+            let text = std::fs::read_to_string(&p).unwrap_or_default();
+            let name = p.strip_prefix(&src).map(|n| n.display().to_string()).unwrap_or_default();
+            text.lines()
+                .enumerate()
+                .filter(|(_, l)| own.iter().any(|o| l.contains(o)))
+                .map(|(k, l)| format!("{name}:{}: {}", k + 1, l.trim()))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert!(found.is_empty(), "a look of its own, not look's:\n{}", found.join("\n"));
+    assert!(!files(&src).is_empty());
+}
+
 /// A long job's end is said on a toast as in the message area, once; its × (or its time) takes
 /// it away; a quick command says nothing there.
 #[test]

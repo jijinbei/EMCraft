@@ -6,6 +6,7 @@ use emcraft_render::Pen;
 use emcraft_render::axes::Axis;
 use emcraft_render::chart::{Chart, Legend, Series, Style};
 use emcraft_ui_core::lang::tr;
+use emcraft_ui_core::number;
 use emcraft_ui_core::view::View;
 use iced::widget::{button, canvas, column, scrollable, table, text};
 use iced::{Element, Fill, Widget};
@@ -46,7 +47,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
     let Some(eigen) = app.session.results().eigen.as_ref() else {
         let missing = View::Eigenmodes.missing(&app.session, &app.replies).map_or("", tr);
-        return crate::parts::empty(t, missing, None);
+        return crate::parts::not_yet(app, View::Eigenmodes, missing);
     };
     let fu = app.session.display().frequency;
     let rows: Vec<Mode> = eigen.modes.iter().enumerate().map(|(i, m)| (i, m.frequency, m.q())).collect();
@@ -56,7 +57,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let head = move |s: String| text(s).size(t.font_body).color(t.form_dim);
     let columns = [
         table::column(head(tr(t!("Mode")).to_owned()), move |(i, _, _): Mode| cell(format!("{}", i + 1)).boxed()),
-        table::column(head(format!("f ({})", fu.symbol())), move |(_, f, _): Mode| cell(format!("{:.4}", fu.from_si(f))).boxed()),
+        table::column(head(format!("f ({})", fu.symbol())), move |(_, f, _): Mode| cell(number::frequency(fu.from_si(f))).boxed()),
         table::column(head("Q".to_owned()), move |(_, _, q): Mode| cell(q.map_or_else(|| "–".to_owned(), |q| format!("{q:.0}"))).boxed()),
         table::column(text(""), move |(i, _, _): Mode| {
             button(text(tr(t!("Field"))).size(t.font_button)).style(look::button(t, false)).on_press(Message::Mode(i)).boxed()

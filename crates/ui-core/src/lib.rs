@@ -58,6 +58,7 @@ pub mod layout;
 pub mod math;
 pub mod messages;
 pub mod navigation;
+pub mod number;
 pub mod outline;
 pub mod page;
 pub mod param_labels;

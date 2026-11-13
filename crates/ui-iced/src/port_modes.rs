@@ -42,7 +42,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         return crate::parts::empty(t, tr(t!("No port modes yet: they need a meshed model with ports.")), Some(solve.boxed()));
     };
     let fu = app.session.display().frequency;
-    let title = trf(t!("Port modes at {f} {unit}"), args!(f = format!("{:.4}", reply.frequency), unit = fu.symbol()));
+    let title = trf(t!("Port modes at {f} {unit}"), args!(f = emcraft_ui_core::number::frequency(reply.frequency), unit = fu.symbol()));
     let ports = reply.ports.iter().map(|p| port(app, p, &reply.length_unit));
     scrollable(Column::with_children(std::iter::once(text(title).size(t.font_heading).boxed()).chain(ports)).spacing(t.space_16).padding(t.space_16))
         .boxed()

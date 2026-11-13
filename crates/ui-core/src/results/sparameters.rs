@@ -180,10 +180,9 @@ pub fn history_tip(session: &Session, r: &emcraft_engine::archive::HistoryRow, s
     let size = made.unknowns.zip(made.tetrahedra).map(|(u, t)| trf(t!("{unknowns} unknowns, {tets} tetrahedra"), args!(unknowns = u, tets = t)));
     let saved = stored.then(|| tr(t!("Saved: restore solves it again")).to_owned());
     let unit = session.display().frequency.symbol();
-    let deepest = r
-        .best_s11_db
-        .zip(r.best_at)
-        .map(|(db, at)| trf(t!("deepest |S11| {db} dB at {f} {unit}"), args!(db = format!("{db:.1}"), f = format!("{at:.4}"), unit = unit)));
+    let deepest = r.best_s11_db.zip(r.best_at).map(|(db, at)| {
+        trf(t!("deepest |S11| {db} dB at {f} {unit}"), args!(db = crate::number::decibels(db), f = crate::number::frequency(at), unit = unit))
+    });
     [label, points, solved, size, saved, deepest].into_iter().flatten().collect::<Vec<_>>().join("\n")
 }
 

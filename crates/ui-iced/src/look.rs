@@ -256,6 +256,26 @@ pub fn toast(t: Tokens, error: bool) -> impl Fn(&iced::Theme) -> container::Styl
     }
 }
 
+/// A pill in `colour`: its tint within its edge (a port's role in the tree).
+pub fn pill(colour: Color) -> impl Fn(&iced::Theme) -> container::Style {
+    move |_| container::Style {
+        background: Some(Background::Color(Color { a: 0.2, ..colour })),
+        border: border(colour, 8),
+        ..container::Style::default()
+    }
+}
+
+/// A swatch: `colour` itself (a legend's entry).
+pub fn swatch(colour: Color) -> impl Fn(&iced::Theme) -> container::Style {
+    move |_| container::Style { background: Some(Background::Color(colour)), ..container::Style::default() }
+}
+
+/// A table's row: every other one (`shaded`) a trace of the ink.
+pub fn stripe(t: Tokens, shaded: bool) -> impl Fn(&iced::Theme) -> container::Style {
+    let shade = if shaded { Color { a: 0.04, ..t.text } } else { Color::TRANSPARENT };
+    move |_| container::Style { background: Some(Background::Color(shade)), ..container::Style::default() }
+}
+
 /// A key cap: a field's fill within the controls' edge.
 pub fn keycap(t: Tokens) -> impl Fn(&iced::Theme) -> container::Style {
     move |_| container::Style {

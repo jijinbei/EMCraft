@@ -8,6 +8,7 @@
 use emcraft_engine::workflow::{Status, Step, StepState};
 use emcraft_engine::{Device, Precision};
 use emcraft_ui_core::lang::{Text, args, lookup, plural, shown, tr, trf};
+use emcraft_ui_core::number;
 use emcraft_ui_core::steps::{Solver, check_text, fix_label};
 use iced::widget::{Column, Space, button, canvas, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Color, Element, Fill, Length, Widget};
@@ -157,7 +158,11 @@ fn boundaries(app: &App) -> Vec<Element<'_, Message>> {
     let m = app.session.model();
     let l = app.session.display().length;
     let (fmt, lu) = (emcraft_ui_core::dialogs::short_number, l.symbol());
-    let walls = kv(t, t!("walls"), m.domain.wall_conductivity.map_or_else(|| tr(t!("perfect conductor")).into(), |s| format!("σ = {s:.3e} S/m")));
+    let walls = kv(
+        t,
+        t!("walls"),
+        m.domain.wall_conductivity.map_or_else(|| tr(t!("perfect conductor")).into(), |s| format!("σ = {} S/m", number::value(s.get()))),
+    );
     let thick = m.domain.wall_thickness.map(|w| kv(t, t!("wall thickness"), format!("{} {lu}", fmt(l.from_si(w.get())))));
     let open = m.domain.open.map_or_else(
         || tr(t!("closed (no PML)")).into(),
@@ -232,7 +237,7 @@ fn mesh(app: &App) -> Vec<Element<'_, Message>> {
         kv(t, t!("nodes"), m.nodes.len().to_string()),
         kv(t, t!("tetrahedra"), m.tets.len().to_string()),
         kv(t, t!("boundary faces"), m.boundary.len().to_string()),
-        kv(t, t!("mean element"), format!("{:.3} {}", l.from_si(h), l.symbol())),
+        kv(t, t!("mean element"), format!("{} {}", number::length(l.from_si(h)), l.symbol())),
     ];
     let estimate = match app.estimate() {
         Some(Ok(e)) => {
@@ -290,8 +295,8 @@ fn excitation(app: &App) -> Vec<Element<'_, Message>> {
                 let numbers = if mode.propagating {
                     format!(
                         "β {}  εeff {}  Z {} Ω",
-                        mode.beta.map_or_else(|| "—".into(), |v| format!("{v:.4}")),
-                        mode.eps_eff.map_or_else(|| "—".into(), |v| format!("{v:.4}")),
+                        mode.beta.map_or_else(|| "—".into(), number::value),
+                        mode.eps_eff.map_or_else(|| "—".into(), number::value),
                         mode.impedance.map_or_else(|| "—".into(), |v| format!("{v:.2}"))
                     )
                 } else {
@@ -498,7 +503,7 @@ fn results<'a>(app: &'a App, states: &[StepState]) -> Vec<Element<'a, Message>> 
                 t!("largest σ(S)"),
                 format!("{:.6} — {}", n("largest_singular_value"), tr(if passive { t!("passive") } else { t!("NOT passive") }))
             ),
-            kv(t, t!("max |S − S^T|"), format!("{:.3e}", n("reciprocity_error")))
+            kv(t, t!("max |S − S^T|"), number::value(n("reciprocity_error")))
         ]
         .spacing(t.space_2)
         .boxed()

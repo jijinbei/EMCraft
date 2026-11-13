@@ -23,8 +23,7 @@ pub struct StudyView {
 
 /// A number in short: five decimals at most, trailing zeros dropped.
 fn short(v: f64) -> String {
-    let s = format!("{v:.5}");
-    s.trim_end_matches('0').trim_end_matches('.').to_owned()
+    crate::number::trimmed(v, 5)
 }
 
 /// The S-parameters a sweep's chart may show (none for an optimization).
@@ -200,7 +199,7 @@ pub fn points(s: &Session, view: &StudyView) -> Option<Table> {
                 .chain(r.values.iter().map(|v| short(*v)))
                 .chain(optimize.then(|| r.objective.map_or_else(|| "–".into(), |o| format!("{o:.4}"))))
                 .chain((!optimize && parameter.is_some()).then(|| [cell(lo), cell(hi)]).into_iter().flatten())
-                .chain(modes.then(|| r.modes.iter().take(6).map(|f| format!("{f:.4}")).collect::<Vec<_>>().join(", ")))
+                .chain(modes.then(|| r.modes.iter().take(6).map(|f| crate::number::frequency(*f)).collect::<Vec<_>>().join(", ")))
                 .chain(std::iter::once(note))
                 .collect()
         })

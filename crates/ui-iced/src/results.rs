@@ -27,10 +27,10 @@ pub fn view(app: &App, page: View) -> Element<'_, Message> {
     let t = app.look.tokens;
     let picture: Element<Message> = match app.charts.page.as_ref().map(|p| &p.shown) {
         Some(Ok(c)) => canvas(Plot { chart: std::borrow::Cow::Borrowed(c), palette: &app.look.theme.palette }).width(Fill).height(CHART_H).boxed(),
-        Some(Err(e)) => {
-            let missing = page.missing(&app.session, &app.replies);
-            crate::parts::empty(t, missing.map_or_else(|| e.clone(), |m| tr(m).to_owned()), None)
-        }
+        Some(Err(e)) => match page.missing(&app.session, &app.replies) {
+            Some(m) => crate::parts::not_yet(app, page, tr(m)),
+            None => crate::parts::empty(t, e.clone(), None),
+        },
         None => text("").boxed(),
     };
     // The analyses: a button each (its dialog), the chart of the last, a line on its numbers.

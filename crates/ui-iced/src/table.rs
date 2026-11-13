@@ -4,10 +4,10 @@
 
 use emcraft_ui_core::results::Table;
 use iced::widget::{Column, container, row, scrollable, text};
-use iced::{Color, Element, Font, Widget, alignment};
+use iced::{Element, Font, Widget, alignment};
 
 use crate::app::Message;
-use crate::look::Tokens;
+use crate::look::{self, Tokens};
 
 /// A character's width as a share of the monospace face's size.
 const CHAR_W: f32 = 0.62;
@@ -44,10 +44,7 @@ pub fn view<'a>(t: Tokens, table: &Table) -> Element<'a, Message> {
     let head = line(&table.headers, true, mark(None));
     let rows = table.rows.iter().take(MOST_ROWS).enumerate().map(|(i, r)| {
         let m = table.marks.as_ref().and_then(|m| m.get(i).copied());
-        let shade = if i % 2 == 1 { Color { a: 0.04, ..t.text } } else { Color::TRANSPARENT };
-        container(line(r, false, mark(m)))
-            .style(move |_: &iced::Theme| container::Style { background: Some(shade.into()), ..container::Style::default() })
-            .boxed()
+        container(line(r, false, mark(m))).style(look::stripe(t, i % 2 == 1)).boxed()
     });
     let caption = table.caption.as_ref().map(|c| text(c.clone()).size(size).color(t.text_dim).boxed());
     let body = Column::with_children(caption.into_iter().chain(std::iter::once(head)).chain(rows)).spacing(t.space_2);

@@ -193,7 +193,7 @@ pub fn dispersion(s: &Session) -> Option<Table> {
     let d = s.results().dispersion.as_ref()?;
     let (fu, lu) = (s.display().frequency, s.display().length);
     let bands = d.points.iter().map(|p| p.frequencies.len()).max().unwrap_or(0);
-    let period = format!("{:.4} {}", lu.from_si(d.period), lu.symbol());
+    let period = format!("{} {}", crate::number::trimmed(lu.from_si(d.period), 4), lu.symbol());
     let caption = trf(t!("{n} unknowns after the periodic reduction; period {period}"), args!(n = d.unknowns, period = period));
     let headers = ["ψ (°)".to_owned(), format!("β (rad/{})", lu.symbol())]
         .into_iter()
@@ -203,8 +203,8 @@ pub fn dispersion(s: &Session) -> Option<Table> {
         .points
         .iter()
         .map(|p| {
-            let bands = (0..bands).map(|b| p.frequencies.get(b).map_or(String::new(), |f| format!("{:.4}", fu.from_si(*f))));
-            [format!("{:.1}", p.psi.to_degrees()), format!("{:.4}", p.beta * lu.to_si(1.0))].into_iter().chain(bands).collect()
+            let bands = (0..bands).map(|b| p.frequencies.get(b).map_or(String::new(), |f| crate::number::frequency(fu.from_si(*f))));
+            [format!("{:.1}", p.psi.to_degrees()), crate::number::value(p.beta * lu.to_si(1.0))].into_iter().chain(bands).collect()
         })
         .collect();
     Some(Table { caption: Some(caption), headers, rows, marks: None })

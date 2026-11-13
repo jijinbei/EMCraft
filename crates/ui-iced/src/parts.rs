@@ -1,12 +1,13 @@
 //! The window's small shared parts, each one look wherever it is: a panel's heading, a note in
 //! a colour, an action, a chip (a choice that is on or off), the × that closes or takes away,
-//! what a page says while it has nothing to show, and a shortcut's keys as key caps.
+//! what a page says while it has nothing to show (a result page: what it needs, each with the
+//! way to its step — FieldCraft's NOT YET card), and a shortcut's keys as key caps.
 
 use emcraft_ui_core::lang::{Text, tr};
 use iced::widget::{Column, button, container, text, tooltip};
-use iced::{Color, Element, Widget};
+use iced::{Color, Element, Fill, Widget};
 
-use crate::app::Message;
+use crate::app::{App, Message};
 use crate::look::{self, Tokens};
 
 /// A heading of a panel's part: small, dim, in capitals.
@@ -59,4 +60,28 @@ pub fn keys<'a>(t: Tokens, what: &str) -> Option<Element<'a, Message>> {
         .into_iter()
         .map(|k| container(text(k).size(t.font_small - 1.0).color(t.text_dim)).padding([0.0, t.space_4]).style(look::keycap(t)).boxed());
     Some(iced::widget::Row::with_children(caps).spacing(t.space_2).align_y(iced::Alignment::Center).boxed())
+}
+
+/// A result page that has nothing to show yet: its name, NOT YET, why, and what it needs — each
+/// step that blocks a run (the preflight's) with the way to it, else the run itself.
+pub fn not_yet<'a>(app: &App, page: emcraft_ui_core::view::View, said: impl Into<String>) -> Element<'a, Message> {
+    use emcraft_engine::workflow::Step;
+    let t = app.look.tokens;
+    let title = emcraft_ui_core::lang::trf(t!("{page} — not yet"), emcraft_ui_core::lang::args!(page = emcraft_ui_core::lang::shown(page)));
+    let pre = emcraft_ui_core::steps::run::preflight(app.solver(), &app.statuses());
+    let needs: Vec<(Step, String)> = if pre.blocking.is_empty() { vec![(Step::Run, tr(t!("the analysis run")).to_owned())] } else { pre.blocking };
+    let need = |(step, what): (Step, String)| {
+        let go = action(t, format!("{}…", emcraft_ui_core::lang::shown(step)), false, Some(Message::Step(Some(step))));
+        iced::widget::row![text(format!("• {what}")).size(t.font_body).color(t.text).width(Fill), go]
+            .spacing(t.space_8)
+            .align_y(iced::Alignment::Center)
+            .boxed()
+    };
+    let head = [
+        text(title.to_uppercase()).size(t.font_small).color(t.text_dim).boxed(),
+        text(said.into()).size(t.font_body).color(t.text).boxed(),
+        text(tr(t!("It needs:"))).size(t.font_small).color(t.text_dim).boxed(),
+    ];
+    let card = Column::with_children(head.into_iter().chain(needs.into_iter().map(need))).spacing(t.space_8).width(520);
+    container(container(card).padding(t.space_16).style(look::ground(t))).padding(t.space_16).boxed()
 }

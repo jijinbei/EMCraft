@@ -61,11 +61,7 @@ fn line<'a>(app: &'a App, t: Tokens, r: &'a Row, stale: bool) -> Element<'a, Mes
         let colour = role_colour(app, role.input);
         container(text(emcraft_render::math::to_unicode(&role.text())).size(t.font_small).color(t.text))
             .padding([t.space_2, t.space_6])
-            .style(move |_: &iced::Theme| container::Style {
-                background: Some(Color { a: 0.2, ..colour }.into()),
-                border: iced::Border { color: colour, width: 1.0, radius: 8.0.into() },
-                ..container::Style::default()
-            })
+            .style(look::pill(colour))
             .boxed()
     });
     let eye = r.eye.as_ref().map(|object| {

@@ -400,7 +400,7 @@ impl Fmt {
     }
 
     fn len(&self, x: f64) -> String {
-        format!("{:.4}", self.length.from_si(x)).trim_end_matches('0').trim_end_matches('.').to_owned()
+        crate::number::trimmed(self.length.from_si(x), 4)
     }
 
     fn unit(&self) -> &'static str {
@@ -660,7 +660,7 @@ fn domain(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         }
         None => {
             let wall = match d.wall_conductivity {
-                Some(sigma) => words(t!("σ = {sigma} S/m"), args!(sigma = format!("{sigma:.3e}"))),
+                Some(sigma) => words(t!("σ = {sigma} S/m"), args!(sigma = crate::number::value(sigma.get()))),
                 None => words(t!("perfect conductor"), &[]),
             };
             let detail = match d.wall_thickness {
@@ -847,7 +847,7 @@ fn results(session: &Session, replies: &Replies) -> Vec<Row> {
         rows.push(node("result:time_domain", name(t!("Time domain")), Some(detail), Glyph::Time, Act::Show(View::SParameters)));
     }
     if let Some(rad) = &r.radiation {
-        let at = format!("{:.4} {}", fu.from_si(rad.result.frequency), fu.symbol());
+        let at = format!("{} {}", crate::number::frequency(fu.from_si(rad.result.frequency)), fu.symbol());
         rows.push(node(
             "result:radiation",
             name(t!("Radiation")),

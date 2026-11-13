@@ -255,10 +255,10 @@ pub fn view(app: &App) -> Element<'_, Message> {
             };
             canvas_widget(program).width(Fill).height(CHART_H).boxed()
         }
-        Some(Err(e)) => {
-            let missing = emcraft_ui_core::view::View::SParameters.missing(s, &app.replies);
-            crate::parts::empty(t, missing.map_or_else(|| e.clone(), |m| tr(m).to_owned()), None)
-        }
+        Some(Err(e)) => match emcraft_ui_core::view::View::SParameters.missing(s, &app.replies) {
+            Some(m) => crate::parts::not_yet(app, emcraft_ui_core::view::View::SParameters, tr(m)),
+            None => crate::parts::empty(t, e.clone(), None),
+        },
         None => Space::new().boxed(),
     };
     let band = refine_bar(app);

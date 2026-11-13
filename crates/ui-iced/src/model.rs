@@ -9,6 +9,7 @@ use emcraft_ui_core::glyph::Glyph;
 use emcraft_ui_core::handle::AXES;
 use emcraft_ui_core::lang::{args, lookup, tr, trf};
 use emcraft_ui_core::navigation::Goal;
+use emcraft_ui_core::number;
 use emcraft_ui_core::scene3d::{Cut, Overlay};
 use emcraft_ui_core::tools::Tool;
 use iced::widget::{Space, button, canvas, column, container, image, pick_list, row, shader, slider, stack, text};
@@ -126,13 +127,13 @@ fn field_bar(app: &App) -> Element<'_, Message> {
     let modes: Vec<(usize, f64)> = app.session.results().eigen.iter().flat_map(|e| e.modes.iter().map(|m| m.frequency).enumerate()).collect();
     let frequencies: Element<Message> = match v.mode {
         Some(k) => pick_list(modes.iter().copied().find(|(i, _)| *i == k), modes, move |(i, f)| {
-            format!("{} {} · {:.4} {}", tr(t!("Mode")), i + 1, fu.from_si(*f), fu.symbol())
+            format!("{} {} · {} {}", tr(t!("Mode")), i + 1, number::frequency(fu.from_si(*f)), fu.symbol())
         })
         .on_select(move |(i, _)| nav(Nav::Mode(Some(i))))
         .text_size(t.font_button)
         .style(look::choice(t))
         .boxed(),
-        None => pick_list(nearest, solved, move |f| format!("{:.4} {}", fu.from_si(*f), fu.symbol()))
+        None => pick_list(nearest, solved, move |f| format!("{} {}", number::frequency(fu.from_si(*f)), fu.symbol()))
             .on_select(move |f| nav(Nav::Frequency(f)))
             .text_size(t.font_button)
             .style(look::choice(t))
@@ -145,7 +146,7 @@ fn field_bar(app: &App) -> Element<'_, Message> {
     let at = v.at.unwrap_or(span / 2.0).clamp(0.0, span);
     let place = slider(0.0..=span.max(f64::MIN_POSITIVE), at, move |x| nav(Nav::At(x))).step(span / 200.0).width(200);
     let l = app.session.display().length;
-    let shown_at = text(format!("{:.3} {}", l.from_si(at), l.symbol())).size(t.font_body).color(t.text_dim);
+    let shown_at = text(format!("{} {}", number::length(l.from_si(at)), l.symbol())).size(t.font_body).color(t.text_dim);
     // The phase ωt in degrees, and its playing.
     let playing = app.playing.is_some();
     let play = tool(t, tr(if playing { t!("Pause") } else { t!("Play") }), playing, Some(Message::Play(!playing)));
@@ -194,7 +195,7 @@ fn section_bar(app: &App, cut: Cut) -> Element<'_, Message> {
     let range = lo[k]..=hi[k].max(lo[k] + f64::MIN_POSITIVE);
     let place = slider(range, cut.at, move |at| set(Cut { at, ..cut })).step((hi[k] - lo[k]) / 200.0).width(240);
     let l = app.session.display().length;
-    let shown = text(format!("{:.3} {}", l.from_si(cut.at), l.symbol())).size(t.font_body).color(t.text_dim);
+    let shown = text(format!("{} {}", number::length(l.from_si(cut.at)), l.symbol())).size(t.font_body).color(t.text_dim);
     let flip = tool(t, tr(t!("Keep the other side")), false, Some(set(Cut { keep: cut.keep.flipped(), ..cut })));
     // A guide's H-plane (y = b/2) and E-plane (x = a/2) cuts.
     use emcraft_ui_core::scene3d::section::Preset;
@@ -247,8 +248,7 @@ fn legend(app: &App) -> Element<'_, Message> {
             .boxed()
     });
     let entries = s.legend.iter().map(|(name, c)| {
-        let swatch = container(Space::new().width(12).height(12))
-            .style(move |_: &iced::Theme| container::Style { background: Some(look::rgb(*c).into()), ..container::Style::default() });
+        let swatch = container(Space::new().width(12).height(12)).style(look::swatch(look::rgb(*c)));
         row![swatch, text(name.clone()).size(t.font_small).color(t.text)].spacing(t.space_6).align_y(Alignment::Center).boxed()
     });
     let list = column(s.bar.iter().map(|b| colour_bar(t, b)).chain(arrows).chain(entries)).spacing(t.space_4);

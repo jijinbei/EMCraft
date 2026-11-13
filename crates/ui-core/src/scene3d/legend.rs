@@ -63,7 +63,7 @@ pub(super) fn legend(colours: &Colours, session: &Session, overlay: Overlay) -> 
                 out.push((trf(t!("rotation: {group}, harmonic {m}"), args!(group = group, m = r.m)), colours.scene.periodic));
             }
             let walls = match m.domain.wall_conductivity {
-                Some(s) => trf(t!("walls σ = {sigma} S/m"), args!(sigma = format!("{s:.3e}"))),
+                Some(s) => trf(t!("walls σ = {sigma} S/m"), args!(sigma = crate::number::value(s.get()))),
                 None => tr(t!("walls: perfect conductor")).into(),
             };
             out.push((walls, colours.scene.metal));

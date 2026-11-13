@@ -248,8 +248,7 @@ fn number_text(v: f64) -> String {
 /// assert_eq!((short_number(2.5), short_number(1.0 / 3.0), short_number(12.0)), ("2.5".into(), "0.333333".into(), "12".into()));
 /// ```
 pub fn short_number(v: f64) -> String {
-    let s = format!("{v:.6}");
-    s.trim_end_matches('0').trim_end_matches('.').to_owned()
+    crate::number::trimmed(v, 6)
 }
 
 /// A JSON value as a field's text.
