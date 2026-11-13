@@ -48,10 +48,9 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
     let kind = app.solver();
     let parts: Vec<&emcraft_ui_core::outline::Part> = app.tree.iter().flat_map(|(_, t)| t).filter(|_| !app.home && !app.settings).collect();
     let plays = parts.iter().filter_map(|p| match p.head {
-        emcraft_ui_core::outline::Head::Step(s) => emcraft_ui_core::outline::play(s).map(|id| {
-            let m = if id == "solve.run" { Message::StepAct(crate::step_panel::Act::Run) } else { Message::Start(id.to_owned()) };
-            (format!("play:{}", s.id()), m)
-        }),
+        emcraft_ui_core::outline::Head::Step(s) => {
+            emcraft_ui_core::outline::play(s).map(|id| (format!("play:{}", s.id()), crate::browser::play_message(id)))
+        }
         emcraft_ui_core::outline::Head::Section(_) => None,
     });
     let offers = |p: &&&emcraft_ui_core::outline::Part| !emcraft_ui_core::outline::adds(p.head, kind).is_empty();
@@ -59,13 +58,15 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         let open = app.adding == Some(p.key());
         (format!("add:{}", p.key()), Message::Add((!open).then_some(p.key())))
     });
-    let commands =
-        parts.iter().filter(|p| app.adding == Some(p.key())).flat_map(|p| emcraft_ui_core::outline::adds(p.head, kind)).filter_map(|a| match a {
-            emcraft_ui_core::outline::Add::Command(id) => Some((format!("command:{id}"), Message::Command(id.to_owned()))),
-            emcraft_ui_core::outline::Add::NewDesign => Some(("new:design".to_owned(), Message::File(FileAction::NewDesign))),
+    let commands = parts.iter().filter(|p| app.adding == Some(p.key())).flat_map(|p| emcraft_ui_core::outline::adds(p.head, kind)).filter_map(|a| {
+        let handle = match a {
+            emcraft_ui_core::outline::Add::Command(id) => format!("command:{id}"),
+            emcraft_ui_core::outline::Add::NewDesign => "new:design".to_owned(),
             // The tools' handles are the model page's (`tool:<id>`).
-            emcraft_ui_core::outline::Add::Tool(_) => None,
-        });
+            emcraft_ui_core::outline::Add::Tool(_) => return None,
+        };
+        Some((handle, crate::browser::add_message(a)))
+    });
     // A design of the user's opened in SolidCraft from its row.
     let designs = app.rows().filter_map(|r| match &r.act {
         emcraft_ui_core::browser::Act::Design(path) => Some((format!("solidcraft:{path}"), Message::OpenDesign(path.clone()))),

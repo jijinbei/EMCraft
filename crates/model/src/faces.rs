@@ -21,9 +21,20 @@ pub struct NamedFaces {
 /// The bodies' named faces, by body name.
 pub type Faces = BTreeMap<String, NamedFaces>;
 
-/// A name as an error quotes it: at most 64 characters.
+/// The most characters of a name an error quotes.
+const QUOTED: usize = 64;
+
+/// The most face names an error lists.
+const LISTED: usize = 12;
+
+/// A name as an error quotes it: at most [`QUOTED`] characters.
 fn clip(name: &str) -> String {
-    name.chars().take(64).collect()
+    name.chars().take(QUOTED).collect()
+}
+
+/// Triangle `t`'s corners among `positions`, none when it names a vertex there is not.
+fn corners(positions: &[Point3], t: &[u32; 3]) -> Option<[Point3; 3]> {
+    Some([*positions.get(t[0] as usize)?, *positions.get(t[1] as usize)?, *positions.get(t[2] as usize)?])
 }
 
 /// The surfaces a face name may lie on: the region's and every body's, by name.
@@ -37,16 +48,14 @@ fn surfaces(m: &Model) -> impl Iterator<Item = (&str, &[Point3], &[[u32; 3]])> {
 
 /// The triangles (their corners, m) of the face named `name`, on whatever body has it.
 pub fn named(m: &Model, name: &str) -> Vec<[Point3; 3]> {
-    let mut out = Vec::new();
-    for (body, positions, triangles) in surfaces(m) {
-        let Some(faces) = m.faces.get(body) else { continue };
-        let Some(k) = faces.names.iter().position(|n| n == name) else { continue };
-        let corners = |t: &[u32; 3]| -> Option<[Point3; 3]> {
-            Some([*positions.get(t[0] as usize)?, *positions.get(t[1] as usize)?, *positions.get(t[2] as usize)?])
-        };
-        out.extend(triangles.iter().zip(&faces.source).filter(|(_, s)| **s as usize == k).filter_map(|(t, _)| corners(t)));
-    }
-    out
+    surfaces(m)
+        .filter_map(|(body, positions, triangles)| {
+            let faces = m.faces.get(body)?;
+            let k = faces.names.iter().position(|n| n == name)?;
+            Some(triangles.iter().zip(&faces.source).filter(move |(_, s)| **s as usize == k).filter_map(move |(t, _)| corners(positions, t)))
+        })
+        .flatten()
+        .collect()
 }
 
 /// Where a port on the face named `name` goes: the rectangle it spans across the axis it is flat
@@ -59,7 +68,7 @@ pub fn named(m: &Model, name: &str) -> Vec<[Point3; 3]> {
 pub fn port_face(m: &Model, name: &str) -> Result<PortFace, String> {
     let tris = named(m, name);
     let Some(b) = Aabb::around(tris.iter().flatten().copied()) else {
-        let known: Vec<&str> = m.faces.values().flat_map(|f| f.names.iter().map(String::as_str)).take(12).collect();
+        let known: Vec<&str> = m.faces.values().flat_map(|f| f.names.iter().map(String::as_str)).take(LISTED).collect();
         return Err(format!("no face named `{}` (faces: {})", clip(name), known.join(", ")));
     };
     let span = (0..3).map(|d| b.max[d] - b.min[d]).fold(0.0, f64::max).max(1e-12);
@@ -73,27 +82,19 @@ pub fn port_face(m: &Model, name: &str) -> Result<PortFace, String> {
 pub fn name_at(m: &Model, axis: Axis, at: Point3, tol: f64) -> Option<String> {
     let k = axis.index();
     let FrameAxes { u, v, .. } = Frame::new(axis).axes();
-    for (body, positions, triangles) in surfaces(m) {
-        let Some(faces) = m.faces.get(body) else { continue };
-        for (t, s) in triangles.iter().zip(&faces.source) {
-            let Some([a, b, c]) = (|| Some([*positions.get(t[0] as usize)?, *positions.get(t[1] as usize)?, *positions.get(t[2] as usize)?]))()
-            else {
-                continue;
-            };
-            if [a, b, c].iter().any(|q| (q[k] - at[k]).abs() > tol) {
-                continue;
-            }
-            // Inside the triangle, as seen along the axis.
-            let cross = |p: Point3, q: Point3, r: Point3| (q[u] - p[u]) * (r[v] - p[v]) - (q[v] - p[v]) * (r[u] - p[u]);
-            let (d1, d2, d3) = (cross(a, b, at), cross(b, c, at), cross(c, a, at));
-            let e = tol * tol;
-            let inside = (d1 >= -e && d2 >= -e && d3 >= -e) || (d1 <= e && d2 <= e && d3 <= e);
-            if inside {
-                return faces.names.get(*s as usize).cloned();
-            }
-        }
-    }
-    None
+    // On the triangle's plane across the axis, and inside it as seen along the axis.
+    let holds = |[a, b, c]: [Point3; 3]| {
+        let flat = [a, b, c].iter().all(|q| (q[k] - at[k]).abs() <= tol);
+        let cross = |p: Point3, q: Point3| (q[u] - p[u]) * (at[v] - p[v]) - (q[v] - p[v]) * (at[u] - p[u]);
+        let sides = [cross(a, b), cross(b, c), cross(c, a)];
+        let e = tol * tol;
+        flat && (sides.iter().all(|d| *d >= -e) || sides.iter().all(|d| *d <= e))
+    };
+    surfaces(m).find_map(|(body, positions, triangles)| {
+        let faces = m.faces.get(body)?;
+        let (_, s) = triangles.iter().zip(&faces.source).find(|(t, _)| corners(positions, t).is_some_and(holds))?;
+        faces.names.get(*s as usize).cloned()
+    })
 }
 
 #[cfg(test)]

@@ -171,17 +171,31 @@ fn ends<'a>(app: &App, t: Tokens, part: &Part) -> Vec<Element<'a, Message>> {
             .boxed()
     };
     let play = match part.head {
-        Head::Step(step) => emcraft_ui_core::outline::play(step).map(|id| {
-            let message = if id == "solve.run" { Message::StepAct(crate::step_panel::Act::Run) } else { Message::Start(id.to_owned()) };
-            let b = small("▶", false, idle.then_some(message));
-            crate::search::tip(t, b, id)
-        }),
+        Head::Step(step) => {
+            emcraft_ui_core::outline::play(step).map(|id| crate::search::tip(t, small("▶", false, idle.then(|| play_message(id))), id))
+        }
         Head::Section(_) => None,
     };
     let open = app.adding == Some(part.key());
     let offers = !emcraft_ui_core::outline::adds(part.head, app.solver()).is_empty();
     let add = offers.then(|| small("＋", open, Some(Message::Add((!open).then_some(part.key())))));
     play.into_iter().chain(add).collect()
+}
+
+/// What a step's ▶ sends for command `id`: the confirmed run through Run's preflight, any other
+/// command run as it is.
+pub(crate) fn play_message(id: &str) -> Message {
+    if id == "solve.run" { Message::StepAct(crate::step_panel::Act::Run) } else { Message::Start(id.to_owned()) }
+}
+
+/// What an entry of a ＋ list sends: a command's dialog (or its run), a tool turned on, a new
+/// SolidCraft design.
+pub(crate) fn add_message(a: Add) -> Message {
+    match a {
+        Add::Command(id) => Message::Command(id.to_owned()),
+        Add::Tool(k) => Message::Tool(Some(k)),
+        Add::NewDesign => Message::File(FileAction::NewDesign),
+    }
 }
 
 /// A node's ＋ list, while it is shown: a new SolidCraft design (the geometry's), its commands (a
@@ -198,12 +212,11 @@ fn add_list<'a>(app: &App, t: Tokens, part: &Part) -> Option<Element<'a, Message
     };
     let entries = emcraft_ui_core::outline::adds(part.head, app.solver()).into_iter().map(|a| match a {
         Add::Command(id) => {
-            let b =
-                entry(emcraft_ui_core::commands::glyph(id), emcraft_ui_core::commands::button_label(id).to_owned(), Message::Command(id.to_owned()));
+            let b = entry(emcraft_ui_core::commands::glyph(id), emcraft_ui_core::commands::button_label(id).to_owned(), add_message(a));
             crate::search::tip(t, b.boxed(), id)
         }
-        Add::Tool(k) => entry(k.glyph(), lookup(k.label()).to_owned(), Message::Tool(Some(k))).boxed(),
-        Add::NewDesign => entry(Glyph::Import, tr(t!("New SolidCraft design")).to_owned(), Message::File(FileAction::NewDesign)).boxed(),
+        Add::Tool(k) => entry(k.glyph(), lookup(k.label()).to_owned(), add_message(a)).boxed(),
+        Add::NewDesign => entry(Glyph::Import, tr(t!("New SolidCraft design")).to_owned(), add_message(a)).boxed(),
     });
     let list = Column::with_children(entries).spacing(1);
     Some(container(list).padding(iced::Padding { top: 2.0, right: 0.0, bottom: 4.0, left: 22.0 }).boxed())

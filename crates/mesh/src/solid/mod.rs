@@ -304,10 +304,7 @@ fn halved(model: &Model, shape: &Shape) -> Result<(Shape, Vec<Feature>)> {
 }
 
 /// `shape` stopped at `at` across axis `d`, if it is a box, a cylinder along z cut across z, or
-/// an extrusion along `d`: every edge that crosses the plane runs along `d`, and every vertex
-/// at or past it lies on a line along `d` through a vertex of the far end (a design's tall sides
-/// may be split at heights of their own). Everything past the plane comes down onto it, the
-/// vertices that meet there are one and the triangles flattened between them go.
+/// an imported extrusion along `d` ([`stopped_surface`]).
 fn shortened(shape: &Shape, d: usize, at: f64, tol: f64) -> Option<Shape> {
     match shape {
         Shape::Box { size } => {
@@ -315,83 +312,110 @@ fn shortened(shape: &Shape, d: usize, at: f64, tol: f64) -> Option<Shape> {
             Some(Shape::Box { size })
         }
         Shape::Cylinder { radius, .. } if d == 2 => Some(Shape::Cylinder { radius: *radius, length: Metres::new(at).ok()? }),
-        Shape::Surface { name, positions, triangles, tags, surfaces } => {
-            let (lo, hi) = positions.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| (lo.min(p[d]), hi.max(p[d])));
-            if !(at > lo + tol && at < hi - tol) {
-                return None;
-            }
-            let near = |z: f64, level: f64| (z - level).abs() <= tol;
-            let corners = |t: &[u32; 3]| -> Option<[Point3; 3]> {
-                Some([*positions.get(t[0] as usize)?, *positions.get(t[1] as usize)?, *positions.get(t[2] as usize)?])
-            };
-            let normal = |[a, b, c]: [Point3; 3]| (b - a).cross(c - a);
-            // A triangle across the plane is upright: its plane holds the direction d.
-            let upright = triangles.iter().all(|t| match corners(t) {
-                Some(c) => {
-                    let crosses = c.iter().any(|p| p[d] < at - tol) && c.iter().any(|p| p[d] > at + tol);
-                    let n = normal(c);
-                    !crosses || n[d].abs() <= 1e-7 * n.norm()
-                }
-                None => false,
-            });
-            if !upright {
-                return None;
-            }
-            let moved: Vec<Point3> = positions.iter().map(|p| if p[d] > at { p.with(d, at) } else { *p }).collect();
-            let (welded, index) = welded(&moved, tol);
-            // Every vertex brought onto the plane, or on it, meets one from the far end (else the
-            // sides' vertices there would cut the moved end's triangles).
-            let far: std::collections::BTreeSet<u32> = positions.iter().zip(&index).filter(|(p, _)| near(p[d], hi)).map(|(_, i)| *i).collect();
-            if positions.iter().zip(&index).any(|(p, i)| p[d] >= at - tol && !far.contains(i)) {
-                return None;
-            }
-            // Each triangle kept as it was turned (none folded over by the move); those flattened go.
-            let mut folded = false;
-            let kept: Vec<(usize, [u32; 3])> = triangles
-                .iter()
-                .enumerate()
-                .filter_map(|(k, t)| {
-                    let w = [index[t[0] as usize], index[t[1] as usize], index[t[2] as usize]];
-                    let after = normal(w.map(|i| welded[i as usize]));
-                    if w[0] == w[1] || w[1] == w[2] || w[0] == w[2] || after.norm() <= tol * tol {
-                        return None;
-                    }
-                    folded |= corners(t).is_none_or(|c| normal(c).dot(after) <= 0.0);
-                    Some((k, w))
-                })
-                .collect();
-            if folded {
-                return None;
-            }
-            let triangles: Vec<[u32; 3]> = kept.iter().map(|(_, t)| *t).collect();
-            if !closed(&triangles) {
-                return None;
-            }
-            // A plane on the far end comes down with it.
-            let surfaces = surfaces
-                .iter()
-                .map(|s| match s {
-                    Some(FaceSurface::Plane { normal, point }) if near(point[d], hi) => {
-                        Some(FaceSurface::Plane { normal: *normal, point: point.with(d, at) })
-                    }
-                    other => other.clone(),
-                })
-                .collect();
-            Some(Shape::Surface {
-                name: name.clone(),
-                positions: welded,
-                triangles,
-                tags: kept.iter().map(|(k, _)| tags.get(*k).copied().unwrap_or(0)).collect(),
-                surfaces,
-            })
-        }
+        Shape::Surface { .. } => stopped_surface(shape, Cut { d, at, tol }),
         _ => None,
     }
 }
 
-/// `points` with those within `tol` of one another made one: the points kept and, for each
-/// point, its index among them.
-fn welded(points: &[Point3], tol: f64) -> (Vec<Point3>, Vec<u32>) {
+/// A plane a surface is stopped at: across axis `d`, at `at` (m), within `tol` (m).
+#[derive(Clone, Copy)]
+struct Cut {
+    d: usize,
+    at: f64,
+    tol: f64,
+}
+
+/// How far from upright (the share of its normal along the cut's axis) a triangle across the
+/// cut may lean: a design's sides are upright to rounding.
+const UPRIGHT: f64 = 1e-7;
+
+/// An imported surface stopped at the cut, if it is an extrusion along the cut's axis: every
+/// triangle across the plane upright, and every vertex at or past it on a line along the axis
+/// through a vertex of the far end (a design's tall sides may be split at heights of their own).
+/// Everything past the plane comes down onto it, the vertices that meet there are one and the
+/// triangles flattened between them go; none is folded over, and the result is closed.
+fn stopped_surface(shape: &Shape, cut: Cut) -> Option<Shape> {
+    let Shape::Surface { name, positions, triangles, tags, surfaces } = shape else { return None };
+    let Cut { d, at, tol } = cut;
+    let hi = positions.iter().map(|p| p[d]).fold(f64::NEG_INFINITY, f64::max);
+    let lo = positions.iter().map(|p| p[d]).fold(f64::INFINITY, f64::min);
+    if !(at > lo + tol && at < hi - tol && upright(positions, triangles, cut)) {
+        return None;
+    }
+    let down = brought_down(positions, cut, hi)?;
+    let kept = unfolded(positions, triangles, &down, tol)?;
+    let triangles: Vec<[u32; 3]> = kept.iter().map(|(_, t)| *t).collect();
+    if !closed(&triangles) {
+        return None;
+    }
+    // A plane on the far end comes down with it.
+    let surfaces = surfaces
+        .iter()
+        .map(|s| match s {
+            Some(FaceSurface::Plane { normal, point }) if (point[d] - hi).abs() <= tol => {
+                Some(FaceSurface::Plane { normal: *normal, point: point.with(d, at) })
+            }
+            other => other.clone(),
+        })
+        .collect();
+    let tags = kept.iter().map(|(k, _)| tags.get(*k).copied().unwrap_or(0)).collect();
+    Some(Shape::Surface { name: name.clone(), positions: down.points, triangles, tags, surfaces })
+}
+
+/// Triangle `t`'s corners among `positions`, none when it names a vertex there is not.
+fn corners(positions: &[Point3], t: &[u32; 3]) -> Option<[Point3; 3]> {
+    Some([*positions.get(t[0] as usize)?, *positions.get(t[1] as usize)?, *positions.get(t[2] as usize)?])
+}
+
+/// A triangle's normal, its length twice the area.
+fn normal([a, b, c]: [Point3; 3]) -> Vec3 {
+    (b - a).cross(c - a)
+}
+
+/// Whether every triangle across the cut's plane is upright: its plane holds the cut's axis.
+fn upright(positions: &[Point3], triangles: &[[u32; 3]], Cut { d, at, tol }: Cut) -> bool {
+    triangles.iter().all(|t| {
+        corners(positions, t).is_some_and(|c| {
+            let crosses = c.iter().any(|p| p[d] < at - tol) && c.iter().any(|p| p[d] > at + tol);
+            let n = normal(c);
+            !crosses || n[d].abs() <= UPRIGHT * n.norm()
+        })
+    })
+}
+
+/// The vertices with everything past the cut brought down onto it and those that meet made one,
+/// if every vertex at or past the plane meets one from the far end `hi` (else the sides'
+/// vertices there would cut the moved end's triangles).
+fn brought_down(positions: &[Point3], Cut { d, at, tol }: Cut, hi: f64) -> Option<Welded> {
+    let moved: Vec<Point3> = positions.iter().map(|p| if p[d] > at { p.with(d, at) } else { *p }).collect();
+    let down = welded(&moved, tol);
+    let far: std::collections::BTreeSet<u32> = positions.iter().zip(&down.index).filter(|(p, _)| (p[d] - hi).abs() <= tol).map(|(_, i)| *i).collect();
+    let met = positions.iter().zip(&down.index).all(|(p, i)| p[d] < at - tol || far.contains(i));
+    met.then_some(down)
+}
+
+/// The triangles left once the vertices are brought `down`, each with its index among the
+/// triangles: the flattened ones gone; none if one is folded over (turned against its side).
+fn unfolded(positions: &[Point3], triangles: &[[u32; 3]], down: &Welded, tol: f64) -> Option<Vec<(usize, [u32; 3])>> {
+    let moved = |t: &[u32; 3]| t.map(|i| down.index[i as usize]);
+    let flattened = |w: [u32; 3]| w[0] == w[1] || w[1] == w[2] || w[0] == w[2] || normal(w.map(|i| down.points[i as usize])).norm() <= tol * tol;
+    let kept: Vec<(usize, [u32; 3])> = triangles.iter().enumerate().map(|(k, t)| (k, moved(t))).filter(|(_, w)| !flattened(*w)).collect();
+    let turned = |(k, w): &(usize, [u32; 3])| {
+        let before = triangles.get(*k).and_then(|t| corners(positions, t)).map(normal);
+        before.is_some_and(|n| n.dot(normal(w.map(|i| down.points[i as usize]))) > 0.0)
+    };
+    kept.iter().all(turned).then_some(kept)
+}
+
+/// Points made one where they lie within a tolerance of one another: those kept, and each
+/// original point's index among them.
+struct Welded {
+    points: Vec<Point3>,
+    index: Vec<u32>,
+}
+
+/// `points` with those within `tol` of one another made one.
+fn welded(points: &[Point3], tol: f64) -> Welded {
     let key = |p: Point3| p.to_array().map(|c| (c / tol).round() as i64);
     let mut seen: std::collections::BTreeMap<[i64; 3], u32> = std::collections::BTreeMap::new();
     let mut kept = Vec::new();
@@ -399,6 +423,7 @@ fn welded(points: &[Point3], tol: f64) -> (Vec<Point3>, Vec<u32>) {
         .iter()
         .map(|p| {
             let k = key(*p);
+            // A point rounded across a key's edge: its neighbours' keys count too.
             let found = (0..27).find_map(|n| seen.get(&[k[0] + n % 3 - 1, k[1] + n / 3 % 3 - 1, k[2] + n / 9 - 1]).copied());
             found.unwrap_or_else(|| {
                 let i = kept.len() as u32;
@@ -408,7 +433,7 @@ fn welded(points: &[Point3], tol: f64) -> (Vec<Point3>, Vec<u32>) {
             })
         })
         .collect();
-    (kept, index)
+    Welded { points: kept, index }
 }
 
 /// Whether every edge of `triangles` is shared by exactly two of them.

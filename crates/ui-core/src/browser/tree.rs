@@ -339,32 +339,31 @@ fn variables(s: &emcraft_engine::Session) -> Vec<Row> {
 /// expression `=a` are the variables'): each its value and unit and its design's file; a click
 /// sets it where the design is imported (`geometry.design`).
 fn design_parameters(s: &emcraft_engine::Session) -> Vec<Row> {
-    let mut rows = Vec::new();
-    for d in emcraft_engine::designs(s) {
-        let Ok(parameters) = &d.parameters else { continue };
-        let file = file_name(&d.path);
-        for q in parameters {
-            let set = d.set.get(&q.name);
-            if set.and_then(serde_json::Value::as_str).is_some_and(|e| e.trim_start().starts_with('=')) {
-                continue;
-            }
-            let value = match set {
-                Some(serde_json::Value::String(e)) => e.clone(),
-                Some(v) => v.to_string(),
-                None => q.value.map_or_else(String::new, |x| format!("{x}")),
-            };
-            let detail = Both { en: format!("= {value} {} · {file}", q.unit), shown: format!("= {value} {} · {file}", q.unit) };
-            let edit = serde_json::json!({"design": d.path, "name": q.name, "value": value});
-            rows.push(node(
-                format!("design:{}:{}", d.path, q.name),
-                own(&q.name),
-                Some(detail),
-                Glyph::Variable,
-                Act::EditWith("geometry.design", edit),
-            ));
-        }
+    emcraft_engine::designs(s)
+        .into_iter()
+        .flat_map(|d| {
+            let parameters = d.parameters.clone().unwrap_or_default();
+            parameters.into_iter().filter_map(move |q| design_parameter(&d, &q))
+        })
+        .collect()
+}
+
+/// Parameter `q` of design `d` as a row, none when a variable sets it (`=a`): its value (as
+/// set where the design is imported, else as saved) and unit, and the design's file.
+fn design_parameter(d: &emcraft_engine::ImportedDesign, q: &emcraft_engine::DesignParameter) -> Option<Row> {
+    let set = d.set.get(&q.name);
+    if set.and_then(serde_json::Value::as_str).is_some_and(|e| e.trim_start().starts_with('=')) {
+        return None;
     }
-    rows
+    let value = match set {
+        Some(serde_json::Value::String(e)) => e.clone(),
+        Some(v) => v.to_string(),
+        None => q.value.map_or_else(String::new, |x| format!("{x}")),
+    };
+    let said = format!("= {value} {} · {}", q.unit, file_name(&d.path));
+    let edit = serde_json::json!({"design": d.path, "name": q.name, "value": value});
+    let id = format!("design:{}:{}", d.path, q.name);
+    Some(node(id, own(&q.name), Some(Both { en: said.clone(), shown: said }), Glyph::Variable, Act::EditWith("geometry.design", edit)))
 }
 
 /// A file's name without its folders (a template's design: after `template:`).

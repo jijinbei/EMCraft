@@ -10,7 +10,7 @@ use std::f64::consts::PI;
 use emcraft_model::units::C0;
 use serde_json::{Value, json};
 
-use crate::Session;
+use crate::{Session, Step};
 
 /// Each pilot template's twin: the same model, its shapes EMCraft's own.
 const TWINS: &[(&str, &str)] = &[
@@ -22,24 +22,29 @@ const TWINS: &[(&str, &str)] = &[
     ("cross-guide-coupler", include_str!("../../../templates/twins/cross-guide-coupler.json")),
 ];
 
-/// `script` run up to its solve, then `command` with `params`: the solve's reply.
-fn solved(script: &str, command: &str, params: &Value) -> Value {
-    let steps: Vec<Value> = serde_json::from_str(script).unwrap();
+/// `steps` run up to their solve, then `command` with `params`: the solve's reply.
+fn solved(steps: Vec<Step>, command: &str, params: &Value) -> Value {
+    let built: Vec<Step> = steps.into_iter().filter(|st| !st.command.starts_with("solve.") && st.command != "project.setup").collect();
     let mut s = Session::new();
-    for step in steps {
-        let c = step["command"].as_str().unwrap();
-        if !c.starts_with("solve.") && c != "project.setup" {
-            s.execute(c, &step["params"]).unwrap_or_else(|e| panic!("{c}: {e}"));
-        }
-    }
+    s.run_steps(&built).unwrap();
     s.execute(command, params).unwrap()
 }
 
-/// Template `name` (its design) and its twin, each solved by `command` with `params`.
-fn both(name: &str, command: &str, params: Value) -> (Value, Value) {
-    let template = emcraft_templates::find(name).unwrap().script;
-    let twin = TWINS.iter().find(|(n, _)| *n == name).unwrap().1;
-    (solved(template, command, &params), solved(twin, command, &params))
+/// The twin of template `name`, its variables set to `values` (an object of numbers, or null).
+fn twin_steps(name: &str, values: &Value) -> Vec<Step> {
+    let script = TWINS.iter().find(|(n, _)| *n == name).unwrap().1;
+    let mut steps: Vec<Step> = serde_json::from_str(script).unwrap();
+    for (key, v) in values.as_object().into_iter().flatten() {
+        steps.iter_mut().filter(|st| st.defines(key)).for_each(|st| st.params["value"] = v.clone());
+    }
+    steps
+}
+
+/// Template `name` (its design) and its twin, their variables set to `values`, each solved by
+/// `command` with `params`.
+fn both(name: &str, values: Value, command: &str, params: Value) -> (Value, Value) {
+    let template = crate::template_steps(name, &values).unwrap();
+    (solved(template, command, &params), solved(twin_steps(name, &values), command, &params))
 }
 
 /// The number at `pointer` in `v`.
@@ -69,7 +74,7 @@ fn every_twin_is_a_template_built_from_a_design() {
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn the_cylinder_cavitys_design_rings_as_its_twin_and_the_closed_form() {
-    let (design, twin) = both("cylinder-cavity", "solve.eigenmodes", json!({"near": 11, "count": 3, "order": 2}));
+    let (design, twin) = both("cylinder-cavity", json!(null), "solve.eigenmodes", json!({"near": 11, "count": 3, "order": 2}));
     let (r, l): (f64, f64) = (0.010, 0.030);
     let te111 = C0 / (2.0 * PI) * ((1.841184 / r).powi(2) + (PI / l).powi(2)).sqrt() / 1e9;
     let tm010 = C0 / (2.0 * PI) * 2.404826 / r / 1e9;
@@ -84,7 +89,7 @@ fn the_cylinder_cavitys_design_rings_as_its_twin_and_the_closed_form() {
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn the_coaxial_lines_design_passes_as_its_twin_and_the_closed_form() {
-    let (design, twin) = both("coaxial-line", "solve.frequency", json!({"frequencies": [2, 6], "order": 2}));
+    let (design, twin) = both("coaxial-line", json!(null), "solve.frequency", json!({"frequencies": [2, 6], "order": 2}));
     for (k, f) in [2e9, 6e9].into_iter().enumerate() {
         let exact = -360.0 * f * 0.020 * 2.1f64.sqrt() / C0;
         let (d, t) = (at(&design, &format!("/points/{k}/s21/deg")), at(&twin, &format!("/points/{k}/s21/deg")));
@@ -100,7 +105,7 @@ fn the_coaxial_lines_design_passes_as_its_twin_and_the_closed_form() {
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn the_inductive_posts_design_reflects_as_its_twin_and_the_closed_form() {
-    let (design, twin) = both("inductive-post", "solve.frequency", json!({"frequencies": [10], "order": 2}));
+    let (design, twin) = both("inductive-post", json!(null), "solve.frequency", json!({"frequencies": [10], "order": 2}));
     let post = emcraft_theory::post::InductivePost { width: 0.02286, length: 0.030, x: 0.01143, z: 0.015, radius: 0.0015 };
     let exact = post.solve(10e9, 64).unwrap().s11.norm();
     let (d, t) = (at(&design, "/points/0/s11/mag"), at(&twin, "/points/0/s11/mag"));
@@ -112,7 +117,7 @@ fn the_inductive_posts_design_reflects_as_its_twin_and_the_closed_form() {
 /// plane: the design's two ends triangulated differently are still mirror images).
 #[test]
 fn the_h_bends_design_turns_as_its_twin() {
-    let (design, twin) = both("h-bend", "solve.frequency", json!({"frequencies": [9, 11], "order": 2}));
+    let (design, twin) = both("h-bend", json!(null), "solve.frequency", json!({"frequencies": [9, 11], "order": 2}));
     for k in 0..2 {
         for s in ["s11", "s21"] {
             let p = format!("/points/{k}/{s}/mag");
@@ -126,7 +131,7 @@ fn the_h_bends_design_turns_as_its_twin() {
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn the_cross_guide_couplers_design_couples_as_its_twin() {
-    let (design, twin) = both("cross-guide-coupler", "solve.frequency", json!({"frequencies": [10], "order": 2}));
+    let (design, twin) = both("cross-guide-coupler", json!(null), "solve.frequency", json!({"frequencies": [10], "order": 2}));
     for s in ["s11", "s21", "s31", "s41"] {
         let p = format!("/points/0/{s}/mag");
         assert!((at(&design, &p) - at(&twin, &p)).abs() < 3e-3, "{p}: design {design}, twin {twin}");
@@ -139,7 +144,7 @@ fn the_cross_guide_couplers_design_couples_as_its_twin() {
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn the_metal_spheres_design_scatters_as_its_twin_and_the_mie_series() {
-    let (design, twin) = both("metal-sphere-scattering", "solve.radiation", json!({"frequency": 10}));
+    let (design, twin) = both("metal-sphere-scattering", json!(null), "solve.radiation", json!({"frequency": 10}));
     let a = 0.005;
     let x = 2.0 * PI * 10e9 / C0 * a;
     let exact = emcraft_theory::radiation::mie_efficiencies(x, None).0 * PI * a * a * 1e6;
@@ -155,17 +160,7 @@ fn the_metal_spheres_design_scatters_as_its_twin_and_the_mie_series() {
 /// 40(2):353–362, 1992), |S11| and |S21| at 8 GHz.
 #[test]
 fn the_bends_square_corner_turns_as_its_twin_and_the_closed_form() {
-    let solve = |script: Vec<crate::Step>| {
-        let mut s = Session::new();
-        s.run_steps(&script.into_iter().filter(|st| !st.command.starts_with("solve.")).collect::<Vec<_>>()).unwrap();
-        s.execute("solve.frequency", &json!({"frequencies": [8], "order": 2})).unwrap()
-    };
-    let design = solve(crate::template_steps("h-bend", &json!({"m": 0})).unwrap());
-    let mut twin: Vec<crate::Step> = serde_json::from_str(TWINS[0].1).unwrap();
-    for st in twin.iter_mut().filter(|st| st.defines("m")) {
-        st.params["value"] = json!(0);
-    }
-    let twin = solve(twin);
+    let (design, twin) = both("h-bend", json!({"m": 0}), "solve.frequency", json!({"frequencies": [8], "order": 2}));
     let (s11, s21) = emcraft_theory::bend::right_angle(emcraft_theory::bend::Corner::HPlane, 0.02286, 0.01016, 8e9, 60).unwrap();
     for (s, exact) in [("s11", s11.norm()), ("s21", s21.norm())] {
         let p = format!("/points/0/{s}/mag");

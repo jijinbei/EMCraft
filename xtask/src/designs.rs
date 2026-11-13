@@ -52,33 +52,48 @@ fn aside(root: &Path) -> PathBuf {
     target.join("xtask-designs")
 }
 
+/// A design to build: its name, its script and the files it is written to (its own and, for a
+/// template's, the oracle cases' copies).
+struct Design {
+    name: String,
+    script: PathBuf,
+    files: Vec<PathBuf>,
+}
+
+/// Every design with a script: the templates' and the oracle cases'.
+fn designs(root: &Path) -> Vec<Design> {
+    let templates = root.join("crates/templates/designs");
+    let cases: Vec<PathBuf> = entries(&root.join("tests/oracle")).into_iter().filter(|p| p.is_dir()).collect();
+    std::iter::once(&templates)
+        .chain(&cases)
+        .flat_map(|dir| scripts(dir).into_iter().map(move |(name, script)| (dir, name, script)))
+        .map(|(dir, name, script)| {
+            let file = format!("{name}.solidcraft");
+            let copies = cases.iter().map(|c| c.join(&file)).filter(|p| *dir == templates && p.exists());
+            let files = std::iter::once(dir.join(&file)).chain(copies).collect();
+            Design { name, script, files }
+        })
+        .collect()
+}
+
 pub fn run(root: &Path, args: &[&str]) -> Result<(), String> {
     let check = args.contains(&"--check");
     let cli = cli();
     let aside = aside(root);
     std::fs::create_dir_all(&aside).map_err(|e| format!("{}: {e}", aside.display()))?;
-    let templates = root.join("crates/templates/designs");
-    let cases: Vec<PathBuf> = entries(&root.join("tests/oracle")).into_iter().filter(|p| p.is_dir()).collect();
+    let shown = |p: &Path| p.strip_prefix(root).unwrap_or(p).display().to_string();
     let mut differ = Vec::new();
     let mut count = 0;
-    for dir in std::iter::once(&templates).chain(&cases) {
-        for (name, script) in scripts(dir) {
-            let bytes = build(&cli, &script, &name, &aside)?;
-            let file = format!("{name}.solidcraft");
-            // The design's own file, and its copies in the oracle's cases.
-            let copies = if *dir == templates { cases.iter().map(|c| c.join(&file)).filter(|p| p.exists()).collect() } else { Vec::new() };
-            for target in std::iter::once(dir.join(&file)).chain(copies) {
-                let shown = target.strip_prefix(root).unwrap_or(&target).display().to_string();
-                if check {
-                    if std::fs::read(&target).ok().as_deref() != Some(bytes.as_slice()) {
-                        differ.push(shown);
-                    }
-                } else {
-                    std::fs::write(&target, &bytes).map_err(|e| format!("{shown}: {e}"))?;
-                    println!("{shown}");
-                }
-                count += 1;
+    for d in designs(root) {
+        let bytes = build(&cli, &d.script, &d.name, &aside)?;
+        for file in &d.files {
+            if !check {
+                std::fs::write(file, &bytes).map_err(|e| format!("{}: {e}", shown(file)))?;
+                println!("{}", shown(file));
+            } else if std::fs::read(file).ok().as_deref() != Some(bytes.as_slice()) {
+                differ.push(shown(file));
             }
+            count += 1;
         }
     }
     if !differ.is_empty() {

@@ -44,6 +44,14 @@ pub fn first_page(s: &Session) -> View {
 /// The browser's tree: its rows under the workflow's steps ([`emcraft_ui_core::outline`]).
 pub type Tree = Vec<emcraft_ui_core::outline::Part>;
 
+/// What the properties panel last followed the selection to: the row selected then, and the
+/// project's generation (a form not edited follows the model when it changes under it).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct Followed {
+    pub(crate) row: Option<String>,
+    pub(crate) generation: u64,
+}
+
 /// The band's fields' node, in a [`Field`].
 pub const BAND: &str = "@band";
 
@@ -240,9 +248,8 @@ pub struct App {
     /// generation it was read for.
     pub(crate) selection: Selection,
     pub(crate) tree: Option<(u64, Tree)>,
-    /// The row the properties panel last followed the selection to, and the project's generation
-    /// then.
-    pub(crate) followed: (Option<String>, u64),
+    /// What the properties panel last followed the selection to.
+    pub(crate) followed: Followed,
     /// The replies of commands the views show (port modes, a comparison, …), kept and let go
     /// by the shared table.
     pub(crate) replies: Replies,
@@ -353,7 +360,7 @@ impl App {
             pinned: None,
             selection: Selection::default(),
             tree: None,
-            followed: (None, 0),
+            followed: Followed::default(),
             replies: Replies::default(),
             dialog: None,
             adding: None,
@@ -641,11 +648,20 @@ impl App {
 
     /// The one row selected: its form in the properties panel.
     fn edit(&mut self) {
-        let Some(r) = self.selected_row() else { return };
-        match self.form_for(&r) {
-            Some(Ok(d)) => self.dialog = Some(d),
-            Some(Err(e)) => self.fail(e),
-            None => {}
+        if let Some(d) = self.selected_row().and_then(|r| self.opened_form(&r)) {
+            self.dialog = Some(d);
+        }
+    }
+
+    /// Row `r`'s form, opened: none for a row that edits nothing, or one whose form cannot open
+    /// (said in the messages).
+    fn opened_form(&mut self, r: &Row) -> Option<Dialog> {
+        match self.form_for(r)? {
+            Ok(d) => Some(d),
+            Err(e) => {
+                self.fail(e);
+                None
+            }
         }
     }
 
@@ -656,9 +672,9 @@ impl App {
     /// (a grip let go, undo): it shows the item as it is now.
     fn follow_selection(&mut self) {
         let row = self.selected_row();
-        let key = row.as_ref().map(|r| r.id.clone());
-        let (same, changed) = (key == self.followed.0, self.followed.1 != self.generation);
-        self.followed = (key, self.generation);
+        let now = Followed { row: row.as_ref().map(|r| r.id.clone()), generation: self.generation };
+        let (same, changed) = (now.row == self.followed.row, now.generation != self.followed.generation);
+        self.followed = now;
         let untouched = |d: &Dialog| d.item.is_some() && d.unchanged.is_some() && d.clone().params().ok() == d.unchanged;
         if same && !(changed && self.dialog.as_ref().is_some_and(untouched)) {
             return;
@@ -666,14 +682,7 @@ impl App {
         if self.dialog.as_ref().is_some_and(|d| d.item.is_none()) {
             return;
         }
-        self.dialog = match row.and_then(|r| self.form_for(&r)) {
-            Some(Ok(d)) => Some(d),
-            Some(Err(e)) => {
-                self.fail(e);
-                None
-            }
-            None => None,
-        };
+        self.dialog = row.and_then(|r| self.opened_form(&r));
     }
 
     /// Command `id` from a ＋ list or the search: its dialog on the model's values, or (without parameters) run.
@@ -727,7 +736,7 @@ impl App {
                 self.after(id, &params, &reply);
                 // An item's form stays, on the item as it is now.
                 if d.item.is_some() {
-                    self.followed.0 = None;
+                    self.followed.row = None;
                 }
             }
             // Shown under the field it names, and said in the message area.
@@ -927,9 +936,10 @@ impl App {
         // item's form), else the open step's panel.
         let docked = self.dialog.as_ref().filter(|_| project).map(|d| crate::dialog::panel(self, d));
         let panel = docked.or_else(|| crate::step_panel::view(self).filter(|_| crate::steps::stepped(self)));
-        let page = match project {
-            true => row(std::iter::once(crate::browser::view(self)).chain(std::iter::once(page)).chain(panel)).spacing(8).height(Fill).boxed(),
-            false => page,
+        let page = if project {
+            row(std::iter::once(crate::browser::view(self)).chain(std::iter::once(page)).chain(panel)).spacing(8).height(Fill).boxed()
+        } else {
+            page
         };
         let parts = std::iter::once(bar.boxed()).chain(found).chain(crate::files::recoveries(self)).chain([page, crate::messages::view(self)]);
         let window = container(iced::widget::Column::with_children(parts)).width(Fill).height(Fill).style(look::window(t));
