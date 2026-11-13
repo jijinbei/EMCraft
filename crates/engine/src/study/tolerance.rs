@@ -161,7 +161,7 @@ pub fn tolerance(s: &mut Session, p: &Params) -> Result<Value> {
     let specs = specs(p)?;
     let n = p.integer("samples", 2..=MAX_GRID_POINTS).or(DEFAULT_SAMPLES)?;
     let seed = p.integer("seed", 0..=u32::MAX as usize).or(1)? as u64;
-    let solve = solve_of(p)?;
+    let solve = solve_of(s, p)?;
     let outputs = outputs_of(p)?;
     let mut rng = SplitMix(seed);
     let draws: Vec<Vec<f64>> = (0..n).map(|_| spreads.iter().map(|sp| sp.nominal + rng.draw(sp)).collect()).collect();

@@ -146,6 +146,7 @@ pub fn param_label(command: &str, name: &'static str) -> &'static str {
         (_, "parameter") => t!("Parameter").en(),
         (_, "params") => t!("Parameters").en(),
         (_, "passes") => t!("Passes").en(),
+        (_, "lowest") => t!("The lowest modes").en(),
         (_, "path") => t!("File").en(),
         (_, "per_wavelength") => t!("Wave divisions").en(),
         (_, "period") => t!("Period").en(),

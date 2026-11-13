@@ -16,8 +16,17 @@ pub(super) struct Solve<'a> {
     params: Value,
 }
 
-pub(super) fn solve_of<'a>(p: &Params<'a>) -> Result<Solve<'a>> {
-    let v = p.raw("solve").ok_or_else(|| p.error("solve", "is required: {\"command\": \"solve.frequency\", \"params\": {…}}"))?;
+/// The study's `solve`, or the job's confirmed run (as solve.run runs it) when it gives none.
+pub(super) fn solve_of<'a>(s: &Session, p: &Params<'a>) -> Result<Solve<'a>> {
+    let Some(v) = p.raw("solve") else {
+        let (command, params) = crate::job::run_of(s).map_err(|_| {
+            p.error(
+                "solve",
+                "give the solve at each point ({\"command\": \"solve.frequency\", \"params\": {…}}), or confirm the run's settings (project.setup)",
+            )
+        })?;
+        return Ok(Solve { command, params });
+    };
     let Step { command, params } = Step::deserialize(v).map_err(|_| p.error("solve", "needs a `command` (solve.frequency, solve.eigenmodes, …)"))?;
     let spec = crate::find_command(&command).filter(|c| c.effect == Effect::Solve).ok_or_else(|| {
         let solvers: Vec<&str> = crate::COMMANDS.iter().filter(|c| c.effect == Effect::Solve).map(|c| c.id).collect();

@@ -656,7 +656,7 @@ pub fn initial(command: &str, s: &Session) -> Value {
             Some((a, z)) => json!({"start": a, "stop": z, "points": 11, "order": 2}),
             None => json!({"start": 8, "stop": 12, "points": 11, "order": 2}),
         },
-        "solve.eigenmodes" => json!({"near": middle, "count": 5, "order": 2}),
+        "solve.eigenmodes" => json!({"near": middle, "lowest": true, "count": 5, "order": 2}),
         "solve.radiation" => json!({"frequency": middle, "order": 2}),
         "solve.time_domain" => {
             let (a, z) = band.unwrap_or((8.0, 12.0));
@@ -771,7 +771,7 @@ fn study(command: &str, s: &Session, band: Option<(f64, f64)>) -> Value {
     } else if s.model().ports.is_empty() {
         let near = band.map_or(10.0, |(a, z)| 0.5 * (a + z));
         (
-            json!({"command": "solve.eigenmodes", "params": {"near": near, "count": 3, "order": 2}}),
+            json!({"command": "solve.eigenmodes", "params": {"lowest": true, "count": 3, "order": 2}}),
             json!({"type": "eigenfrequency", "mode": 1, "target": near}),
         )
     } else {
@@ -781,11 +781,57 @@ fn study(command: &str, s: &Session, band: Option<(f64, f64)>) -> Value {
             json!({"type": "min_max_db", "parameter": "s11"}),
         )
     };
-    if command == "study.sweep" {
+    let mut v = if command == "study.sweep" {
         json!({"variable": name, "start": spread(-0.2), "stop": spread(0.2), "points": 5, "solve": solve})
     } else {
         json!({"variables": [{"name": name, "min": spread(-0.5), "max": spread(0.5)}], "goal": goal, "solve": solve, "max_evaluations": 40})
+    };
+    // With the run's settings confirmed, each point runs them: no solve to write by hand.
+    if s.model().job.setup().is_some()
+        && let Some(o) = v.as_object_mut()
+    {
+        o.remove("solve");
     }
+    v
+}
+
+/// The fields a command's dialog folds under Options (the study's solve by hand, its grid and
+/// its surrogate): what most runs leave as they are.
+pub fn folded(command: &str) -> &'static [&'static str] {
+    match command {
+        "study.sweep" => &["variables", "values", "solve", "outputs", "surrogate"],
+        "study.optimize" | "study.tolerance" => &["solve"],
+        _ => &[],
+    }
+}
+
+/// What each point of a study runs when its dialog gives no solve: the confirmed run in a line
+/// (its command's label, then each parameter's label and value), or why there is none.
+///
+/// ```
+/// use emcraft_engine::Session;
+/// use emcraft_ui_core::dialogs::each_point;
+/// let mut s = Session::new();
+/// assert!(each_point(&s).is_err(), "no run's settings confirmed yet");
+/// s.execute("file.sample", &serde_json::json!({"name": "highpass"}))?;
+/// assert!(each_point(&s)?.contains("101"), "{}", each_point(&s)?); // its 101 points
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub fn each_point(s: &Session) -> Result<String, String> {
+    let (command, params) = emcraft_engine::job::run_of(s)
+        .map_err(|_| crate::lang::tr(t!("Confirm the run's settings (Setup) first, or give the solve under Options.")).to_owned())?;
+    let parts: Vec<String> = params
+        .as_object()
+        .into_iter()
+        .flatten()
+        .map(|(k, v)| {
+            let label = emcraft_engine::find_command(command)
+                .and_then(|c| c.params.iter().find(|q| q.name == k))
+                .map_or_else(|| k.clone(), |q| crate::lang::lookup(crate::param_labels::param_label(command, q.name)).to_owned());
+            format!("{label} {}", value_text(v))
+        })
+        .collect();
+    Ok(format!("{} · {}", crate::lang::command_label(command), parts.join(", ")))
 }
 
 /// A variable's value `v` moved by the share `k` of it (by `k` itself when it is 0): a study's
@@ -850,6 +896,20 @@ mod tests {
         assert_eq!((text(&d, "start"), text(&d, "stop")), ("1.2".to_owned(), "1.8".to_owned()));
         let d = d.followed("points", &s);
         assert_eq!(text(&d, "start"), "1.2", "other fields leave it");
+    }
+
+    /// A study's dialog with the run's settings confirmed writes no solve: each point runs them,
+    /// said in a line, and the hand-written solve is folded under Options with the grid's
+    /// fields. Evidence: the high-pass filter's confirmed sweep has 101 points.
+    #[test]
+    fn a_studys_dialog_runs_the_confirmed_settings() {
+        let mut s = Session::new();
+        s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+        let d = Dialog::new(spec("study.sweep"), &s, &initial("study.sweep", &s), false);
+        assert!(d.fields.iter().any(|f| f.name == "solve" && f.text.is_empty()));
+        assert!(d.clone().params().is_ok_and(|p| p.get("solve").is_none()));
+        assert!(each_point(&s).is_ok_and(|line| line.contains("101")), "{:?}", each_point(&s));
+        assert!(folded("study.sweep").contains(&"solve") && !folded("study.sweep").contains(&"variable"));
     }
 
     /// Every command's dialog opens on its initial values and gives back parameters the engine

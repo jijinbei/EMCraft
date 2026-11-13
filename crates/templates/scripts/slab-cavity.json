@@ -7,6 +7,6 @@
  {"command": "model.material.create", "params": {"name": "ptfe", "eps_r": "=er"}},
  {"command": "geometry.waveguide", "params": {"width": "=a", "height": "=b", "sections": [{"length": "=d1", "material": "vacuum"}, {"length": "=d2", "material": "ptfe"}]}},
  {"command": "mesh.generate", "params": {"size": 3}},
- {"command": "project.setup", "params": {"kind": "eigenmodes", "count": 3, "order": 2, "frequency": 8}},
- {"command": "solve.eigenmodes", "params": {"near": 8, "count": 3, "order": 2}}
+ {"command": "project.setup", "params": {"kind": "eigenmodes", "count": 3, "order": 2, "frequency": 8, "lowest": true}},
+ {"command": "solve.eigenmodes", "params": {"lowest": true, "count": 3, "order": 2}}
 ]

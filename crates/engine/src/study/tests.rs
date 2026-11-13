@@ -372,3 +372,20 @@ fn a_tolerance_analysis_repeats_with_its_seed_and_reads_its_yield() {
         assert!(s.execute("study.tolerance", &bad).is_err(), "{bad}");
     }
 }
+
+/// A study given no solve runs the run's confirmed settings at each point, and without them
+/// asks for either. Evidence: the confirmed sweep of three frequencies, 6 to 9 GHz, is what each
+/// point's row holds.
+#[test]
+fn a_study_without_a_solve_runs_the_confirmed_settings() {
+    let mut s = filter(6.0);
+    let sweep = json!({"variable": "l", "values": [18, 22]});
+    let e = s.execute("study.sweep", &sweep).unwrap_err().to_string();
+    assert!(e.contains("project.setup"), "{e}");
+    s.execute("project.setup", &json!({"kind": "frequency", "start": 6, "stop": 9, "points": 3, "order": 1})).unwrap();
+    let reply = s.execute("study.sweep", &sweep).unwrap();
+    assert_eq!(reply["solve"], "solve.frequency", "{reply}");
+    let rows = reply["rows"].as_array().map_or(0, Vec::len);
+    let freqs = reply["rows"][0]["points"].as_array().map_or(0, Vec::len);
+    assert_eq!((rows, freqs), (2, 3), "{reply}");
+}

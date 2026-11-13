@@ -1,6 +1,7 @@
 //! The devices a solve may run on, as `solve.devices` lists them, and the one chosen for a
-//! machine at first: an available CUDA accelerator in double precision (single for the time
-//! domain when double is not offered), else the CPU's threads.
+//! machine at first: the CPU's threads for the frequency-domain solvers (their fronts are complex
+//! double, which a GeForce card runs at 1/64 of its single rate: an RTX 3080 took 101 s where the
+//! CPU took 35 s), the time domain on an available CUDA accelerator.
 
 use emcraft_engine::{Device, Precision};
 use serde_json::Value;
@@ -54,15 +55,16 @@ pub fn rows(list: &Value) -> Vec<DeviceRow> {
 /// ```
 /// use emcraft_engine::{Device, Precision};
 /// use emcraft_ui_core::steps::{Solver, devices::recommended};
-/// let list = serde_json::json!({"devices":[{"name":"cpu","available":true,"precisions":["double"]},{"name":"cuda","available":true,"precisions":["single"]}]});
+/// let list = serde_json::json!({"devices":[{"name":"cpu","available":true,"precisions":["double"]},{"name":"cuda","available":true,"precisions":["single","double"]}]});
+/// // A CUDA card in double is there, and the frequency domain still starts on the CPU.
 /// assert_eq!(recommended(&list, Solver::Frequency), (Device::Cpu, Precision::Double));
-/// assert_eq!(recommended(&list, Solver::TimeDomain), (Device::Cuda, Precision::Single));
+/// assert_eq!(recommended(&list, Solver::TimeDomain), (Device::Cuda, Precision::Double));
 /// ```
 pub fn recommended(list: &Value, solver: Solver) -> (Device, Precision) {
     use {Device::*, Precision::*};
     let candidates: &[(Device, Precision)] = match solver {
         Solver::TimeDomain => &[(Cuda, Double), (Cuda, Single), (Cpu, Double)],
-        _ => &[(Cuda, Double), (Cpu, Double)],
+        _ => &[(Cpu, Double)],
     };
     let rows = rows(list);
     candidates.iter().copied().find(|&(device, p)| rows.iter().any(|r| r.device == device && r.available && r.runs(p))).unwrap_or((Cpu, Double))

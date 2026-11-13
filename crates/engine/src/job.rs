@@ -61,6 +61,7 @@ pub fn parse(s: &Session, p: &Params) -> Result<Setup> {
             near: p.hertz("frequency").required()?,
             count: job::count("count", p.integer("count", 1..=MAX_MODES).or(DEFAULT_MODES)?, MAX_MODES)?,
             order: order()?,
+            lowest: p.flag("lowest").or(false)?,
         },
         Analysis::Radiation => Setup::Radiation { frequency: p.hertz("frequency").required()?, order: order()? },
         Analysis::Pcb => return Err(p.error("kind", "the PCB diagnosis has no run settings: its conditions are pcb.inspect's")),
@@ -79,7 +80,10 @@ pub fn setup_reply(s: &Session) -> Value {
             json!({"start": f(band.start), "stop": f(band.stop), "points": points.get(), "order": order(*o)})
         }
         Setup::TimeDomain { band, points, cell, excite } => time_domain(s, *band, *points, *cell, excite),
-        Setup::Eigenmodes { near, count, order: o } => json!({"frequency": f(*near), "count": count.get(), "order": order(*o)}),
+        Setup::Eigenmodes { near, count, order: o, lowest: false } => json!({"frequency": f(*near), "count": count.get(), "order": order(*o)}),
+        Setup::Eigenmodes { near, count, order: o, lowest: true } => {
+            json!({"frequency": f(*near), "count": count.get(), "order": order(*o), "lowest": true})
+        }
         Setup::Radiation { frequency, order: o } => json!({"frequency": f(*frequency), "order": order(*o)}),
         Setup::System { band, points, frequency } => system(s, *band, *points, *frequency),
     };
@@ -103,10 +107,15 @@ pub fn solve_of(s: &Session, setup: &Setup) -> (&'static str, Value) {
         Setup::TimeDomain { band, points, cell, excite } => ("solve.time_domain", time_domain(s, *band, *points, *cell, excite)),
         // A periodic cell's modes depend on the phase across it: its dispersion diagram, the
         // bands up to the same shift.
-        Setup::Eigenmodes { near, count, order } if s.model.domain.periodic.is_some() => {
+        Setup::Eigenmodes { near, count, order, .. } if s.model.domain.periodic.is_some() => {
             ("solve.dispersion", json!({"near": f(*near), "bands": count.get().min(20), "order": u8::from(*order)}))
         }
-        Setup::Eigenmodes { near, count, order } => ("solve.eigenmodes", json!({"near": f(*near), "count": count.get(), "order": u8::from(*order)})),
+        Setup::Eigenmodes { near, count, order, lowest: false } => {
+            ("solve.eigenmodes", json!({"near": f(*near), "count": count.get(), "order": u8::from(*order)}))
+        }
+        Setup::Eigenmodes { count, order, lowest: true, .. } => {
+            ("solve.eigenmodes", json!({"lowest": true, "count": count.get(), "order": u8::from(*order)}))
+        }
         Setup::Radiation { frequency, order } => ("solve.radiation", json!({"frequency": f(*frequency), "order": u8::from(*order)})),
         Setup::System { band, points, frequency } => ("solve.system", system(s, *band, *points, *frequency)),
     }

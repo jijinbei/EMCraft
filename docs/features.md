@@ -169,7 +169,7 @@ Navigates the PCB workflow (board, net, settings, inspect, results) or selects a
 
 ## `project.setup` — Confirm the run's settings
 
-Confirms the run's settings for the job's kind of analysis (or `kind`), as the Setup step shows them: a sweep's band (`start`, `stop`), `points` and element `order`; the time domain's band, `points`, `cell` and the ports to `excite`; the eigenmodes' `count` near `frequency` and `order`; a radiation solve's `frequency` and `order`; a system's band, `points` and the `frequency` its budget is shown at. The job is then ready: the Setup step is done and Run (solve.run) runs them. Choosing another kind (project.analysis) takes them back. The band also sets meshing by wavelength (its top) and the port previews. Undo goes back.
+Confirms the run's settings for the job's kind of analysis (or `kind`), as the Setup step shows them: a sweep's band (`start`, `stop`), `points` and element `order`; the time domain's band, `points`, `cell` and the ports to `excite`; the eigenmodes' `count` near `frequency` (or the lowest, `lowest`) and `order`; a radiation solve's `frequency` and `order`; a system's band, `points` and the `frequency` its budget is shown at. The job is then ready: the Setup step is done and Run (solve.run) runs them. Choosing another kind (project.analysis) takes them back. The band also sets meshing by wavelength (its top) and the port previews. Undo goes back.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -179,7 +179,8 @@ Confirms the run's settings for the job's kind of analysis (or `kind`), as the S
 | `points` | integer |  | no | the frequency points (default 101) |
 | `order` | integer |  | no | element order, 1 or 2 (default 2) |
 | `count` | integer |  | no | the eigenmodes to find, 1 to 50 (default 5) |
-| `frequency` | number | frequency | no | the eigenmodes' search frequency (near), the radiation solve's, or a system's budget's (default the band's centre) |
+| `frequency` | number | frequency | no | the eigenmodes' search frequency (near; with `lowest`, the frequency the mesh is for), the radiation solve's, or a system's budget's (default the band's centre) |
+| `lowest` | boolean |  | no | the eigenmodes: the `count` lowest, none left out, instead of those nearest `frequency` (default false) |
 | `cell` | number | length | no | the time domain's cell size (default 1 mm) |
 | `excite` | array |  | no | the time domain's ports to excite, by name (default the first) |
 
@@ -1171,11 +1172,12 @@ No parameters.
 
 ## `solve.eigenmodes` — Eigenmodes
 
-With symmetry planes found for every wall (model.symmetry.auto with no port), each combination of their walls is solved on the same mesh and the `count` modes nearest `near` of them all kept, each read in its own system. The resonances of the guide closed at both ends by conducting walls (a cavity; ports are left out): the `count` modes nearest `near`, with Q factors from the walls' conductivity and the dielectrics' loss tangents by perturbation. Put `near` a little above the modes wanted: modes up to about √2 times it are found before the curl's null space.
+With symmetry planes found for every wall (model.symmetry.auto with no port), each combination of their walls is solved on the same mesh and the `count` modes nearest `near` of them all kept, each read in its own system. The resonances of the guide closed at both ends by conducting walls (a cavity; ports are left out): the `count` modes nearest `near`, or with `lowest` the `count` lowest, none below the last left out; a count that ends inside a degenerate set (modes within 0.5 % of each other, such as a round cavity's TE111 pair) takes the rest of it too. Q factors from the walls' conductivity and the dielectrics' loss tangents by perturbation.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `near` | number | frequency | yes | the frequency the modes are sought around |
+| `near` | number | frequency | no | the frequency the modes are sought around (required without `lowest`) |
+| `lowest` | boolean |  | no | the lowest modes instead of those nearest `near` (default false) |
 | `count` | integer |  | no | modes, 1 to 50 (default 5) |
 | `order` | integer |  | no | element order: 1 or 2 (default) |
 
@@ -1746,7 +1748,7 @@ Sweeps a variable, or several on a grid: for each value (each point of the grid:
 | `start` | number |  | no | the first value (without `values`) |
 | `stop` | number |  | no | the last value |
 | `points` | integer |  | no | values from start to stop (default 5, at most 101) |
-| `solve` | object |  | yes | the solve at each point: {"command", "params"} |
+| `solve` | object |  | no | the solve at each point: {"command", "params"} (default the run's confirmed settings, as solve.run runs them) |
 | `outputs` | array |  | no | the S-parameters kept, such as ["s11", "s21"] (default all) |
 | `surrogate` | object |  | no | solve only some points and predict the rest: {"budget": N}, N from 2 to the grid's points (a grid of 3 or more) |
 
@@ -1759,7 +1761,7 @@ Monte Carlo tolerance analysis: each variable drawn about its value as it stands
 | `variables` | array |  | yes | the variables drawn: [{"name": "w", "sigma": 0.05}] (normal) or [{"name": "w", "tolerance": 0.1}] (uniform within ±), in the variables' units (at most 8) |
 | `samples` | integer |  | no | the draws (default 50, 2 to 400) |
 | `seed` | integer |  | no | the generator's seed (default 1): another seed, other draws |
-| `solve` | object |  | yes | the solve at each point: {"command", "params"} |
+| `solve` | object |  | no | the solve at each point: {"command", "params"} (default the run's confirmed settings, as solve.run runs them) |
 | `outputs` | array |  | no | the S-parameters kept, such as ["s11", "s21"] (default all) |
 | `spec` | array |  | no | bounds for the yield: [{"output": "s11", "max_db": -15, "start": 9, "stop": 11}] or `min_db` (|S| at least); frequencies in the display unit (at most 16) |
 
@@ -1771,7 +1773,7 @@ Finds the variables' values within their bounds that minimize a goal, by the Nel
 |---|---|---|---|---|
 | `variables` | array |  | yes | the variables varied: [{"name", "min", "max"}] (at most 8) |
 | `goal` | object |  | yes | what to minimize: {"type", "parameter", "target", "mode", "quantity"} |
-| `solve` | object |  | yes | the solve at each point: {"command", "params"} |
+| `solve` | object |  | no | the solve at each point: {"command", "params"} (default the run's confirmed settings, as solve.run runs them) |
 | `max_evaluations` | integer |  | no | the most solves (default 50, at most 500) |
 | `tolerance` | number |  | no | where it stops (default 1e-3): the simplex's size, a share of each range; Bayesian, the expected improvement, a share of the spread of the goal's values solved |
 | `method` | string |  | no | `simplex` (Nelder–Mead, the default) or `bayesian` (a Gaussian-process surrogate choosing each solve) |

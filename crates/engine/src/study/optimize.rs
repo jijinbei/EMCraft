@@ -145,7 +145,7 @@ fn best_row(rows: &[Row]) -> Result<usize> {
 pub fn optimize(s: &mut Session, p: &Params) -> Result<Value> {
     let bounds = bounds(s, p)?;
     let goal = Goal::read(p)?;
-    let solve = solve_of(p)?;
+    let solve = solve_of(s, p)?;
     let cap = p.integer("max_evaluations", 2..=MAX_EVALUATIONS).or(50)?;
     let tolerance = p.number("tolerance").check(|t| (1e-9..=0.5).contains(t), "from 1e-9 to 0.5").or(1e-3)?;
     let bayes = match p.string("method").or("simplex")? {

@@ -235,5 +235,11 @@ pub fn checked(solver: Solver, limit: u64, f: Fields) -> (Result<Value, String>,
     if solver == Solver::TimeDomain && !f.excite.is_empty() {
         p["excite"] = json!(f.excite);
     }
+    // The lowest modes, none left out: the frequency is the one the mesh is for, not a target
+    // whose nearest modes could leave a lower one out (a cavity's dimensions changed moved its
+    // modes past a fixed target).
+    if solver == Solver::Eigenmodes {
+        p["lowest"] = json!(true);
+    }
     (Ok(p), f)
 }

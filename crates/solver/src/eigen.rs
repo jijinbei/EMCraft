@@ -499,10 +499,104 @@ fn ferrite_modes(model: &Model, driven: &Driven, count: usize, near: f64) -> Res
     Ok((modes, iterations))
 }
 
-/// The `count` modes of the model's guide closed into a cavity nearest above and below
-/// `near` (Hz): the lowest ones when `near` is a little above them.
-pub fn eigenmodes(model: &Model, order: Order, count: usize, near: f64) -> Result<Eigen> {
+/// What an eigenmode analysis looks for.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Seek {
+    /// The modes nearest a frequency (Hz), above and below it.
+    Near(f64),
+    /// The lowest modes, none below the last one left out.
+    Lowest,
+}
+
+/// Two modes closer than this share of their frequency are one degenerate set (a round
+/// cavity's TE111 pair, split by its mesh by a few tenths of a per cent): a count that ends
+/// inside one takes the rest of it too, never half of it.
+const DEGENERATE: f64 = 5e-3;
+
+/// The most times the shift is lowered while the lowest mode found is not well above it.
+const MAX_LOWERINGS: usize = 6;
+
+/// How far mode `m` is from the shift at `near` (Hz) as the iteration measures it: in k², so
+/// in f², not f (a mode an octave below is nearer than one half again above).
+fn from_shift(m: &Mode, near: f64) -> f64 {
+    (m.frequency * m.frequency - near * near).abs()
+}
+
+/// `modes` (each with its distance from what is sought) cut to the `count` nearest, the rest
+/// of a degenerate set the last one belongs to kept too, in ascending frequency.
+fn kept(mut modes: Vec<Mode>, count: usize, distance: impl Fn(&Mode) -> f64) -> Vec<Mode> {
+    modes.sort_by(|a, b| distance(a).total_cmp(&distance(b)));
+    let last = modes.get(count.saturating_sub(1)).map(|m| m.frequency);
+    let mut n = count.min(modes.len());
+    if let Some(f) = last {
+        n += modes.iter().skip(n).take_while(|m| (m.frequency - f).abs() <= DEGENERATE * f).count();
+    }
+    modes.truncate(n);
+    modes.sort_by(|a, b| a.frequency.total_cmp(&b.frequency));
+    modes
+}
+
+/// A frequency (Hz) below the model's lowest cavity mode, to begin the lowest modes' search
+/// from: half the lowest mode an empty box as long as the mesh's longest side would have,
+/// filled with its densest material (c / (2 L n) / 2). A cavity loaded or folded below it is
+/// found by lowering the shift ([`lowest`]).
+fn below_the_lowest(model: &Model) -> Result<f64> {
+    let mesh = model.mesh.as_ref().ok_or_else(|| SolveError::NotReady("the model has no mesh".into()))?;
+    let span = |c: fn(&emcraft_model::Point3) -> f64| {
+        let (lo, hi) = mesh.nodes.iter().map(c).fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), v| (a.min(v), b.max(v)));
+        hi - lo
+    };
+    let side = span(|p| p.x).max(span(|p| p.y)).max(span(|p| p.z));
+    let index = model.materials.iter().map(|m| m.index_at(1e9)).filter(|n| n.is_finite()).fold(1.0, f64::max);
+    let f = C0 / (2.0 * side * index) / 2.0;
+    if f.is_finite() && f > 0.0 { Ok(f) } else { Err(invalid("eigenmodes", "the mesh has no extent")) }
+}
+
+/// The `count` lowest modes (and the rest of a degenerate set the last one is in): sought
+/// nearest a shift below them all, lowered while the lowest found is not √2 above it. Then
+/// every mode below the shift would be nearer it than the farthest found, so none is left out.
+fn lowest(model: &Model, order: Order, count: usize) -> Result<Eigen> {
+    let mut shift = below_the_lowest(model)?;
+    let mut eigen = nearest(model, order, count + 2, shift)?;
+    for _ in 0..MAX_LOWERINGS {
+        match eigen.modes.first() {
+            Some(m) if m.frequency < std::f64::consts::SQRT_2 * shift => {
+                shift = m.frequency / 2.0;
+                eigen = nearest(model, order, count + 2, shift)?;
+            }
+            _ => break,
+        }
+    }
+    let modes = kept(std::mem::take(&mut eigen.modes), count, |m| m.frequency);
+    Ok(Eigen { modes, ..eigen })
+}
+
+/// The `count` modes the model's guide closed into a cavity has nearest `near` (Hz) above and
+/// below it (a count ending inside a degenerate set taking the rest of it), or its lowest ones.
+pub fn eigenmodes_seek(model: &Model, order: Order, count: usize, seek: Seek) -> Result<Eigen> {
     if count == 0 || count > MAX_MODES {
+        return Err(invalid("mode count", format!("must be 1 to {MAX_MODES}")));
+    }
+    match seek {
+        Seek::Lowest => lowest(model, order, count),
+        Seek::Near(near) => {
+            let mut eigen = nearest(model, order, count + 2, near)?;
+            eigen.modes = kept(std::mem::take(&mut eigen.modes), count, |m| from_shift(m, near));
+            Ok(eigen)
+        }
+    }
+}
+
+/// The `count` modes of the model's guide closed into a cavity nearest above and below
+/// `near` (Hz): [`eigenmodes_seek`] with [`Seek::Near`].
+pub fn eigenmodes(model: &Model, order: Order, count: usize, near: f64) -> Result<Eigen> {
+    eigenmodes_seek(model, order, count, Seek::Near(near))
+}
+
+/// The `count` modes nearest `near` (Hz) as the iteration finds them (no degenerate set
+/// completed): at most [`MAX_MODES`] and two.
+fn nearest(model: &Model, order: Order, count: usize, near: f64) -> Result<Eigen> {
+    if count == 0 || count > MAX_MODES + 2 {
         return Err(invalid("mode count", format!("must be 1 to {MAX_MODES}")));
     }
     check_frequency(near)?;
@@ -539,30 +633,31 @@ pub fn eigenmodes(model: &Model, order: Order, count: usize, near: f64) -> Resul
     Ok(Eigen { driven, modes, iterations, families: Vec::new() })
 }
 
-/// The eigenmodes nearest `near` of a model whose symmetry planes' walls no port decides
-/// ([`Model::every_wall`]): each combination of walls solved on the same mesh
-/// ([`Model::with_walls`]; with two planes, four quarters), the `count` modes nearest `near`
-/// of them all kept in ascending frequency, each with its system. A whole cavity's modes are
-/// each even or odd about each plane, so every one is found, in a fraction of the whole's
-/// unknowns. Without that flag, [`eigenmodes`].
-pub fn eigenmodes_every_wall(model: &Model, order: Order, count: usize, near: f64) -> Result<Eigen> {
+/// The eigenmodes sought (nearest a frequency, or the lowest) of a model whose symmetry planes'
+/// walls no port decides ([`Model::every_wall`]): each combination of walls solved on the same
+/// mesh ([`Model::with_walls`]; with two planes, four quarters), the `count` sought of them all
+/// kept in ascending frequency (a degenerate set the last is in kept whole: its members are
+/// often of two families), each with its system. A whole cavity's modes are each even or odd
+/// about each plane, so every one is found, in a fraction of the whole's unknowns. Without that
+/// flag, [`eigenmodes_seek`].
+pub fn eigenmodes_every_wall(model: &Model, order: Order, count: usize, seek: Seek) -> Result<Eigen> {
     let combinations = model.wall_combinations();
     if !model.domain.every_wall || combinations.len() < 2 {
-        return eigenmodes(model, order, count, near);
+        return eigenmodes_seek(model, order, count, seek);
     }
     let mut systems: Vec<Driven> = Vec::with_capacity(combinations.len());
     let mut all: Vec<Mode> = Vec::new();
     let mut iterations = 0;
     for (k, kinds) in combinations.iter().enumerate() {
-        let e = eigenmodes(&model.with_walls(kinds), order, count, near)?;
+        let e = eigenmodes_seek(&model.with_walls(kinds), order, count, seek)?;
         iterations += e.iterations;
         all.extend(e.modes.into_iter().map(|m| Mode { family: k, ..m }));
         systems.push(e.driven);
     }
-    // The `count` nearest `near`, then by frequency.
-    all.sort_by(|a, b| (a.frequency - near).abs().total_cmp(&(b.frequency - near).abs()));
-    all.truncate(count);
-    all.sort_by(|a, b| a.frequency.total_cmp(&b.frequency));
+    let all = match seek {
+        Seek::Near(near) => kept(all, count, |m| from_shift(m, near)),
+        Seek::Lowest => kept(all, count, |m| m.frequency),
+    };
     let mut systems = systems.into_iter();
     let driven = systems.next().ok_or_else(|| SolveError::NotReady("no wall combination".into()))?;
     Ok(Eigen { driven, modes: all, iterations, families: systems.collect() })

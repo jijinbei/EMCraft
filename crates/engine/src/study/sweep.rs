@@ -16,7 +16,7 @@ use crate::{Params, Result, Session};
 /// a grid of several.
 pub fn sweep(s: &mut Session, p: &Params) -> Result<Value> {
     let axes = axes(s, p)?;
-    let solve = solve_of(p)?;
+    let solve = solve_of(s, p)?;
     let outputs = outputs_of(p)?;
     let n = axes.iter().try_fold(1usize, |n, (_, v)| n.checked_mul(v.len()).filter(|n| *n <= MAX_GRID_POINTS)).ok_or_else(|| {
         let sizes: Vec<String> = axes.iter().map(|(_, v)| v.len().to_string()).collect();

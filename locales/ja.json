@@ -628,14 +628,17 @@
     "mean element": "平均要素",
     "memory": "メモリー",
     "min |{p}| dB": "最小 |{p}| dB",
-    "modes": "モード数",
+    "lowest modes": "最低次からのモード数",
+    "The lowest modes": "最低次のモードを求める",
+    "Confirm the run's settings (Setup) first, or give the solve under Options.": "先に Setup で解析の設定を確定するか、Options で各点の解き方を指定してください。",
+    "Each point runs:": "各点で解くもの：",
     "modes ({unit})": "モード ({unit})",
     "must be a finite number": "有限の数値にしてください",
     "must be a whole number from {lo} to {hi}": "{lo}〜{hi} の整数にしてください",
     "must be from {lo} to {hi}": "{lo}〜{hi} にしてください",
     "must be greater than 0": "0 より大きくしてください",
     "must not be below the start": "開始より小さくできません",
-    "near": "目安周波数",
+    "mesh for": "メッシュの基準周波数",
     "needs attention": "要対応",
     "no": "いいえ",
     "no legend": "凡例なし",
@@ -1095,7 +1098,7 @@
     "results.cavity": {"label": "空洞の諸量", "doc": "固有モードを加速空洞として評価する。直線（`from`–`to`、どちらも省略すると領域の z 軸）に沿って、速さ `beta` c の粒子が感じる電圧 V = |∫ E_z e^{jωz/(βc)} dz| と電界そのものの V₀ = |∫ E_z dz|（ともに蓄積エネルギー 1 J あたり、V）、走行時間係数 T = V/V₀、R/Q = V²/(ωU)（Ω、線形加速器の定義）、損失のある壁では Q₀ とシャント抵抗 (R/Q) Q₀（Ω）。", "params": {"mode": "固有モード（1 から、既定 1）", "from": "直線の始点 [x, y, z]", "to": "直線の終点 [x, y, z]", "beta": "粒子の速さ v/c（0 より大きく 1 以下、既定 1）", "points": "直線の分割数（1〜20000、既定 400）"}},
     "project.setup": {
       "label": "解析設定の確定",
-      "doc": "ジョブの解析の種類（または `kind`）の実行設定を、Setup ステップに表示されたとおりに確定する。掃引は帯域（`start`、`stop`）・`points`・要素次数 `order`、時間領域は帯域・`points`・`cell`・励振するポート `excite`、固有モードは `frequency` の近くの `count` 個と `order`、放射解析は `frequency` と `order`、システムは帯域、`points` とバジェットを示す `frequency`。確定するとジョブは実行可能になる：Setup ステップは完了になり、Run（solve.run）がこの設定で実行する。別の種類を選ぶ（project.analysis）と確定は取り消される。帯域は波長基準のメッシュ分割（その上端）とポートモードのプレビューにも使う。元に戻せる。",
+      "doc": "ジョブの解析の種類（または `kind`）の実行設定を、Setup ステップに表示されたとおりに確定する。掃引は帯域（`start`、`stop`）・`points`・要素次数 `order`、時間領域は帯域・`points`・`cell`・励振するポート `excite`、固有モードは `frequency` の近くの `count` 個（`lowest` なら最低次から）と `order`、放射解析は `frequency` と `order`、システムは帯域、`points` とバジェットを示す `frequency`。確定するとジョブは実行可能になる：Setup ステップは完了になり、Run（solve.run）がこの設定で実行する。別の種類を選ぶ（project.analysis）と確定は取り消される。帯域は波長基準のメッシュ分割（その上端）とポートモードのプレビューにも使う。元に戻せる。",
       "params": {
         "kind": "解析の種類（既定はジョブのもの）：`frequency`、`eigenmodes`、`radiation`、`time_domain`、`system`。project.analysis と同じく選ぶ",
         "start": "帯域の開始（掃引、時間領域、システム）",
@@ -1103,7 +1106,8 @@
         "points": "周波数点数（既定 101）",
         "order": "要素次数、1 または 2（既定 2）",
         "count": "求める固有モードの数、1〜50（既定 5）",
-        "frequency": "固有モードの探索周波数（near）、放射解析の周波数、またはシステムのバジェットの周波数（既定は帯域の中心）",
+        "frequency": "固有モードの探索周波数（near。`lowest` のときはメッシュの基準周波数）、放射解析の周波数、またはシステムのバジェットの周波数（既定は帯域の中心）",
+        "lowest": "固有モード：`frequency` に近いモードの代わりに、最低次から `count` 個を取りこぼしなく求める（既定 false）",
         "cell": "時間領域のセルの大きさ（既定 1 mm）",
         "excite": "時間領域で励振するポートの名前（既定は最初のポート）"
       }
@@ -1440,7 +1444,7 @@
     },
     "geometry.reload": {
       "label": "形状を読み直す",
-      "doc": "履歴からモデルを組み直し、取り込んだファイルをすべて読み直す：EMCraft から SolidCraft で開いて保存した設計は今の形で入り、取り込みの後のポート・材料・設定がそれに付け直される（docs/adr/0010-geometry-from-solidcraft.md）。履歴、実行記録、プロジェクトのファイルはそのまま。結果は残り、モデルが変わったところは古いものとして印が付く。",
+      "doc": "履歴からモデルを組み直し、取り込んだファイルをすべて読み直す：EMCraft から SolidCraft で開いて保存した設計は今の形で入り、取り込みの後のポート・材料・設定がそれに付け直される（docs/adr/0010-geometry-from-solidcraft.md）。履歴、実行記録、プロジェクトのファイルはそのまま。新しい形で正しくなくなった結果は捨てる（スタディは残す）。それまでの解析は解析履歴に残り、Restore で戻せる。",
       "params": {}
     },
     "geometry.design": {
@@ -1768,9 +1772,10 @@
     },
     "solve.eigenmodes": {
       "label": "固有モード",
-      "doc": "model.symmetry.auto がポートなしで見つけた対称面（すべての壁）があるときは、壁の組み合わせごとに同じメッシュで解き、全体から `near` に近い `count` 個のモードを、それぞれの系で残す。両端を導体壁で閉じた導波管（空洞。ポートは除外）の共振：`near` に最も近い `count` 個のモードと、壁の導電率と誘電体の損失正接から摂動法で求めた Q 値。`near` は求めたいモードより少し上に置く：回転の零空間より前に、その約 √2 倍までのモードが求まる。",
+      "doc": "model.symmetry.auto がポートなしで見つけた対称面（すべての壁）があるときは、壁の組み合わせごとに同じメッシュで解き、全体から `near` に近い `count` 個のモードを、それぞれの系で残す。両端を導体壁で閉じた導波管（空洞。ポートは除外）の共振：`near` に最も近い `count` 個のモード、または `lowest` なら最低次から `count` 個（それより下のモードは取りこぼさない）。`count` 個目が縮退したモードの組（互いに 0.5 % 以内、円筒空洞の TE111 の組など）の途中で終わるときは、組の残りも含める。Q 値は壁の導電率と誘電体の損失正接から摂動法で求める。",
       "params": {
-        "near": "モードを探す中心周波数",
+        "near": "モードを探す中心周波数（`lowest` がないときは必須）",
+        "lowest": "`near` に近いモードの代わりに最低次のモードを求める（既定 false）",
         "count": "モード数、1〜50（既定 5）",
         "order": "要素次数：1 または 2（既定）"
       }
@@ -2104,7 +2109,7 @@
         "start": "最初の値（`values` を使わない場合）",
         "stop": "最後の値",
         "points": "start から stop までの値の数（既定 5、最大 101）",
-        "solve": "各点での解析：{\"command\", \"params\"}",
+        "solve": "各点での解析：{\"command\", \"params\"}（既定は確定済みの実行設定。solve.run が実行するもの）",
         "outputs": "保持する Sパラメータ、例 [\"s11\", \"s21\"]（既定はすべて）",
         "surrogate": "一部の点だけを解析し残りを予測する：{\"budget\": N}、N は 2 からグリッドの点数まで（3 点以上のグリッド）"
       }
@@ -2116,7 +2121,7 @@
         "variables": "抽出する変数：[{\"name\": \"w\", \"sigma\": 0.05}]（正規）または [{\"name\": \"w\", \"tolerance\": 0.1}]（± の一様）、変数の単位で（最大 8）",
         "samples": "抽出の回数（既定 50、2〜400）",
         "seed": "生成器の種（既定 1）：別の種なら別の抽出",
-        "solve": "各点で実行する解析：{\"command\": \"solve.frequency\", \"params\": {…}}",
+        "solve": "各点での解析：{\"command\", \"params\"}（既定は確定済みの実行設定。solve.run が実行するもの）",
         "outputs": "残す S パラメータ、例 [\"s11\", \"s21\"]（既定はすべて）",
         "spec": "歩留まりの規格：[{\"output\": \"s11\", \"max_db\": -15, \"start\": 9, \"stop\": 11}] または `min_db`（|S| 以上）。周波数は表示単位（最大 16）"
       }
@@ -2127,7 +2132,7 @@
       "params": {
         "variables": "変化させる変数：[{\"name\", \"min\", \"max\"}]（最大 8 個）",
         "goal": "最小化する対象：{\"type\", \"parameter\", \"target\", \"mode\", \"quantity\"}",
-        "solve": "各点での解析：{\"command\", \"params\"}",
+        "solve": "各点での解析：{\"command\", \"params\"}（既定は確定済みの実行設定。solve.run が実行するもの）",
         "max_evaluations": "最大の解析回数（既定 50、最大 500）",
         "tolerance": "停止の基準（既定 1e-3）：シンプレックスの大きさ、各範囲に対する割合。ベイズ最適化では期待改善量、解析した目標値の幅に対する割合",
         "method": "`simplex`（Nelder–Mead、既定）または `bayesian`（ガウス過程代理モデルが各解析点を選ぶ）"

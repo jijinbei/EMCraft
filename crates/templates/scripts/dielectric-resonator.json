@@ -6,6 +6,6 @@
  {"command": "geometry.import", "params": {"path": "template:dielectric-resonator.solidcraft", "parameters": {"r_puck": "=r_puck", "h_puck": "=h_puck"}, "materials": {"cavity": "interior", "puck": "ceramic"}}},
  {"command": "model.walls", "params": {"thickness": 1.27, "conductivity": 58000000.0}},
  {"command": "mesh.generate", "params": {"size": 3}},
- {"command": "project.setup", "params": {"kind": "eigenmodes", "count": 4, "order": 2, "frequency": 5}},
- {"command": "solve.eigenmodes", "params": {"near": 5, "count": 4, "order": 2}}
+ {"command": "project.setup", "params": {"kind": "eigenmodes", "count": 4, "order": 2, "frequency": 5, "lowest": true}},
+ {"command": "solve.eigenmodes", "params": {"lowest": true, "count": 4, "order": 2}}
 ]

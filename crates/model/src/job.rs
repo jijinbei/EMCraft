@@ -50,8 +50,15 @@ impl From<Order> for u8 {
 pub enum Setup {
     /// S-parameters at `points` frequencies over `band`.
     Frequency { band: Band, points: NonZeroUsize, order: Order },
-    /// `count` modes near `near`.
-    Eigenmodes { near: Hertz, count: NonZeroUsize, order: Order },
+    /// `count` modes near `near`, or with `lowest` the `count` lowest (`near` then the
+    /// frequency the mesh and the band's diagram are for).
+    Eigenmodes {
+        near: Hertz,
+        count: NonZeroUsize,
+        order: Order,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        lowest: bool,
+    },
     /// The radiation at `frequency`.
     Radiation { frequency: Hertz, order: Order },
     /// A pulse over `band` on a grid of `cell`, its spectrum at `points` frequencies; one run

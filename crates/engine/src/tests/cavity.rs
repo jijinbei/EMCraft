@@ -17,6 +17,8 @@ fn a_pillbox_accelerates_as_its_closed_form_says() {
     s.execute("model.walls", &json!({"conductivity": 5.8e7})).unwrap();
     s.execute("mesh.generate", &json!({"size": 3})).unwrap();
     s.execute("solve.eigenmodes", &json!({"near": 11.4, "count": 2, "order": 2})).unwrap();
+    // Two asked for, three kept: TE111's pair is not split.
+    assert_eq!(s.results().eigen.as_ref().map(|e| e.modes.len()), Some(3));
     let r = s.execute("results.cavity", &json!({})).unwrap();
     // TE111 has no E_z on the axis: no transit time to give.
     let te = s.execute("results.cavity", &json!({"mode": 2})).unwrap();
@@ -33,7 +35,7 @@ fn a_pillbox_accelerates_as_its_closed_form_says() {
     approx::assert_abs_diff_eq!(given["r_over_q"].as_f64().unwrap(), rq, epsilon = 1e-9 * rq);
     for bad in [
         json!({"mode": 0}),
-        json!({"mode": 3}),
+        json!({"mode": 4}),
         json!({"beta": 0}),
         json!({"beta": 1.5}),
         json!({"beta": "fast"}),

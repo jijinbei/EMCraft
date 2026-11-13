@@ -5,6 +5,6 @@
  {"command": "geometry.import", "params": {"path": "template:coaxial-line.solidcraft", "parameters": {"r_outer": "=r_outer", "r_inner": "=r_inner", "l": "=l"}, "materials": {"line": "interior", "inner": "metal"}}},
  {"command": "model.walls", "params": {"thickness": 1.27, "conductivity": 58000000.0}},
  {"command": "mesh.generate", "params": {"size": 2}},
- {"command": "project.setup", "params": {"kind": "eigenmodes", "count": 2, "order": 2, "frequency": 5}},
- {"command": "solve.eigenmodes", "params": {"near": 5, "count": 2, "order": 2}}
+ {"command": "project.setup", "params": {"kind": "eigenmodes", "count": 2, "order": 2, "frequency": 5, "lowest": true}},
+ {"command": "solve.eigenmodes", "params": {"lowest": true, "count": 2, "order": 2}}
 ]

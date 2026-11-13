@@ -165,7 +165,8 @@ const CO_POLAR: ParamSpec =
 const RENAME: ParamSpec = opt("rename", K::String, "a new name, unique");
 
 // The solve a study runs at each point.
-const STUDY_SOLVE: ParamSpec = req("solve", K::Object, "the solve at each point: {\"command\", \"params\"}");
+const STUDY_SOLVE: ParamSpec =
+    opt("solve", K::Object, "the solve at each point: {\"command\", \"params\"} (default the run's confirmed settings, as solve.run runs them)");
 
 pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
@@ -375,7 +376,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "project.setup",
         label: "Confirm the run's settings",
-        doc: "Confirms the run's settings for the job's kind of analysis (or `kind`), as the Setup step shows them: a sweep's band (`start`, `stop`), `points` and element `order`; the time domain's band, `points`, `cell` and the ports to `excite`; the eigenmodes' `count` near `frequency` and `order`; a radiation solve's `frequency` and `order`; a system's band, `points` and the `frequency` its budget is shown at. The job is then ready: the Setup step is done and Run (solve.run) runs them. Choosing another kind (project.analysis) takes them back. The band also sets meshing by wavelength (its top) and the port previews. Undo goes back.",
+        doc: "Confirms the run's settings for the job's kind of analysis (or `kind`), as the Setup step shows them: a sweep's band (`start`, `stop`), `points` and element `order`; the time domain's band, `points`, `cell` and the ports to `excite`; the eigenmodes' `count` near `frequency` (or the lowest, `lowest`) and `order`; a radiation solve's `frequency` and `order`; a system's band, `points` and the `frequency` its budget is shown at. The job is then ready: the Setup step is done and Run (solve.run) runs them. Choosing another kind (project.analysis) takes them back. The band also sets meshing by wavelength (its top) and the port previews. Undo goes back.",
         params: &[
             opt("kind", K::String, "the kind of analysis (default the job's): `frequency`, `eigenmodes`, `radiation`, `time_domain` or `system`; choosing it as project.analysis does").one_of(&Analysis::IDS),
             opt("start", K::Number, "the band's start (a sweep, the time domain, a system)").of(F),
@@ -383,7 +384,8 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("points", K::Integer, "the frequency points (default 101)"),
             opt("order", K::Integer, "element order, 1 or 2 (default 2)"),
             opt("count", K::Integer, "the eigenmodes to find, 1 to 50 (default 5)"),
-            opt("frequency", K::Number, "the eigenmodes' search frequency (near), the radiation solve's, or a system's budget's (default the band's centre)").of(F),
+            opt("frequency", K::Number, "the eigenmodes' search frequency (near; with `lowest`, the frequency the mesh is for), the radiation solve's, or a system's budget's (default the band's centre)").of(F),
+            opt("lowest", K::Boolean, "the eigenmodes: the `count` lowest, none left out, instead of those nearest `frequency` (default false)"),
             opt("cell", K::Number, "the time domain's cell size (default 1 mm)").of(L),
             opt("excite", K::Array, "the time domain's ports to excite, by name (default the first)"),
         ],
@@ -1536,9 +1538,10 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "solve.eigenmodes",
         label: "Eigenmodes",
-        doc: "With symmetry planes found for every wall (model.symmetry.auto with no port), each combination of their walls is solved on the same mesh and the `count` modes nearest `near` of them all kept, each read in its own system. The resonances of the guide closed at both ends by conducting walls (a cavity; ports are left out): the `count` modes nearest `near`, with Q factors from the walls' conductivity and the dielectrics' loss tangents by perturbation. Put `near` a little above the modes wanted: modes up to about √2 times it are found before the curl's null space.",
+        doc: "With symmetry planes found for every wall (model.symmetry.auto with no port), each combination of their walls is solved on the same mesh and the `count` modes nearest `near` of them all kept, each read in its own system. The resonances of the guide closed at both ends by conducting walls (a cavity; ports are left out): the `count` modes nearest `near`, or with `lowest` the `count` lowest, none below the last left out; a count that ends inside a degenerate set (modes within 0.5 % of each other, such as a round cavity's TE111 pair) takes the rest of it too. Q factors from the walls' conductivity and the dielectrics' loss tangents by perturbation.",
         params: &[
-            req("near", K::Number, "the frequency the modes are sought around").of(F),
+            opt("near", K::Number, "the frequency the modes are sought around (required without `lowest`)").of(F),
+            opt("lowest", K::Boolean, "the lowest modes instead of those nearest `near` (default false)"),
             opt("count", K::Integer, "modes, 1 to 50 (default 5)"),
             ORDER,
         ],

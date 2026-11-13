@@ -190,10 +190,24 @@ fn body<'a>(app: &'a App, d: &'a Dialog, padding: iced::Padding) -> Element<'a, 
     // The import's head: the formats, Choose file…, what the file holds (crate::import).
     let head = crate::import::head(app, d);
     let (fold, help) = (crate::import::fold(app, d), crate::import::help(app, d));
-    Column::with_children(std::iter::once(title).chain(head).chain(fold).chain([list]).chain(help).chain(error).chain(std::iter::once(footer)))
-        .spacing(t.space_12)
-        .padding(padding)
-        .boxed()
+    let each = each_point(app, d);
+    Column::with_children(
+        std::iter::once(title).chain(head).chain([list]).chain(each).chain(fold).chain(help).chain(error).chain(std::iter::once(footer)),
+    )
+    .spacing(t.space_12)
+    .padding(padding)
+    .boxed()
+}
+
+/// A study's dialog without a solve written: what each of its points runs (the run's confirmed
+/// settings, in a line), or that the settings are to confirm first.
+fn each_point<'a>(app: &'a App, d: &Dialog) -> Option<Element<'a, Message>> {
+    let t = app.look.tokens;
+    let empty = d.fields.iter().find(|f| f.name == "solve")?.text.trim().is_empty();
+    (d.command.id.starts_with("study.") && empty).then(|| match dialogs::each_point(&app.session) {
+        Ok(line) => text(format!("{} {line}", tr(t!("Each point runs:")))).size(t.font_small).color(t.text_dim).boxed(),
+        Err(why) => text(why).size(t.font_small).color(t.warning).boxed(),
+    })
 }
 
 /// The open dialog `d` over the window (a page that is not the project's: the start page).

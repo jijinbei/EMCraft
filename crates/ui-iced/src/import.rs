@@ -169,19 +169,23 @@ pub fn head<'a>(app: &'a App, d: &'a Dialog) -> Option<Element<'a, Message>> {
 }
 
 /// Which of dialog `d`'s fields its list shows: all, but for the import the path (and the
-/// parameters, unless a design's are edited above) with the rest under Options.
+/// parameters, unless a design's are edited above) with the rest under Options, and for another
+/// command those it folds ([`emcraft_ui_core::dialogs::folded`]) under Options.
 pub fn shown<'d>(app: &App, d: &'d Dialog) -> impl Fn(&str) -> bool + 'd {
     let import = d.command.id == ID;
     let design =
         app.replies.import.as_ref().filter(|p| p.key == key(d)).and_then(|p| p.reply.as_ref().ok()).is_some_and(|r| r.format == "solidcraft");
-    move |n: &str| !import || if ABOVE.contains(&n) { n == "path" || !design } else { d.options }
+    let folded = emcraft_ui_core::dialogs::folded(d.command.id);
+    move |n: &str| {
+        if import { if ABOVE.contains(&n) { n == "path" || !design } else { d.options } } else { d.options || !folded.contains(&n) }
+    }
 }
 
-/// The import's Options: a ▸ that unfolds its other fields, ▾ that folds them; and ? beside it
-/// that shows the command's description.
+/// The Options of the import and of a dialog that folds fields: a ▸ that unfolds them, ▾ that
+/// folds them; and ? beside it that shows the command's description.
 pub fn fold<'a>(app: &'a App, d: &Dialog) -> Option<Element<'a, Message>> {
     let t = app.look.tokens;
-    (d.command.id == ID).then(|| {
+    (d.command.id == ID || !emcraft_ui_core::dialogs::folded(d.command.id).is_empty()).then(|| {
         let mark = if d.options { "▾" } else { "▸" };
         let options = button(text(format!("{mark} {}", tr(t!("Options")))).size(t.font_body))
             .style(look::quiet(t))
@@ -194,7 +198,9 @@ pub fn fold<'a>(app: &'a App, d: &Dialog) -> Option<Element<'a, Message>> {
 /// The command's whole description, while ? is on.
 pub fn help<'a>(app: &'a App, d: &Dialog) -> Option<Element<'a, Message>> {
     let t = app.look.tokens;
-    (d.command.id == ID && d.help).then(|| text(emcraft_ui_core::lang::command_doc(ID).to_owned()).size(t.font_small).color(t.text_dim).boxed())
+    let id = d.command.id;
+    let folds = id == ID || !emcraft_ui_core::dialogs::folded(id).is_empty();
+    (folds && d.help).then(|| text(emcraft_ui_core::lang::command_doc(id).to_owned()).size(t.font_small).color(t.text_dim).boxed())
 }
 
 /// What the file holds: its bodies, size and units, and a design's parameters as fields.

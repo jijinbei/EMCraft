@@ -762,3 +762,22 @@ fn a_lossy_ferrites_heat_is_what_the_ports_lose() {
     assert!(lost > 0.01, "the slab absorbs: {lost}");
     assert!((heat - lost).abs() < 1e-6, "heat {heat} against lost {lost}");
 }
+
+/// The lowest eigenmodes are all found, whatever the cavity's size, and a degenerate pair is
+/// never split: the copper cylinder made 12 mm in radius (its template's target, 11 GHz, kept
+/// TM010, TM011 and one of TE112 and left TE111 out). Analytic evidence: in a cylinder of radius
+/// a = 12 mm and length l = 30 mm, TE111 is the lowest mode, a pair at
+/// f = (c/2π)·√((1.8412/a)² + (π/l)²) ≈ 8.864 GHz; one mode asked for brings both.
+#[test]
+fn the_lowest_modes_are_all_found_and_a_degenerate_pair_kept_whole() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "cylinder-cavity"})).unwrap();
+    s.execute("project.variable", &json!({"name": "r", "value": 12})).unwrap();
+    let reply = s.execute("solve.eigenmodes", &json!({"lowest": true, "count": 1, "order": 2})).unwrap();
+    let (a, l): (f64, f64) = (0.012, 0.03);
+    let te111 = 299_792_458.0 / (2.0 * std::f64::consts::PI) * ((1.841_183_781_340_659 / a).powi(2) + (std::f64::consts::PI / l).powi(2)).sqrt();
+    let freqs: Vec<f64> = s.results().eigen.iter().flat_map(|e| e.modes.iter().map(|m| m.frequency)).collect();
+    assert_eq!(freqs.len(), 2, "the pair whole: {freqs:?} ({reply})");
+    assert!(freqs.iter().all(|f| (f / te111 - 1.0).abs() < 5e-3), "{freqs:?} against {te111}");
+    assert!(s.execute("solve.eigenmodes", &json!({"count": 1})).is_err(), "neither `near` nor `lowest`");
+}

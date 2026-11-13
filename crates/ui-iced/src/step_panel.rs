@@ -353,7 +353,7 @@ pub(crate) fn setup(app: &App) -> Vec<Element<'_, Message>> {
                 field(app, "cell", t!("cell"), lu),
             ]
         }
-        Solver::Eigenmodes => vec![field(app, "count", t!("modes"), ""), field(app, "frequency", t!("near"), fu)],
+        Solver::Eigenmodes => vec![field(app, "count", t!("lowest modes"), ""), field(app, "frequency", t!("mesh for"), fu)],
         Solver::Radiation => vec![field(app, "frequency", t!("frequency"), fu)],
         Solver::System => vec![
             field(app, "start", t!("start"), fu),
