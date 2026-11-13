@@ -178,8 +178,13 @@ pub(super) fn symmetry_planes(colours: &Colours, session: &emcraft_engine::Sessi
         };
         let q = [at(lo[u], lo[v]), at(hi[u], lo[v]), at(hi[u], hi[v]), at(lo[u], hi[v])];
         let color = super::style::symmetry_rgb(colours, s.kind);
-        out.scene.tri(q[0], q[1], q[2], color, 80);
-        out.scene.tri(q[0], q[2], q[3], color, 80);
+        // A plane a guide's strips lie in is its outline alone: its fill would fight them.
+        let size = (0..3).map(|i| hi[i] - lo[i]).fold(0.0, f64::max).max(1e-9);
+        let strips = m.waveguide().is_some_and(|w| k == 1 && w.strips.iter().any(|st| (st.y - s.at).abs() <= 1e-6 * size));
+        if !strips {
+            out.scene.tri(q[0], q[1], q[2], color, 80);
+            out.scene.tri(q[0], q[2], q[3], color, 80);
+        }
         for i in 0..4 {
             out.scene.line(q[i], q[(i + 1) % 4], color, 235);
         }

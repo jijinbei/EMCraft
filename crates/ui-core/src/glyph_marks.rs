@@ -575,6 +575,16 @@ fn paint_app(k: &Kit<'_>, glyph: Glyph) -> bool {
             pen.open(&[(0.16, 0.32), (0.16, 0.7), (0.5, 0.88), (0.84, 0.7), (0.84, 0.32)], line);
             pen.open(&[(0.5, 0.5), (0.5, 0.88)], line);
         }
+        // A house filled in the ink, its door cut out of its foot (SolidCraft's home, on a 64
+        // grid): the roof, the walls either side of the door and the lintel over it.
+        Glyph::House => {
+            let g = |x: f32, y: f32| (x / 64.0, y / 64.0);
+            let (solid, ink) = (Stroke::NONE, k.ink);
+            pen.fill(&[g(9.5, 30.0), g(32.0, 10.0), g(54.5, 30.0)], ink, solid);
+            pen.fill(&[g(10.0, 29.5), g(26.5, 29.5), g(26.5, 53.5), g(10.0, 53.5)], ink, solid);
+            pen.fill(&[g(37.5, 29.5), g(54.0, 29.5), g(54.0, 53.5), g(37.5, 53.5)], ink, solid);
+            pen.fill(&[g(26.0, 29.5), g(38.0, 29.5), g(38.0, 35.5), g(26.0, 35.5)], ink, solid);
+        }
         // An eye on a plane seen square on: face the field's plane.
         Glyph::Lookat => {
             pen.fill(&[(0.42, 0.18), (0.88, 0.18), (0.88, 0.82), (0.42, 0.82)], accent.gamma_multiply(0.3), bold);

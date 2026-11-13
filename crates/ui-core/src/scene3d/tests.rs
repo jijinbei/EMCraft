@@ -103,6 +103,23 @@ fn meshed(name: &str, size: Option<f64>) -> Session {
     s
 }
 
+/// A stripline's strips, which lie in its symmetry plane inside the filling, show: drawn solid
+/// in the strip's colour, the filling and the walls let them through, the plane they lie in its
+/// outline alone, and no faint mirrored copy lies on them.
+#[test]
+fn a_striplines_strips_show_through_its_filling_and_walls() {
+    let s = meshed("coupled-filter", Some(4.0));
+    let b = build(&s, Overlay::Plain);
+    let strip: Vec<_> = b.scene.tris.iter().filter(|t| t.color == sc().strip).collect();
+    assert!(!strip.is_empty(), "the strips are drawn");
+    assert!(strip.iter().all(|t| t.alpha == 255), "solid, once each: no faint copy on them");
+    let wall = wall_style(&colours(), s.model(), Overlay::Plain, false, 0, Kind::Wall);
+    assert!(wall.1 < 110, "the walls let them show: {}", wall.1);
+    assert!(!b.scene.tris.iter().any(|t| t.color == sc().symmetry_magnetic), "the plane under the strips is its outline");
+    let filling = b.scene.tris.iter().filter(|t| t.color == material_rgb(&colours(), s.model(), 1)).map(|t| t.alpha).max();
+    assert!(filling.is_some_and(|a| a <= 70), "the filling lets them show: {filling:?}");
+}
+
 /// A cut shows the mesh throughout the domain, with neither filled caps nor a metal
 /// backing. Geometry views keep only the outline and material boundaries.
 #[test]

@@ -29,9 +29,9 @@ emcraft_macros::named_enum! {
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
     pub enum Navigator {
         /// A cube: its faces and corners turn to that view, a drag on it orbits.
-        #[default]
         Cube = "cube" => "Cube",
-        /// The six signed axes.
+        /// The six signed axes in a disc at the view's top right (SolidCraft's default).
+        #[default]
         Axes = "axes" => "Axes",
     }
 }
@@ -331,10 +331,18 @@ impl Goal {
     }
 }
 
-/// How far (points) the axes navigator's tips stand from its middle, and how near a click
-/// must come to one.
-pub const NAVIGATOR_REACH: f32 = 30.0;
-pub const NAVIGATOR_TIP: f32 = 9.0;
+/// The axes navigator's measures (points), SolidCraft's: how far its tips stand from its middle
+/// (its axes 38 long, drawn at 0.84 of that), how near a click must come to one, the square it
+/// takes at the view's top right and how far its middle sits above that square's, its disc's
+/// radius, and where its home chip stands (up and left of the middle by as much) and its
+/// radius.
+pub const NAVIGATOR_REACH: f32 = 38.0 * 0.84;
+pub const NAVIGATOR_TIP: f32 = 15.0;
+pub const NAVIGATOR_BOX: f32 = 116.0;
+pub const NAVIGATOR_LIFT: f32 = 4.0;
+pub const NAVIGATOR_DISC: f32 = 49.5;
+pub const NAVIGATOR_HOME: f32 = 37.0;
+pub const NAVIGATOR_HOME_R: f32 = 12.0;
 
 /// The standard view looking from the side of axis `k` given by `sign` (its eye there).
 ///
@@ -353,12 +361,14 @@ pub fn view_from(k: usize, sign: f64) -> Option<StandardView> {
 }
 
 /// A tip of the axes navigator: its axis (0, 1, 2), whether it is the positive end, where it
-/// stands from the navigator's middle (points, y down) and the view a click on it turns to.
+/// stands from the navigator's middle (points, y down), how much it points toward the eye (−1
+/// to 1) and the view a click on it turns to.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tip {
     pub axis: usize,
     pub positive: bool,
     pub offset: crate::geom::Vector,
+    pub toward: f32,
     pub view: StandardView,
 }
 
@@ -379,7 +389,7 @@ impl Tip {
 /// let tips = emcraft_ui_core::navigation::navigator(&c);
 /// assert_eq!(tips.len(), 6);
 /// // From the front, +x points right and the nearest tip (drawn last) is +z.
-/// assert!(tips.iter().any(|t| t.axis == 0 && t.positive && (t.offset.x - 30.0).abs() < 1e-4));
+/// assert!(tips.iter().any(|t| t.axis == 0 && t.positive && (t.offset.x - 31.92).abs() < 1e-4));
 /// assert_eq!(tips.last().map(|t| (t.axis, t.positive)), Some((2, true)));
 /// ```
 pub fn navigator(cam: &Camera) -> Vec<Tip> {
@@ -390,9 +400,30 @@ pub fn navigator(cam: &Camera) -> Vec<Tip> {
     tips.into_iter()
         .filter_map(|(k, sign)| {
             let offset = crate::geom::Vector::new((axes[k][0] * sign) as f32 * NAVIGATOR_REACH, (axes[k][1] * sign) as f32 * NAVIGATOR_REACH);
-            Some(Tip { axis: k, positive: sign > 0.0, offset, view: view_from(k, sign)? })
+            Some(Tip { axis: k, positive: sign > 0.0, offset, toward: (-forward[k] * sign) as f32, view: view_from(k, sign)? })
         })
         .collect()
+}
+
+/// Where a click on `tip` turns `cam`: to look from its side, or from the other side when it
+/// already does (SolidCraft's: click again to reverse).
+///
+/// ```
+/// use emcraft_render::view3d::{Camera, StandardView};
+/// use emcraft_ui_core::navigation::{Goal, navigator, tip_goal};
+/// let mut c = Camera::default();
+/// c.standard(StandardView::Front);
+/// let tips = navigator(&c);
+/// let front = tips.iter().find(|t| t.view == StandardView::Front).unwrap();
+/// let right = tips.iter().find(|t| t.view == StandardView::Right).unwrap();
+/// assert_eq!(tip_goal(&c, right), Goal::View(StandardView::Right));
+/// assert_eq!(tip_goal(&c, front), Goal::View(StandardView::Back));
+/// ```
+pub fn tip_goal(cam: &Camera, tip: &Tip) -> Goal {
+    let sign = if tip.positive { 1.0 } else { -1.0 };
+    let looking = cam.basis().forward.get(tip.axis).is_some_and(|f| -f * sign > 0.9999);
+    let view = if looking { view_from(tip.axis, -sign).unwrap_or(tip.view) } else { tip.view };
+    Goal::View(view)
 }
 
 /// The tip of `tips` a click `at` (points from the navigator's middle) lands on: the nearest one

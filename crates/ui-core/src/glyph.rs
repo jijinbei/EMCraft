@@ -41,6 +41,8 @@ emcraft_macros::named_enum! {
         Script = "script",
         Fit = "fit",
         Home = "home",
+        /// A house, its door cut out of it: the axes navigator's home view (SolidCraft's).
+        House = "house",
         Lookat = "lookat",
         Perspective = "perspective",
         Orthographic = "orthographic",

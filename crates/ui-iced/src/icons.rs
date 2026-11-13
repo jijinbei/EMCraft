@@ -94,8 +94,16 @@ impl canvas::Program<Message> for Icon {
 
     fn draw(&self, _: &(), renderer: &Renderer, _: &Theme, bounds: Rectangle, _: Cursor) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
-        let k = bounds.width.min(bounds.height) / SIZE;
-        let off = Vector::new((bounds.width - SIZE * k) / 2.0, (bounds.height - SIZE * k) / 2.0);
+        self.paint(&mut frame, Rectangle::new(Point::ORIGIN, bounds.size()));
+        vec![frame.into_geometry()]
+    }
+}
+
+impl Icon {
+    /// The glyph drawn in `frame`, fitted in `area`.
+    pub fn paint(&self, frame: &mut Frame, area: Rectangle) {
+        let k = area.width.min(area.height) / SIZE;
+        let off = Vector::new(area.x + (area.width - SIZE * k) / 2.0, area.y + (area.height - SIZE * k) / 2.0);
         let at = |p: Pos2| Point::new(p.x * k + off.x, p.y * k + off.y);
         for m in glyph_marks::marks(self.glyph) {
             match m {
@@ -152,7 +160,6 @@ impl canvas::Program<Message> for Icon {
                 }),
             }
         }
-        vec![frame.into_geometry()]
     }
 }
 

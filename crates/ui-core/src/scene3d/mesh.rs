@@ -41,6 +41,8 @@ pub(super) fn from_mesh(colours: &Colours, session: &emcraft_engine::Session, ov
         };
         let kind = surface.kind(i);
         let (mut color, mut alpha) = match f.tag {
+            // A guide's strip (on a symmetry plane, or a sheet inside): its metal, solid.
+            Boundary::Pec if on_strip(m, [a, b, c]) => (colours.scene.strip, 255),
             // A periodic boundary is no wall either: tied to the opposite face.
             _ if port.is_none() && periodic.holds(mesh, &f.nodes) => (colours.scene.periodic, plane_alpha(colours, m, overlay, tet_mat(f.tet))),
             // A symmetry plane is no wall: its own colour in every overlay.
@@ -86,6 +88,29 @@ pub(super) fn from_mesh(colours: &Colours, session: &emcraft_engine::Session, ov
     [Some(Built::of(scene)), shell, regions.map(Built::of), Some(Built::of(edges))].into_iter().flatten().fold(Built::default(), Built::merge)
 }
 
+/// Whether the triangle `p` (m) lies in one of the model's symmetry planes.
+fn on_symmetry_plane(m: &Model, p: [[f64; 3]; 3]) -> bool {
+    let size = m.bounds().map_or(1.0, |b| (b.max - b.min).norm()).max(1e-9);
+    m.domain.symmetry.iter().any(|s| {
+        let k = s.axis.index().min(2);
+        p.iter().all(|q| (q[k] - s.at).abs() <= 1e-6 * size)
+    })
+}
+
+/// Whether the triangle `p` (m) lies on one of the guide's strips: in its plane, its middle
+/// within the strip's rectangle.
+fn on_strip(m: &Model, p: [[f64; 3]; 3]) -> bool {
+    let Some(w) = m.waveguide() else { return false };
+    let middle: [f64; 3] = std::array::from_fn(|k| (p[0][k] + p[1][k] + p[2][k]) / 3.0);
+    let size = w.width.get().max(w.length()).max(1e-9);
+    let near = |a: f64, b: f64| (a - b).abs() <= 1e-6 * size;
+    w.strips.iter().any(|s| {
+        p.iter().all(|q| near(q[1], s.y))
+            && (s.x0..=s.x0 + s.width.get()).contains(&middle[0])
+            && (s.z0.min(s.z1)..=s.z0.max(s.z1)).contains(&middle[2])
+    })
+}
+
 /// The mesh's outer walls, turned out of the inside, and the ports and planes they end on.
 fn inside(m: &Model, mesh: &emcraft_model::Mesh, surface: &Surface, periodic: &PeriodicPlanes) -> super::shell::Inside {
     let mut out = super::shell::Inside::default();
@@ -115,6 +140,7 @@ fn inside(m: &Model, mesh: &emcraft_model::Mesh, surface: &Surface, periodic: &P
 /// Shared faces within one region are omitted; vacuum is shown only while selected.
 fn material_regions(colours: &Colours, m: &Model, mesh: &emcraft_model::Mesh, overlay: Overlay, selected: Option<usize>) -> Scene {
     let mut scene = Scene::default();
+    let inside_conductors = super::style::holds_conductors(m);
     let material = |t: u32| mesh.tet_material.get(t as usize).copied().unwrap_or(0) as usize;
     let mut keyed = Vec::with_capacity(mesh.tets.len() * 4);
     for (t, tet) in mesh.tets.iter().enumerate() {
@@ -136,12 +162,19 @@ fn material_regions(colours: &Colours, m: &Model, mesh: &emcraft_model::Mesh, ov
                 continue;
             }
             let [Some(a), Some(mut b), Some(mut c)] = face.map(|n| mesh.nodes.get(n as usize).copied()) else { continue };
+            // A face on a symmetry plane is the solved half's cut, not the region's edge (and a
+            // strip there is drawn instead).
+            if on_symmetry_plane(m, [a, b, c].map(p3)) {
+                continue;
+            }
             let fourth = mesh.tets.get(tet as usize).and_then(|t| t.iter().find(|n| !face.contains(n))).and_then(|n| mesh.nodes.get(*n as usize));
             if fourth.is_some_and(|p| (b - a).cross(c - a).dot(*p - a) > 0.0) {
                 std::mem::swap(&mut b, &mut c);
             }
+            // A guide's strips and vias lie inside its fillings: they let them show.
             let alpha = match overlay {
                 Overlay::Field => 65,
+                _ if inside_conductors => 70,
                 _ => 220,
             };
             scene.tagged(Pick::Material(mat).tag(), |s| s.tri(p3(a), p3(b), p3(c), material_rgb(colours, m, mat), alpha));

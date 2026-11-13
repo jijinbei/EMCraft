@@ -70,12 +70,19 @@ pub(super) fn wall_style(c: &Colours, m: &Model, overlay: Overlay, port: bool, m
         (_, Kind::Conductor) => (s.metal_dark, 255),
         (Overlay::Materials, Kind::Air) => (material_rgb(c, m, material), 0),
         (_, Kind::Air) => (s.metal, if overlay == Overlay::Mesh { 0 } else { 16 }),
-        (Overlay::Plain | Overlay::Board, Kind::Wall) => (s.metal, 110),
+        // A guide's strips and vias lie inside: its walls let them show.
+        (Overlay::Plain | Overlay::Board, Kind::Wall) => (s.metal, if holds_conductors(m) { 45 } else { 110 }),
         (Overlay::Mesh, Kind::Wall) => (s.mesh_wall, 25),
         (Overlay::Materials, Kind::Wall) => (s.metal, 70),
         (Overlay::Ports, Kind::Wall) => (s.metal, 55),
         (Overlay::Boundaries, Kind::Wall) => (s.metal_dark, 110),
     }
+}
+
+/// Whether the model is a guide with conductors inside it (strips, vias), which its walls and
+/// fillings must let show.
+pub(super) fn holds_conductors(m: &Model) -> bool {
+    m.waveguide().is_some_and(|w| !w.strips.is_empty() || !w.vias.is_empty())
 }
 
 /// The opacity of a face that is no wall (a symmetry plane, a periodic boundary) in an

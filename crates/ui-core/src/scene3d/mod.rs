@@ -355,10 +355,19 @@ fn images(m: &emcraft_model::Model) -> (Vec<Image<'_>>, Vec<Image<'_>>) {
 /// `faint` (the Mesh step tells them apart): the images a third as opaque, without the mesh's
 /// edges or lines.
 fn with_images(scene: Scene, images: &[Image<'_>], cumulative: bool, flip: bool, faint: bool) -> Scene {
+    // A triangle the image leaves where it is (one on a mirror plane: a strip there) is not
+    // drawn again over itself.
+    let fixed = |image: &Image<'_>, p: &[[f64; 3]; 3]| {
+        p.iter().all(|q| {
+            let r = image(*q);
+            (0..3).all(|k| (r[k] - q[k]).abs() <= 1e-9 * (1.0 + q[k].abs()))
+        })
+    };
     let image_of = |from: &Scene, image: &Image<'_>| Scene {
         tris: from
             .tris
             .iter()
+            .filter(|t| !fixed(image, &t.p))
             .map(|t| {
                 let p = t.p.map(image);
                 emcraft_render::view3d::Tri {
