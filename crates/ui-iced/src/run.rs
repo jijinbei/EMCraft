@@ -87,13 +87,25 @@ impl App {
             (self.home, self.settings) = (false, false);
             self.page = crate::app::first_page(&self.session);
             self.adding = None;
+            // The last project's field view (an eigenmode's index, a frequency it solved, the
+            // field shown and playing) is not this one's: as a new window starts.
+            self.view3d.field = crate::view3d::field::start();
+            self.view3d.overlay = emcraft_ui_core::scene3d::Overlay::Plain;
+            self.playing = None;
         } else if emcraft_ui_core::after::leaves_start(id) {
             self.home = false;
         }
         self.read();
-        if job::is_solve(id) {
-            let results = emcraft_ui_core::after::results_view(&self.session);
-            self.page = if PAGES.contains(&results) { results } else { self.page };
+        // A solve shows its results' page; a study (its solves of other models) its own.
+        let results = if job::is_solve(id) {
+            Some(emcraft_ui_core::after::results_view(&self.session))
+        } else if matches!(id, "study.sweep" | "study.optimize") {
+            Some(emcraft_ui_core::view::View::Study)
+        } else {
+            None
+        };
+        if let Some(results) = results.filter(|r| PAGES.contains(r)) {
+            self.page = results;
         }
     }
 

@@ -194,7 +194,7 @@ pub fn inspect(app: &App) -> Value {
             "detected": crate::import::inspect(app, d),
             "fields": d.fields.iter().map(|f| (f.name.to_owned(), json!({"text": f.text, "on": f.on, "parts": f.parts, "error": f.error}))).collect::<serde_json::Map<_, _>>(),
         })),
-        "asking": app.asking.as_ref().map(|t| format!("{t:?}")),
+        "asking": app.asking.as_ref().map(|t| serde_json::to_value(t).unwrap_or(Value::Null)),
         "selection": app.selection.iter().map(|p| format!("{p:?}")).collect::<Vec<_>>(),
         "tools": app.tools.inspect(app.tool, app.session.display().length),
         "template": app.template.card.as_ref().map(emcraft_ui_core::template_card::TemplateCard::inspect),
@@ -519,9 +519,17 @@ impl App {
         if let Some(id) = p.get("open").and_then(Value::as_str) {
             self.update(Message::Command(id.to_owned()));
         }
-        if let (Some(values), Some(d)) = (p.get("set").and_then(Value::as_object), self.dialog.as_mut()) {
-            for (k, v) in values {
-                if let Err(e) = d.set(k, v) {
+        if let Some(values) = p.get("set").and_then(Value::as_object)
+            && let Some(d) = self.dialog.take()
+        {
+            // As typed one after the other: what follows a field brought along, then the values
+            // given explicitly kept over what followed.
+            let set = |mut d: emcraft_ui_core::dialogs::Dialog| values.iter().try_for_each(|(k, v)| d.set(k, v)).map(|()| d);
+            let done = set(d.clone()).and_then(|typed| set(values.keys().fold(typed, |d, k| d.followed(k, &self.session))));
+            match done {
+                Ok(done) => self.dialog = Some(done),
+                Err(e) => {
+                    self.dialog = Some(d);
                     return err(e);
                 }
             }

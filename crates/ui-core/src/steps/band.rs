@@ -84,7 +84,10 @@ impl Diagram {
 pub fn diagram(s: &emcraft_engine::Session, f: &Fields, solves: Vec<f64>) -> Option<Diagram> {
     let unit = s.display().frequency;
     let (a, z) = f.band().or_else(|| solves.first().map(|x| (*x, *x)))?;
-    let width = (z - a).max(z.abs() * 1e-3).max(1e-12);
+    // One frequency (an eigenmode's target, a radiation's): a fifth of it round it, not a
+    // thousandth (whose ticks were ten-thousandths of a GHz, run together).
+    let single = z - a <= z.abs() * 1e-9;
+    let width = if single { 0.2 * z.abs() } else { z - a }.max(1e-12);
     let cuts: Vec<Cut> = emcraft_engine::workflow::cutoffs(s)
         .into_iter()
         .map(|c| Cut { at: unit.from_si(c.frequency), label: crate::chart_words::translate(&c.label), first: c.first })
@@ -92,7 +95,7 @@ pub fn diagram(s: &emcraft_engine::Session, f: &Fields, solves: Vec<f64>) -> Opt
         .collect();
     let lo = cuts.iter().map(|c| c.at).fold(a, f64::min);
     let hi = cuts.iter().map(|c| c.at).fold(z, f64::max);
-    let pad = 0.04 * (hi - lo).max(width);
+    let pad = if single { width / 2.0 } else { 0.04 * (hi - lo).max(width) };
     let (lo, hi) = (lo - pad, hi + pad);
     let raw = (hi - lo) / 6.0;
     let mag = 10f64.powf(raw.log10().floor());

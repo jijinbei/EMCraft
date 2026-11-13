@@ -47,10 +47,15 @@ impl canvas::Program<Message> for Band<'_> {
         }
         frame.stroke(&Path::line(Point::new(left, base), Point::new(right, base)), line(1.0, t.text_dim));
         let small = t.font_small;
+        // A tick's number is left out where it would run into the unit at the axis's end.
+        let width = |s: &str| s.chars().count() as f32 * small * 0.6;
+        let unit_left = right - width(self.unit) - 6.0;
         for v in &d.ticks {
             frame.stroke(&Path::line(Point::new(x(*v), base), Point::new(x(*v), base + 3.0)), line(1.0, t.text_dim));
             let text = emcraft_ui_core::dialogs::short_number(*v);
-            frame.fill_text(label(text, Point::new(x(*v), base + 4.0), t.text_dim, small, iced::widget::text::Alignment::Center));
+            if x(*v) + width(&text) / 2.0 <= unit_left {
+                frame.fill_text(label(text, Point::new(x(*v), base + 4.0), t.text_dim, small, iced::widget::text::Alignment::Center));
+            }
         }
         frame.fill_text(label(self.unit.to_owned(), Point::new(right, base + 4.0), t.text_dim, small, iced::widget::text::Alignment::Right));
         for (i, c) in d.cuts.iter().enumerate() {

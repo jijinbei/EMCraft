@@ -323,6 +323,23 @@ impl Dialog {
         }
     }
 
+    /// The dialog after its field `changed` was: the fields that follow it brought along (a
+    /// sweep's start and stop round the variable chosen, as it opened round the first one's).
+    pub fn followed(mut self, changed: &str, session: &Session) -> Dialog {
+        if self.command.id == "study.sweep" && changed == "variable" {
+            let chosen = self.fields.iter().find(|f| f.name == "variable").map(|f| f.text.clone());
+            if let Some(v) = chosen.and_then(|n| session.variables().get(&n).copied()) {
+                for (name, k) in [("start", -0.2), ("stop", 0.2)] {
+                    if let Some(f) = self.field_mut(name) {
+                        f.text = short_number(spread(v, k));
+                        f.error = None;
+                    }
+                }
+            }
+        }
+        self
+    }
+
     /// Sets a field from a JSON value, as typing it would (the control channel's `ui.dialog`).
     pub fn set(&mut self, name: &str, v: &Value) -> Result<(), String> {
         let f = self.field_mut(name).ok_or_else(|| format!("the dialog has no field `{}`", clip(name, 64)))?;
@@ -748,7 +765,7 @@ fn periodic(s: &Session) -> Value {
 /// optimization, the goal that goes with it.
 fn study(command: &str, s: &Session, band: Option<(f64, f64)>) -> Value {
     let (name, v) = s.variables().iter().next().map_or((None, 1.0), |(n, v)| (Some(n.clone()), *v));
-    let spread = |k: f64| if v == 0.0 { k } else { v * (1.0 + k) };
+    let spread = |k: f64| spread(v, k);
     let (solve, goal) = if s.model().domain.open.is_some() {
         (json!({"command": "solve.radiation", "params": initial("solve.radiation", s)}), json!({"type": "maximize", "quantity": "radiated_power"}))
     } else if s.model().ports.is_empty() {
@@ -769,6 +786,12 @@ fn study(command: &str, s: &Session, band: Option<(f64, f64)>) -> Value {
     } else {
         json!({"variables": [{"name": name, "min": spread(-0.5), "max": spread(0.5)}], "goal": goal, "solve": solve, "max_evaluations": 40})
     }
+}
+
+/// A variable's value `v` moved by the share `k` of it (by `k` itself when it is 0): a study's
+/// range round it.
+fn spread(v: f64, k: f64) -> f64 {
+    if v == 0.0 { k } else { v * (1.0 + k) }
 }
 
 /// The unit a field's value is read in.
@@ -808,6 +831,25 @@ mod tests {
         let mut s = Session::new();
         s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
         assert_eq!(initial("mesh.generate", &s)["per_wavelength"], 6, "{}", initial("mesh.generate", &s));
+    }
+
+    /// A sweep's range follows the variable chosen: it opened round the first variable, and the
+    /// post's radius chosen after it is swept round its own value (±20 % of 1.5 mm: 1.2 to
+    /// 1.8), not the guide's width's (18.288 to 27.432).
+    #[test]
+    fn a_sweeps_range_follows_the_variable_chosen() {
+        let mut s = Session::new();
+        for (name, value) in [("a", 22.86), ("r_post", 1.5)] {
+            s.execute("project.variable", &json!({"name": name, "value": value, "quantity": "length"})).unwrap();
+        }
+        let mut d = Dialog::new(spec("study.sweep"), &s, &initial("study.sweep", &s), false);
+        let text = |d: &Dialog, n: &str| d.fields.iter().find(|f| f.name == n).map_or_default(|f| f.text.clone());
+        assert_eq!((text(&d, "start"), text(&d, "stop")), ("18.288".to_owned(), "27.432".to_owned()));
+        d.set("variable", &json!("r_post")).unwrap();
+        let d = d.followed("variable", &s);
+        assert_eq!((text(&d, "start"), text(&d, "stop")), ("1.2".to_owned(), "1.8".to_owned()));
+        let d = d.followed("points", &s);
+        assert_eq!(text(&d, "start"), "1.2", "other fields leave it");
     }
 
     /// Every command's dialog opens on its initial values and gives back parameters the engine

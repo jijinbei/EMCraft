@@ -564,6 +564,17 @@ impl PlaneSamples {
         })
     }
 
+    /// The Cartesian component of E strongest on this plane (Ey when the plane has no field): what
+    /// a picture of an eigenmode shows first, since a cavity's mode is not the guide's TE10,
+    /// whose E is along y (a cylinder's TM010 has Ez alone, its Ey the solve's round-off).
+    pub fn strongest_e(&self) -> Component {
+        [Component::Ex, Component::Ey, Component::Ez]
+            .into_iter()
+            .map(|c| (c, self.strongest(c).map_or(0.0, |(_, a)| a)))
+            .fold((Component::Ey, 0.0), |best, (c, a)| if a > best.1 { (c, a) } else { best })
+            .0
+    }
+
     /// Whether these samples serve a view (same frequency, plane, position and excitation).
     pub fn serves(&self, view: &FieldView, at: f64) -> bool {
         self.plane == view.plane

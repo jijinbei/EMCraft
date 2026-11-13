@@ -994,7 +994,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "geometry.reload",
         label: "Reload geometry",
-        doc: "Builds the model again from its history, reading every imported file again: a SolidCraft design saved since (opened in SolidCraft from EMCraft, docs/adr/0010-geometry-from-solidcraft.md) comes in as it is now, the ports, materials and settings after its import applied to it again. The history, the runs and the project's file stay; results are kept, marked out of date where the model changed.",
+        doc: "Builds the model again from its history, reading every imported file again: a SolidCraft design saved since (opened in SolidCraft from EMCraft, docs/adr/0010-geometry-from-solidcraft.md) comes in as it is now, the ports, materials and settings after its import applied to it again. The history, the runs and the project's file stay; results the new shape makes wrong are dropped (a study's kept), the analysis history keeping each one solved before (Restore brings it back).",
         params: &[],
         effect: Effect::Rebuild,
         invalidates: Some(Change::Geometry),

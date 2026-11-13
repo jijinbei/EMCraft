@@ -653,6 +653,35 @@ fn a_cavitys_modes_are_listed_and_one_is_shown() {
     }
 }
 
+/// An eigenmode's field shows its strongest component of E, and another project starts its field
+/// view afresh (the last one's mode asked of it said "no eigenmodes"). Analytic evidence: the
+/// copper cylinder of radius 10 mm has TM010 at 2.405·c/(2πa) ≈ 11.47 GHz, its E along the
+/// axis (z) alone, so its picture is Ez, not the guide's Ey.
+#[test]
+fn a_modes_field_shows_its_strongest_component_and_a_new_project_forgets_it() {
+    use crate::view3d::Nav;
+    use emcraft_engine::view::Component;
+    use emcraft_ui_core::scene3d::Overlay;
+    let mut app = App::new(Some("cylinder-cavity"));
+    // First-order elements: the mode's place and its strongest component, not its last digit.
+    let setup = json!({"kind": "eigenmodes", "count": 3, "order": 1, "frequency": 11});
+    assert!(app.session.execute("project.setup", &setup).is_ok());
+    app.update(Message::Start("solve.run".into()));
+    finish(&mut app);
+    assert_eq!(app.error, None);
+    let tm010 = 2.404_825_557_695_773 * 299_792_458.0 / (2.0 * std::f64::consts::PI * 0.01);
+    let freqs: Vec<f64> = app.session.results().eigen.iter().flat_map(|e| e.modes.iter().map(|m| m.frequency)).collect();
+    let i = (0..freqs.len()).min_by(|&a, &b| (freqs[a] - tm010).abs().total_cmp(&(freqs[b] - tm010).abs())).unwrap_or(0);
+    assert!((freqs[i] / tm010 - 1.0).abs() < 1e-2, "{freqs:?} against {tm010}");
+    app.update(Message::Mode(i));
+    assert_eq!((app.view3d.field.mode, app.view3d.field.component), (Some(i), Component::Ez));
+    app.update(Message::View3d(Nav::Phase(1.0)));
+    app.start("file.sample", json!({"name": "cavity"}));
+    finish(&mut app);
+    assert_eq!(app.view3d.field, crate::view3d::field::start(), "the field view as a new window's");
+    assert_eq!((app.view3d.overlay, app.playing), (Overlay::Plain, None));
+}
+
 /// Undo and Redo, by their keys too: a material's εr changed is taken back and done again; the
 /// keys go to the window only when no field takes them.
 #[test]
@@ -1167,6 +1196,33 @@ fn the_setup_panel_keeps_its_parts_while_the_band_is_wrong() {
     app.update(Message::StepAct(Act::Typed("stop", "12".to_owned())));
     assert!(app.band_diagram().is_some());
     assert_eq!(crate::step_panel::setup(&app).len(), whole);
+}
+
+/// An eigenmode solve's one frequency is drawn a fifth of it wide, its ticks readable. Evidence:
+/// the cylinder's target, 11 GHz, spans 9.9 to 12.1 GHz with ticks at most six to its span (each
+/// at least 0.2 GHz apart), not ten-thousandths of a GHz run together.
+#[test]
+fn a_one_frequency_band_diagram_spans_a_fifth_round_it() {
+    let mut app = App::new(Some("cylinder-cavity"));
+    app.update(Message::Step(Some(emcraft_engine::workflow::Step::Setup)));
+    let d = app.band_diagram().unwrap_or_else(|| panic!("a diagram for the eigenmodes' target"));
+    let (lo, hi) = d.span;
+    assert!((lo - 9.9).abs() < 1e-9 && (hi - 12.1).abs() < 1e-9, "{:?}", d.span);
+    assert!(d.ticks.windows(2).all(|w| w[1] - w[0] >= 0.2 - 1e-9) && d.ticks.len() <= 12, "{:?}", d.ticks);
+}
+
+/// A study's end shows the study's page, as a solve's end shows its results' (it stayed on the
+/// model). Evidence: a sweep of the high-pass filter's εr over two values, three frequencies
+/// each, is a study of two points.
+#[test]
+fn a_studys_end_shows_its_page() {
+    let mut app = App::new(Some("highpass"));
+    finish(&mut app);
+    let solve = json!({"command": "solve.frequency", "params": {"start": 6, "stop": 9, "points": 3, "order": 1}});
+    app.start("study.sweep", json!({"variable": "er", "values": [2.0, 2.2], "solve": solve}));
+    finish(&mut app);
+    assert_eq!(app.error, None);
+    assert_eq!(app.page, emcraft_ui_core::view::View::Study);
 }
 
 /// The mesh step's ▶ meshes with what its form starts with, not with nothing: it was refused

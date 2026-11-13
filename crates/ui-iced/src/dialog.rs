@@ -73,7 +73,7 @@ pub fn edited(d: Dialog, edit: &Edit) -> Dialog {
 }
 
 /// The field an edit changes.
-fn field_of(edit: &Edit) -> Option<usize> {
+pub(crate) fn field_of(edit: &Edit) -> Option<usize> {
     match edit {
         Edit::Text(i, _) | Edit::On(i, _) | Edit::Part(i, ..) | Edit::Cell(i, ..) | Edit::AddRow(i) | Edit::RemoveRow(i, _) => Some(*i),
         Edit::Options | Edit::Help | Edit::Ok | Edit::Cancel => None,

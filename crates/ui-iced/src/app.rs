@@ -1051,7 +1051,13 @@ impl App {
             Message::Mode(i) => {
                 self.page = View::Model;
                 let view = std::mem::take(&mut self.view3d).navigated(Nav::Overlay(emcraft_ui_core::scene3d::Overlay::Field));
-                self.view3d = view.navigated(Nav::Mode(Some(i)));
+                let view = view.navigated(Nav::Mode(Some(i)));
+                // Its strongest component of E, not the guide's Ey: a cavity's mode may have none.
+                let strongest = emcraft_engine::view::sample_plane(&self.session, &view.field).map(|s| s.strongest_e());
+                self.view3d = match strongest {
+                    Ok(c) => view.navigated(Nav::Component(c)),
+                    Err(_) => view,
+                };
                 None
             }
             Message::Hover(at) => {
@@ -1093,7 +1099,14 @@ impl App {
                 None
             }
             Message::Dialog(edit) => {
-                self.dialog = self.dialog.take().map(|d| crate::dialog::edited(d, &edit));
+                self.dialog = self.dialog.take().map(|d| {
+                    let changed = crate::dialog::field_of(&edit).and_then(|i| d.fields.get(i)).map(|f| f.name);
+                    let d = crate::dialog::edited(d, &edit);
+                    match changed {
+                        Some(name) => d.followed(name, &self.session),
+                        None => d,
+                    }
+                });
                 None
             }
             Message::Click(_) if self.tool.is_some() => {
