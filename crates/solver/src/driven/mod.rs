@@ -428,7 +428,7 @@ impl Driven {
         // (The ports' rank-one terms border the matrix instead of filling it: see `system`.)
         let gaps = lumped.iter().map(|l| &l.c).chain(elements.iter().map(|e| &e.c));
         let pattern = space.pattern(gaps.map(|c| c.iter().map(|(u, _)| *u).collect()));
-        let in_pml = pml.as_ref().map(Layer::tets).unwrap_or_default();
+        let in_pml = pml.as_ref().map_or_default(Layer::tets);
         let volume = space.volume_matrices(&pattern, &media, |t| !in_pml.contains(&t))?;
         let tie = match (&model.domain.periodic, &model.domain.rotation) {
             (Some(_), Some(_)) => return Err(invalid("rotational symmetry", "not supported yet: with periodic boundaries")),

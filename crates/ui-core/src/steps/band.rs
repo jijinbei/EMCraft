@@ -47,7 +47,7 @@ pub fn solves(solver: Solver, f: &Fields, limit: u64) -> Vec<f64> {
             (0..n).map(|k| if n == 1 { a } else { a + (z - a) * k as f64 / (n - 1) as f64 }).collect()
         }
         Solver::Pcb => Vec::new(),
-        Solver::Eigenmodes | Solver::Radiation => positive(&f.frequency).map(|v| vec![v]).unwrap_or_default(),
+        Solver::Eigenmodes | Solver::Radiation => positive(&f.frequency).map_or_default(|v| vec![v]),
     }
 }
 

@@ -121,7 +121,7 @@ pub fn run(launch: Launch) -> iced::Result {
     let Launch { sample, project, shoot, replay, picker, control } = launch;
     // The control channel's queue goes to the first window made.
     let control = std::sync::Mutex::new(control);
-    let prefs = prefs::default_path().map(|p| prefs::Prefs::load(&p)).unwrap_or_default();
+    let prefs = prefs::default_path().map_or_default(|p| prefs::Prefs::load(&p));
     // The language shown when a font shows it (else English), the pictures' text with its face.
     let (font_state, found) = language::chosen(prefs.language(), prefs.font_file.as_deref());
     let font = found.filter(|_| prefs.font_file.is_some()).map(|f| f.bytes);

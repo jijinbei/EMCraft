@@ -126,7 +126,7 @@ pub(crate) struct Shell {
 impl Driven {
     /// The layer's tetrahedra (none without a layer).
     pub(crate) fn pml_tets(&self) -> std::collections::HashSet<usize> {
-        self.pml.as_ref().map(Layer::tets).unwrap_or_default()
+        self.pml.as_ref().map_or_default(Layer::tets)
     }
 
     /// Adds the layer's tetrahedra at wavenumber k₀: with stretches s_d = 1 − j(σ₀/k₀)ξ_d², the

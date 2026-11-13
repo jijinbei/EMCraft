@@ -89,7 +89,7 @@ fn list(t: &[char], pos: &mut usize, depth: usize, budget: &mut usize, group: bo
                     }
                     Some(Node::Text(mut s)) if s.chars().count() > 1 => {
                         // Only the last character carries the script: `ab^2`.
-                        let last = s.pop().map(String::from).unwrap_or_default();
+                        let last = s.pop().map_or_default(String::from);
                         out.push(Node::Text(s));
                         vec![Node::Text(last)]
                     }
@@ -163,7 +163,7 @@ fn command_name(t: &[char], pos: &mut usize) -> String {
         *pos += n.len();
         n
     } else {
-        let n = t.get(*pos).map(std::string::ToString::to_string).unwrap_or_default();
+        let n = t.get(*pos).map_or_default(std::string::ToString::to_string);
         *pos += 1;
         n
     }

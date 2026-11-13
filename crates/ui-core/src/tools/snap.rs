@@ -174,7 +174,7 @@ pub fn over(m: &emcraft_model::Model, sight: &Sight, tool: Tool, at: Point, face
             } else {
                 // Behind see-through faces (a guide's sides in front of its far end): the first
                 // face along the ray a port may go on, else what shows through.
-                let behind = cam.ray(sight.pixel(at)).map(|r| view3d::hits_in_order(&built.scene, r, BEHIND)).unwrap_or_default();
+                let behind = cam.ray(sight.pixel(at)).map_or_default(|r| view3d::hits_in_order(&built.scene, r, BEHIND));
                 Some(behind.into_iter().find(|h| usable(h)).unwrap_or_else(|| solid.unwrap_or(near)))
             }
         }

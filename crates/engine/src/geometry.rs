@@ -595,7 +595,7 @@ pub fn designs(s: &Session) -> Vec<ImportedDesign> {
         .map(|path| ImportedDesign {
             path: path.to_owned(),
             template: path.starts_with(emcraft_templates::DESIGN_SCHEME),
-            set: imports.iter().rev().find(|(p, _)| *p == path).map(|(_, set)| set.clone()).unwrap_or_default(),
+            set: imports.iter().rev().find(|(p, _)| *p == path).map_or_default(|(_, set)| set.clone()),
             parameters: design_parameters(path).map_err(|e| e.to_string()),
         })
         .collect()

@@ -3,6 +3,7 @@ name = "emcraft-render"
 description = "EMCraft pictures without a GPU: a 2D canvas with anti-aliased lines, arrows and text, colour maps, field plots on planes (colour map plus vector arrows) and line charts of S-parameters, written as PNG"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [lints]

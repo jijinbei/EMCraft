@@ -5,6 +5,8 @@ members = ["crates/*", "apps/*", "xtask"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+# Rust 1.100: the never type `!`, the allocator API and `DropGuard` stable.
+rust-version = "1.100"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]

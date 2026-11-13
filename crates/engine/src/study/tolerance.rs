@@ -274,7 +274,7 @@ pub struct Statistics {
 impl Statistics {
     pub fn of(study: &Study) -> Statistics {
         let ok: Vec<&Row> = study.rows.iter().filter(|r| r.error.is_none()).collect();
-        let freqs = ok.first().map(|r| r.frequencies.clone()).unwrap_or_default();
+        let freqs = ok.first().map_or_default(|r| r.frequencies.clone());
         let alike: Vec<&Row> = ok.iter().copied().filter(|r| r.frequencies == freqs).collect();
         let spreads = study
             .parameters()
@@ -297,7 +297,7 @@ impl Statistics {
                 (name, at)
             })
             .collect();
-        let specs = study.tolerance.as_ref().map(|t| t.specs.as_slice()).unwrap_or_default();
+        let specs = study.tolerance.as_ref().map_or_default(|t| t.specs.as_slice());
         let passed = ok.iter().filter(|r| !specs.is_empty() && specs.iter().all(|sp| sp.met(r) == Some(true))).count();
         Statistics { spreads, passed, solved: ok.len() }
     }

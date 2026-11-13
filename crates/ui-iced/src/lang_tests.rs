@@ -36,7 +36,7 @@ fn visit(app: &mut App) {
 /// visited at its end; the start page with each purpose.
 fn tour() -> Record {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios");
-    let mut files: Vec<_> = std::fs::read_dir(&dir).map(|d| d.flatten().map(|e| e.path()).collect()).unwrap_or_default();
+    let mut files: Vec<_> = std::fs::read_dir(&dir).map_or_default(|d| d.flatten().map(|e| e.path()).collect());
     files.sort();
     lang::set("ja");
     lang::record(true);

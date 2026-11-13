@@ -437,9 +437,7 @@ pub fn harmonics(s: &mut Session, p: &Params) -> Result<Value> {
             .ports
             .iter()
             .map(|port| match &port.modes {
-                emcraft_solver::driven::PortModes::Cyclic(c) => {
-                    c.modes.first().map(emcraft_solver::driven::cyclic::RotatingMode::name).unwrap_or_default()
-                }
+                emcraft_solver::driven::PortModes::Cyclic(c) => c.modes.first().map_or_default(emcraft_solver::driven::cyclic::RotatingMode::name),
                 _ => String::new(),
             })
             .collect();

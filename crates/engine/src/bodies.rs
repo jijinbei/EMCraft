@@ -297,7 +297,7 @@ pub fn body_edit(s: &mut Session, p: &Params) -> Result<Value> {
     let shape = edited_shape(p, &old_shape)?;
     let at = p.edit_point("at", old_at)?;
     let axis: Axis = p.choice("axis").or(old_axis)?;
-    let region = s.model.domain.solid.as_ref().map(|x| x.material.clone()).unwrap_or_default();
+    let region = s.model.domain.solid.as_ref().map_or_default(|x| x.material.clone());
     let material = p.string("material").optional()?.unwrap_or(&b.material).to_owned();
     // What the body is with its material: a subtracted or an added feature, else an inclusion.
     let combine = |m: &str| {

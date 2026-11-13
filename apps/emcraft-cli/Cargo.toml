@@ -3,6 +3,7 @@ name = "emcraft-cli"
 description = "EMCraft on the command line: run command scripts, list commands, write field and S-parameter pictures"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [[bin]]

@@ -134,8 +134,7 @@ pub fn card(app: &App) -> Option<Element<'_, Message>> {
         .page
         .as_ref()
         .and_then(|c| c.shown.as_ref().ok())
-        .map(|c| c.curves().into_iter().map(|(k, l)| (k.to_owned(), l.to_owned())).collect())
-        .unwrap_or_default();
+        .map_or_default(|c| c.curves().into_iter().map(|(k, l)| (k.to_owned(), l.to_owned())).collect());
     let palette = &app.look.theme.palette;
     let swatches: Vec<emcraft_render::Rgb> =
         (0..emcraft_render::palette::SERIES as u8).map(|i| palette.pen(emcraft_render::Pen::Series(i))).chain([palette.ink]).collect();

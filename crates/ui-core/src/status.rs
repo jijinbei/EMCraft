@@ -87,7 +87,7 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             args!(name = r.text("name"), ports = r.count("ports"), n = r.count("frequencies")),
         ),
         "filter.synthesize" | "results.coupling" => {
-            let fit = r.0.get("rms_s21").and_then(serde_json::Value::as_f64).map(|v| format!(" (RMS |ΔS21| {v:.3})")).unwrap_or_default();
+            let fit = r.0.get("rms_s21").and_then(serde_json::Value::as_f64).map_or_default(|v| format!(" (RMS |ΔS21| {v:.3})"));
             trf(t!("Coupling matrix of {n} resonators{fit}."), args!(n = r.count("order"), fit = fit))
         }
         "results.equivalent" => trf(t!("Equivalent circuit kept as {name}."), args!(name = r.text("kept"))),

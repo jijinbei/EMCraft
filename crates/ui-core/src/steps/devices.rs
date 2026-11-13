@@ -37,11 +37,11 @@ impl DeviceRow {
 
 /// The devices of a `solve.devices` reply (names this build does not know are left out).
 pub fn rows(list: &Value) -> Vec<DeviceRow> {
-    let rows = list.get("devices").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+    let rows = list.get("devices").and_then(Value::as_array).map_or_default(Vec::as_slice);
     rows.iter()
         .filter_map(|d| {
             let device = d.get("name").and_then(Value::as_str).and_then(Device::parse)?;
-            let listed = d.get("precisions").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+            let listed = d.get("precisions").and_then(Value::as_array).map_or_default(Vec::as_slice);
             let precisions = Precision::ALL.into_iter().filter(|p| listed.iter().any(|v| v == p.id())).collect();
             let problem = d.get("problem").and_then(Value::as_str).map(str::to_owned);
             Some(DeviceRow { device, available: d.get("available").and_then(Value::as_bool) == Some(true), precisions, problem })

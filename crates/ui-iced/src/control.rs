@@ -494,7 +494,7 @@ impl App {
             };
             self.keep_crash_reports(dir.into(), false);
         }
-        let reports = self.crashes.dir.as_deref().map(emcraft_ui_core::crash::list).unwrap_or_default();
+        let reports = self.crashes.dir.as_deref().map_or_default(emcraft_ui_core::crash::list);
         ok(json!({
             "dir": self.crashes.dir.as_ref().map(|d| d.display().to_string()),
             "journal": self.crashes.journal.as_ref().map(|j| j.path().display().to_string()),

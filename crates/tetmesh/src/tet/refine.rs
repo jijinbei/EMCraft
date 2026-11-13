@@ -359,7 +359,7 @@ pub fn feature_curves(cx: &TetComplex, feature_cos: f64) -> Result<(Vec<[u32; 2]
     let mut index: IdMap<[u32; 2], u32> = IdMap::default();
     let mut edges = Vec::new();
     for e in keys {
-        let s = sides.get(&e).map(Vec::as_slice).unwrap_or_default();
+        let s = sides.get(&e).map_or_default(Vec::as_slice);
         let [(ta, na), (tb, nb)] = s else {
             return Err(Error::Failed(format!("boundary edge {e:?} has {} faces", s.len())));
         };

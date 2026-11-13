@@ -158,7 +158,7 @@ impl Autosave {
     /// Copies into `dir` (none: no copies), with those found there newer than their projects
     /// offered for recovery ([`scan`]).
     pub fn at(dir: Option<PathBuf>) -> Autosave {
-        let found = dir.as_deref().map(scan).unwrap_or_default();
+        let found = dir.as_deref().map_or_default(scan);
         Autosave { dir, found, ..Autosave::default() }
     }
 

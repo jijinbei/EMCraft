@@ -135,7 +135,7 @@ pub fn table(session: &Session) -> Option<Table> {
 /// the caption.
 pub fn coupling(reply: &Value) -> Table {
     let names: Vec<String> =
-        reply.get("names").and_then(Value::as_array).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect()).unwrap_or_default();
+        reply.get("names").and_then(Value::as_array).map_or_default(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect());
     let at = |i: usize, j: usize| reply["matrix"][i][j].as_f64().unwrap_or(0.0);
     let rows = names
         .iter()
@@ -147,8 +147,7 @@ pub fn coupling(reply: &Value) -> Table {
         })
         .collect();
     let list = |key: &str| {
-        let v: Vec<String> =
-            reply[key].as_array().map(|a| a.iter().filter_map(|x| x.as_f64().map(|x| format!("{x:.3}"))).collect()).unwrap_or_default();
+        let v: Vec<String> = reply[key].as_array().map_or_default(|a| a.iter().filter_map(|x| x.as_f64().map(|x| format!("{x:.3}"))).collect());
         if v.is_empty() { "—".to_owned() } else { v.join(", ") }
     };
     let caption = trf(t!("Reflection zeros ω: {r} · transmission zeros ω: {z}"), args!(r = list("reflection_zeros"), z = list("transmission_zeros")));

@@ -3,6 +3,7 @@ name = "emcraft-tetmesh"
 description = "EMCraft's unstructured tetrahedral mesher: robust predicates, surface preparation, Delaunay tetrahedralization, constrained boundary recovery and the quality stage (refinement, smoothing, improvement), adapted from FieldCraft's"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [lints]

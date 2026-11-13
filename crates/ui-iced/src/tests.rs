@@ -43,7 +43,7 @@ fn the_node_editor_edits_drags_and_links_the_chain() {
     let r = emcraft_ui_core::system::reading(&app.session, "RX").and_then(|(_, nf)| nf).unwrap_or_default();
     assert!((2.0..2.2).contains(&r), "chain NF {r}");
     // A card dragged 50 to the right, from its header.
-    let before = app.layout().node("LNA").map(|n| n.rect.left()).unwrap_or_default();
+    let before = app.layout().node("LNA").map_or_default(|n| n.rect.left());
     app.update(Message::Grab("LNA".into()));
     for x in [300.0, 350.0] {
         app.update(Message::Pointer(Pointer::Move(Point::new(x, 100.0))));
@@ -55,7 +55,7 @@ fn the_node_editor_edits_drags_and_links_the_chain() {
     assert_eq!(app.session.model().system.stages.len(), 2);
     app.update(Message::Run(Command { id: "system.unlink", params: json!({"from": "band-pass filter", "to": RECEIVER}) }));
     assert!(!app.session.model().system.order().1, "unlinked short of the receiver");
-    let to = app.layout().node(RECEIVER).map(emcraft_ui_core::system::layout::NodeBox::input).unwrap_or_default();
+    let to = app.layout().node(RECEIVER).map_or_default(emcraft_ui_core::system::layout::NodeBox::input);
     app.update(Message::StartLink("band-pass filter".into()));
     app.update(Message::Pointer(Pointer::Release(to)));
     assert!(app.session.model().system.order().1, "the filter linked to the receiver");
@@ -120,7 +120,7 @@ fn finish(app: &mut App) {
 #[test]
 fn every_look_is_looks() {
     fn files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
-        let entries = std::fs::read_dir(dir).map(|d| d.flatten().map(|e| e.path()).collect::<Vec<_>>()).unwrap_or_default();
+        let entries = std::fs::read_dir(dir).map_or_default(|d| d.flatten().map(|e| e.path()).collect::<Vec<_>>());
         entries.into_iter().flat_map(|p| if p.is_dir() { files(&p) } else { vec![p] }).filter(|p| p.extension().is_some_and(|e| e == "rs")).collect()
     }
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -130,7 +130,7 @@ fn every_look_is_looks() {
         .filter(|p| !p.ends_with("look.rs") && !p.ends_with("tests.rs"))
         .flat_map(|p| {
             let text = std::fs::read_to_string(&p).unwrap_or_default();
-            let name = p.strip_prefix(&src).map(|n| n.display().to_string()).unwrap_or_default();
+            let name = p.strip_prefix(&src).map_or_default(|n| n.display().to_string());
             text.lines()
                 .enumerate()
                 .filter(|(_, l)| own.iter().any(|o| l.contains(o)))
@@ -485,7 +485,7 @@ fn a_dialog_edits_an_item_and_delete_takes_one_away() {
     assert_eq!(app.dialog.as_ref().map(|d| d.fields[k].text.clone()), Some("2.5".into()));
     // A port deleted from the card.
     let ports = app.session.model().ports.len();
-    let port = app.rows().find(|r| r.pick == Some(emcraft_ui_core::scene3d::Pick::Port(1))).map(|r| r.id.clone()).unwrap_or_default();
+    let port = app.rows().find(|r| r.pick == Some(emcraft_ui_core::scene3d::Pick::Port(1))).map_or_default(|r| r.id.clone());
     app.update(Message::Row(port));
     app.update(Message::Delete);
     assert_eq!(app.session.model().ports.len(), ports - 1);
@@ -808,7 +808,7 @@ fn a_boards_route_is_diagnosed() {
 #[test]
 fn scenarios() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios");
-    let mut files: Vec<_> = std::fs::read_dir(&dir).map(|d| d.flatten().map(|e| e.path()).collect()).unwrap_or_default();
+    let mut files: Vec<_> = std::fs::read_dir(&dir).map_or_default(|d| d.flatten().map(|e| e.path()).collect());
     files.sort();
     assert!(!files.is_empty(), "no scenarios in {}", dir.display());
     let failed: Vec<String> = files
@@ -1158,7 +1158,7 @@ fn hostile_setup_input_is_refused_in_place() {
 fn the_boundaries_step_finds_the_mirror_planes() {
     let mut app = App::new(Some("highpass"));
     app.update(Message::Step(Some(emcraft_engine::workflow::Step::Boundaries)));
-    let found = app.workflow.symmetry.as_ref().map(|(_, f, _)| f.iter().map(|f| f.axis.id()).collect::<Vec<_>>()).unwrap_or_default();
+    let found = app.workflow.symmetry.as_ref().map_or_default(|(_, f, _)| f.iter().map(|f| f.axis.id()).collect::<Vec<_>>());
     assert!(found.contains(&"x") && found.contains(&"y"), "{found:?}");
     assert!(crate::step_panel::view(&app, emcraft_ui_core::layout::SIDE.1).is_some());
 }
@@ -1351,7 +1351,7 @@ fn the_style_card_edits_the_charts_style() {
     app.update(Message::Style(StyleAct::Typed(Field::Min(1), "-30".into())));
     app.update(Message::Style(StyleAct::Commit(Field::Min(1))));
     assert_eq!(chart(&app).y.min, -30.0);
-    let first = chart(&app).curves().first().map(|(k, _)| (*k).to_owned()).unwrap_or_default();
+    let first = chart(&app).curves().first().map_or_default(|(k, _)| (*k).to_owned());
     app.update(Message::Style(StyleAct::Send(emcraft_ui_core::results::style::params(
         emcraft_engine::views::ChartId::SParameters,
         json!({"hidden": [first.clone()]}),
@@ -1547,7 +1547,7 @@ fn crash_reports_are_kept_shown_and_deleted() {
     let dir = base.join(format!("iced-crashes-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let mut app = App::new(Some("highpass")).with_crash_reports(Some(dir.clone()), false);
-    let journal = app.crashes.journal.as_ref().map(|j| j.path().to_path_buf()).unwrap_or_default();
+    let journal = app.crashes.journal.as_ref().map_or_default(|j| j.path().to_path_buf());
     app.run_now("model.material.create", &json!({"name": "ceramic", "eps_r": 9.8}));
     let noted = emcraft_ui_core::crash::read_journal(&journal).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(noted.entries.len(), 1);
@@ -1555,11 +1555,11 @@ fn crash_reports_are_kept_shown_and_deleted() {
     app.update(Message::Reports(ReportAct::Show(true)));
     assert_eq!(app.crashes.shown.as_ref().map(Vec::len), Some(1));
     // The report plays the session back: the sample's history, then the material.
-    let report = app.crashes.shown.as_ref().and_then(|r| r.first()).map(|r| r.folder.clone()).unwrap_or_default();
+    let report = app.crashes.shown.as_ref().and_then(|r| r.first()).map_or_default(|r| r.folder.clone());
     let recording = emcraft_ui_core::record::Recording::read(&report).unwrap_or_else(|e| panic!("{e}"));
     assert!(recording.history.as_array().is_some_and(|h| !h.is_empty()) && recording.entries.len() == 1);
     assert_eq!(crate::escape::stack(&app).first(), Some(&emcraft_ui_core::layer::Layer::Reports));
-    let id = app.crashes.shown.as_ref().and_then(|r| r.first()).map(|r| r.id.clone()).unwrap_or_default();
+    let id = app.crashes.shown.as_ref().and_then(|r| r.first()).map_or_default(|r| r.id.clone());
     app.update(Message::Reports(ReportAct::Delete(id)));
     assert_eq!(app.crashes.shown.as_ref().map(Vec::len), Some(0));
     app.update(Message::Escape(false));

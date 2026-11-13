@@ -222,7 +222,7 @@ fn detected<'a>(app: &'a App, r: &'a emcraft_engine::ImportInspection) -> Elemen
         .and_then(|v| v.as_object().cloned())
         .unwrap_or_default();
     let params = r.parameters.iter().take(64).map(|q| {
-        let saved = q.value.map(|x| emcraft_ui_core::dialogs::value_text(&json!(x))).unwrap_or_default();
+        let saved = q.value.map_or_default(|x| emcraft_ui_core::dialogs::value_text(&json!(x)));
         let now = set.get(&q.name).map_or_else(|| saved.clone(), emcraft_ui_core::dialogs::value_text);
         let (name, saved_too) = (q.name.clone(), saved.clone());
         let input = text_input("", now)

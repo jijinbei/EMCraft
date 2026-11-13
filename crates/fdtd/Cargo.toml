@@ -3,6 +3,7 @@ name = "emcraft-fdtd"
 description = "EMCraft's time-domain solver: the finite integration technique (FDTD) on a tensor grid, waveguide ports with CPML absorbers, broadband S-parameters by Fourier transforms"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [lints]

@@ -146,7 +146,7 @@ impl Library {
     }
 
     fn read(&self, id: fontdb::ID) -> Option<Found> {
-        let family = self.db.face(id)?.families.first().map(|(n, _)| n.clone()).unwrap_or_default();
+        let family = self.db.face(id)?.families.first().map_or_default(|(n, _)| n.clone());
         self.db.with_face_data(id, |data, index| (data.len() <= MAX_FONT).then(|| Found { family, index, bytes: data.to_vec() })).flatten()
     }
 }

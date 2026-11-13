@@ -345,7 +345,7 @@ impl View3d {
     /// The parts the box `b` (points over the view) takes.
     pub fn boxed(&self, b: BoxSel) -> Vec<Pick> {
         let (w, h) = (f64::from(self.size.0), f64::from(self.size.1));
-        self.shown.as_ref().map(|s| emcraft_ui_core::selection::boxed(&s.built.scene, &self.camera, w, h, b)).unwrap_or_default()
+        self.shown.as_ref().map_or_default(|s| emcraft_ui_core::selection::boxed(&s.built.scene, &self.camera, w, h, b))
     }
 
     /// The cut's outline (m): what lies on its plane, else the model's box flattened onto it.

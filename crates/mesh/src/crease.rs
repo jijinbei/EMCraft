@@ -40,7 +40,7 @@ impl Work<'_> {
     }
 
     fn live(&self, v: usize) -> Vec<usize> {
-        self.around.get(v).map(|l| l.iter().copied().filter(|&t| self.alive[t]).collect()).unwrap_or_default()
+        self.around.get(v).map_or_default(|l| l.iter().copied().filter(|&t| self.alive[t]).collect())
     }
 
     fn neighbours(&self, v: usize) -> BTreeSet<u32> {

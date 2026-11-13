@@ -52,7 +52,7 @@ pub enum Field {
 fn text(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),
-        Value::Number(n) => n.as_f64().map(emcraft_render::axes::format).unwrap_or_default(),
+        Value::Number(n) => n.as_f64().map_or_default(emcraft_render::axes::format),
         _ => String::new(),
     }
 }

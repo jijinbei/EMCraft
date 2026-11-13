@@ -17,7 +17,7 @@ impl Pen {
         let first = board.segments.iter().find(|g| Some(g.net.as_str()) == route).or_else(|| board.segments.first());
         match first {
             Some(g) => Pen { net: g.net.clone(), layer: g.layer.clone(), width: g.width, from: None },
-            None => Pen { net: "NET".into(), layer: board.layers.first().map(|l| l.name.clone()).unwrap_or_default(), width: 0.2e-3, from: None },
+            None => Pen { net: "NET".into(), layer: board.layers.first().map_or_default(|l| l.name.clone()), width: 0.2e-3, from: None },
         }
     }
 }

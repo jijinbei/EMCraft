@@ -163,7 +163,7 @@ fn tests(lines: &[&str]) -> Vec<Test> {
         let above: Vec<&str> =
             lines[..i].iter().rev().take_while(|l| l.trim_start().starts_with("//") || l.trim_start().starts_with("#[")).copied().collect();
         let Some(f) = (i..lines.len()).find(|k| lines[*k].contains("fn ")) else { break };
-        let name = lines[f].split("fn ").nth(1).map(|r| r.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect()).unwrap_or_default();
+        let name = lines[f].split("fn ").nth(1).map_or_default(|r| r.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect());
         // The body: to the brace that closes it, strings emptied.
         let mut depth = 0i64;
         let mut opened = false;

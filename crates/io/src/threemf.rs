@@ -628,7 +628,7 @@ pub fn read(bytes: &[u8]) -> Result<Vec<Surface>> {
             queue.push(p);
         }
     }
-    let build = pkg.parts.get(&pkg.root).map(|m| m.build.clone()).unwrap_or_default();
+    let build = pkg.parts.get(&pkg.root).map_or_default(|m| m.build.clone());
     let mut budget = Budget::default();
     build.iter().enumerate().map(|(k, c)| pkg.item(k, c, &mut budget)).collect()
 }

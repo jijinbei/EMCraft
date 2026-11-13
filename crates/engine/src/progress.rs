@@ -71,7 +71,7 @@ impl Progress {
         Snapshot {
             done: self.done.load(Ordering::Relaxed),
             total: self.total.load(Ordering::Relaxed),
-            stage: self.stage.lock().map(|s| s.clone()).unwrap_or_default(),
+            stage: self.stage.lock().map_or_default(|s| s.clone()),
             cancelled: self.cancelled(),
             open: self.open.load(Ordering::Relaxed),
             // Only open work reports one (the default bits read 0.0).

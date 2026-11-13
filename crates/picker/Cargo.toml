@@ -3,6 +3,7 @@ name = "emcraft-picker"
 description = "The system's file dialog for EMCraft's windows (rfd): projects to open and save, parts to import, each asked on a thread of its own so the window keeps drawing (emcraft_ui_core::files::Picker)"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [lints]

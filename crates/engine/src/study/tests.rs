@@ -320,7 +320,7 @@ fn a_variables_label_is_kept_and_checked() {
     let mut s = Session::new();
     s.execute("project.variable", &json!({"name": "t", "value": 2, "quantity": "length", "label": "iris thickness"})).unwrap();
     s.execute("project.variable", &json!({"name": "t", "value": 3})).unwrap();
-    let def = s.history.iter().find(|st| st.defines("t")).map(|st| st.params.clone()).unwrap_or_default();
+    let def = s.history.iter().find(|st| st.defines("t")).map_or_default(|st| st.params.clone());
     assert_eq!((def["label"].as_str(), def["quantity"].as_str()), (Some("iris thickness"), Some("length")));
     assert!(s.execute("project.variable", &json!({"name": "u", "value": 1, "label": "x".repeat(81)})).is_err());
     assert!(s.execute("project.variable", &json!({"name": "u", "value": 1, "label": "two\nlines"})).is_err());

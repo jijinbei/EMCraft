@@ -3,6 +3,7 @@ name = "emcraft-control"
 description = "EMCraft's control channel, whatever window serves it: a request and where its reply goes, and the loopback JSON-lines server with its per-launch token (docs/control-protocol.md)"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [lints]

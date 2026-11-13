@@ -3,6 +3,7 @@ name = "emcraft"
 description = "EMCraft desktop app: the iced window (crates/ui-iced) on the system's file dialog and the control channel"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [[bin]]

@@ -266,7 +266,7 @@ fn pulse<'a>(app: &'a App) -> Element<'a, Message> {
     let f = &app.pulse;
     let (fu, lu) = (app.session.display().frequency.symbol(), app.session.display().length.symbol());
     let field = |name, label, value: &'a str, unit: &'a str| pulse_field(t, name, label, value, unit);
-    let waves: Vec<String> = app.session.results().bloch.as_ref().map(|b| b.waves.iter().map(|w| w.name.clone()).collect()).unwrap_or_default();
+    let waves: Vec<String> = app.session.results().bloch.as_ref().map_or_default(|b| b.waves.iter().map(|w| w.name.clone()).collect());
     let bloch = !waves.is_empty();
     let cell = bloch.then(|| field("length", t!("length"), &f.length, lu));
     let wave_chips = (waves.len() > 1).then(|| {

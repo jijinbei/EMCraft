@@ -3,6 +3,7 @@ name = "emcraft-i18n"
 description = "EMCraft's translation checks at compile time: text!, template! and plural! find each English text in locales/*.json and its placeholders alike in every complete language"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [lib]

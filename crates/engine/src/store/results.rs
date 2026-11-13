@@ -418,7 +418,7 @@ impl StoredEigen {
                 }
             }
             let n = unknowns_of(family(k));
-            let vector = vectors.get(at..at + n).map(<[C]>::to_vec).unwrap_or_default();
+            let vector = vectors.get(at..at + n).map_or_default(<[C]>::to_vec);
             at += n;
             modes.push(emcraft_solver::eigen::Mode { frequency, vector, q_walls: q[0], q_dielectric: q[1], q_magnetic: q[2], family: family(k) });
         }

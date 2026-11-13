@@ -187,7 +187,7 @@ pub fn notes(
         }
     }
     dims.truncate(MAX_DIMS);
-    let ports = m.bounds().map(|b| port_marks(m, b, k, c, driven, &len)).unwrap_or_default();
+    let ports = m.bounds().map_or_default(|b| port_marks(m, b, k, c, driven, &len));
     (dims, ports)
 }
 

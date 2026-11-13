@@ -3,6 +3,7 @@ name = "emcraft-ui-iced"
 description = "EMCraft's second window, in iced, on the same shared rules as the egui one (emcraft-ui-core): the model in 3D drawn by the GPU in iced's shader widget, meshed and solved on a worker; the sweep's S-parameters; a system's node editor — so far (docs/adr/0007-iced-window.md)"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [lints]

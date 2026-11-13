@@ -3,6 +3,7 @@ name = "emcraft-gpu3d"
 description = "EMCraft's 3D view drawn by the GPU (wgpu) with a depth buffer, for whatever window shows it: the scene packed, the passes and WGSL shaders, picking by the tags under a pixel, and an offscreen device of the process's own (docs/adr/0004-gpu-viewport.md)"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [lints]

@@ -3,6 +3,7 @@ name = "emcraft-templates"
 description = "EMCraft's templates in one place: the sample models' command scripts, their variables, and the geometry builders they call"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [lints]

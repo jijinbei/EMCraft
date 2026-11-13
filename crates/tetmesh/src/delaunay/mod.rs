@@ -198,7 +198,7 @@ impl Triangulation {
 
         // Merge duplicates: sort by coordinates, ties by index, keep the first of each run.
         let mut by_coords: Vec<u32> = (0..n as u32).collect();
-        let key = |v: u32| tri.points.get(v as usize).map(|p| p.coords().map(f64::to_bits)).unwrap_or_default();
+        let key = |v: u32| tri.points.get(v as usize).map_or_default(|p| p.coords().map(f64::to_bits));
         // Equal values have equal bits after `admit`; the bit order is total and deterministic.
         by_coords.sort_unstable_by_key(|&v| (key(v), v));
         for run in by_coords.chunk_by(|&a, &b| key(a) == key(b)) {

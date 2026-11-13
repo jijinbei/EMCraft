@@ -146,7 +146,7 @@ pub(super) fn fill(
     let (keys, frequencies) = keys(&good);
     let gp = fit(&x, &good, &keys, None);
     let solves = chosen.iter().filter(|c| **c).count();
-    let surrogate = Surrogate { solves, lengths: gp.as_ref().map(|g| g.lengths().to_vec()).unwrap_or_default(), at_best: None };
+    let surrogate = Surrogate { solves, lengths: gp.as_ref().map_or_default(|g| g.lengths().to_vec()), at_best: None };
     let mut out = Vec::with_capacity(n);
     for (i, row) in rows.into_iter().enumerate() {
         if let Some(r) = row {

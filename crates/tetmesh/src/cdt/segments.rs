@@ -145,7 +145,7 @@ impl Recovery {
                     }
                     requeue(s, &mut next);
                     for x in touched {
-                        for &r in through.get(x as usize).map(Vec::as_slice).unwrap_or_default() {
+                        for &r in through.get(x as usize).map_or_default(Vec::as_slice) {
                             requeue(r as usize, &mut next);
                         }
                     }

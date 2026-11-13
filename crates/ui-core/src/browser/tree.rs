@@ -321,7 +321,7 @@ fn variables(s: &emcraft_engine::Session) -> Vec<Row> {
         .map(|(name, value)| {
             let given = s.history().iter().rev().find(|st| st.defines(name)).and_then(|st| st.param("value").cloned());
             // (A template's parameter says what it is.)
-            let expression = given.as_ref().and_then(serde_json::Value::as_str).map(|e| format!(" ({e})")).unwrap_or_default();
+            let expression = given.as_ref().and_then(serde_json::Value::as_str).map_or_default(|e| format!(" ({e})"));
             let edit = serde_json::json!({"name": name, "value": given.unwrap_or_else(|| serde_json::json!(value))});
             let label = template.iter().find(|p| p.name == *name).and_then(|p| p.label.clone());
             let said = |shown: &str| match &label {
@@ -751,7 +751,7 @@ fn excitation(s: &emcraft_engine::Session, f: &Fmt) -> Vec<Row> {
 
 /// A waveguide port's detail: where it lies and its modes (`y = 0 mm · 4 modes · 50 Ω`).
 fn port_detail(p: &emcraft_model::Port, l: emcraft_model::units::Length) -> Both {
-    let z = p.reference.map(|z| format!(" · {z} Ω")).unwrap_or_default();
+    let z = p.reference.map_or_default(|z| format!(" · {z} Ω"));
     let template = match (p.face.is_some(), p.end) {
         (true, _) => {
             lang::pick(p.modes as usize, t!("{axis} = {at} {unit} · {n} mode{impedance}"), t!("{axis} = {at} {unit} · {n} modes{impedance}"))
@@ -767,7 +767,7 @@ fn port_detail(p: &emcraft_model::Port, l: emcraft_model::units::Length) -> Both
 /// legend says `Port 1 (start)`): `Port 1 (start): 4 modes, 50 Ω`; a port on a face by its
 /// plane, in display units `l`: `Port 1 (y = 100 mm): 4 modes`.
 pub fn port_text(p: &emcraft_model::Port, l: emcraft_model::units::Length) -> Both {
-    let z = p.reference.map(|z| format!(", {z} Ω")).unwrap_or_default();
+    let z = p.reference.map_or_default(|z| format!(", {z} Ω"));
     let template = match (p.face.is_some(), p.end) {
         (true, _) => lang::pick(
             p.modes as usize,

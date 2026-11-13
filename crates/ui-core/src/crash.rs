@@ -117,12 +117,10 @@ impl Report {
             Kind::UncleanExit => "the window ended without closing",
             Kind::Report => "an unexpected result",
         };
-        let at = self.location.as_ref().map(|l| format!("at {l}\n")).unwrap_or_default();
-        let trace = self
-            .backtrace
-            .as_ref()
-            .map(|b| format!("\n<details><summary>backtrace</summary>\n\n```\n{}\n```\n</details>\n", emcraft_engine::text::clip(b, 20_000)))
-            .unwrap_or_default();
+        let at = self.location.as_ref().map_or_default(|l| format!("at {l}\n"));
+        let trace = self.backtrace.as_ref().map_or_default(|b| {
+            format!("\n<details><summary>backtrace</summary>\n\n```\n{}\n```\n</details>\n", emcraft_engine::text::clip(b, 20_000))
+        });
         let s = format!(
             "EMCraft {}: {what} (seen {} times)\n\n```\n{}\n{at}```\n{trace}\nWhat led to it plays back with `emcraft --replay {}` (attach its recording.json).\n",
             self.emcraft,
@@ -303,7 +301,7 @@ pub fn collect_dead(dir: &Path, ours: Option<&Path>) -> usize {
     let mut n = 0;
     for path in dead {
         if let Ok(recording) = read_journal(&path) {
-            let last = recording.entries.last().map(|e| format!("{:?}", e.action)).unwrap_or_default();
+            let last = recording.entries.last().map_or_default(|e| format!("{:?}", e.action));
             let message = match last.as_str() {
                 "" => "The window ended without closing.".to_owned(),
                 l => format!("The window ended without closing, after: {}", emcraft_engine::text::clip(l, 300)),

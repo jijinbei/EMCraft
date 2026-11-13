@@ -518,7 +518,7 @@ impl Collapser {
             }
             self.live_triangles = self.live_triangles.saturating_sub(1);
         }
-        let mut list = self.around.get_mut(u as usize).map(std::mem::take).unwrap_or_default();
+        let mut list = self.around.get_mut(u as usize).map_or_default(std::mem::take);
         let tri_alive = &self.tri_alive;
         list.retain(|t| tri_alive.get(*t as usize).copied().unwrap_or(false));
         for &t in s.at_v.iter().filter(|t| !s.shared.contains(t)) {

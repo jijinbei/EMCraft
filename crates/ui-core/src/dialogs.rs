@@ -183,12 +183,12 @@ impl Field {
         match &self.kind {
             Kind::Bool => self.on = v.as_bool().unwrap_or(false),
             Kind::Vector(names) => {
-                self.parts = (0..names.len()).map(|i| v.get(i).map(value_text).unwrap_or_default()).collect();
+                self.parts = (0..names.len()).map(|i| v.get(i).map_or_default(value_text)).collect();
             }
             Kind::Table(cols) => {
-                self.rows = v.as_array().map(|rows| rows.iter().take(MAX_ROWS).map(|r| table_row(cols, r)).collect()).unwrap_or_default();
+                self.rows = v.as_array().map_or_default(|rows| rows.iter().take(MAX_ROWS).map(|r| table_row(cols, r)).collect());
             }
-            Kind::Numbers => self.text = v.as_array().map(|a| list_text(a)).unwrap_or_default(),
+            Kind::Numbers => self.text = v.as_array().map_or_default(|a| list_text(a)),
             _ => self.text = bounded(&value_text(v)),
         }
     }
@@ -196,7 +196,7 @@ impl Field {
 
 /// A table row's cells from a JSON record, column by column (missing ones empty).
 fn table_row(cols: &[Column], record: &Value) -> Vec<String> {
-    cols.iter().map(|c| record.get(c.name).map(value_text).unwrap_or_default()).collect()
+    cols.iter().map(|c| record.get(c.name).map_or_default(value_text)).collect()
 }
 
 /// A list of numbers as a list field's text.

@@ -1220,7 +1220,7 @@ impl App {
             }
             Message::Boxed(add) => {
                 let view = std::mem::take(&mut self.view3d);
-                self.selection.boxed(&view.boxsel.map(|b| view.boxed(b)).unwrap_or_default(), add);
+                self.selection.boxed(&view.boxsel.map_or_default(|b| view.boxed(b)), add);
                 self.view3d = view.navigated(Nav::Box(None));
                 None
             }

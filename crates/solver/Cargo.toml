@@ -3,6 +3,7 @@ name = "emcraft-solver"
 description = "EMCraft's frequency-domain solver: assembly of the curl-curl equation on Nédélec elements, waveguide ports, a multifrontal complex symmetric LDLᵀ factorization, S-parameters and fields"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [lints]

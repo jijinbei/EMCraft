@@ -41,7 +41,7 @@ impl App {
     /// The fields at the probes, for the field view as it stands.
     fn probe_values(&self) -> Vec<Option<(emcraft_model::CVec3, emcraft_model::CVec3)>> {
         let points: Vec<Point3> = self.session.views().probes.iter().map(emcraft_engine::views::Probe::point).collect();
-        emcraft_engine::view::fields_at(&self.session, &self.view3d.field, &points).map(|p| p.values).unwrap_or_default()
+        emcraft_engine::view::fields_at(&self.session, &self.view3d.field, &points).map_or_default(|p| p.values)
     }
 }
 

@@ -42,7 +42,7 @@ impl Slice {
         for (name, v) in at {
             let k = study.variables.iter().position(|n| n == name).ok_or_else(|| bad(format!("names no variable of the sweep: `{name}`")))?;
             let v = v.as_f64().filter(|v| v.is_finite()).ok_or_else(|| bad(format!("`{name}` must be a number")))?;
-            let axis = study.grid.get(k).map(Vec::as_slice).unwrap_or_default();
+            let axis = study.grid.get(k).map_or_default(Vec::as_slice);
             let i = axis.iter().enumerate().min_by(|a, b| (a.1 - v).abs().total_cmp(&(b.1 - v).abs()).then(a.0.cmp(&b.0))).map(|(i, _)| i);
             if let Some(slot) = slice.at.get_mut(k) {
                 *slot = i.ok_or_else(|| bad(format!("`{name}`: the sweep has no values")))?;
