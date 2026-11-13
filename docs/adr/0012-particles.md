@@ -1,6 +1,6 @@
 # ADR 0012: Electrons in the fields — tracking first, then particle-in-cell
 
-Status: accepted (2026-11-14); stage A in progress.
+Status: accepted (2026-11-14); stage A done (2026-11-14: results.track, the pillbox-tracking oracle case, the electron-pillbox template); stage B next.
 
 ## Context
 
