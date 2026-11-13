@@ -1,6 +1,6 @@
 # ADR 0010: Shapes are made in SolidCraft
 
-Status: accepted (2026-11-13); H1–H4 done.
+Status: accepted (2026-11-13); H1–H5 done.
 
 ## Context
 
@@ -65,8 +65,17 @@ copies what SolidCraft (the sibling CAD) does properly. The same commands also b
   generators wrote, only the format's newer spelling moved (`solidcraft/51`, parameter names on
   extrudes, the extent's convention written out), and the templates, the oracle and their
   fixtures did not move.
-- **H5** A pilot: six templates moved (an H-plane bend, a cylindrical cavity, a coaxial line, an
-  inductive post, a metal sphere's scattering, the cross-guide coupler), each with its script twin
-  and the closed form.
+- **H5** (done) A pilot: six templates moved — the H-plane bend, the cylindrical cavity, the
+  coaxial line (its inner conductor a metal body of the design), the inductive post (likewise),
+  the metal sphere's scattering (the sphere alone, in the import's open box, its margin `25 − r`
+  keeping the box 50 mm) and the cross-guide coupler — each design a short script of
+  `solid.box`, `solid.cylinder`, `solid.sphere` and a sketch's `solid.extrude`, the template
+  passing its variables (the bend's mitre is `mitre`: `m` is a unit name in SolidCraft). Each
+  keeps its old script as its twin (`crates/templates/twins/<name>.json`); `tests/twins.rs`
+  solves both and checks they agree with each other and with the closed form where there is
+  one (the cylinder's TE111 and TM010, the line's phase, the post's integral equation, the
+  sphere's Mie series, the square corner's field superposition at m = 0). A symmetry plane
+  across an imported surface now asks each vertex's image to lie on the surface, not to be a
+  vertex: a design's two ends are triangulated differently.
 - **H6** The other CAD-like templates, in batches; an oracle fixture that moves says why.
 - **H7** Docs and scenarios.

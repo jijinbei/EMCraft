@@ -1,8 +1,6 @@
 [
  {"command": "project.variable", "params": {"name": "r", "label": "sphere radius", "value": 5, "quantity": "length"}},
- {"command": "geometry.solid", "params": {"shape": "box", "size": [50, 50, 50]}},
- {"command": "geometry.inclusion", "params": {"shape": "sphere", "radius": "=r", "at": [25, 25, 25]}},
- {"command": "model.open", "params": {"thickness": 12}},
+ {"command": "geometry.import", "params": {"path": "template:metal-sphere.solidcraft", "parameters": {"r": "=r"}, "open": true, "thickness": 12, "margin": "=25-r"}},
  {"command": "mesh.generate", "params": {"per_wavelength": 6, "frequency": 10}},
  {"command": "source.plane_wave", "params": {"direction": [0, 0, 1], "polarization": [1, 0, 0]}},
  {"command": "project.setup", "params": {"kind": "radiation", "frequency": 10}},

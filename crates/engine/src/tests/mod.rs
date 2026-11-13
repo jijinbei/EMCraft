@@ -23,6 +23,7 @@ mod sides;
 mod solve;
 mod symmetry;
 mod system;
+mod twins;
 mod view;
 mod views;
 

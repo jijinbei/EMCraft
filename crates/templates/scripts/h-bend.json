@@ -3,7 +3,7 @@
  {"command": "project.variable", "params": {"name": "b", "label": "guide height", "value": 10.16, "quantity": "length"}},
  {"command": "project.variable", "params": {"name": "l", "label": "arm length", "value": 20, "quantity": "length"}},
  {"command": "project.variable", "params": {"name": "m", "label": "mitre cut", "value": 14.6, "quantity": "length"}},
- {"command": "geometry.solid", "params": {"shape": "prism", "points": [[0, 0], ["=a", 0], ["=a", "=l"], ["=l+a", "=l"], ["=l+a", "=l+a"], ["=m", "=l+a"], [0, "=l+a-m"]], "length": "=b"}},
+ {"command": "geometry.import", "params": {"path": "template:h-bend.solidcraft", "parameters": {"a": "=a", "b": "=b", "l": "=l", "mitre": "=m"}, "materials": {"bend": "interior"}}},
  {"command": "model.walls", "params": {"thickness": 1.27}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4, "axis": "y", "face": [0, 0, 0, "=a", "=b"]}},
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4, "axis": "x", "face": ["=l+a", "=l", 0, "=a", "=b"]}},

@@ -227,26 +227,57 @@ impl Symmetry {
         Ok(())
     }
 
-    /// Whether an imported surface's vertices, placed by `place`, mirror onto its vertices (other
-    /// shapes pass: their boxes decide).
+    /// Whether an imported surface's vertices, placed by `place`, mirror onto the surface (other
+    /// shapes pass: their boxes decide): each vertex's image is a vertex, or lies on a triangle —
+    /// a flat face triangulated differently on its two sides (a design's end caps, each with
+    /// points of its own inside) is still symmetric. The images that are no vertex are each
+    /// looked for among the triangles, at most [`MAX_MIRROR_TESTS`] tests in all (past them the
+    /// surface is taken as not symmetric).
     fn surface_mirrors(&self, shape: &Shape, place: impl Fn(Point3) -> Point3, tol: f64) -> bool {
-        let Shape::Surface { positions, .. } = shape else { return true };
+        let Shape::Surface { positions, triangles, .. } = shape else { return true };
         let d = self.axis.index();
         let key = |p: Point3| p.to_array().map(|c| (c / tol).round() as i64);
         let placed: Vec<Point3> = positions.iter().map(|p| place(*p)).collect();
         let keys: std::collections::BTreeSet<[i64; 3]> = placed.iter().map(|p| key(*p)).collect();
-        placed.iter().all(|p| {
-            let image = key(p.with(d, 2.0 * self.at - p[d]));
-            // A vertex rounded across a key's edge: its neighbours count too.
+        // A vertex rounded across a key's edge: its neighbours count too.
+        let is_vertex = |q: Point3| {
+            let k = key(q);
             (-1..=1).any(|o| {
-                keys.contains(&{
-                    let mut k = image;
-                    k[d] += o;
-                    k
-                })
+                let mut n = k;
+                n[d] += o;
+                keys.contains(&n)
+            })
+        };
+        let images: Vec<Point3> = placed.iter().map(|p| p.with(d, 2.0 * self.at - p[d])).filter(|q| !is_vertex(*q)).collect();
+        if images.len().saturating_mul(triangles.len()) > MAX_MIRROR_TESTS {
+            return false;
+        }
+        let corner = |i: u32| placed.get(i as usize).copied();
+        images.iter().all(|q| {
+            triangles.iter().any(|t| match (corner(t[0]), corner(t[1]), corner(t[2])) {
+                (Some(a), Some(b), Some(c)) => on_triangle(*q, [a, b, c], tol),
+                _ => false,
             })
         })
     }
+}
+
+/// The most point-on-triangle tests a symmetry check makes for an imported surface.
+const MAX_MIRROR_TESTS: usize = 50_000_000;
+
+/// Whether `q` lies on the triangle `t` (within `tol`, m): within `tol` of its plane and at
+/// most `tol` outside each of its edges.
+fn on_triangle(q: Point3, t: [Point3; 3], tol: f64) -> bool {
+    let n = (t[1] - t[0]).cross(t[2] - t[0]);
+    let Some(unit) = n.normalized() else { return false };
+    if unit.dot(q - t[0]).abs() > tol {
+        return false;
+    }
+    (0..3).all(|i| {
+        let (a, b) = (t[i], t[(i + 1) % 3]);
+        // The distance of q inside the edge's line, times the edge's length.
+        unit.dot((b - a).cross(q - a)) >= -tol * (b - a).norm()
+    })
 }
 
 /// A piece of a planar circuit that a symmetric guide must hold the mirror image of.
@@ -604,5 +635,32 @@ mod tests {
         let both = Symmetry::image_through(&planes, Point3::new(0.015, 0.008, 0.0));
         assert_eq!(both.point, Point3::new(2.0 * 0.01 - 0.015, 2.0 * 0.005 - 0.008, 0.0));
         assert!(both.e == [1.0, 1.0, -1.0] && both.h == [1.0, 1.0, -1.0]);
+    }
+
+    /// A unit cube imported as a surface, its top cap split at an inner point of its own and its
+    /// bottom cap not (as a design's caps may be): symmetric about z = ½ all the same; the same
+    /// cube with that point pushed into it (a dent in the top, none in the bottom) is not.
+    #[test]
+    fn a_surface_whose_caps_are_split_differently_is_symmetric() {
+        let cube = |lift: f64| {
+            let mut positions: Vec<Point3> = (0..8).map(|i| Point3::new((i & 1) as f64, ((i >> 1) & 1) as f64, ((i >> 2) & 1) as f64)).collect();
+            positions.push(Point3::new(0.3, 0.6, 1.0 + lift));
+            let quads: [[u32; 4]; 5] = [[0, 4, 6, 2], [1, 3, 7, 5], [0, 1, 5, 4], [2, 6, 7, 3], [0, 2, 3, 1]];
+            let mut triangles: Vec<[u32; 3]> = quads.iter().flat_map(|q| [[q[0], q[1], q[2]], [q[0], q[2], q[3]]]).collect();
+            triangles.extend([[4, 5, 8], [5, 7, 8], [7, 6, 8], [6, 4, 8]]);
+            let mut m = Model::default();
+            let tags = vec![0; triangles.len()];
+            m.set_solid(Solid {
+                shape: Shape::Surface { name: "cube".into(), positions, triangles, tags, surfaces: Vec::new() },
+                material: "vacuum".into(),
+            })
+            .unwrap();
+            m
+        };
+        let plane = vec![Symmetry { axis: Axis::Z, at: 0.5, kind: SymmetryKind::Electric }];
+        cube(0.0).set_symmetry(plane.clone()).unwrap();
+        assert!(cube(-0.2).set_symmetry(plane).is_err());
+        assert!(on_triangle(Point3::new(0.2, 0.2, 0.0), [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)], 1e-9));
+        assert!(!on_triangle(Point3::new(0.8, 0.8, 0.0), [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)], 1e-9));
     }
 }

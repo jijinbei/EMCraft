@@ -1,0 +1,116 @@
+{
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "Cross-guide coupler"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "a",
+        "expression": "22.86",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "b",
+        "expression": "10.16",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "l",
+        "expression": "10",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "t",
+        "expression": "1",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "r",
+        "expression": "3.5",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "d",
+        "expression": "7",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "solid.box",
+      "params": {
+        "length": "2 * l + a",
+        "width": "a",
+        "height": "b",
+        "body_name": "guide"
+      }
+    },
+    {
+      "command": "solid.cylinder",
+      "params": {
+        "radius": "r",
+        "height": "t + b / 2",
+        "base": [
+          "l + a / 2 - d",
+          "a / 2 - d",
+          "3 * b / 4"
+        ],
+        "operation": "join",
+        "targets": [
+          "guide"
+        ]
+      }
+    },
+    {
+      "command": "solid.cylinder",
+      "params": {
+        "radius": "r",
+        "height": "t + b / 2",
+        "base": [
+          "l + a / 2 + d",
+          "a / 2 + d",
+          "3 * b / 4"
+        ],
+        "operation": "join",
+        "targets": [
+          "guide"
+        ]
+      }
+    },
+    {
+      "command": "solid.box",
+      "params": {
+        "length": "a",
+        "width": "2 * l + a",
+        "height": "b",
+        "corner": [
+          "l",
+          "-l",
+          "b + t"
+        ],
+        "operation": "join",
+        "targets": [
+          "guide"
+        ]
+      }
+    }
+  ]
+}

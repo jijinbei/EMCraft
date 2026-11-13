@@ -1,0 +1,96 @@
+{
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "H-plane bend"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "a",
+        "expression": "22.86",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "b",
+        "expression": "10.16",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "l",
+        "expression": "20",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "mitre",
+        "expression": "14.6",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "sketch.create",
+      "params": {
+        "plane": "XY",
+        "name": "outline"
+      }
+    },
+    {
+      "command": "sketch.line",
+      "params": {
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            "a",
+            0
+          ],
+          [
+            "a",
+            "l"
+          ],
+          [
+            "l + a",
+            "l"
+          ],
+          [
+            "l + a",
+            "l + a"
+          ],
+          [
+            "mitre",
+            "l + a"
+          ],
+          [
+            0,
+            "l + a - mitre"
+          ]
+        ],
+        "closed": true
+      }
+    },
+    {
+      "command": "sketch.finish",
+      "params": {}
+    },
+    {
+      "command": "solid.extrude",
+      "params": {
+        "distance": "b",
+        "body_name": "bend"
+      }
+    }
+  ]
+}

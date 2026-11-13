@@ -1,0 +1,34 @@
+{
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "Cylinder cavity"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "r",
+        "expression": "10",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "l",
+        "expression": "30",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "solid.cylinder",
+      "params": {
+        "radius": "r",
+        "height": "l",
+        "body_name": "cavity"
+      }
+    }
+  ]
+}

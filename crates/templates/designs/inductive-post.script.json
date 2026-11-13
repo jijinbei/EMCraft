@@ -1,0 +1,65 @@
+{
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "Inductive post"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "a",
+        "expression": "22.86",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "b",
+        "expression": "10.16",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "l",
+        "expression": "30",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "r_post",
+        "expression": "1.5",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "solid.box",
+      "params": {
+        "length": "a",
+        "width": "b",
+        "height": "l",
+        "body_name": "guide"
+      }
+    },
+    {
+      "command": "solid.cylinder",
+      "params": {
+        "radius": "r_post",
+        "height": "b",
+        "base": [
+          "a / 2",
+          0,
+          "l / 2"
+        ],
+        "axis": "Y",
+        "body_name": "post"
+      }
+    }
+  ]
+}

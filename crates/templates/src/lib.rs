@@ -778,6 +778,12 @@ pub const DESIGNS: &[Design] = &[
     Design { file: "corrugated-cell.solidcraft", bytes: include_bytes!("../designs/corrugated-cell.solidcraft") },
     Design { file: "helical-cell.solidcraft", bytes: include_bytes!("../designs/helical-cell.solidcraft") },
     Design { file: "heart-wire.solidcraft", bytes: include_bytes!("../designs/heart-wire.solidcraft") },
+    Design { file: "h-bend.solidcraft", bytes: include_bytes!("../designs/h-bend.solidcraft") },
+    Design { file: "cylinder-cavity.solidcraft", bytes: include_bytes!("../designs/cylinder-cavity.solidcraft") },
+    Design { file: "coaxial-line.solidcraft", bytes: include_bytes!("../designs/coaxial-line.solidcraft") },
+    Design { file: "inductive-post.solidcraft", bytes: include_bytes!("../designs/inductive-post.solidcraft") },
+    Design { file: "metal-sphere.solidcraft", bytes: include_bytes!("../designs/metal-sphere.solidcraft") },
+    Design { file: "cross-guide-coupler.solidcraft", bytes: include_bytes!("../designs/cross-guide-coupler.solidcraft") },
     Design { file: "adsb-patch.s1p", bytes: include_bytes!("../designs/adsb-patch.s1p") },
     Design { file: "adsb-bandpass.s2p", bytes: include_bytes!("../designs/adsb-bandpass.s2p") },
 ];

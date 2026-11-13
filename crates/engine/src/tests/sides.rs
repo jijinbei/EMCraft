@@ -110,13 +110,16 @@ fn a_mitred_bend_is_the_same_turned_round() {
     // (Lossless and reciprocal, as every template: invariants.rs.)
     let (a, b, l, m) = (22.86, 10.16, 20.0, 14.6);
     let w = l + a;
-    // The template keeps its lower half (a symmetry plane at mid-height); the turned copy is whole.
-    let mut s = super::template_meshed("h-bend", 4.0);
-    s.execute("model.symmetry", &json!({"clear": true})).unwrap();
+    // The template's bend, its shape a prism of EMCraft's own (its twin's: tests/twins.rs).
+    let outline = [[0.0, 0.0], [a, 0.0], [a, l], [w, l], [w, w], [m, w], [0.0, w - m]];
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "prism", "points": outline, "length": b})).unwrap();
     s.execute("mesh.generate", &json!({"size": 4})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 4, "axis": "y", "face": [0, 0, 0, a, b]})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "modes": 4, "axis": "x", "face": [w, l, 0, a, b]})).unwrap();
     let r = s.execute("solve.frequency", &json!({"frequencies": [9, 11], "order": 2})).unwrap();
     // The same bend turned a quarter round about z, (x, y) → (w − y, x): its ports swap axes.
-    let turned: Vec<[f64; 2]> = [[0.0, 0.0], [a, 0.0], [a, l], [w, l], [w, w], [m, w], [0.0, w - m]].iter().map(|p| [w - p[1], p[0]]).collect();
+    let turned: Vec<[f64; 2]> = outline.iter().map(|p| [w - p[1], p[0]]).collect();
     let mut t = Session::new();
     t.execute("geometry.solid", &json!({"shape": "prism", "points": turned, "length": b})).unwrap();
     t.execute("mesh.generate", &json!({"size": 4})).unwrap();
