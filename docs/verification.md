@@ -186,7 +186,17 @@ not asserted again by another; a test that leaves one out names the layer that h
    `coupled-line-coupler-4port`); the conversion itself against the closed-form coupler from an
    ideal modal S (`emcraft-solver::driven::terminals`); coupled microstrips, whose modes travel
    apart, unitary and reciprocal after per-mode de-embedding (engine tests).
-14. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
+14. **Templates from SolidCraft designs** (`crates/engine/src/tests/twins.rs`,
+   `crates/engine/src/tests/designs.rs`; docs/adr/0010-geometry-from-solidcraft.md): 39
+   templates open SolidCraft designs built from their command scripts (`cargo xtask designs`,
+   `--check` when the SolidCraft pin moves), so every template's run tests the import, the
+   design's exact surfaces and the mesh built on them. Six keep their old scripts as twins
+   (`crates/templates/twins/`): the design and its twin solved alike agree with each other and
+   with the closed form — the cylinder's TE111 and TM010 (1e-3), the coaxial line's phase
+   (0.5°), the post's integral equation (1e-2), a conducting sphere's Mie cross-section (10 %),
+   the square H-plane corner's field superposition (3e-3) — and the mitred bend and the
+   cross-guide coupler, which have none, with each other (3e-3).
+15. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
    own model as a command script (`recipe.json`), its reference values with source, tolerance
    and the reason for the tolerance (`expected.json`), and our accepted values (`fixture.json`).
 

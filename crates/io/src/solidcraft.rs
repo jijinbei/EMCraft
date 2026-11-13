@@ -68,14 +68,17 @@ fn design(bytes: &[u8]) -> Result<Arc<sx::Design>> {
     LAST.design(bytes)
 }
 
-/// The design's parameters as it stores them.
+/// The design's parameters as it stores them: those made in its parameters table, not the
+/// names SolidCraft gives its sketches' dimensions and its features' inputs (`d1`, `d2`…,
+/// which follow those).
 ///
 /// ```
 /// let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/oracle/design-post/post.solidcraft");
 /// let bytes = std::fs::read(path).unwrap_or_default();
 /// let p = emcraft_io::solidcraft::parameters(&bytes).unwrap_or_default();
-/// // The post's diameter, 3 mm as saved.
+/// // The post's diameter, 3 mm as saved; its four parameters and none of the dimensions'.
 /// assert!(p.iter().any(|q| q.name == "d" && q.value == Some(3.0) && q.unit == "mm"));
+/// assert_eq!(p.iter().map(|q| q.name.as_str()).collect::<Vec<_>>(), ["a", "b", "l", "d"]);
 /// assert!(emcraft_io::solidcraft::parameters(b"not a design").is_err());
 /// assert!(emcraft_io::solidcraft::is_design("post.solidcraft") && !emcraft_io::solidcraft::is_design("post.3mf"));
 /// ```
@@ -83,6 +86,7 @@ pub fn parameters(bytes: &[u8]) -> Result<Vec<Parameter>> {
     Ok(design(bytes)?
         .parameters()
         .into_iter()
+        .filter(|p| p.source == sx::ParameterSource::User)
         .map(|p| {
             let value = match p.quantity() {
                 Some(sx::Quantity::Length(l)) => Some(l.0),

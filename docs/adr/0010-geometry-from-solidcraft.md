@@ -1,6 +1,6 @@
 # ADR 0010: Shapes are made in SolidCraft
 
-Status: accepted (2026-11-13); H1–H6 done.
+Status: accepted (2026-11-13); done (H1–H7).
 
 ## Context
 
@@ -91,4 +91,9 @@ copies what SolidCraft (the sibling CAD) does properly. The same commands also b
   rather than by a Boolean whose cut lies a millionth off the plane. No oracle fixture moved:
   the cases write their own models; the symmetric tee's test meshes at 5 mm (at 6 mm, four
   elements across, the design's whole tee lay 0.015 off its half).
-- **H7** Docs and scenarios.
+- **H7** (done) Docs and scenarios: the scenario `designs` (a template's parameter set in the
+  tree, Geometry's ＋ without shapes, a design of the user's with ↗ and its parameter set in
+  the tree, a port by face name refused and then placed), docs/ux/workflow.md, the
+  verification and architecture notes. A design's parameters are those of its parameters table:
+  the names SolidCraft gives its sketches' dimensions and features' inputs (`d1`, `d2`…, which
+  follow them) are no longer listed.

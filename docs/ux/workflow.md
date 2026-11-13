@@ -20,7 +20,7 @@ pitfalls they name: skipping the mesh convergence check, and wrong boundary cond
 | # | Step | What the engineer decides | What goes wrong |
 |---|---|---|---|
 | 0 | **Home** (the job's intent) | the kind of problem (guided-wave component, planar circuit, antenna, scatterer, resonator), units | a kind that does not fit the model |
-| 1 | **Geometry** | shapes, Booleans, imported surfaces (a SolidCraft design with its parameters, 3MF, STL: chosen, dropped on the window or begun from the start page and the empty step; the dialog shows the file's bodies, size and parameters, and what importing makes of them), layers and strips | non-closed or overlapping bodies, features flush with walls |
+| 1 | **Geometry** | the shape: a template's, set by its parameters, or a SolidCraft design (made and edited in SolidCraft; opened there from its row ↗ and read again when saved; a new one from Geometry's ＋), or a 3MF or STL part — chosen, dropped on the window or begun from the start page and the empty step, the dialog showing the file's bodies, size and parameters and what importing makes of them; a guide's sections, layers and strips | non-closed or overlapping bodies, features flush with walls |
 | 2 | **Materials** (EMCraft: part of Geometry, its bodies drawn in their materials' colours, the materials listed under them with a New material button) | εr, μr, loss tangent per body; wall conductivity | lossy material at a port; wrong units |
 | 3 | **Excitation** | waveguide ports (and how many modes), lumped ports and their impedance, plane waves, dipoles; reference impedances | a port off its face, the first mode cut off in the band, too few modes near a discontinuity |
 | 4 | **Boundaries** | conducting walls (perfect or finite σ), the open boundary (PML thickness, reflection), symmetry | the bodies touching the PML, the Huygens box crossing them |
@@ -149,7 +149,14 @@ band, the device, Run's preflight) in its panel, the views of the 3D view in the
 and samples in the bar and on the start page; the 3D view's orientation is a view cube (or the six
 signed axes, Settings ▸ 3D view ▸ Navigator). The window makes no shapes
 (docs/adr/0010-geometry-from-solidcraft.md): a template's are set by its parameters (the tree's
-Parameters), a design's in SolidCraft; a body's form is what it is made of.
+Parameters), a design's in SolidCraft; a body's form is what it is made of. A design of the
+user's is a row of Geometry with ↗, Open in SolidCraft (the program in Settings ▸ SolidCraft);
+saved there, the model is read again with everything after its import (`geometry.reload`). Its
+parameters — those made in its parameters table, not the names SolidCraft gives its dimensions —
+are rows of the Parameters, set where it is imported (`geometry.design`). A port goes on one of
+its faces by the face's name (`face_name`, the port tool records it), so it follows the face
+when the design changes; a name the design has none of is refused at its field, which lists the
+names it has.
 
 **Navigating the 3D view** works as in SolidCraft, so the sibling apps feel alike
 (`crates/ui-core/src/navigation.rs`, `cube.rs`, `crates/ui-iced/src/view3d/`; scenario `navigation`):
