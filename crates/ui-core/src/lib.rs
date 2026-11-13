@@ -54,6 +54,7 @@ pub mod handle;
 pub mod job;
 pub mod lang;
 pub mod layer;
+pub mod layout;
 pub mod math;
 pub mod messages;
 pub mod navigation;

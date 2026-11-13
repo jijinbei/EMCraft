@@ -44,6 +44,11 @@ pub fn first_page(s: &Session) -> View {
 /// The browser's tree: its rows under the workflow's steps ([`emcraft_ui_core::outline`]).
 pub type Tree = Vec<emcraft_ui_core::outline::Part>;
 
+/// The gap between the window's columns (points).
+const COLUMN_GAP: f32 = 8.0;
+/// What the columns' gaps take (points): one each side of the page.
+const COLUMN_GAPS: f32 = 2.0 * COLUMN_GAP;
+
 /// What the properties panel last followed the selection to: the row selected then, and the
 /// project's generation (a form not edited follows the model when it changes under it).
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -619,6 +624,36 @@ impl App {
         None
     }
 
+    /// The page in view (the start page and the settings over the project's).
+    fn page_view(&self) -> Element<'_, Message> {
+        match self.page {
+            _ if self.settings => crate::settings::view(self),
+            _ if self.home => crate::start::view(self),
+            View::Model => crate::model::view(self),
+            View::Eigenmodes => crate::eigenmodes::view(self),
+            View::PortModes => crate::port_modes::view(self),
+            View::Pcb => crate::pcb::view(self),
+            View::SParameters => crate::sparameters::view(self),
+            v if v.chart().is_some() => crate::results::view(self, v),
+            _ => crate::system::view(self),
+        }
+    }
+
+    /// Whether the properties panel shows: an item's form or a docked dialog, the field's column,
+    /// or the open step's panel.
+    fn side_panel_shown(&self) -> bool {
+        self.dialog.is_some() || crate::field_panel::shown(self) || (self.workflow.step.is_some() && crate::steps::stepped(self))
+    }
+
+    /// The properties panel, `width` wide: the open dialog (an item's form), else the field's
+    /// column, else the open step's panel.
+    fn side_panel(&self, width: f32) -> Option<Element<'_, Message>> {
+        let docked = self.dialog.as_ref().map(|d| crate::dialog::panel(self, d, width));
+        docked
+            .or_else(|| crate::field_panel::view(self, width))
+            .or_else(|| crate::step_panel::view(self, width).filter(|_| crate::steps::stepped(self)))
+    }
+
     /// View `v` shown: a page of its own, or (the fields) the model with its field put forward.
     fn show(&mut self, v: View) {
         if v == View::Field {
@@ -922,28 +957,17 @@ impl App {
         let search = (!self.settings && !self.home).then(|| crate::search::field(self));
         let bar = row(std::iter::once(container(bar).width(Fill).boxed()).chain(search)).spacing(12).align_y(Alignment::Center);
         let bar = container(bar).padding([6, 14]).width(Fill).style(look::app_bar(t));
-        let page = match self.page {
-            _ if self.settings => crate::settings::view(self),
-            _ if self.home => crate::start::view(self),
-            View::Model => crate::model::view(self),
-            View::Eigenmodes => crate::eigenmodes::view(self),
-            View::PortModes => crate::port_modes::view(self),
-            View::Pcb => crate::pcb::view(self),
-            View::SParameters => crate::sparameters::view(self),
-            v if v.chart().is_some() => crate::results::view(self, v),
-            _ => crate::system::view(self),
-        };
         let project = !self.settings && !self.home;
         // What the search finds, under the bar.
         let found = project.then(|| crate::search::results(self)).flatten();
-        // The tree at the page's left; at its right the properties panel: the open dialog (an
-        // item's form), else the open step's panel.
-        let docked = self.dialog.as_ref().filter(|_| project).map(|d| crate::dialog::panel(self, d));
-        let panel = docked.or_else(|| crate::step_panel::view(self).filter(|_| crate::steps::stepped(self)));
+        // The tree at the page's left, the properties panel at its right, their widths from the
+        // room the window gives (emcraft_ui_core::layout).
         let page = if project {
-            row(std::iter::once(crate::browser::view(self)).chain(std::iter::once(page)).chain(panel)).spacing(8).height(Fill).boxed()
+            let c = emcraft_ui_core::layout::columns(self.window.0, COLUMN_GAPS, self.side_panel_shown());
+            let columns = [crate::browser::view(self, c.tree), self.page_view()].into_iter().chain(self.side_panel(c.side));
+            row(columns).spacing(COLUMN_GAP).height(Fill).boxed()
         } else {
-            page
+            self.page_view()
         };
         let parts = std::iter::once(bar.boxed()).chain(found).chain(crate::files::recoveries(self)).chain([page, crate::messages::view(self)]);
         let window = container(iced::widget::Column::with_children(parts)).width(Fill).height(Fill).style(look::window(t));

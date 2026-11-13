@@ -15,9 +15,6 @@ use serde_json::json;
 use crate::app::{App, Message};
 use crate::look::{self, Tokens};
 
-/// The column's width (points).
-const WIDTH: f32 = 300.0;
-
 fn heading<'a>(t: Tokens, title: Text) -> Element<'a, Message> {
     text(tr(title).to_uppercase()).size(t.font_small).color(t.text_dim).boxed()
 }
@@ -54,9 +51,14 @@ impl App {
     }
 }
 
+/// Whether the column shows: the model's page with its field.
+pub fn shown(app: &App) -> bool {
+    app.page == emcraft_ui_core::view::View::Model && app.view3d.overlay == emcraft_ui_core::scene3d::Overlay::Field
+}
+
 /// The column, while the field is shown.
-pub fn view(app: &App) -> Option<Element<'_, Message>> {
-    if app.view3d.overlay != emcraft_ui_core::scene3d::Overlay::Field {
+pub fn view(app: &App, width: f32) -> Option<Element<'_, Message>> {
+    if !shown(app) {
         return None;
     }
     let t = app.look.tokens;
@@ -109,5 +111,5 @@ pub fn view(app: &App) -> Option<Element<'_, Message>> {
         .chain(std::iter::once(heading(t, t!("PINNED"))))
         .chain(pinned)
         .chain([heading(t, t!("SAVE")), save]);
-    Some(container(scrollable(Column::with_children(parts).spacing(8).padding(10))).width(WIDTH).height(Fill).style(look::ground(t)).boxed())
+    Some(container(scrollable(Column::with_children(parts).spacing(8).padding(10))).width(width).height(Fill).style(look::ground(t)).boxed())
 }

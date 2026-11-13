@@ -614,6 +614,21 @@ fn paint_app(k: &Kit<'_>, glyph: Glyph) -> bool {
             pen.frame(pen.rect(0.3, 0.14, 0.66, 0.36), 1.0, line);
             p.rect_filled(pen.rect(0.28, 0.54, 0.72, 0.86), 1.5, accent);
         }
+        // An arc over the top, its head at the left end turning down: undo; mirrored, redo.
+        Glyph::Undo | Glyph::Redo => {
+            let flip = |x: f32| if glyph == Glyph::Redo { 1.0 - x } else { x };
+            let bend: Vec<(f32, f32)> =
+                (0..=16).map(|k| -3.0 + 3.0 * k as f32 / 16.0).map(|a: f32| (flip(0.5 + 0.3 * a.cos()), 0.6 + 0.3 * a.sin())).collect();
+            pen.open(&bend, line);
+            pen.open(&[(flip(0.06), 0.46), (flip(0.2), 0.64), (flip(0.34), 0.46)], bold);
+        }
+        // A disk with a pen across its corner: save under another name.
+        Glyph::SaveAs => {
+            pen.open(&[(0.62, 0.1), (0.1, 0.1), (0.1, 0.8), (0.5, 0.8)], line);
+            pen.open(&[(0.62, 0.1), (0.74, 0.22), (0.74, 0.44)], line);
+            pen.frame(pen.rect(0.24, 0.1, 0.56, 0.3), 1.0, line);
+            pen.open(&[(0.5, 0.94), (0.94, 0.5)], bold);
+        }
         // A gear.
         Glyph::Settings => {
             let teeth: Vec<Pos2> = (0..48)

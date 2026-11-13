@@ -118,6 +118,13 @@ and the UI should make the same habits easy for the user's own models.
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+The tree and the properties panel have their widths when the window is wide enough; a narrower
+window takes the room from both alike, down to their least widths, so the page between them keeps
+its own (`emcraft_ui_core::layout`). The panel holds an item's form or a dialog, else the
+field's column while the model shows its field, else the open step's panel — the results' on a
+result's page. The bar's file and edit actions and the 3D view's fit, home view, projection,
+section and measure are glyphs, their names and keys on hover; the other standard views are the
+view cube's faces.
 One structure holds the job (docs/adr/0009-model-tree-window.md): the tree's nodes are the
 steps, its rows what each step made (bodies and materials under Geometry, the ports under
 Excitation, the walls under Region, the mesh, the results); each command is on the ＋ of the

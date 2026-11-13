@@ -5,6 +5,7 @@
 
 use emcraft_engine::view::{Component, Plane};
 use emcraft_render::view3d::StandardView;
+use emcraft_ui_core::glyph::Glyph;
 use emcraft_ui_core::handle::AXES;
 use emcraft_ui_core::lang::{args, lookup, tr, trf};
 use emcraft_ui_core::navigation::Goal;
@@ -30,10 +31,6 @@ const OVERLAYS: [(Overlay, emcraft_ui_core::lang::Text); 5] = [
     (Overlay::Mesh, t!("Mesh")),
 ];
 
-/// The standard views offered, and each one's name.
-const VIEWS: [(StandardView, emcraft_ui_core::lang::Text); 4] =
-    [(StandardView::Iso, t!("Iso")), (StandardView::Front, t!("Front")), (StandardView::Top, t!("Top")), (StandardView::Right, t!("Right"))];
-
 /// A button of the bar: `label`, lit when `on`, sending `message` (none: greyed).
 fn tool<'a>(t: Tokens, label: &str, on: bool, message: Option<Message>) -> Element<'a, Message> {
     iced::widget::button(text(label.to_owned()).size(t.font_button)).style(look::toggle(t, on)).on_press_maybe(message).boxed()
@@ -49,25 +46,47 @@ fn bar(app: &App) -> Element<'_, Message> {
     let overlays = offered.map(|(o, label)| tool(t, tr(label), o == overlay, Some(Message::View3d(Nav::Overlay(o)))));
     let section = app.view3d.section;
     let cut = app.view3d.bounds().map(|b| Cut::middle(0, b));
-    let sectioning = tool(t, tr(t!("Section view")), section.is_some(), Some(Message::View3d(Nav::Section(section.map_or(cut, |_| None)))));
+    use crate::icons::{On, ToolFace, tool_button};
+    let sectioning = tool_button(
+        t,
+        ToolFace { glyph: Glyph::Section, name: tr(t!("Section view")).to_owned(), key: None, on: section.is_some(), place: On::Panel },
+        Some(Message::View3d(Nav::Section(section.map_or(cut, |_| None)))),
+    );
     use emcraft_render::view3d::Projection;
     let ortho = app.view3d.camera.projection == Projection::Orthographic;
-    let projection = tool(
+    let projection = tool_button(
         t,
-        tr(if ortho { t!("Orthographic") } else { t!("Perspective") }),
-        ortho,
+        ToolFace {
+            glyph: if ortho { Glyph::Orthographic } else { Glyph::Perspective },
+            name: tr(if ortho { t!("Orthographic") } else { t!("Perspective") }).to_owned(),
+            key: None,
+            on: false,
+            place: On::Panel,
+        },
         Some(Message::View3d(Nav::Projection(if ortho { Projection::Perspective } else { Projection::Orthographic }))),
     );
-    let views = std::iter::once(tool(t, tr(t!("Fit")), false, Some(Message::View3d(Nav::Goal(Goal::Fit)))))
-        .chain(std::iter::once(projection))
-        .chain(std::iter::once(sectioning))
-        .chain(VIEWS.iter().map(|(v, label)| tool(t, tr(*label), false, Some(Message::View3d(Nav::Goal(Goal::standard(*v)))))));
+    // The fit and the home view; the others are the view cube's faces (and Ctrl+1–7).
+    let fit = tool_button(
+        t,
+        ToolFace { glyph: Glyph::Fit, name: tr(t!("Fit")).to_owned(), key: None, on: false, place: On::Panel },
+        Some(Message::View3d(Nav::Goal(Goal::Fit))),
+    );
+    let home = tool_button(
+        t,
+        ToolFace { glyph: Glyph::Home, name: tr(t!("Iso")).to_owned(), key: None, on: false, place: On::Panel },
+        Some(Message::View3d(Nav::Goal(Goal::standard(StandardView::Iso)))),
+    );
+    let views = [fit, home, projection, sectioning].into_iter();
     let idle = app.job.is_none();
     // The tools: each lit while on, a second press turns it off; the port tools (Excitation's
     // ＋) only while on.
     let tools = Tool::ALL.into_iter().filter(|k| *k == Tool::Measure || app.tool == Some(*k)).map(|k| {
         let on = app.tool == Some(k);
-        tool(t, lookup(k.label()), on, idle.then_some(Message::Tool((!on).then_some(k))))
+        crate::icons::tool_button(
+            t,
+            crate::icons::ToolFace { glyph: k.glyph(), name: lookup(k.label()).to_owned(), key: None, on, place: crate::icons::On::Panel },
+            idle.then_some(Message::Tool((!on).then_some(k))),
+        )
     });
     let gap = || Space::new().width(16).boxed();
     row(overlays.chain(std::iter::once(gap())).chain(views).chain(std::iter::once(gap())).chain(tools))
@@ -345,6 +364,5 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let field = (app.view3d.overlay == Overlay::Field).then(|| field_bar(app));
     let section = app.view3d.section.map(|c| section_bar(app, c));
     let main = column(std::iter::once(bar(app)).chain(section).chain(field).chain(std::iter::once(picture))).spacing(8).height(Fill);
-    let side = crate::field_panel::view(app);
-    row(std::iter::once(main.boxed()).chain(side)).spacing(12).padding(12).height(Fill).boxed()
+    container(main).padding(12).height(Fill).boxed()
 }

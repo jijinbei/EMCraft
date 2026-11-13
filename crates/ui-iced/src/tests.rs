@@ -1070,7 +1070,7 @@ fn every_steps_panel_and_the_kind() {
         app.update(Message::Step(Some(step)));
         let _ = app.view();
         assert_eq!(app.workflow.step, (step != Step::Intent).then_some(step), "{step:?}");
-        assert!(crate::step_panel::view(&app).is_some() == (step != Step::Intent));
+        assert!(crate::step_panel::view(&app, emcraft_ui_core::layout::SIDE.1).is_some() == (step != Step::Intent));
     }
     app.update(Message::Step(Some(Step::Excitation)));
     app.update(Message::StepAct(crate::step_panel::Act::PreviewModes));
@@ -1081,7 +1081,7 @@ fn every_steps_panel_and_the_kind() {
     app.update(Message::Run(emcraft_ui_core::system::gesture::Command { id: "project.analysis", params: json!({"kind": "eigenmodes"}) }));
     assert_eq!(app.solver(), emcraft_ui_core::steps::Solver::Eigenmodes);
     app.update(Message::Step(Some(Step::Setup)));
-    assert!(crate::step_panel::view(&app).is_some());
+    assert!(crate::step_panel::view(&app, emcraft_ui_core::layout::SIDE.1).is_some());
 }
 
 /// Hostile text in the Setup form never crashes: each is refused under its field (or read as
@@ -1115,7 +1115,7 @@ fn the_boundaries_step_finds_the_mirror_planes() {
     app.update(Message::Step(Some(emcraft_engine::workflow::Step::Boundaries)));
     let found = app.workflow.symmetry.as_ref().map(|(_, f, _)| f.iter().map(|f| f.axis.id()).collect::<Vec<_>>()).unwrap_or_default();
     assert!(found.contains(&"x") && found.contains(&"y"), "{found:?}");
-    assert!(crate::step_panel::view(&app).is_some());
+    assert!(crate::step_panel::view(&app, emcraft_ui_core::layout::SIDE.1).is_some());
 }
 
 /// The S-parameters page. Analytic evidence: a band picked over 7–8 GHz refined with 5 points
@@ -1197,7 +1197,9 @@ fn the_field_column_reads_power_probes_and_a_pinned_point() {
     let report = emcraft_engine::power::at(&app.session, 8e9, 0).unwrap_or_else(|e| panic!("{e}"));
     let lost = report["unaccounted"].as_f64().unwrap_or(f64::NAN);
     assert!(lost.abs() < 1e-3, "lossless: {lost}");
-    assert!(crate::field_panel::view(&app).is_some());
+    // Shown beside the model.
+    app.update(Message::Page(emcraft_ui_core::view::View::Model));
+    assert!(crate::field_panel::view(&app, emcraft_ui_core::layout::SIDE.1).is_some());
     // A click on the plane pins its point.
     let at = (0..60)
         .flat_map(|i| (0..40).map(move |j| emcraft_ui_core::geom::Point::new(200.0 + 7.0 * i as f32, 150.0 + 7.0 * j as f32)))

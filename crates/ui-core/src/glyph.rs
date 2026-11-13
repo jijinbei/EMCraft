@@ -94,6 +94,12 @@ emcraft_macros::named_enum! {
         SymmetryMagnetic = "symmetry_magnetic",
         /// Field lines: arrows bending round.
         FieldLines = "field_lines",
+        /// An arrow turning back to the left: undo.
+        Undo = "undo",
+        /// An arrow turning on to the right: redo.
+        Redo = "redo",
+        /// A disk with a pen: save under another name.
+        SaveAs = "save_as",
     /// A plain rounded square: a command without a glyph of its own.
         Blank = "blank",
     }

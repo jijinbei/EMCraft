@@ -21,6 +21,46 @@ pub fn view<'a>(glyph: Glyph, side: f32, ink: Color, accent: Color) -> Element<'
     iced::widget::canvas(Icon { glyph, ink, accent }).width(side).height(side).boxed()
 }
 
+/// The side of a glyph on a button of the bar or the 3D view's bar (points).
+const TOOL_SIDE: f32 = 20.0;
+
+/// Where a glyph's button sits: the window's bar (its ink and fill) or a panel.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum On {
+    Bar,
+    Panel,
+}
+
+/// What a glyph's button shows: its glyph, the name and key said on hover, whether it is lit and
+/// where it sits.
+pub struct ToolFace {
+    pub glyph: Glyph,
+    pub name: String,
+    pub key: Option<&'static str>,
+    pub on: bool,
+    pub place: On,
+}
+
+/// A button that is its glyph alone, sending `message` (none: off, dim), its name and its key
+/// (if it has one) on hover.
+pub fn tool_button<'a>(t: crate::look::Tokens, face: ToolFace, message: Option<Message>) -> Element<'a, Message> {
+    let ToolFace { glyph, name, key, on, place } = face;
+    let (ink, accent) = match (place, message.is_some()) {
+        (_, false) => (t.text_dim, t.text_dim),
+        (On::Bar, true) => (t.app_bar_text, t.app_bar_text),
+        (On::Panel, true) => (t.icon, t.accent),
+    };
+    let style = move |theme: &iced::Theme, status| match place {
+        On::Bar => crate::look::bar_toggle(t, on)(theme, status),
+        On::Panel => crate::look::toggle(t, on)(theme, status),
+    };
+    let face = iced::widget::button(view(glyph, TOOL_SIDE, ink, accent)).padding([4, 6]).style(style).on_press_maybe(message);
+    let key = key.map(|k| iced::widget::text(k.to_owned()).size(t.font_small).color(t.text_dim).boxed());
+    let said = iced::widget::row(std::iter::once(iced::widget::text(name).size(t.font_small).boxed()).chain(key)).spacing(8);
+    let card = iced::widget::container(said).padding(6).style(crate::look::ground(t));
+    iced::widget::tooltip(face, card, iced::widget::tooltip::Position::Bottom).gap(4).boxed()
+}
+
 impl Icon {
     fn colour(&self, c: Color32) -> Color {
         let base = match c.ink {

@@ -16,9 +16,6 @@ use serde_json::Value;
 use crate::app::{App, Message};
 use crate::look::{self, Tokens};
 
-/// The panel's width (points).
-const WIDTH: f32 = 380.0;
-
 /// What the panel's controls ask of the window.
 #[derive(Clone, Debug)]
 pub enum Act {
@@ -72,8 +69,12 @@ fn colour(t: Tokens, s: Status) -> Color {
 }
 
 /// The open step's panel, when one is open.
-pub fn view(app: &App) -> Option<Element<'_, Message>> {
-    let step = app.workflow.step?;
+pub fn view(app: &App, width: f32) -> Option<Element<'_, Message>> {
+    // A result's page shows the results' panel, whichever step was open.
+    let step = match app.workflow.step? {
+        _ if app.page.is_result() && app.page != emcraft_ui_core::view::View::PortModes => Step::Results,
+        step => step,
+    };
     let t = app.look.tokens;
     let states = app.statuses();
     let state = states.get(step.index())?.clone();
@@ -93,7 +94,7 @@ pub fn view(app: &App) -> Option<Element<'_, Message>> {
     };
     let parts = std::iter::once(head).chain(unneeded).chain(checks).chain(body);
     let list = Column::with_children(parts).spacing(8).padding(12);
-    Some(container(scrollable(list).height(Fill)).width(WIDTH).height(Fill).style(look::ground(t)).boxed())
+    Some(container(scrollable(list).height(Fill)).width(width).height(Fill).style(look::ground(t)).boxed())
 }
 
 /// The status's mark, `Step n · name` and the status.

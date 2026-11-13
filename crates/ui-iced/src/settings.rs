@@ -9,6 +9,9 @@ use emcraft_ui_core::lang::{self, Text, lookup, tr};
 use emcraft_ui_core::navigation::{NAV_PRESETS, TOUCHPAD};
 use emcraft_ui_core::prefs::GpuLook;
 use iced::widget::{Column, button, column, container, pick_list, row, scrollable, text, text_input};
+
+/// The settings' column's width (points): a line of text stays readable.
+const READING_WIDTH: f32 = 900.0;
 use iced::{Alignment, Element, Fill, Widget};
 
 use crate::app::{App, Message};
@@ -170,6 +173,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         ),
         section(t, t!("Crash reports"), tr(t!("Kept on this computer only. Copy one to report it; nothing is sent.")), reports(app)),
     ];
-    let page = Column::with_children(sections).spacing(24).padding(24).width(900);
-    container(scrollable(page)).width(Fill).height(Fill).boxed()
+    // The settings at most a reading width wide; the scroll bar at the window's edge.
+    let page = Column::with_children(sections).spacing(24).padding(24).width(READING_WIDTH);
+    scrollable(container(page).width(Fill)).width(Fill).height(Fill).boxed()
 }

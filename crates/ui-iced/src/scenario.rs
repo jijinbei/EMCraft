@@ -243,6 +243,8 @@ pub fn run(app: &mut App, steps: &[Value]) -> Result<(), String> {
         } else if let Some(s) = step.get("size").and_then(Value::as_array) {
             let side = |k: usize| s.get(k).and_then(Value::as_f64).filter(|v| (200.0..=8000.0).contains(v)).map(|v| v as f32);
             size = side(0).zip(side(1)).ok_or_else(|| at("a size is [w, h], each 200 to 8000".into()))?;
+            // The window's columns follow its width.
+            app.window = size;
         } else if ["press", "field", "key", "shot"].iter().any(|k| step.get(k).is_some()) {
             for m in through_layout(app, step, size).map_err(at)? {
                 app.update(m);

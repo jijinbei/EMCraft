@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use emcraft_ui_core::autosave;
 use emcraft_ui_core::files::{Answer, FileAction, Picker, Purpose, Then};
+use emcraft_ui_core::glyph::Glyph;
 use emcraft_ui_core::lang::{args, tr, trf};
 use iced::widget::{Space, button, center, column, container, opaque, row, text};
 use iced::{Color, Element, Fill, Task, Widget};
@@ -251,13 +252,16 @@ pub fn dropped(event: iced::Event, _: iced::event::Status, _: iced::window::Id) 
 pub fn edits(app: &App) -> impl Iterator<Item = Element<'_, Message>> {
     let t = app.look.tokens;
     let idle = app.job.is_none();
-    [("edit.undo", !app.session.undo().is_empty()), ("edit.redo", !app.session.redo().is_empty())].into_iter().map(move |(id, can)| {
-        let label = emcraft_ui_core::lang::command_label(id).to_owned();
-        button(text(label).size(t.font_button))
-            .style(look::bar_button(t))
-            .on_press_maybe((idle && can).then(|| Message::Start(id.to_owned())))
-            .boxed()
-    })
+    [("edit.undo", Glyph::Undo, "Ctrl+Z", !app.session.undo().is_empty()), ("edit.redo", Glyph::Redo, "Ctrl+Y", !app.session.redo().is_empty())]
+        .into_iter()
+        .map(move |(id, glyph, key, can)| {
+            let label = emcraft_ui_core::lang::command_label(id).to_owned();
+            crate::icons::tool_button(
+                t,
+                crate::icons::ToolFace { glyph, name: label, key: Some(key), on: false, place: crate::icons::On::Bar },
+                (idle && can).then(|| Message::Start(id.to_owned())),
+            )
+        })
 }
 
 /// The File buttons in the window's bar: New, Open, Save, Save As.
@@ -265,18 +269,22 @@ pub fn buttons(app: &App) -> impl Iterator<Item = Element<'_, Message>> {
     let t = app.look.tokens;
     let idle = app.job.is_none();
     [
-        ("file.new", FileAction::Request(Then::New)),
-        ("file.open", FileAction::Request(Then::Open)),
-        ("file.save", FileAction::Save),
-        ("", FileAction::SaveAs),
+        ("file.new", Glyph::New, "Ctrl+N", FileAction::Request(Then::New)),
+        ("file.open", Glyph::OpenFile, "Ctrl+O", FileAction::Request(Then::Open)),
+        ("file.save", Glyph::Save, "Ctrl+S", FileAction::Save),
+        ("", Glyph::SaveAs, "Ctrl+Shift+S", FileAction::SaveAs),
     ]
     .into_iter()
-    .map(move |(id, action)| {
+    .map(move |(id, glyph, key, action)| {
         let label = match id {
             "" => tr(t!("Save as…")).to_owned(),
             _ => emcraft_ui_core::lang::command_label(id).to_owned(),
         };
-        button(text(label).size(t.font_button)).style(look::bar_button(t)).on_press_maybe(idle.then_some(Message::File(action))).boxed()
+        crate::icons::tool_button(
+            t,
+            crate::icons::ToolFace { glyph, name: label, key: Some(key), on: false, place: crate::icons::On::Bar },
+            idle.then_some(Message::File(action)),
+        )
     })
 }
 

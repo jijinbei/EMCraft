@@ -24,9 +24,6 @@ use iced::{Alignment, Color, Element, Fill, Widget};
 use crate::app::{App, Message};
 use crate::look::{self, Tokens};
 
-/// The browser's width (points).
-const WIDTH: f32 = 290.0;
-
 /// The step a row's command belongs to.
 pub fn step_of(r: &Row) -> Option<emcraft_engine::workflow::Step> {
     let command = match (&r.item, &r.act) {
@@ -241,7 +238,7 @@ fn section_head<'a>(app: &App, t: Tokens, part: &Part, name: &str, folded: bool)
 
 /// The browser: the kind of analysis, then the tree — a node a step (its rows under it, the
 /// geometry's bodies and materials each under their heading), the sections of their own above.
-pub fn view(app: &App) -> Element<'_, Message> {
+pub fn view(app: &App, width: f32) -> Element<'_, Message> {
     let t = app.look.tokens;
     let stale = app.statuses().get(Step::Results.index()).is_some_and(|s| s.status == emcraft_engine::workflow::Status::Stale);
     let parts = app.tree.iter().flat_map(|(_, tree)| tree).map(|part| {
@@ -264,5 +261,5 @@ pub fn view(app: &App) -> Element<'_, Message> {
         .padding(iced::Padding { top: 8.0, right: 18.0, bottom: 8.0, left: 8.0 })
         .width(Fill);
     // The scroll bar beside the rows, not over their eyes.
-    container(scrollable(list)).width(WIDTH).height(Fill).style(look::ground(t)).boxed()
+    container(scrollable(list)).width(width).height(Fill).style(look::ground(t)).boxed()
 }

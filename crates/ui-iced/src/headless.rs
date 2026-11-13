@@ -29,6 +29,8 @@ pub fn render(app: &mut App, size: (f32, f32)) -> Result<(u32, u32, Vec<u8>), St
     // The 3D view drawn into a picture while the view is built.
     app.headless = true;
     let theme = app.theme();
+    // Laid out for the picture's size (the columns' widths follow the window's), then as it was.
+    let window = std::mem::replace(&mut app.window, size);
     let element = app.view();
     let mut ui: UserInterface<'_, Message, iced::Theme, iced::Renderer> =
         UserInterface::build(element, iced::Size::new(w, h), Cache::default(), &mut renderer);
@@ -49,5 +51,6 @@ pub fn render(app: &mut App, size: (f32, f32)) -> Result<(u32, u32, Vec<u8>), St
     let rgba = renderer.screenshot(iced::Size::new(pw, ph), SCALE, base.background_color);
     drop(ui);
     app.headless = false;
+    app.window = window;
     Ok((pw, ph, rgba))
 }

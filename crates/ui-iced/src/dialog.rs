@@ -192,13 +192,10 @@ pub fn view<'a>(app: &'a App, d: &'a Dialog) -> Element<'a, Message> {
     opaque(veil).boxed()
 }
 
-/// The properties panel's width (points).
-pub const PANEL: f32 = 400.0;
-
 /// Dialog `d` in the properties panel at the page's right (docs/adr/0009-model-tree-window.md):
 /// the model beside it stays in sight and in reach.
-pub fn panel<'a>(app: &'a App, d: &'a Dialog) -> Element<'a, Message> {
+pub fn panel<'a>(app: &'a App, d: &'a Dialog, width: f32) -> Element<'a, Message> {
     let t = app.look.tokens;
     let list = body(app, d, iced::Padding { top: 12.0, right: 18.0, bottom: 12.0, left: 12.0 });
-    container(scrollable(list).height(Fill)).width(PANEL).height(Fill).style(look::ground(t)).boxed()
+    container(scrollable(list).height(Fill)).width(width).height(Fill).style(look::ground(t)).boxed()
 }
