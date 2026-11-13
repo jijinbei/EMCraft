@@ -129,6 +129,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("view.dispersion", Some(t!("Dispersion PNG").en()), Some(Glyph::Dispersion), false),
     ui("results.eigenmodes", None, Some(Glyph::Eigen), false),
     ui("results.cavity", None, Some(Glyph::Eigen), false),
+    ui("results.track", None, Some(Glyph::Eigen), true),
     ui("solve.port_modes", Some(t!("Port modes").en()), Some(Glyph::PortModes), true),
     ui("results.sparameters", None, Some(Glyph::Chart), false),
     ui("results.power", None, Some(Glyph::Chart), false),

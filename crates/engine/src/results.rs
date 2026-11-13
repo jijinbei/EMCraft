@@ -274,6 +274,20 @@ const MIN_FIELD_R_OVER_Q: f64 = 1e-3;
 /// The most intervals `results.cavity` integrates along its line in.
 const MAX_CAVITY_POINTS: usize = 20_000;
 
+/// The line a particle crosses a cavity along: `from`–`to`, or the region's axis along z
+/// (through the middle of its bounding box) when neither is given.
+pub(crate) fn cavity_line(s: &Session, p: &Params) -> Result<(emcraft_model::Point3, emcraft_model::Point3)> {
+    match (p.point("from").optional()?, p.point("to").optional()?) {
+        (Some(a), Some(b)) => Ok((a, b)),
+        (None, None) => {
+            let b = s.model.bounds().ok_or_else(|| EngineError::failed("no geometry"))?;
+            let (cx, cy) = (0.5 * (b.min.x + b.max.x), 0.5 * (b.min.y + b.max.y));
+            Ok((emcraft_model::Point3::new(cx, cy, b.min.z), emcraft_model::Point3::new(cx, cy, b.max.z)))
+        }
+        _ => Err(p.error("to", "`from` and `to` go together (or neither: the region's axis along z)")),
+    }
+}
+
 /// `results.cavity`: an eigenmode as an accelerating cavity — along a straight line (its
 /// region's axis along z by default), the voltage a particle crossing at speed βc sees,
 /// V = |∫ E_z e^{jωz/(βc)} dz|, against the field's own, V₀ = |∫ E_z dz|; the transit-time
@@ -293,15 +307,7 @@ pub fn cavity(s: &mut Session, p: &Params) -> Result<Value> {
         return Err(p.error("beta", "must be greater than 0 and at most 1 (v/c)"));
     }
     let n = p.integer("points", 1..=MAX_CAVITY_POINTS).or(400)?;
-    let line = match (p.point("from").optional()?, p.point("to").optional()?) {
-        (Some(a), Some(b)) => (a, b),
-        (None, None) => {
-            let b = s.model.bounds().ok_or_else(|| EngineError::failed("no geometry"))?;
-            let (cx, cy) = (0.5 * (b.min.x + b.max.x), 0.5 * (b.min.y + b.max.y));
-            (emcraft_model::Point3::new(cx, cy, b.min.z), emcraft_model::Point3::new(cx, cy, b.max.z))
-        }
-        _ => return Err(p.error("to", "`from` and `to` go together (or neither: the region's axis along z)")),
-    };
+    let line = cavity_line(s, p)?;
     let driven = e.driven_of(m);
     let (x, f) = (&m.vector, m.frequency);
     let omega = 2.0 * std::f64::consts::PI * f;

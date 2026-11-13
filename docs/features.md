@@ -1230,6 +1230,25 @@ An eigenmode as an accelerating cavity, along a straight line (`from`–`to`, th
 | `beta` | number |  | no | the particle's speed over c, above 0 to 1 (default 1) |
 | `points` | integer |  | no | intervals along the line, 1 to 20000 (default 400) |
 
+## `results.track` — Track electrons
+
+Electrons sent through an eigenmode as through an accelerating cavity (docs/adr/0012-particles.md): pushed by the relativistic Boris (or Vay) push through the mode's E and B at the accelerating voltage asked for, V₀ = |∫ E·dl| along the line (`from`–`to`, the region's axis along z when neither is given), plus a uniform static magnetic field if given. The mode's phase is set so that a particle entering at phase 0 and keeping its speed gains the most, |q| V₀ T cos φ (T the transit-time factor at the entry speed). Each particle starts on the entry plane, at each of `phases` phases (or at `phase`) and each of `offsets` off the line, and runs until it leaves through the exit plane, falls back behind the entry plane or meets a wall (leaves the mesh between them); no field beyond the planes. The reply gives each particle's end, its energy out and gain (eV) against the constant-speed gain, and its points [x, y, z, t (ns), energy (eV)]. The window draws the trajectories of the last run.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `mode` | integer |  | no | the eigenmode, from 1 (default 1) |
+| `voltage` | number |  | no | the accelerating voltage V₀ along the line, V (default 1e6) |
+| `energy` | number |  | no | the electrons' kinetic energy as they enter, eV (default 1e6) |
+| `phases` | integer |  | no | entry phases spread over the period, 1 to 360 (default 12) |
+| `phase` | number |  | no | one entry phase, degrees (instead of `phases`) |
+| `offsets` | array | length | no | distances off the line the electrons start at (default [0]) |
+| `magnetic` | array |  | no | a uniform static magnetic field [Bx, By, Bz], T |
+| `from` | array | length | no | the line's start [x, y, z] |
+| `to` | array | length | no | the line's end [x, y, z] |
+| `pusher` | string |  | no | `boris` (default) or `vay` (for γ in the hundreds and crossed fields) |
+| `steps` | integer |  | no | time steps per RF period, 20 to 100000 (default 400) |
+| `points` | integer |  | no | points kept of each trajectory, 2 to 10000 (default 200) |
+
 ## `solve.port_modes` — Port modes
 
 Each port's modes at one frequency, from the meshed model without solving the volume: the closed forms for a whole rectangle or circle of one material, the cross-section solver elsewhere. Per mode: the propagation constant β (radians per length unit), the effective permittivity (β/k₀)² and — for a line with conductors besides the ground (coaxial, strips) — the characteristic impedance by power and current per conductor, 2P/Σ|I|² (Ω), when it propagates (several strips in one dielectric: their TEM modes split into those of orthogonal currents, the even mode then the odd for two coupled strips, Z0e and Z0o); the attenuation (dB per length unit) when it does not.

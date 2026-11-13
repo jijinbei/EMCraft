@@ -69,3 +69,54 @@ fn a_beam_pipe_cavity_agrees_with_its_body_of_revolution() {
     let rq = r["r_over_q"].as_f64().unwrap();
     assert!(rq > 120.0 && rq < 160.0, "{r}");
 }
+
+/// Electrons tracked through a pillbox's mode (its energies against qV₀T cos φ are the oracle's
+/// `pillbox-tracking`): refused before anything is solved and for hostile parameters; an
+/// electron bent off its line by a static field across it is lost on the cylinder's wall, where
+/// it met it said; the last run's parameters kept for the window to draw. Evidence: 1 MeV
+/// electrons (γ = 2.96) in 0.5 T turn on a radius γmv/(eB) ≈ 9.4 mm, so one starting 8 mm off
+/// the axis of a 10 mm pillbox reaches its wall (r = 10 mm) before its far end.
+#[test]
+fn electrons_are_tracked_through_a_mode_and_lost_on_its_walls() {
+    let mut s = Session::new();
+    assert!(s.execute("results.track", &json!({})).is_err(), "nothing solved");
+    s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 13.06})).unwrap();
+    s.execute("mesh.generate", &json!({"size": 4})).unwrap();
+    s.execute("solve.eigenmodes", &json!({"lowest": true, "count": 1, "order": 1})).unwrap();
+    let bent = json!({"energy": 1e6, "voltage": 1e3, "phase": 0, "offsets": [8], "magnetic": [0.0, 0.5, 0.0]});
+    let r = s.execute("results.track", &bent).unwrap();
+    let p = &r["particles"][0];
+    assert_eq!(p["end"], "lost", "{p}");
+    let at = p["lost_at"].as_array().unwrap();
+    let radius = (at[0].as_f64().unwrap() - 0.0).hypot(at[1].as_f64().unwrap());
+    assert!((radius - 10.0).abs() < 0.6, "on the wall: r = {radius} mm");
+    assert_eq!(s.views().track.as_ref(), Some(&bent), "kept for the window");
+    let straight = s.execute("results.track", &json!({"energy": 1e6, "voltage": 1e3, "phases": 4})).unwrap();
+    assert!(straight["particles"].as_array().unwrap().iter().all(|p| p["end"] == "through"), "{straight}");
+    for bad in [
+        json!({"mode": 0}),
+        json!({"mode": 2}),
+        json!({"voltage": 0}),
+        json!({"voltage": -1}),
+        json!({"voltage": 1e300}),
+        json!({"energy": 0}),
+        json!({"energy": "fast"}),
+        json!({"energy": 1e20}),
+        json!({"phases": 0}),
+        json!({"phases": 361}),
+        json!({"phase": "inf"}),
+        json!({"offsets": []}),
+        json!({"offsets": [1, "x"]}),
+        json!({"phases": 360, "offsets": [0, 1, 2]}),
+        json!({"magnetic": [0, 0]}),
+        json!({"magnetic": [0, 0, 1e9]}),
+        json!({"pusher": "leapfrog"}),
+        json!({"steps": 1}),
+        json!({"points": 1}),
+        json!({"from": [0, 0, 0]}),
+        json!({"from": [0, 0, 0], "to": [0, 0, 0]}),
+        json!({"energy": 1, "steps": 100_000}),
+    ] {
+        assert!(s.execute("results.track", &bad).is_err(), "{bad}");
+    }
+}

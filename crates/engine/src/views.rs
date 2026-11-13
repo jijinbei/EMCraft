@@ -247,6 +247,10 @@ pub struct Views {
     /// with the project (a template's own).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pulse: Option<serde_json::Value>,
+    /// The last electrons `results.track` sent, its parameters as given: the trajectories the
+    /// 3D view draws, kept with the project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub track: Option<serde_json::Value>,
     /// S-parameters read from files (`results.import`), drawn over the S-parameter chart.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub measured: Vec<crate::network::Measured>,
@@ -328,6 +332,10 @@ impl Views {
         if self.pcb_illustration.victim.as_ref().is_some_and(|n| n.trim().is_empty() || n.chars().count() > 128) {
             return Err(EngineError::failed("invalid PCB victim"));
         }
+        // The last tracking's parameters: an object of a few fields, as results.track takes it.
+        if self.track.as_ref().is_some_and(|t| !t.is_object() || t.to_string().len() > 16_384) {
+            return Err(EngineError::failed("views: the tracking's parameters are not an object of at most 16 kB"));
+        }
         Ok(Views {
             pcb_illustration: self.pcb_illustration,
             pcb: self.pcb,
@@ -338,6 +346,7 @@ impl Views {
             hidden_materials: self.hidden_materials,
             hidden_geometry: self.hidden_geometry,
             pulse: self.pulse,
+            track: self.track,
             measured: self.measured,
         })
     }

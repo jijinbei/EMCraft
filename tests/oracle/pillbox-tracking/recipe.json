@@ -1,0 +1,8 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 10, "length": 13.06}},
+ {"command": "model.walls", "params": {"conductivity": 5.8e7}},
+ {"command": "mesh.generate", "params": {"size": 2}},
+ {"command": "solve.eigenmodes", "params": {"lowest": true, "count": 1, "order": 2}},
+ {"command": "results.track", "params": {"voltage": 1e6, "energy": 1e8, "phases": 12, "points": 2}, "id": "fast"},
+ {"command": "results.track", "params": {"voltage": 1e3, "energy": 1e6, "phase": 0, "points": 2}, "id": "slow"}
+]

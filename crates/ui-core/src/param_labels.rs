@@ -9,6 +9,15 @@ pub fn param_label(command: &str, name: &'static str) -> &'static str {
         ("mesh.generate", "frequency") => t!("Mesh frequency").en(),
         ("mesh.generate", "size") => t!("Element size").en(),
         ("units.set", "frequency") => t!("Frequency unit").en(),
+        // Tracking electrons: what each particle is sent with.
+        ("results.track", "energy") => t!("Entry energy (eV)").en(),
+        ("results.track", "voltage") => t!("Voltage (V)").en(),
+        ("results.track", "phases") => t!("Entry phases").en(),
+        ("results.track", "phase") => t!("Entry phase (°)").en(),
+        ("results.track", "offsets") => t!("Offsets").en(),
+        ("results.track", "magnetic") => t!("Static field (T)").en(),
+        ("results.track", "pusher") => t!("Push").en(),
+        ("results.track", "steps") => t!("Steps per period").en(),
         ("units.set", "length") => t!("Length unit").en(),
         // The import's own words (its dialog's head names the file's parts).
         ("geometry.import", "unit") => t!("STL unit").en(),

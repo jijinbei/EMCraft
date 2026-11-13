@@ -2061,6 +2061,7 @@ dependencies = [
  "emcraft-macros",
  "emcraft-mesh",
  "emcraft-model",
+ "emcraft-particles",
  "emcraft-render",
  "emcraft-solver",
  "emcraft-templates",

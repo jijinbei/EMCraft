@@ -13,6 +13,7 @@ workspace = true
 emcraft-macros = { workspace = true }
 emcraft-i18n = { workspace = true }
 emcraft-model = { workspace = true }
+emcraft-particles = { workspace = true }
 emcraft-templates = { workspace = true }
 emcraft-mesh = { workspace = true }
 emcraft-fem = { workspace = true }

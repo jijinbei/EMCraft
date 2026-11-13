@@ -1,0 +1,72 @@
+{
+ "title": "Electrons tracked through a pillbox's TM010: the energy they gain against qV₀T cos φ",
+ "kind": "theory",
+ "source": "A particle crossing a gap of length L at constant speed βc gains W = qV₀T cos φ, T = sin(x)/x, x = ωL/(2βc), φ its phase as it enters (T. P. Wangler, RF Linear Accelerators, 2nd ed., Wiley 2008, §2.2–2.3), the pillbox's TM010 at f = χ01 c/(2πR) with E_z uniform along it. Evaluated apart from the code under test",
+ "quantities": [
+  {
+   "id": "gain_0",
+   "quantity": "energy gained on crest, φ = 0 (eV), 100 MeV electrons, V₀ = 1 MV",
+   "measure": {
+    "step": "fast",
+    "pointer": "/particles/0/gain"
+   },
+   "value": 636800.2084214663,
+   "tolerance": {
+    "relative": 0.001
+   },
+   "reason": "the mode's E and B interpolated from 2 mm tetrahedra at order 2, the push second order at 400 steps a period: within 1e-4 of V₀T"
+  },
+  {
+   "id": "gain_60",
+   "quantity": "energy gained at φ = 60° (eV)",
+   "measure": {
+    "step": "fast",
+    "pointer": "/particles/2/gain"
+   },
+   "value": 318400.10421073315,
+   "tolerance": {
+    "relative": 0.002
+   },
+   "reason": "the mode's E and B interpolated from 2 mm tetrahedra at order 2, the push second order at 400 steps a period: within 1e-4 of V₀T"
+  },
+  {
+   "id": "gain_90",
+   "quantity": "energy gained at φ = 90° (eV): none",
+   "measure": {
+    "step": "fast",
+    "pointer": "/particles/3/gain"
+   },
+   "value": 0.0,
+   "tolerance": {
+    "absolute": 1000.0
+   },
+   "reason": "the phase the mode is set to from the line integral against the push's own sampling: about 4e-4 of V₀T"
+  },
+  {
+   "id": "gain_180",
+   "quantity": "energy lost at φ = 180° (eV)",
+   "measure": {
+    "step": "fast",
+    "pointer": "/particles/6/gain"
+   },
+   "value": -636800.2084214663,
+   "tolerance": {
+    "relative": 0.001
+   },
+   "reason": "the mode's E and B interpolated from 2 mm tetrahedra at order 2, the push second order at 400 steps a period: within 1e-4 of V₀T"
+  },
+  {
+   "id": "gain_slow",
+   "quantity": "energy gained on crest by 1 MeV electrons (β = 0.941) at V₀ = 1 kV (eV): T at their speed",
+   "measure": {
+    "step": "slow",
+    "pointer": "/particles/0/gain"
+   },
+   "value": 596.4114468872848,
+   "tolerance": {
+    "relative": 0.002
+   },
+   "reason": "the gain 6e-4 of their energy: their speed's change on the way is below the tolerance"
+  }
+ ]
+}
