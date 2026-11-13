@@ -1236,7 +1236,7 @@ Electrons sent through an eigenmode as through an accelerating cavity (docs/adr/
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `mode` | integer |  | no | the eigenmode, from 1 (default 1) |
+| `mode` | integer |  | no | the eigenmode, from 1 (default the first with a field along the line to accelerate with) |
 | `voltage` | number |  | no | the accelerating voltage V₀ along the line, V (default 1e6) |
 | `energy` | number |  | no | the electrons' kinetic energy as they enter, eV (default 1e6) |
 | `phases` | integer |  | no | entry phases spread over the period, 1 to 360 (default 12) |

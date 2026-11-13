@@ -32,8 +32,6 @@ const MAX_TOTAL_STEPS: usize = 50_000_000;
 const MAX_ENERGY: f64 = 1e13;
 /// Intervals of the line integrals that set the field's amplitude and phase.
 const INTERVALS: usize = 400;
-/// Below this share of the asked voltage per joule the mode has no field along the line.
-const NO_FIELD: f64 = 1e-12;
 
 /// The elementary charge (C): energies in and out are in electronvolts.
 const EV: f64 = 1.602_176_634e-19;
@@ -68,7 +66,38 @@ fn end_name(end: End) -> &'static str {
 
 pub fn track(s: &mut Session, p: &Params) -> Result<Value> {
     let e = s.results.eigen.as_ref().ok_or(EngineError::NotSolved { what: "eigenmodes", run: "solve.eigenmodes" })?;
-    let index = p.integer("mode", 1..=e.modes.len().max(1)).or(1)?;
+    let (from, to) = crate::results::cavity_line(s, p)?;
+    // Whether a mode has a field along the line to accelerate with: V₀²/(ωU), the R/Q of the
+    // field's own voltage, at least results.cavity's threshold (a TE mode on the axis has none,
+    // its V₀ the solve's round-off).
+    let images = 2f64.powi(i32::try_from(s.model.domain.symmetry.len()).unwrap_or(0));
+    let r_over_q = |m: &emcraft_solver::eigen::Mode| -> Result<f64> {
+        let d = e.driven_of(m);
+        let v = d.line_integral(&m.vector, m.frequency, (from, to), INTERVALS, |_| C::new(1.0, 0.0))?.norm();
+        let u = d.stored_energy(&m.vector, m.frequency)? * images;
+        Ok(if u > 0.0 { v * v / (2.0 * std::f64::consts::PI * m.frequency * u) } else { 0.0 })
+    };
+    let index = match p.integer("mode", 1..=e.modes.len().max(1)).optional()? {
+        Some(i) => {
+            let m = e.modes.get(i - 1).ok_or_else(|| p.error("mode", format!("must be 1 to {}", e.modes.len())))?;
+            if r_over_q(m)? < crate::results::MIN_FIELD_R_OVER_Q {
+                return Err(p.error("mode", format!("mode {i} has no field along the line to accelerate with (a TE mode on the axis?)")));
+            }
+            i
+        }
+        // The first mode that accelerates along the line: its R/Q above the threshold and a
+        // hundredth of the best's (a coarse mesh leaves a TE mode some round-off on the axis,
+        // R/Q a few thousandths of an ohm, where TM010's is tens).
+        None => {
+            let each = e.modes.iter().map(r_over_q).collect::<Result<Vec<f64>>>()?;
+            let best = each.iter().copied().fold(0.0, f64::max);
+            let floor = crate::results::MIN_FIELD_R_OVER_Q.max(0.01 * best);
+            each.iter()
+                .position(|rq| *rq >= floor)
+                .map(|k| k + 1)
+                .ok_or_else(|| EngineError::failed("no mode solved has a field along the line to accelerate with"))?
+        }
+    };
     let m = e.modes.get(index - 1).ok_or_else(|| p.error("mode", format!("must be 1 to {}", e.modes.len())))?;
     let voltage = p.number("voltage").or(1e6)?;
     if !(voltage.is_finite() && voltage > 0.0 && voltage <= 1e12) {
@@ -106,7 +135,6 @@ pub fn track(s: &mut Session, p: &Params) -> Result<Value> {
     };
     let per_period = p.integer("steps", 20..=100_000).or(400)?;
     let most_points = p.integer("points", 2..=10_000).or(200)?;
-    let (from, to) = crate::results::cavity_line(s, p)?;
     let span: Vec3 = to - from;
     let length = span.norm();
     let axis = span.normalized().ok_or_else(|| p.error("to", "must differ from `from`"))?;
@@ -121,9 +149,8 @@ pub fn track(s: &mut Session, p: &Params) -> Result<Value> {
     let field_voltage = driven.line_integral(x, f, (from, to), INTERVALS, |_| C::new(1.0, 0.0))?;
     let felt = driven.line_integral(x, f, (from, to), INTERVALS, |z| C::from_polar(1.0, omega * z / speed))?;
     let v_own = field_voltage.norm();
-    let energy_scale = driven.stored_energy(x, f)?.max(f64::MIN_POSITIVE).sqrt();
-    if !(v_own / energy_scale > NO_FIELD && felt.norm() > 0.0) {
-        return Err(EngineError::failed("the mode has no field along the line to accelerate with (a TE mode on the axis?)"));
+    if !(v_own > 0.0 && felt.norm() > 0.0) {
+        return Err(EngineError::failed("the mode has no field along the line to accelerate with"));
     }
     let amplitude = C::new(voltage / v_own, 0.0) * species.charge.signum() * felt.conj() / felt.norm();
     let transit = felt.norm() / v_own;
@@ -198,5 +225,6 @@ pub fn track(s: &mut Session, p: &Params) -> Result<Value> {
         "particles": particles,
     });
     s.views.track = Some(p.value().clone());
+    s.views.tracked = Some(std::sync::Arc::new(reply.clone()));
     Ok(reply)
 }

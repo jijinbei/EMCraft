@@ -101,6 +101,9 @@ impl App {
             Some(emcraft_ui_core::after::results_view(&self.session))
         } else if matches!(id, "study.sweep" | "study.optimize") {
             Some(emcraft_ui_core::view::View::Study)
+        } else if id == "results.track" {
+            // The electrons' trajectories are drawn in the model.
+            Some(emcraft_ui_core::view::View::Model)
         } else {
             None
         };

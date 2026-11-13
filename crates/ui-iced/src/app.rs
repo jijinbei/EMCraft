@@ -244,6 +244,8 @@ pub struct App {
     pub(crate) tdr: emcraft_ui_core::results::views::TdrView,
     pub(crate) pattern: emcraft_ui_core::results::views::PatternCut,
     pub(crate) pulse: emcraft_ui_core::results::views::PulseForm,
+    /// The generation the project's own electrons were last sent for (`own_track`): once.
+    pub(crate) tracked_for: Option<u64>,
     pub(crate) study: emcraft_ui_core::results::study::StudyView,
     /// The open chart's style card.
     pub(crate) style: emcraft_ui_core::results::style::StyleForm,
@@ -365,6 +367,7 @@ impl App {
             tdr: Default::default(),
             pattern: Default::default(),
             pulse: Default::default(),
+            tracked_for: None,
             study: Default::default(),
             style: Default::default(),
             search: String::new(),
@@ -546,6 +549,7 @@ impl App {
         self.probe_import();
         self.sync_planes();
         self.own_pulse();
+        self.own_track();
         self.sync_style();
         self.sview = std::mem::take(&mut self.sview).kept(&self.session);
         // The reference plane's number follows the port and a drag until it is edited.

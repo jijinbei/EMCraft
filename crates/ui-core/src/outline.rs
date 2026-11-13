@@ -110,6 +110,8 @@ const STEP_ADDS: &[(Step, &[&str])] = &[
             "circuit.cascade",
             "filter.synthesize",
             "results.coupling",
+            "results.cavity",
+            "results.track",
         ],
     ),
 ];
@@ -241,7 +243,7 @@ pub fn fits(kind: Analysis, id: &str) -> bool {
     }
     match id {
         "solve.frequency" => kind == Frequency,
-        "solve.eigenmodes" | "solve.dispersion" | "view.dispersion" => kind == Eigenmodes,
+        "solve.eigenmodes" | "solve.dispersion" | "view.dispersion" | "results.cavity" | "results.track" => kind == Eigenmodes,
         "solve.radiation" => kind == Radiation,
         "solve.time_domain" => kind == TimeDomain,
         // Open problems: the layer, sources and the far field.

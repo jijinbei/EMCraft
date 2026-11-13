@@ -657,6 +657,9 @@ pub fn initial(command: &str, s: &Session) -> Value {
             None => json!({"start": 8, "stop": 12, "points": 11, "order": 2}),
         },
         "solve.eigenmodes" => json!({"near": middle, "lowest": true, "count": 5, "order": 2}),
+        // Electrons through the first mode that accelerates at 1 MV, entering at 1 MeV at twelve
+        // phases.
+        "results.track" => json!({"voltage": 1e6, "energy": 1e6, "phases": 12, "offsets": [0]}),
         "solve.radiation" => json!({"frequency": middle, "order": 2}),
         "solve.time_domain" => {
             let (a, z) = band.unwrap_or((8.0, 12.0));

@@ -501,6 +501,14 @@ pub const TEMPLATES: &[Template] = &[
         group: Group::Resonators,
     },
     Template {
+        name: "electron-pillbox",
+        label: "Electrons through a copper pillbox 10 mm in radius and 13.06 mm long: its TM010 at 1 MV, 1 MeV electrons sent at twelve phases and five distances off the axis, their energy gained against qV₀T cos φ",
+        script: include_str!("../scripts/electron-pillbox.json"),
+        marks: include_str!("../scripts/electron-pillbox.marks.json"),
+        kinds: &[Analysis::Eigenmodes],
+        group: Group::Resonators,
+    },
+    Template {
         name: "loaded-sphere",
         label: "Spherical cavity, radius 10 mm, around a concentric ceramic sphere (εr = 4, radius 4 mm): two material regions joined node for node, the TM11 triplet at 11.26 GHz",
         script: include_str!("../scripts/loaded-sphere.json"),

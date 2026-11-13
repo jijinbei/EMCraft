@@ -1,0 +1,10 @@
+[
+ {"command": "project.variable", "params": {"name": "r", "label": "cavity radius", "value": 10, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "l", "label": "cavity length", "value": 13.06, "quantity": "length"}},
+ {"command": "geometry.import", "params": {"path": "template:cylinder-cavity.solidcraft", "parameters": {"r": "=r", "l": "=l"}, "materials": {"cavity": "interior"}}},
+ {"command": "model.walls", "params": {"thickness": 1.27, "conductivity": 58000000.0}},
+ {"command": "mesh.generate", "params": {"size": 2}},
+ {"command": "project.setup", "params": {"kind": "eigenmodes", "count": 1, "order": 2, "frequency": 11.5, "lowest": true}},
+ {"command": "solve.eigenmodes", "params": {"lowest": true, "count": 1, "order": 2}},
+ {"command": "results.track", "params": {"voltage": 1e6, "energy": 1e6, "phases": 12, "offsets": [-6, -3, 0, 3, 6], "points": 60}}
+]

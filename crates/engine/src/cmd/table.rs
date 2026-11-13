@@ -1618,7 +1618,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Track electrons",
         doc: "Electrons sent through an eigenmode as through an accelerating cavity (docs/adr/0012-particles.md): pushed by the relativistic Boris (or Vay) push through the mode's E and B at the accelerating voltage asked for, V₀ = |∫ E·dl| along the line (`from`–`to`, the region's axis along z when neither is given), plus a uniform static magnetic field if given. The mode's phase is set so that a particle entering at phase 0 and keeping its speed gains the most, |q| V₀ T cos φ (T the transit-time factor at the entry speed). Each particle starts on the entry plane, at each of `phases` phases (or at `phase`) and each of `offsets` off the line, and runs until it leaves through the exit plane, falls back behind the entry plane or meets a wall (leaves the mesh between them); no field beyond the planes. The reply gives each particle's end, its energy out and gain (eV) against the constant-speed gain, and its points [x, y, z, t (ns), energy (eV)]. The window draws the trajectories of the last run.",
         params: &[
-            opt("mode", K::Integer, "the eigenmode, from 1 (default 1)"),
+            opt("mode", K::Integer, "the eigenmode, from 1 (default the first with a field along the line to accelerate with)"),
             opt("voltage", K::Number, "the accelerating voltage V₀ along the line, V (default 1e6)"),
             opt("energy", K::Number, "the electrons' kinetic energy as they enter, eV (default 1e6)"),
             opt("phases", K::Integer, "entry phases spread over the period, 1 to 360 (default 12)"),

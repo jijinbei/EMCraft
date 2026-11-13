@@ -251,6 +251,9 @@ pub struct Views {
     /// 3D view draws, kept with the project.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub track: Option<serde_json::Value>,
+    /// That run's reply (its trajectories), for the 3D view: not saved, made again by running it.
+    #[serde(skip)]
+    pub tracked: Option<std::sync::Arc<serde_json::Value>>,
     /// S-parameters read from files (`results.import`), drawn over the S-parameter chart.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub measured: Vec<crate::network::Measured>,
@@ -347,6 +350,7 @@ impl Views {
             hidden_geometry: self.hidden_geometry,
             pulse: self.pulse,
             track: self.track,
+            tracked: None,
             measured: self.measured,
         })
     }

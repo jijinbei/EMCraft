@@ -682,6 +682,31 @@ fn a_modes_field_shows_its_strongest_component_and_a_new_project_forgets_it() {
     assert_eq!((app.view3d.overlay, app.playing), (Overlay::Plain, None));
 }
 
+/// Electrons tracked through a mode are drawn in the model and their gains charted on the
+/// eigenmodes page; the page they are sent from goes to the model. Evidence: the copper
+/// cylinder's three lowest modes are TE111's pair, with no E_z on the axis, and TM010: the
+/// electrons, sent at two phases half a period apart, go through TM010 (mode 3), the first that
+/// accelerates.
+#[test]
+fn tracked_electrons_are_drawn_and_charted() {
+    use emcraft_ui_core::view::View;
+    let mut app = App::new(Some("cylinder-cavity"));
+    let setup = json!({"kind": "eigenmodes", "count": 3, "order": 1, "frequency": 11, "lowest": true});
+    assert!(app.session.execute("project.setup", &setup).is_ok());
+    app.update(Message::Start("solve.run".into()));
+    finish(&mut app);
+    app.update(Message::Page(View::Eigenmodes));
+    assert!(crate::eigenmodes::gains(&app).is_none(), "nothing tracked yet");
+    assert!(app.session.execute("results.track", &json!({"mode": 1})).is_err(), "TE111 does not accelerate");
+    app.start("results.track", json!({"energy": 1e6, "voltage": 1e5, "phases": 2, "points": 20}));
+    finish(&mut app);
+    assert_eq!(app.error, None);
+    assert_eq!(app.page, View::Model);
+    assert!(!emcraft_ui_core::scene3d::trajectories(&app.session).scene.lines.is_empty());
+    assert!(crate::eigenmodes::gains(&app).is_some_and(|c| c.series.len() == 2));
+    assert_eq!(app.session.views().tracked.as_ref().map(|r| r["mode"].clone()), Some(json!(3)));
+}
+
 /// Undo and Redo, by their keys too: a material's εr changed is taken back and done again; the
 /// keys go to the window only when no field takes them.
 #[test]

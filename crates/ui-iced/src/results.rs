@@ -150,6 +150,22 @@ impl App {
     }
 }
 
+impl App {
+    /// A project with electrons of its own to send (a template's, a file's) and its mode solved
+    /// but nothing tracked on it yet: they are sent, once for the project as it is.
+    pub(crate) fn own_track(&mut self) {
+        let s = &self.session;
+        let waiting = s.results().eigen.is_some()
+            && emcraft_ui_core::scene3d::trajectories(s).scene.lines.is_empty()
+            && self.job.is_none()
+            && self.tracked_for != Some(self.generation);
+        if let Some(own) = s.views().track.clone().filter(|_| waiting) {
+            self.tracked_for = Some(self.generation);
+            self.start("results.track", own);
+        }
+    }
+}
+
 fn note<'a>(app: &App, s: emcraft_ui_core::lang::Text) -> Element<'a, Message> {
     let t = app.look.tokens;
     text(tr(s)).size(t.font_small).color(t.text_dim).boxed()

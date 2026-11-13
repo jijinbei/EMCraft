@@ -334,11 +334,15 @@ pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
             unsolved = true;
         } else if unsolved && step.command.starts_with("results.") {
             // A reading of a solve not run yet: a pulse's settings kept for its view (made once
-            // the solves have run), the rest left for after them.
+            // the solves have run), electrons' to send, the rest left for after them.
             if step.command == "results.pulse" {
                 let vars = fresh.variables.clone();
                 let params = Params::new(&step.params, fresh.display).with_variables(&vars);
                 crate::results::keep_pulse_view(&mut fresh, &params).map_err(|e| e.in_step(i + 1, &step.command))?;
+            }
+            // Electrons to send once the mode is solved: the window sends them then.
+            if step.command == "results.track" {
+                fresh.views.track = Some(step.params.clone());
             }
         } else {
             fresh.execute(&step.command, &step.params).map_err(|e| e.in_step(i + 1, &step.command))?;

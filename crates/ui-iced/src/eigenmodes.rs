@@ -1,6 +1,7 @@
 //! The eigenmodes page: each mode the solve found — its resonant frequency and Q (lossless: none)
 //! — in a table, and a button that shows its field in the 3D view; with losses, the modes'
-//! resonances over the band above it (Q against frequency, each mode marked by its number).
+//! resonances over the band above it (Q against frequency, each mode marked by its number);
+//! below, the energy the electrons tracked last gained against their entry phase.
 
 use emcraft_render::Pen;
 use emcraft_render::axes::Axis;
@@ -42,6 +43,35 @@ fn resonances(modes: &[Mode], fu: emcraft_model::units::Frequency) -> Option<Cha
     Some(chart)
 }
 
+/// The energy the electrons tracked last (`results.track`) gained against their entry phase,
+/// over the constant-speed gain qV₀T cos φ (docs/adr/0012-particles.md); none while nothing was
+/// tracked on the modes solved now (the 3D view's trajectories go by the same rule).
+pub(crate) fn gains(app: &App) -> Option<Chart> {
+    use serde_json::Value;
+    if emcraft_ui_core::scene3d::trajectories(&app.session).scene.lines.is_empty() {
+        return None;
+    }
+    let reply = app.session.views().tracked.as_deref()?;
+    let particles = reply.get("particles").and_then(Value::as_array)?;
+    let tracked: Vec<[f64; 2]> = particles
+        .iter()
+        .filter(|p| p.get("end").and_then(Value::as_str) == Some("through"))
+        .filter_map(|p| Some([p.get("phase")?.as_f64()?.rem_euclid(360.0), p.get("gain")?.as_f64()? / 1e3]))
+        .collect();
+    let amplitude = reply.get("voltage").and_then(Value::as_f64)? * reply.get("transit").and_then(Value::as_f64)? / 1e3;
+    let closed: Vec<[f64; 2]> = (0..=72).map(|k| f64::from(k) * 5.0).map(|d| [d, amplitude * d.to_radians().cos()]).collect();
+    let top = tracked.iter().map(|p| p[1].abs()).fold(amplitude.abs(), f64::max).max(1e-9);
+    let x = Axis::new("entry phase (°)", 0.0, 360.0);
+    let y = Axis::new("energy gained (keV)", -1.1 * top, 1.1 * top);
+    let series = vec![
+        Series::new("closed", "constant speed: qV₀T cos φ", Pen::Series(2), Style::Line, closed),
+        Series::new("tracked", "tracked", Pen::Series(1), Style::Markers, tracked),
+    ];
+    let mut chart = Chart::new("Energy gained by entry phase", x, y, series);
+    emcraft_ui_core::chart_words::translate_chart(&mut chart);
+    Some(chart)
+}
+
 /// The eigenmodes page, or why there is nothing to show yet.
 pub fn view(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
@@ -63,6 +93,8 @@ pub fn view(app: &App) -> Element<'_, Message> {
             button(text(tr(t!("Field"))).size(t.font_button)).style(look::button(t, false)).on_press(Message::Mode(i)).boxed()
         }),
     ];
-    let parts = chart.into_iter().chain(std::iter::once(table(columns, rows).boxed()));
+    let gained =
+        gains(app).map(|c| canvas(Plot { chart: std::borrow::Cow::Owned(c), palette: &app.look.theme.palette }).width(Fill).height(CHART_H).boxed());
+    let parts = chart.into_iter().chain(std::iter::once(table(columns, rows).boxed())).chain(gained);
     scrollable(column(parts).spacing(t.space_16).padding(t.space_16)).boxed()
 }

@@ -1,0 +1,15 @@
+[
+  {"note": "Electrons through a cavity's mode (docs/adr/0012-particles.md): the copper cylinder's three lowest modes solved (TE111's pair, then TM010, the first that accelerates along the axis), Results' ＋ offers tracking, its dialog sends two phases, and the window goes to the model where their trajectories are drawn; the eigenmodes page charts their gains"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "cylinder-cavity"}}},
+  {"call": "engine.execute", "params": {"command": "project.setup", "params": {"kind": "eigenmodes", "count": 3, "order": 1, "frequency": 11, "lowest": true}}},
+  {"call": "engine.execute", "params": {"command": "solve.run"}},
+  {"click": "add:results"},
+  {"expect": {"handles": ["command:results.track", "command:results.cavity"]}},
+  {"click": "command:results.track"},
+  {"expect": {"inspect": {"dialog.command": "results.track"}}},
+  {"call": "ui.dialog", "params": {"set": {"phases": 2, "voltage": 1e5, "points": 20}, "ok": true}},
+  {"until": {"inspect": {"job": null}}, "timeout": 60},
+  {"expect": {"inspect": {"page": "model", "error": null}}},
+  {"call": "ui.set", "params": {"page": "eigenmodes"}},
+  {"shot": "tracking-gains"}
+]

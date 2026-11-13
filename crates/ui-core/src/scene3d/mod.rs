@@ -3,7 +3,8 @@
 //! faces told apart in [`surface`]), a coarse tessellation of the geometry (the waveguide's
 //! sections, layers and strips; boxes, cylinders, spheres and imported surfaces; inclusions and
 //! Boolean features) before ([`geometry`]); ports, lumped ports, sources and the open boundary's
-//! layer on top ([`extras`]); the field on its planes ([`field`]); the legend ([`legend`]) in
+//! layer on top ([`extras`]); the electrons tracked last ([`particles`]); the field on its
+//! planes ([`field`]); the legend ([`legend`]) in
 //! the colours of [`style`]. Pictures come from [`emcraft_render::view3d`].
 
 use emcraft_engine::Session;
@@ -22,6 +23,7 @@ pub use field::{arrow_legend, phase_arrows, plane_probe, probe_lines};
 mod geometry;
 mod legend;
 mod mesh;
+mod particles;
 mod shell;
 mod style;
 mod surface;
@@ -29,6 +31,7 @@ mod surface;
 pub use extras::{along, port_normal, port_quad, quad_centre};
 pub use field::normal_axis;
 pub use geometry::{BOX_EDGES, box_corner};
+pub use particles::trajectories;
 pub use style::{Colours, material_rgb};
 
 emcraft_macros::named_enum! {
@@ -434,6 +437,7 @@ pub fn build_with(session: &Session, overlay: Overlay, colours: &Colours, fields
     let built = filter_geometry(session, model)
         .merge(extras::symmetry_planes(colours, session, bounds))
         .merge(extras::extras(colours, m, session.driven_port(), overlay, bounds))
+        .merge(particles::trajectories(session))
         .merge(Built { legend: legend::legend(colours, session, overlay), ..Built::default() })
         .merge(field_planes(colours, session, overlay, fields, bounds));
     highlighted(colours, Built { bounds, ..built }, selected)

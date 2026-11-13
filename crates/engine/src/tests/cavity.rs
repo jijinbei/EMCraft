@@ -120,3 +120,16 @@ fn electrons_are_tracked_through_a_mode_and_lost_on_its_walls() {
         assert!(s.execute("results.track", &bad).is_err(), "{bad}");
     }
 }
+
+/// The electron pillbox's template keeps its electrons for after its solve: opened without
+/// solving, its mode is not there to track through, so `results.track`'s parameters wait in
+/// the views (the window sends them once the mode is solved) and nothing is tracked yet.
+#[test]
+fn a_templates_electrons_wait_for_its_solve() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "electron-pillbox"})).unwrap();
+    assert!(s.results().eigen.is_none());
+    let kept = s.views().track.as_ref().unwrap_or_else(|| panic!("the electrons kept"));
+    assert_eq!(kept["phases"], 12);
+    assert!(s.views().tracked.is_none());
+}

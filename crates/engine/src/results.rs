@@ -269,7 +269,7 @@ pub fn tdr(s: &mut Session, p: &Params) -> Result<Value> {
 }
 
 /// Below this V₀²/(ωU) (Ω) a mode has no field along the line to speak of.
-const MIN_FIELD_R_OVER_Q: f64 = 1e-3;
+pub(crate) const MIN_FIELD_R_OVER_Q: f64 = 1e-3;
 
 /// The most intervals `results.cavity` integrates along its line in.
 const MAX_CAVITY_POINTS: usize = 20_000;
