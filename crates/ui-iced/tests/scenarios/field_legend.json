@@ -1,0 +1,14 @@
+[
+  {"note": "The field's legend: its colour bar says the field's peak and, pressed, pins the point where it is; a value typed for full colour clamps the colours, the ends the field goes past marked ≥ and ≤; auto takes the field's own peak again"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 6, "stop": 9, "points": 4, "order": 1}}},
+  {"call": "ui.set", "params": {"page": "field"}},
+  {"expect": {"handles": ["field:peak"], "inspect": {"view3d.field.clamp": null, "view3d.field.pinned": null}}},
+  {"shot": "field-legend"},
+  {"click": "field:peak"},
+  {"field": "#field-clamp", "text": "1", "enter": true},
+  {"expect": {"inspect": {"view3d.field.clamp": 1.0, "view3d.field.ticks": ["≤-1", "0", "≥1"]}}},
+  {"shot": "field-clamped"},
+  {"press": "auto"},
+  {"expect": {"inspect": {"view3d.field.clamp": null}}}
+]

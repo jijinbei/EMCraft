@@ -1,6 +1,6 @@
-//! The field view's side column on the model page, beside the 3D view while it shows the field
-//!: the power that reaches each port at the field's frequency,
-//! the project's probes with the field coloured there (+ adds one at the pinned point, else the
+//! The field view's side column on the model page, beside the 3D view while it shows the
+//! field: the power that reaches each port at the field's frequency, the value drawn at full
+//! colour (typed, or the field's own peak), the project's probes with the field coloured there (+ adds one at the pinned point, else the
 //! plane's middle; ✕ takes one away), the fields at the pinned point (a click on the plane pins
 //! it), and the picture and the animation saved through their dialogs (`view.field`,
 //! `view.animation`). The rules are the shared crate's ([`emcraft_ui_core::results::fields`]).
@@ -8,13 +8,14 @@
 use emcraft_model::geom::Point3;
 use emcraft_ui_core::lang::tr;
 use emcraft_ui_core::results::fields;
-use iced::widget::{Column, container, row, scrollable, text};
+use iced::widget::{Column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Fill, Widget};
 use serde_json::json;
 
-use crate::app::{App, Message};
+use crate::app::{App, FIELD_SCALE, Field, Message};
 use crate::look::{self, Tokens};
 use crate::parts::{action, heading};
+use crate::view3d::Nav;
 
 fn line<'a>(t: Tokens, s: impl Into<String>) -> Element<'a, Message> {
     text(s.into()).size(t.font_small).color(t.text).boxed()
@@ -68,6 +69,25 @@ pub fn view(app: &App, width: f32) -> Option<Element<'_, Message>> {
         }
         Err(e) => Column::with_children([heading(t, t!("POWER DISTRIBUTION")), line(t, e.to_string())]).spacing(t.space_4).boxed(),
     });
+    // The value at full colour: typed (Enter), or the field's own peak.
+    let scale = Field { node: FIELD_SCALE.to_owned(), key: "clamp" };
+    let typed = scale.clone();
+    let unit = if v.component.is_magnetic() { "A/m" } else { "V/m" };
+    let input = text_input(tr(t!("auto")), app.draft(&scale, v.clamp))
+        .id("field-clamp")
+        .size(t.font_small)
+        .padding([t.space_2, t.space_6])
+        .width(90)
+        .style(look::field(t))
+        .on_input(move |s| Message::Typed(typed.clone(), s))
+        .on_submit(Message::Commit(scale));
+    let auto = v.clamp.map(|_| action(t, tr(t!("auto")), false, Some(Message::View3d(Nav::Clamp(None)))));
+    let colours = [
+        text(tr(t!("Full colour at"))).size(t.font_small).color(t.form_dim).boxed(),
+        input.boxed(),
+        text(unit).size(t.font_small).color(t.text_dim).boxed(),
+    ];
+    let colours = row(colours.into_iter().chain(auto)).spacing(t.space_4).align_y(Alignment::Center).wrap().boxed();
     // The probes.
     let add = app.probe_point().map(|at| action(t, "+", false, idle.then(|| run("view.probe.add", json!({"at": at})))));
     let head = row(std::iter::once(heading(t, t!("PROBES"))).chain(add)).spacing(t.space_8).align_y(Alignment::Center).boxed();
@@ -104,7 +124,7 @@ pub fn view(app: &App, width: f32) -> Option<Element<'_, Message>> {
     .boxed();
     let parts = power
         .into_iter()
-        .chain(std::iter::once(head))
+        .chain([heading(t, t!("COLOURS")), colours, head])
         .chain(probes)
         .chain(std::iter::once(heading(t, t!("PINNED"))))
         .chain(pinned)

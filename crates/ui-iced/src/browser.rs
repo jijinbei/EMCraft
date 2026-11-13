@@ -221,6 +221,19 @@ fn add_list<'a>(app: &App, t: Tokens, part: &Part) -> Option<Element<'a, Message
     Some(container(list).padding(iced::Padding { top: 2.0, right: 0.0, bottom: 4.0, left: 22.0 }).boxed())
 }
 
+/// A group's last row, dim: ＋ and what command `id` adds (its dialog opens in the properties
+/// panel).
+fn ghost<'a>(app: &App, t: Tokens, id: &'static str) -> Element<'a, Message> {
+    let said = format!("＋ {}…", emcraft_ui_core::commands::button_label(id));
+    let face = text(said).size(t.font_small).color(t.text_dim);
+    let b = button(face)
+        .width(Fill)
+        .padding(iced::Padding { top: t.space_2, right: t.space_6, bottom: t.space_2, left: t.space_24 + t.space_6 })
+        .style(look::row(t, false))
+        .on_press_maybe(app.job.is_none().then(|| add_message(Add::Command(id))));
+    crate::search::command_tip(app, b.boxed(), id)
+}
+
 /// A section's heading of its own (the variables, a system's): its fold, name and count.
 fn section_head<'a>(app: &App, t: Tokens, part: &Part, name: &str, folded: bool) -> Element<'a, Message> {
     let count = part.count();
@@ -247,17 +260,20 @@ pub fn view(app: &App, width: f32) -> Element<'_, Message> {
     let t = app.look.tokens;
     let stale = app.statuses().get(Step::Results.index()).is_some_and(|s| s.status == emcraft_engine::workflow::Status::Stale);
     let parts = app.tree.iter().flat_map(|(_, tree)| tree).map(|part| {
-        let folded = part.count() == 0 || app.folded.iter().any(|f| f == part.key());
+        let folded = part.count() > 0 && app.folded.iter().any(|f| f == part.key());
         let head = match part.head {
             Head::Step(step) => step_head(app, t, step, part, folded),
             Head::Section(name) => section_head(app, t, part, name, folded),
         };
         let headed = part.groups.len() > 1;
-        let groups = part.groups.iter().filter(|(_, rows)| !rows.is_empty()).map(|(name, rows)| {
+        let kind = app.solver();
+        let shown = |(name, rows): &&(&str, Vec<Row>)| !rows.is_empty() || emcraft_ui_core::outline::ghost(name, kind).is_some();
+        let groups = part.groups.iter().filter(shown).map(|(name, rows)| {
             let heading = headed
                 .then(|| container(text(lookup(name).to_owned()).size(t.font_small).color(t.text_dim)).padding([t.space_2, t.space_24]).boxed());
             let lines = rows.iter().map(|r| line(app, t, r, stale && *name == "Results"));
-            Column::with_children(heading.into_iter().chain(lines)).spacing(t.space_2).boxed()
+            let more = emcraft_ui_core::outline::ghost(name, kind).map(|id| ghost(app, t, id));
+            Column::with_children(heading.into_iter().chain(lines).chain(more)).spacing(t.space_2).boxed()
         });
         let body = (!folded).then(|| Column::with_children(groups).spacing(t.space_4).boxed());
         Column::with_children([head].into_iter().chain(add_list(app, t, part)).chain(body)).spacing(t.space_2).boxed()

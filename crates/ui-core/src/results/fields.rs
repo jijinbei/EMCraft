@@ -106,5 +106,8 @@ pub fn save_params(v: &FieldView, at: Option<f64>, s: &Session, path: &str, anim
     if let Some(e) = entries.get(v.excitation).filter(|_| entries.len() > 1) {
         p["excitation"] = json!(e.name);
     }
+    if let Some(c) = v.clamp {
+        p["clamp"] = json!(c);
+    }
     p
 }

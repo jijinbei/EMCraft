@@ -94,6 +94,7 @@ pub fn field_view(s: &Session, p: &Params) -> Result<FieldView> {
         None => (!v.component.is_magnetic(), v.component.is_magnetic()),
     };
     v.phase = p.number("phase").or(0.0)?.to_radians();
+    v.clamp = p.positive("clamp").optional()?;
     v.excitation = args::excitation(s, p)?;
     Ok(v)
 }

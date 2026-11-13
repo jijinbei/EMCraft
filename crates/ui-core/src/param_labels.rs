@@ -49,6 +49,7 @@ pub fn param_label(command: &str, name: &'static str) -> &'static str {
         (_, "center") => t!("Centre frequency").en(),
         (_, "centre") => t!("Centre").en(),
         (_, "chart") => t!("Chart").en(),
+        (_, "clamp") => t!("Full colour at").en(),
         (_, "clear") => t!("Clear").en(),
         (_, "colour") => t!("Colour").en(),
         (_, "combine") => t!("Combine").en(),

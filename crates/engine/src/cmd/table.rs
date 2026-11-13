@@ -146,6 +146,8 @@ const FIELD_MODE: ParamSpec = opt("mode", K::Integer, "an eigenmode (1 = the low
 const PLANE: ParamSpec = opt("plane", K::String, "`h` (H-plane, default), `e` (E-plane) or `cross` (cross-section)").one_of(&Plane::IDS);
 const PLANE_AT: ParamSpec = opt("at", K::Number, "the plane's position along its normal (default the middle)").of(L);
 const COMPONENT: ParamSpec = opt("component", K::String, "colour: ex, ey (default), ez, hx, hy, hz, |e|, |h|").one_of(&Component::IDS);
+const CLAMP: ParamSpec =
+    opt("clamp", K::Number, "the value at full colour, V/m or A/m (default the field's peak); stronger values take the end colour");
 
 // The port a TDR reads.
 const TDR_PORT: ParamSpec = opt("port", K::String, "the port (default the first)");
@@ -1902,6 +1904,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             COMPONENT,
             opt("arrows", K::Array, "vector fields drawn: `[\"e\", \"h\"]` (default: the coloured component's field; H's arrows sit between E's when both show)"),
             opt("phase", K::Number, "ωt in degrees (default 0)"),
+            CLAMP,
             EXCITATION,
             opt("width", K::Integer, "picture width in pixels (default 1100)"),
         ],
@@ -1922,6 +1925,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             PLANE_AT,
             COMPONENT,
             opt("arrows", K::Array, "vector fields drawn: `[\"e\", \"h\"]` (default: the coloured component's field)"),
+            CLAMP,
             EXCITATION,
             opt("frames", K::Integer, "frames in a period, 4 to 120 (default 24)"),
             opt("period", K::Number, "seconds a period plays for (default 2)"),

@@ -123,6 +123,27 @@ fn field_views_show_the_te10_pattern() {
     assert_eq!(plot.lines.len(), 2);
 }
 
+/// TE10's E_y is strongest across the guide's middle (x = a/2, sin(πx/a) = 1), and a clamp
+/// sets the value drawn at full colour; a clamp that is not a positive number is refused.
+#[test]
+fn the_strongest_sample_and_a_clamp() {
+    let mut s = small();
+    let v = view::FieldView::new(8.0e9, view::Plane::Cross);
+    let samples = view::sample_plane(&s, &v).unwrap();
+    let (p, peak) = samples.strongest(view::Component::Ey).unwrap();
+    let (x, _) = samples.axes();
+    let middle = (x.min + x.max) / 2.0;
+    assert!((p.at[0] - middle).abs() < 0.1 * (x.max - x.min), "{p:?}");
+    let every = samples.plot(&v).unwrap().scalar.unwrap();
+    assert!(every.values.iter().filter(|v| v.is_finite()).all(|v| v.abs() <= peak * (1.0 + 1e-12)));
+    let clamped = samples.plot(&view::FieldView { clamp: Some(0.5 * peak), ..v.clone() }).unwrap().scalar.unwrap();
+    assert_eq!(clamped.range, Some(0.5 * peak));
+    let path = scratch("clamp.png");
+    for bad in [json!(0), json!(-1), json!("big")] {
+        assert!(s.execute("view.field", &json!({"path": path, "frequency": 8, "plane": "cross", "clamp": bad})).is_err(), "{bad}");
+    }
+}
+
 #[test]
 fn a_port_mode_is_drawn_across_its_face() {
     let mut s = Session::new();

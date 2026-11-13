@@ -1,0 +1,11 @@
+[
+  {"note": "The tree's ghost rows: a dim ＋ at the end of the bodies, the materials and the ports, shown while the group is empty too; pressed, the command's form opens in the properties panel"},
+  {"call": "engine.execute", "params": {"command": "file.new", "params": {}}},
+  {"call": "engine.execute", "params": {"command": "project.analysis", "params": {"kind": "frequency"}}},
+  {"expect": {"handles": ["ghost:Bodies", "ghost:Materials", "ghost:Excitation"]}},
+  {"shot": "tree-ghosts-empty"},
+  {"click": "ghost:Excitation"},
+  {"expect": {"inspect": {"dialog.command": "model.port.create"}}},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"shot": "tree-ghosts"}
+]

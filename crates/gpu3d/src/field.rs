@@ -160,9 +160,10 @@ impl FieldGrid {
     }
 
     /// The colour scale when the scene gives none: signed for a component, a magnitude's (in
-    /// decibels when `view` asks) for a length, to the peak over the period.
+    /// decibels when `view` asks) for a length, to the clamp `view` asks for, else the peak over
+    /// the period.
     pub fn scale(&self, view: &FieldView) -> ColourScale {
-        let peak = self.period_peak();
+        let peak = view.clamp.filter(|c| *c > 0.0 && c.is_finite()).unwrap_or_else(|| self.period_peak());
         if self.axis < 3 {
             ColourScale::signed(peak)
         } else {

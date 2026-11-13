@@ -1480,6 +1480,7 @@ Writes a PNG of the fields on a plane: a component as colour and the in-plane E 
 | `component` | string |  | no | colour: ex, ey (default), ez, hx, hy, hz, |e|, |h| |
 | `arrows` | array |  | no | vector fields drawn: `["e", "h"]` (default: the coloured component's field; H's arrows sit between E's when both show) |
 | `phase` | number |  | no | ωt in degrees (default 0) |
+| `clamp` | number |  | no | the value at full colour, V/m or A/m (default the field's peak); stronger values take the end colour |
 | `excitation` | string |  | no | the excited port (default the driven one: view.driven) |
 | `width` | integer |  | no | picture width in pixels (default 1100) |
 
@@ -1497,6 +1498,7 @@ Writes an animated PNG of the fields on a plane over one period of ωt, looping:
 | `at` | number | length | no | the plane's position along its normal (default the middle) |
 | `component` | string |  | no | colour: ex, ey (default), ez, hx, hy, hz, |e|, |h| |
 | `arrows` | array |  | no | vector fields drawn: `["e", "h"]` (default: the coloured component's field) |
+| `clamp` | number |  | no | the value at full colour, V/m or A/m (default the field's peak); stronger values take the end colour |
 | `excitation` | string |  | no | the excited port (default the driven one: view.driven) |
 | `frames` | integer |  | no | frames in a period, 4 to 120 (default 24) |
 | `period` | number |  | no | seconds a period plays for (default 2) |

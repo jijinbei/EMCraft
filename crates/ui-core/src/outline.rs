@@ -165,6 +165,27 @@ pub fn adds(head: Head, kind: Analysis) -> Vec<Add> {
     design.into_iter().chain(commands).chain(tools).collect()
 }
 
+/// What a group's last, dim row adds to it (FieldCraft's ghost row): a design imported to the
+/// bodies, a material, a port; none for the other groups, or when the job's kind has no use for
+/// it.
+///
+/// ```
+/// use emcraft_engine::workflow::Analysis;
+/// use emcraft_ui_core::outline::ghost;
+/// assert_eq!(ghost("Materials", Analysis::Frequency), Some("model.material.create"));
+/// assert_eq!(ghost("Excitation", Analysis::Frequency), Some("model.port.create"));
+/// assert_eq!(ghost("Results", Analysis::Frequency), None);
+/// ```
+pub fn ghost(group: &str, kind: Analysis) -> Option<&'static str> {
+    let id = match group {
+        "Bodies" => "geometry.import",
+        "Materials" => "model.material.create",
+        "Excitation" => "model.port.create",
+        _ => return None,
+    };
+    fits(kind, id).then_some(id)
+}
+
 /// The commands that make shapes: the language of scripts, templates, the oracle and agents,
 /// which the window does not offer (docs/adr/0010-geometry-from-solidcraft.md).
 pub const SHAPES: &[&str] = &[

@@ -95,6 +95,8 @@ pub enum Nav {
     Arrows(bool, bool),
     /// An eigenmode's field (by its index) instead of the sweep's, or the sweep's.
     Mode(Option<usize>),
+    /// The field's value at full colour (V/m or A/m), or its own peak.
+    Clamp(Option<f64>),
 }
 
 /// A grip dragged (a body's, or the selected port's reference plane's): pressed where (points
@@ -233,7 +235,7 @@ type Arrows = (Vec<scene3d::Arrow>, Vec<(String, Rgb)>);
 
 /// The scene of `session` for `key` in `theme`'s colours with the field's `layers`, packed, its
 /// plane marked for the GPU to colour from `grid` when it does (`view` its scale's), the field's
-/// `arrows` with it.
+/// `arrows` with it (its colour bar without the field's peak: [`View3d::refreshed`] adds it).
 fn built(
     session: &Session,
     theme: &Theme,
@@ -249,7 +251,7 @@ fn built(
     let mark = grid.as_ref().map(|(g, _)| g.mark());
     let packed = Packed::with_arrows(b.gpu_scene.as_ref().unwrap_or(&b.scene), emcraft_gpu3d::next_id(), mark, &b.arrows);
     let bounds = b.bounds.or_else(|| b.scene.bounds());
-    let (labels, bar) = (b.labels.clone(), b.colour_bar.as_ref().map(field::Bar::of));
+    let (labels, bar) = (b.labels.clone(), None);
     let legend = b.legend.clone();
     let arrow_legend = b.arrow_legend.iter().map(|(s, c)| (emcraft_render::math::to_unicode(s), *c)).collect();
     // The scale the colour bar shows, so the plane and the bar agree.
@@ -289,7 +291,7 @@ impl View3d {
         let place = sampled.as_ref().map(field::Sampled::place);
         // The plane's phasors for the GPU: made again only for new samples or another component.
         let lo = session.model().bounds().map(|b| [b.min.x, b.min.y, b.min.z]);
-        let grid_key = (generation, FieldView { phase: 0.0, db: None, contours: false, ..self.field.clone() });
+        let grid_key = (generation, FieldView { phase: 0.0, db: None, contours: false, clamp: None, ..self.field.clone() });
         let grid = match (gpu_field, &plot, &sampled, lo) {
             (true, Some(Ok(_)), Some(s), Some(lo)) => Some(match &self.grid {
                 Some((k, g)) if *k == grid_key => g.clone(),
@@ -306,7 +308,10 @@ impl View3d {
             (Some(_), Some(s), Some(lo)) => scene3d::phase_arrows(session, s.samples(), &self.field, lo, &Colours::of(theme)),
             _ => (Vec::new(), Vec::new()),
         };
+        let strongest = sampled.as_ref().and_then(|s| s.samples().strongest(self.field.component)).map(|(p, a)| (p.at, a));
         let shown = built(session, theme, key, &layers, grid.clone().map(|g| (g, &self.field)), arrows);
+        // The colour bar saying where the field is strongest.
+        let shown = Shown { bar: shown.built.colour_bar.as_ref().map(|c| field::Bar::of(c, strongest)), ..shown };
         let field_error = plot.and_then(Result::err);
         let grid = grid.map(|g| (grid_key, g)).or_else(|| self.grid.clone());
         let view = View3d { shown: Some(shown), sampled, grid, field_error, ..self };
@@ -547,6 +552,7 @@ impl View3d {
             }
             Nav::Mode(mode) => View3d { field: FieldView { mode, ..self.field.clone() }, ..self },
             Nav::Arrows(show_e, show_h) => View3d { field: FieldView { show_e, show_h, ..self.field.clone() }, ..self },
+            Nav::Clamp(clamp) => View3d { field: FieldView { clamp: clamp.filter(|c| *c > 0.0 && c.is_finite()), ..self.field.clone() }, ..self },
             Nav::Frequency(frequency) => View3d { field: FieldView { frequency, ..self.field.clone() }, ..self },
             Nav::At(at) => View3d { field: FieldView { at: Some(at), ..self.field.clone() }, ..self },
             Nav::Phase(phase) if phase.is_finite() => {

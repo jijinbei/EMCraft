@@ -209,6 +209,9 @@ pub struct FieldView {
     pub db: Option<f64>,
     /// Thin lines at every tenth of the colour map.
     pub contours: bool,
+    /// The value drawn at full colour (V/m or A/m), stronger values in the end colour; the
+    /// field's own peak when `None`.
+    pub clamp: Option<f64>,
 }
 
 impl FieldView {
@@ -225,6 +228,7 @@ impl FieldView {
             mode: None,
             db: None,
             contours: false,
+            clamp: None,
         }
     }
 
@@ -544,6 +548,22 @@ impl PlaneSamples {
         ((c[nk] - self.normal).abs() <= tolerance).then(|| [unit.from_si(c[hk]), unit.from_si(c[vk])])
     }
 
+    /// The sample where `component` is strongest over a period (its amplitude the largest; the
+    /// first such in the grid's order), with that amplitude; `None` while no sample has one.
+    pub fn strongest(&self, component: Component) -> Option<(Probe, f64)> {
+        let probe = |k: usize, (e, h): (CVec3, CVec3)| {
+            let (i, j) = (k % self.nx, k / self.nx);
+            let ((xa, xb), (ya, yb)) = (self.x.span(), self.y.span());
+            let along = |n: usize, m: usize| if n > 1 { m as f64 / (n - 1) as f64 } else { 0.0 };
+            Probe { at: [xa + (xb - xa) * along(self.nx, i), ya + (yb - ya) * along(self.ny, j)], e, h, normal: self.axes[2] }
+        };
+        let amplitudes = self.grid.iter().enumerate().filter_map(|(k, g)| g.map(|g| probe(k, g))).map(|p| (p, p.value(component, 0.0).1));
+        amplitudes.filter(|(_, a)| a.is_finite() && *a > 0.0).fold(None, |best: Option<(Probe, f64)>, (p, a)| match best {
+            Some((_, b)) if b >= a => best,
+            _ => Some((p, a)),
+        })
+    }
+
     /// Whether these samples serve a view (same frequency, plane, position and excitation).
     pub fn serves(&self, view: &FieldView, at: f64) -> bool {
         self.plane == view.plane
@@ -631,7 +651,7 @@ impl PlaneSamples {
                 ny: self.ny,
                 values,
                 kind: if comp.is_magnitude() { ScalarKind::Magnitude } else { ScalarKind::Signed },
-                range: Some(peak),
+                range: Some(view.clamp.filter(|c| *c > 0.0 && c.is_finite()).unwrap_or(peak)),
                 db: view.db,
             }),
             arrows: sets,

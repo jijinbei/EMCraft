@@ -11,7 +11,7 @@ use emcraft_ui_core::lang::{args, lookup, tr, trf};
 use emcraft_ui_core::navigation::Goal;
 use emcraft_ui_core::scene3d::{Cut, Overlay};
 use emcraft_ui_core::tools::Tool;
-use iced::widget::{Space, canvas, column, container, image, pick_list, row, shader, slider, stack, text};
+use iced::widget::{Space, button, canvas, column, container, image, pick_list, row, shader, slider, stack, text};
 use iced::{Alignment, Element, Fill, Widget};
 
 use crate::app::{App, Message};
@@ -212,14 +212,21 @@ fn section_bar(app: &App, cut: Cut) -> Element<'_, Message> {
         .boxed()
 }
 
-/// The field's colour bar: its quantity, its gradient and its ticks.
+/// The field's colour bar: its quantity, its gradient, its ticks and the field's peak (pressed:
+/// the point pinned).
 fn colour_bar(t: Tokens, bar: &field::Bar) -> Element<'_, Message> {
     let gradient = image(bar.gradient.clone()).width(BAR_W).height(12).content_fit(iced::ContentFit::Fill).filter_method(image::FilterMethod::Linear);
     let ticks = bar.ticks.iter().enumerate().flat_map(|(k, tick)| {
         let gap = (k > 0).then(|| Space::new().width(Fill).boxed());
         gap.into_iter().chain(std::iter::once(text(tick.clone()).size(t.font_small).color(t.text_dim).boxed()))
     });
-    column![text(bar.title.clone()).size(t.font_body).color(t.text), gradient, row(ticks).width(BAR_W)].spacing(t.space_4).boxed()
+    let peak = bar.peak.as_ref().map(|(value, at)| {
+        let said = trf(t!("max {value}"), args!(value = value));
+        let pin = button(text(said).size(t.font_small)).style(look::quiet(t)).padding(0).on_press(Message::Pin(*at));
+        crate::parts::hint_text(t, pin.boxed(), tr(t!("Pin the strongest point")))
+    });
+    let parts = [text(bar.title.clone()).size(t.font_body).color(t.text).boxed(), gradient.boxed(), row(ticks).width(BAR_W).boxed()];
+    column(parts.into_iter().chain(peak)).spacing(t.space_4).boxed()
 }
 
 /// The colour bar's width (points).

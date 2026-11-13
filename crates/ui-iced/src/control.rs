@@ -29,8 +29,9 @@ fn err(e: impl std::fmt::Display) -> Value {
 }
 
 /// Every handle the window shows now, with the message pressing it sends: the bar's pages and
-/// buttons, the tree's ▶ and ＋ (and the commands of the ＋ list shown), the model page's overlays, views and tools, the
-/// browser's rows, the selection's card, the open dialog's and question's buttons.
+/// buttons, the tree's ▶ and ＋ (and the commands of the ＋ list shown) and its ghost rows, the
+/// model page's overlays, views and tools, the browser's rows, the selection's card, the open
+/// dialog's and question's buttons.
 pub fn handles(app: &App) -> Vec<(String, Message)> {
     let replies = &app.replies;
     let pages = crate::run::PAGES.into_iter().filter(|v| v.available(&app.session, replies)).map(|v| (format!("page:{}", v.id()), Message::Page(v)));
@@ -72,7 +73,12 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         emcraft_ui_core::browser::Act::Design(path) => Some((format!("solidcraft:{path}"), Message::OpenDesign(path.clone()))),
         _ => None,
     });
-    let tabs = plays.chain(adds).chain(designs).collect::<Vec<_>>();
+    // The groups' ghost rows (`ghost:<group>`).
+    let ghosts = parts.iter().flat_map(|p| &p.groups).filter_map(|(name, _)| {
+        emcraft_ui_core::outline::ghost(name, kind)
+            .map(|id| (format!("ghost:{name}"), crate::browser::add_message(emcraft_ui_core::outline::Add::Command(id))))
+    });
+    let tabs = plays.chain(adds).chain(designs).chain(ghosts).collect::<Vec<_>>();
     let model = (app.page == View::Model).then(|| {
         let overlays = Overlay::ALL.into_iter().map(|o| (format!("overlay:{}", o.id()), Message::View3d(Nav::Overlay(o))));
         let views = emcraft_render::view3d::StandardView::ALL
@@ -88,7 +94,9 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
         // Each tool turned on, or off when on.
         let tools =
             emcraft_ui_core::tools::Tool::ALL.into_iter().map(|k| (format!("tool:{}", k.id()), Message::Tool((app.tool != Some(k)).then_some(k))));
-        overlays.chain(views).chain(fixed).chain(tools).collect::<Vec<_>>()
+        // The field's peak in the legend, pinned.
+        let peak = app.view3d.shown.as_ref().and_then(|s| s.bar.as_ref()?.peak.as_ref()).map(|(_, at)| ("field:peak".to_owned(), Message::Pin(*at)));
+        overlays.chain(views).chain(fixed).chain(tools).chain(peak).collect::<Vec<_>>()
     });
     let rows = app.rows().map(|r| (format!("row:{}", r.id), Message::Row(r.id.clone())));
     let steps = crate::steps::stepped(app)
@@ -161,7 +169,6 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
 pub fn inspect(app: &App) -> Value {
     let v = &app.view3d;
     let c = v.camera;
-    let f = &v.field;
     json!({
         "project": {"name": app.session.name(), "dirty": app.session.is_dirty(), "path": app.session.path()},
         "page": app.page.id(),
@@ -207,7 +214,7 @@ pub fn inspect(app: &App) -> Value {
             "section_notes": app.section_notes().map(|(d, p)| json!({"dims": d.iter().map(|d| d.text.clone()).collect::<Vec<_>>(), "ports": p.iter().map(|p| p.text.clone()).collect::<Vec<_>>()})),
             "projection": format!("{:?}", c.projection).to_lowercase(),
             "section": v.section.map(|s| s.inspect(app.session.display().length)),
-            "field": {"plane": f.plane.id(), "component": f.component.id(), "frequency": f.frequency, "phase": f.phase.to_degrees(), "mode": f.mode, "error": v.field_error},
+            "field": field_inspect(app),
         },
         "results": {
             "sweep": app.session.results().sweep.is_some(),
@@ -216,6 +223,25 @@ pub fn inspect(app: &App) -> Value {
             "analysis": app.replies.analysis.as_ref().map(|a| a.command.clone()),
             "pcb": app.replies.pcb.is_some(),
         },
+    })
+}
+
+/// The field view as `ui.inspect` shows it: what it shows, its clamp, the pinned point, the
+/// colour bar's ticks and the peak it says.
+fn field_inspect(app: &App) -> Value {
+    let (v, f) = (&app.view3d, &app.view3d.field);
+    let bar = v.shown.as_ref().and_then(|s| s.bar.as_ref());
+    json!({
+        "plane": f.plane.id(),
+        "component": f.component.id(),
+        "frequency": f.frequency,
+        "phase": f.phase.to_degrees(),
+        "mode": f.mode,
+        "clamp": f.clamp,
+        "pinned": app.pinned,
+        "ticks": bar.map(|b| b.ticks.clone()),
+        "peak": bar.and_then(|b| b.peak.as_ref()).map(|(value, _)| value.clone()),
+        "error": v.field_error,
     })
 }
 

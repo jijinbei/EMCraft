@@ -60,6 +60,9 @@ pub(crate) struct Followed {
 /// The band's fields' node, in a [`Field`].
 pub const BAND: &str = "@band";
 
+/// The field view's colour scale's node, in a [`Field`] (its key `clamp`).
+pub const FIELD_SCALE: &str = "@field";
+
 /// A field typed in place: its node (a card's name, or [`BAND`]) and the parameter it sets.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Field {
@@ -100,6 +103,8 @@ pub enum Message {
     View3d(Nav),
     /// A click on the 3D view: what is under it picked.
     Click(Click),
+    /// A point of the field's plane pinned (display units along the picture's axes).
+    Pin([f64; 2]),
     /// The selection box let go: what it took selected (added to the selection with Shift).
     Boxed(bool),
     /// The 3D view's tool turned on, or off.
@@ -994,6 +999,13 @@ impl App {
                 self.drafts.insert(field, text);
                 None
             }
+            Message::Commit(field) if field.node == FIELD_SCALE => {
+                // Empty: the field's own peak; else a positive number.
+                let typed = self.drafts.remove(&field)?;
+                let typed = typed.trim();
+                let clamp = if typed.is_empty() { None } else { Some(typed.parse::<f64>().ok().filter(|v| *v > 0.0 && v.is_finite())?) };
+                self.next(Message::View3d(Nav::Clamp(clamp)))
+            }
             Message::Commit(field) => {
                 let text = self.drafts.remove(&field)?;
                 self.committed(&field, &text)
@@ -1174,6 +1186,10 @@ impl App {
             },
             Message::Grip(m) => {
                 self.grip(m);
+                None
+            }
+            Message::Pin(at) => {
+                self.pinned = Some(at);
                 None
             }
             Message::Click(c) => {

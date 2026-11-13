@@ -430,12 +430,16 @@ pub fn build_with(session: &Session, overlay: Overlay, colours: &Colours, fields
     highlighted(colours, Built { bounds, ..built }, selected)
 }
 
-/// The field's planes on one colour scale, the largest peak's ([`Overlay::Field`] only).
+/// The field's planes on one colour scale, the largest range's: each plane's value at full
+/// colour (its peak over the period, or the clamp asked for), else its largest value
+/// ([`Overlay::Field`] only).
 fn field_planes(colours: &Colours, session: &Session, overlay: Overlay, fields: &[FieldLayer], bounds: Option<([f64; 3], [f64; 3])>) -> Built {
     if overlay != Overlay::Field {
         return Built::default();
     }
-    let peak = fields.iter().filter_map(|f| f.plot.scalar.as_ref()).map(|s| field::largest_magnitude(&s.values)).fold(0.0, f64::max);
+    let range =
+        |s: &emcraft_render::plot::Scalar| s.range.filter(|r| *r > 0.0 && r.is_finite()).unwrap_or_else(|| field::largest_magnitude(&s.values));
+    let peak = fields.iter().filter_map(|f| f.plot.scalar.as_ref()).map(range).fold(0.0, f64::max);
     fields
         .iter()
         .enumerate()
