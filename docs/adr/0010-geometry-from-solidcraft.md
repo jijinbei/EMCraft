@@ -1,6 +1,6 @@
 # ADR 0010: Shapes are made in SolidCraft
 
-Status: accepted (2026-11-13); H1–H5 done.
+Status: accepted (2026-11-13); H1–H6 done.
 
 ## Context
 
@@ -77,5 +77,18 @@ copies what SolidCraft (the sibling CAD) does properly. The same commands also b
   sphere's Mie series, the square corner's field superposition at m = 0). A symmetry plane
   across an imported surface now asks each vertex's image to lie on the surface, not to be a
   vertex: a design's two ends are triangulated differently.
-- **H6** The other CAD-like templates, in batches; an oracle fixture that moves says why.
+- **H6** (done) The other CAD-like templates: 33 more open designs (20 new ones; the
+  time-domain twins of a template, the coaxial cavity and the time-domain sphere share theirs),
+  so that 39 templates build from SolidCraft designs. Two keep their solids: `dipole`, a box of
+  air around a source with no shape to design, and `td-dipole`, whose square arms are drawn on
+  the time-domain grid — their ends at cells' centres, where a design's surface (exact to
+  rounding) falls on either side and the feed would cross a conductor. The radius bends' arcs are SolidCraft's
+  arcs, no longer 36 chords. An open problem keeps its box of air where it was:
+  `geometry.import {box}` sets the box's far corner from the design's origin, the bodies left
+  where the design puts them. A symmetry plane across a design cut along its extrusion stops it
+  there even when its sides are split at heights of their own (every triangle across the plane
+  upright, every vertex at or past it on a line through the far end's, none folded over),
+  rather than by a Boolean whose cut lies a millionth off the plane. No oracle fixture moved:
+  the cases write their own models; the symmetric tee's test meshes at 5 mm (at 6 mm, four
+  elements across, the design's whole tee lay 0.015 off its half).
 - **H7** Docs and scenarios.

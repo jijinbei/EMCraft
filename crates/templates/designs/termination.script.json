@@ -1,0 +1,90 @@
+{
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "Termination"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "a",
+        "expression": "22.86",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "b",
+        "expression": "10.16",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "l",
+        "expression": "105",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "w",
+        "expression": "90",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "solid.box",
+      "params": {
+        "length": "a",
+        "width": "l",
+        "height": "b",
+        "body_name": "guide"
+      }
+    },
+    {
+      "command": "sketch.create",
+      "params": {
+        "plane": "XY",
+        "name": "wedge",
+        "offset": "1"
+      }
+    },
+    {
+      "command": "sketch.line",
+      "params": {
+        "points": [
+          [
+            1,
+            "l - 1"
+          ],
+          [
+            "a / 2",
+            "l - w"
+          ],
+          [
+            "a - 1",
+            "l - 1"
+          ]
+        ],
+        "closed": true
+      }
+    },
+    {
+      "command": "sketch.finish",
+      "params": {}
+    },
+    {
+      "command": "solid.extrude",
+      "params": {
+        "distance": "b - 2",
+        "body_name": "absorber"
+      }
+    }
+  ]
+}

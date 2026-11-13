@@ -1,7 +1,7 @@
 [
  {"command": "project.variable", "params": {"name": "r", "label": "guide radius", "value": 10, "quantity": "length"}},
  {"command": "project.variable", "params": {"name": "l", "label": "guide length", "value": 30, "quantity": "length"}},
- {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": "=r", "length": "=l"}},
+ {"command": "geometry.import", "params": {"path": "template:circular-guide.solidcraft", "parameters": {"r": "=r", "l": "=l"}, "materials": {"guide": "interior"}}},
  {"command": "model.walls", "params": {"thickness": 1.27}},
  {"command": "mesh.generate", "params": {"size": 3}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 3}},

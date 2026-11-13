@@ -1,0 +1,47 @@
+{
+  "format": "solidcraft/51",
+  "format_pending": [
+    "bridged-counterbore",
+    "embedded-surface-textures",
+    "fillet-turn",
+    "hole-direction-own-faces",
+    "intersection-curve-sketch-curves",
+    "point-cloud-segments-and-triangles",
+    "revolve-axis-origin-expressions",
+    "transferred-profile-frame",
+    "two-sided-extrude-fixed-sides"
+  ],
+  "name": "Dielectric sphere",
+  "units": "mm",
+  "params": [
+    {
+      "name": "r",
+      "expr": "5",
+      "unit": "mm",
+      "model": false
+    }
+  ],
+  "features": [
+    {
+      "id": 1,
+      "name": "Sphere1",
+      "suppressed": false,
+      "body_names": [
+        "sphere"
+      ],
+      "param_names": [
+        "d1"
+      ],
+      "type": "sphere",
+      "center": [
+        25.0,
+        25.0,
+        25.0
+      ],
+      "radius": "r",
+      "operation": "new_body"
+    }
+  ],
+  "next_id": 2,
+  "next_component_color_index": 0
+}

@@ -2,9 +2,7 @@
  {"command": "project.variable", "params": {"name": "er", "label": "relative permittivity", "value": 4}},
  {"command": "project.variable", "params": {"name": "r", "label": "sphere radius", "value": 5, "quantity": "length"}},
  {"command": "model.material.create", "params": {"name": "ceramic", "eps_r": "=er"}},
- {"command": "geometry.solid", "params": {"shape": "box", "size": [50, 50, 50]}},
- {"command": "geometry.body", "params": {"material": "ceramic", "shape": "sphere", "radius": "=r", "at": [25, 25, 25]}},
- {"command": "model.open", "params": {"thickness": 12}},
+ {"command": "geometry.import", "params": {"path": "template:sphere-scattering.solidcraft", "parameters": {"r": "=r"}, "materials": {"sphere": "ceramic"}, "open": true, "box": [50, 50, 50], "thickness": 12}},
  {"command": "source.plane_wave", "params": {"direction": [0, 0, 1], "polarization": [1, 0, 0]}},
  {"command": "project.setup", "params": {"kind": "time_domain", "start": 6, "stop": 14, "points": 33, "cell": 0.5}},
  {"command": "solve.time_domain", "params": {"start": 6, "stop": 14, "points": 33, "cell": 0.5}}

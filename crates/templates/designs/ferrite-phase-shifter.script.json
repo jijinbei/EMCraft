@@ -1,0 +1,49 @@
+{
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "Ferrite phase shifter"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "w",
+        "expression": "2",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "x",
+        "expression": "4",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "solid.box",
+      "params": {
+        "length": 22.86,
+        "width": 10.16,
+        "height": 40,
+        "body_name": "guide"
+      }
+    },
+    {
+      "command": "solid.box",
+      "params": {
+        "length": "w",
+        "width": 8.16,
+        "height": 20,
+        "body_name": "slab",
+        "corner": [
+          "x",
+          1,
+          10
+        ]
+      }
+    }
+  ]
+}

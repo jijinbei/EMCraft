@@ -1,0 +1,247 @@
+{
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "Magic tee"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "a",
+        "expression": "22.86",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "b",
+        "expression": "10.16",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "l",
+        "expression": "20",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "rp",
+        "expression": "1",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "hp",
+        "expression": "11",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "hx",
+        "expression": "8",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "ez",
+        "expression": "5",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "ey",
+        "expression": "5",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "sketch.create",
+      "params": {
+        "plane": "XY",
+        "name": "outline"
+      }
+    },
+    {
+      "command": "sketch.line",
+      "params": {
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            "2 * l + a",
+            0
+          ],
+          [
+            "2 * l + a",
+            "a"
+          ],
+          [
+            "l + a",
+            "a"
+          ],
+          [
+            "l + a",
+            "l + a"
+          ],
+          [
+            "l",
+            "l + a"
+          ],
+          [
+            "l",
+            "a"
+          ],
+          [
+            0,
+            "a"
+          ]
+        ],
+        "closed": true
+      }
+    },
+    {
+      "command": "sketch.finish",
+      "params": {}
+    },
+    {
+      "command": "solid.extrude",
+      "params": {
+        "distance": "b + l",
+        "body_name": "tee"
+      }
+    },
+    {
+      "command": "sketch.create",
+      "params": {
+        "plane": "XY",
+        "name": "cap",
+        "offset": "b"
+      }
+    },
+    {
+      "command": "sketch.line",
+      "params": {
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            "l + a / 2 - b / 2",
+            0
+          ],
+          [
+            "l + a / 2 - b / 2",
+            "a"
+          ],
+          [
+            "l + a / 2 + b / 2",
+            "a"
+          ],
+          [
+            "l + a / 2 + b / 2",
+            0
+          ],
+          [
+            "2 * l + a",
+            0
+          ],
+          [
+            "2 * l + a",
+            "a"
+          ],
+          [
+            "l + a",
+            "a"
+          ],
+          [
+            "l + a",
+            "l + a"
+          ],
+          [
+            "l",
+            "l + a"
+          ],
+          [
+            "l",
+            "a"
+          ],
+          [
+            0,
+            "a"
+          ]
+        ],
+        "closed": true
+      }
+    },
+    {
+      "command": "sketch.finish",
+      "params": {}
+    },
+    {
+      "command": "solid.extrude",
+      "params": {
+        "distance": "l",
+        "body_name": "cap"
+      }
+    },
+    {
+      "command": "solid.cylinder",
+      "params": {
+        "radius": "rp",
+        "height": "b + 2",
+        "body_name": "post1",
+        "base": [
+          "l + a / 2 - hx",
+          "a + hp",
+          0
+        ]
+      }
+    },
+    {
+      "command": "solid.cylinder",
+      "params": {
+        "radius": "rp",
+        "height": "b + 2",
+        "body_name": "post2",
+        "base": [
+          "l + a / 2 + hx",
+          "a + hp",
+          0
+        ]
+      }
+    },
+    {
+      "command": "solid.cylinder",
+      "params": {
+        "radius": "rp",
+        "height": "b + 4",
+        "body_name": "post3",
+        "base": [
+          "l + a / 2 - b / 2 - 2",
+          "ey",
+          "b + ez"
+        ],
+        "axis": "X"
+      }
+    }
+  ]
+}

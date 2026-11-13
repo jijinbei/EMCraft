@@ -18,7 +18,8 @@ mod sector;
 mod tessellation;
 
 use emcraft_model::{
-    Aabb, Axis, Boundary, BoundaryFace, BoxSize, Buckets, Combine, Feature, Mesh, Metres, Model, Point3, Shape, SphericalLayer, Vec3, positive,
+    Aabb, Axis, Boundary, BoundaryFace, BoxSize, Buckets, Combine, FaceSurface, Feature, Mesh, Metres, Model, Point3, Shape, SphericalLayer, Vec3,
+    positive,
 };
 use emcraft_tetmesh::size::{LocalSize, Region};
 
@@ -303,7 +304,10 @@ fn halved(model: &Model, shape: &Shape) -> Result<(Shape, Vec<Feature>)> {
 }
 
 /// `shape` stopped at `at` across axis `d`, if it is a box, a cylinder along z cut across z, or
-/// an extrusion along `d` (every vertex on one of its two ends).
+/// an extrusion along `d`: every edge that crosses the plane runs along `d`, and every vertex
+/// at or past it lies on a line along `d` through a vertex of the far end (a design's tall sides
+/// may be split at heights of their own). Everything past the plane comes down onto it, the
+/// vertices that meet there are one and the triangles flattened between them go.
 fn shortened(shape: &Shape, d: usize, at: f64, tol: f64) -> Option<Shape> {
     match shape {
         Shape::Box { size } => {
@@ -313,17 +317,110 @@ fn shortened(shape: &Shape, d: usize, at: f64, tol: f64) -> Option<Shape> {
         Shape::Cylinder { radius, .. } if d == 2 => Some(Shape::Cylinder { radius: *radius, length: Metres::new(at).ok()? }),
         Shape::Surface { name, positions, triangles, tags, surfaces } => {
             let (lo, hi) = positions.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| (lo.min(p[d]), hi.max(p[d])));
-            let on_ends = positions.iter().all(|p| (p[d] - lo).abs() <= tol || (p[d] - hi).abs() <= tol);
-            (on_ends && at > lo + tol).then(|| Shape::Surface {
+            if !(at > lo + tol && at < hi - tol) {
+                return None;
+            }
+            let near = |z: f64, level: f64| (z - level).abs() <= tol;
+            let corners = |t: &[u32; 3]| -> Option<[Point3; 3]> {
+                Some([*positions.get(t[0] as usize)?, *positions.get(t[1] as usize)?, *positions.get(t[2] as usize)?])
+            };
+            let normal = |[a, b, c]: [Point3; 3]| (b - a).cross(c - a);
+            // A triangle across the plane is upright: its plane holds the direction d.
+            let upright = triangles.iter().all(|t| match corners(t) {
+                Some(c) => {
+                    let crosses = c.iter().any(|p| p[d] < at - tol) && c.iter().any(|p| p[d] > at + tol);
+                    let n = normal(c);
+                    !crosses || n[d].abs() <= 1e-7 * n.norm()
+                }
+                None => false,
+            });
+            if !upright {
+                return None;
+            }
+            let moved: Vec<Point3> = positions.iter().map(|p| if p[d] > at { p.with(d, at) } else { *p }).collect();
+            let (welded, index) = welded(&moved, tol);
+            // Every vertex brought onto the plane, or on it, meets one from the far end (else the
+            // sides' vertices there would cut the moved end's triangles).
+            let far: std::collections::BTreeSet<u32> = positions.iter().zip(&index).filter(|(p, _)| near(p[d], hi)).map(|(_, i)| *i).collect();
+            if positions.iter().zip(&index).any(|(p, i)| p[d] >= at - tol && !far.contains(i)) {
+                return None;
+            }
+            // Each triangle kept as it was turned (none folded over by the move); those flattened go.
+            let mut folded = false;
+            let kept: Vec<(usize, [u32; 3])> = triangles
+                .iter()
+                .enumerate()
+                .filter_map(|(k, t)| {
+                    let w = [index[t[0] as usize], index[t[1] as usize], index[t[2] as usize]];
+                    let after = normal(w.map(|i| welded[i as usize]));
+                    if w[0] == w[1] || w[1] == w[2] || w[0] == w[2] || after.norm() <= tol * tol {
+                        return None;
+                    }
+                    folded |= corners(t).is_none_or(|c| normal(c).dot(after) <= 0.0);
+                    Some((k, w))
+                })
+                .collect();
+            if folded {
+                return None;
+            }
+            let triangles: Vec<[u32; 3]> = kept.iter().map(|(_, t)| *t).collect();
+            if !closed(&triangles) {
+                return None;
+            }
+            // A plane on the far end comes down with it.
+            let surfaces = surfaces
+                .iter()
+                .map(|s| match s {
+                    Some(FaceSurface::Plane { normal, point }) if near(point[d], hi) => {
+                        Some(FaceSurface::Plane { normal: *normal, point: point.with(d, at) })
+                    }
+                    other => other.clone(),
+                })
+                .collect();
+            Some(Shape::Surface {
                 name: name.clone(),
-                positions: positions.iter().map(|p| if (p[d] - hi).abs() <= tol { p.with(d, at) } else { *p }).collect(),
-                triangles: triangles.clone(),
-                tags: tags.clone(),
-                surfaces: surfaces.clone(),
+                positions: welded,
+                triangles,
+                tags: kept.iter().map(|(k, _)| tags.get(*k).copied().unwrap_or(0)).collect(),
+                surfaces,
             })
         }
         _ => None,
     }
+}
+
+/// `points` with those within `tol` of one another made one: the points kept and, for each
+/// point, its index among them.
+fn welded(points: &[Point3], tol: f64) -> (Vec<Point3>, Vec<u32>) {
+    let key = |p: Point3| p.to_array().map(|c| (c / tol).round() as i64);
+    let mut seen: std::collections::BTreeMap<[i64; 3], u32> = std::collections::BTreeMap::new();
+    let mut kept = Vec::new();
+    let index = points
+        .iter()
+        .map(|p| {
+            let k = key(*p);
+            let found = (0..27).find_map(|n| seen.get(&[k[0] + n % 3 - 1, k[1] + n / 3 % 3 - 1, k[2] + n / 9 - 1]).copied());
+            found.unwrap_or_else(|| {
+                let i = kept.len() as u32;
+                kept.push(*p);
+                seen.insert(k, i);
+                i
+            })
+        })
+        .collect();
+    (kept, index)
+}
+
+/// Whether every edge of `triangles` is shared by exactly two of them.
+fn closed(triangles: &[[u32; 3]]) -> bool {
+    let mut edges: std::collections::BTreeMap<(u32, u32), u32> = std::collections::BTreeMap::new();
+    for t in triangles {
+        for k in 0..3 {
+            let (a, b) = (t[k], t[(k + 1) % 3]);
+            *edges.entry((a.min(b), a.max(b))).or_insert(0) += 1;
+        }
+    }
+    !triangles.is_empty() && edges.values().all(|n| *n == 2)
 }
 
 /// The boundary faces the symmetry planes cut (every corner on a plane, to a billionth of the
@@ -1413,5 +1510,34 @@ mod tests {
                 digest(&mesh)
             );
         }
+    }
+
+    /// A unit cube whose four sides are split at mid-height, as a design's tall sides may be:
+    /// stopped at that height, or at a third, it is the part below, closed (what is above brought
+    /// down onto the plane, the flattened rows gone); it is no plain extrusion when a vertex on
+    /// the plane lies on no line along z through the top's.
+    #[test]
+    fn an_extrusion_split_at_the_plane_is_stopped_there() {
+        // Corners k (x = k & 1, y = k >> 1 & 1) at z = 0, ½ and 1: index k + 4 level.
+        let positions: Vec<Point3> = (0..12).map(|i| Point3::new((i & 1) as f64, ((i >> 1) & 1) as f64, (i / 4) as f64 * 0.5)).collect();
+        let mut triangles: Vec<[u32; 3]> = vec![[0, 2, 3], [0, 3, 1], [8, 9, 11], [8, 11, 10]];
+        // Each side, counter-clockwise from outside, its two rows.
+        for (a, b) in [(0, 1), (1, 3), (3, 2), (2, 0)] {
+            for level in 0..2 {
+                let (p, q, r, s) = (a + 4 * level, b + 4 * level, b + 4 * (level + 1), a + 4 * (level + 1));
+                triangles.extend([[p, q, r], [p, r, s]]);
+            }
+        }
+        let tags = vec![0; triangles.len()];
+        let cube = Shape::Surface { name: "cube".into(), positions, triangles, tags, surfaces: Vec::new() };
+        let Some(Shape::Surface { positions, triangles, .. }) = shortened(&cube, 2, 0.5, 1e-9) else { panic!("not stopped") };
+        assert_eq!((positions.len(), triangles.len()), (8, 12));
+        assert!(closed(&triangles) && positions.iter().all(|p| p.z <= 0.5));
+        let Some(Shape::Surface { positions, triangles, .. }) = shortened(&cube, 2, 1.0 / 3.0, 1e-9) else { panic!("not stopped") };
+        assert!(closed(&triangles) && positions.iter().all(|p| p.z <= 1.0 / 3.0) && positions.len() == 8);
+        let Shape::Surface { mut positions, triangles, tags, .. } = cube else { panic!("a surface") };
+        positions[5].x = 0.9;
+        let moved = Shape::Surface { name: "cube".into(), positions, triangles, tags, surfaces: Vec::new() };
+        assert!(shortened(&moved, 2, 0.5, 1e-9).is_none());
     }
 }

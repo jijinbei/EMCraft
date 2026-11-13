@@ -2,7 +2,7 @@
  {"command": "project.variable", "params": {"name": "a", "label": "guide width", "value": 22.86, "quantity": "length"}},
  {"command": "project.variable", "params": {"name": "b", "label": "guide height", "value": 10.16, "quantity": "length"}},
  {"command": "project.variable", "params": {"name": "l", "label": "guide length", "value": 50, "quantity": "length"}},
- {"command": "geometry.solid", "params": {"shape": "box", "size": ["=a", "=b", "=l"]}},
+ {"command": "geometry.import", "params": {"path": "template:straight.solidcraft", "parameters": {"a": "=a", "b": "=b", "l": "=l"}, "materials": {"guide": "interior"}}},
  {"command": "model.walls", "params": {"thickness": 1.27}},
  {"command": "mesh.generate", "params": {"size": "=a/8"}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},

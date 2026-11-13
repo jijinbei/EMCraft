@@ -1,0 +1,40 @@
+{
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "Loaded spherical cavity"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "r_cavity",
+        "expression": "10",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "r_core",
+        "expression": "4",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "solid.sphere",
+      "params": {
+        "radius": "r_cavity",
+        "body_name": "cavity"
+      }
+    },
+    {
+      "command": "solid.sphere",
+      "params": {
+        "radius": "r_core",
+        "body_name": "core"
+      }
+    }
+  ]
+}

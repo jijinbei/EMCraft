@@ -1,0 +1,30 @@
+{
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "Dielectric sphere"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "r",
+        "expression": "5",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "solid.sphere",
+      "params": {
+        "radius": "r",
+        "body_name": "sphere",
+        "center": [
+          25,
+          25,
+          25
+        ]
+      }
+    }
+  ]
+}

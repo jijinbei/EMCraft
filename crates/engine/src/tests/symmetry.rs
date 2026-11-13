@@ -37,8 +37,10 @@ fn agree(name: &str, (w, h): (Value, Value), entries: &[&str], tol: f64, share: 
 
 #[test]
 fn an_h_plane_tee_solves_on_its_lower_half() {
-    // About its mid-height, an electric wall: TE10's E is normal to the plane.
-    let r = whole_and_half("h-tee", 6.0, &[9.0, 11.0], "z", "electric");
+    // About its mid-height, an electric wall: TE10's E is normal to the plane. (5 mm: at 6 mm,
+    // four elements across the guide, the design's whole tee meshed from its few large faces
+    // lies 0.015 off.)
+    let r = whole_and_half("h-tee", 5.0, &[9.0, 11.0], "z", "electric");
     agree("h-tee", r, &["s11", "s21", "s31", "s33"], 0.01, 0.6);
 }
 

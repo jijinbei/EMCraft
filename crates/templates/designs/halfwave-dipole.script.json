@@ -1,0 +1,60 @@
+{
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "Half-wave dipole"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "arm",
+        "expression": "7",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "gap",
+        "expression": "1",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "r_wire",
+        "expression": "0.5",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "solid.cylinder",
+      "params": {
+        "radius": "r_wire",
+        "height": "arm",
+        "body_name": "arm1",
+        "base": [
+          30,
+          30,
+          "30 - gap / 2 - arm"
+        ]
+      }
+    },
+    {
+      "command": "solid.cylinder",
+      "params": {
+        "radius": "r_wire",
+        "height": "arm",
+        "body_name": "arm2",
+        "base": [
+          30,
+          30,
+          "30 + gap / 2"
+        ]
+      }
+    }
+  ]
+}

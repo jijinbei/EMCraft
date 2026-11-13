@@ -1,0 +1,48 @@
+{
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "Dielectric resonator"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "r_puck",
+        "expression": "5.25",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "h_puck",
+        "expression": "4.6",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "solid.box",
+      "params": {
+        "length": 30,
+        "width": 30,
+        "height": 20,
+        "body_name": "cavity"
+      }
+    },
+    {
+      "command": "solid.cylinder",
+      "params": {
+        "radius": "r_puck",
+        "height": "h_puck",
+        "body_name": "puck",
+        "base": [
+          15,
+          15,
+          "10 - h_puck / 2"
+        ]
+      }
+    }
+  ]
+}

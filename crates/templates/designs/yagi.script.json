@@ -1,0 +1,110 @@
+{
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "Yagi-Uda antenna"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "l_driven",
+        "expression": "12.4",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "l_reflector",
+        "expression": "15.6",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "l_director",
+        "expression": "12.6",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "s_reflector",
+        "expression": "7.5",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "s_director",
+        "expression": "6",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "r_wire",
+        "expression": "0.5",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "solid.cylinder",
+      "params": {
+        "radius": "r_wire",
+        "height": "l_driven / 2 - 0.5",
+        "body_name": "driven1",
+        "base": [
+          30,
+          25,
+          "25 - l_driven / 2"
+        ]
+      }
+    },
+    {
+      "command": "solid.cylinder",
+      "params": {
+        "radius": "r_wire",
+        "height": "l_driven / 2 - 0.5",
+        "body_name": "driven2",
+        "base": [
+          30,
+          25,
+          25.5
+        ]
+      }
+    },
+    {
+      "command": "solid.cylinder",
+      "params": {
+        "radius": "r_wire",
+        "height": "l_reflector",
+        "body_name": "reflector",
+        "base": [
+          "30 - s_reflector",
+          25,
+          "25 - l_reflector / 2"
+        ]
+      }
+    },
+    {
+      "command": "solid.cylinder",
+      "params": {
+        "radius": "r_wire",
+        "height": "l_director",
+        "body_name": "director",
+        "base": [
+          "30 + s_director",
+          25,
+          "25 - l_director / 2"
+        ]
+      }
+    }
+  ]
+}

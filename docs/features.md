@@ -705,6 +705,7 @@ Reads a part: an STL file (one body) or a 3MF package, such as SolidCraft's expo
 | `region` | string |  | no | `box` (air around the bodies), `cavity` (the air the metal bodies enclose) or the name of the body that is the region; by default the `interior` body, else the cavity when the metal encloses air, else the box |
 | `keep` | string |  | no | with `region` `cavity`: `enclosed` (every piece of air the metal encloses, the default) or `largest` (the largest alone) |
 | `margin` | number | length | no | the box's room around the bodies, the layer included (default a quarter of their largest extent; with `open`, a quarter wavelength of air and the layer) |
+| `box` | array | length | no | the box of air's far corner (x, y, z), from the design's origin, the bodies left where the design puts them (instead of `margin`) |
 | `materials` | object |  | no | body name → material, `metal` (the default for every body) or `interior` (the region itself; one body at most) |
 | `open` | boolean |  | no | an open problem: line the box of air with a perfectly matched layer (default false) |
 | `thickness` | number | length | no | the layer's thickness with `open` (default a quarter of the band's longest wavelength) |

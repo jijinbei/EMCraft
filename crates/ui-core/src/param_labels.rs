@@ -17,6 +17,7 @@ pub fn param_label(command: &str, name: &'static str) -> &'static str {
         ("geometry.import", "materials") => t!("Materials").en(),
         ("geometry.import", "open") => t!("Open (PML)").en(),
         ("geometry.import", "thickness") => t!("PML thickness").en(),
+        ("geometry.import", "box") => t!("Box corner").en(),
         ("geometry.import", "fit_surfaces") => t!("Fit surfaces").en(),
         ("geometry.import", "parameters") => t!("Parameters").en(),
         ("filter.synthesize" | "results.coupling", "order") => t!("Resonators").en(),

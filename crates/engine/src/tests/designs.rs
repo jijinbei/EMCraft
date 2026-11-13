@@ -331,3 +331,23 @@ fn a_port_on_a_named_face_follows_it() {
     let e = s.execute("model.port.create", &json!({"name": "4", "face_name": far, "face": [0, 0, 0, 1, 1]})).unwrap_err();
     assert!(matches!(&e, EngineError::Params(m) if m.contains("not both")), "{e}");
 }
+
+/// An open template's box set by its corner (`box`): the design's sphere left where it is, at
+/// the middle of the 50 mm box; a box with a margin too, or one the bodies stick out of, refused.
+#[test]
+fn a_design_lies_in_the_box_its_corner_gives() {
+    let s = built("sphere-scattering", json!(null));
+    let [lo, hi] = s.model.bounds().unwrap().corners();
+    assert!((0..3).all(|d| lo[d].abs() < 1e-12 && (hi[d] - 0.05).abs() < 1e-12), "{lo:?} {hi:?}");
+    assert!(s.model.domain.open.is_some());
+    let mut s = Session::new();
+    let at = |extra: serde_json::Value| {
+        let mut p = json!({"path": "template:sphere-scattering.solidcraft", "open": true, "thickness": 12});
+        p.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        p
+    };
+    for bad in [json!({"box": [50, 50, 50], "margin": 20}), json!({"box": [50, 50, 28]}), json!({"box": [50, 50]})] {
+        let e = s.execute("geometry.import", &at(bad.clone())).unwrap_err();
+        assert!(matches!(&e, EngineError::Params(_)), "{bad}: {e}");
+    }
+}

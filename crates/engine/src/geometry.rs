@@ -291,7 +291,10 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         }
         Region::Box { .. } => {
             let margin = p.positive_length("margin").optional()?;
-            let shape = air_box(p, &mut parts, margin, layer.thickness.map(Metres::get), layer.quarter)?;
+            let shape = match p.point("box").optional()? {
+                Some(far) => given_box(p, &parts, far, margin)?,
+                None => air_box(p, &mut parts, margin, layer.thickness.map(Metres::get), layer.quarter)?,
+            };
             s.model.set_solid(Solid { shape, material: material.clone() })?;
             None
         }
@@ -461,7 +464,7 @@ fn choose_region(s: &mut Session, p: &Params, parts: &mut [PartBody], materials:
     let keep: Option<Keep> = p.choice("keep").optional()?;
     // The kind asked for, checked before any cavity is made.
     let explicit_cavity = given.as_deref() == Some("cavity");
-    let boxed = matches!(given.as_deref(), Some("box")) || (given.is_none() && interiors.is_empty() && (open || p.has("margin")));
+    let boxed = matches!(given.as_deref(), Some("box")) || (given.is_none() && interiors.is_empty() && (open || p.has("margin") || p.has("box")));
     let tried = given.is_none() && interiors.is_empty() && !boxed;
     if open && !boxed {
         return Err(p.error("region", "an open problem lies in a box of air (`box`)"));
@@ -799,6 +802,20 @@ fn air_box(p: &Params, bodies: &mut [PartBody], margin: Option<f64>, thickness: 
     bodies.iter_mut().for_each(|b| b.moved(shift));
     let size = emcraft_model::Vec3::new(hi[0] - lo[0] + 2.0 * margin, hi[1] - lo[1] + 2.0 * margin, hi[2] - lo[2] + 2.0 * margin);
     Ok(Shape::Box { size: BoxSize::new(size)? })
+}
+
+/// The box of air from the design's origin to its corner `far` (m), the bodies where the design
+/// puts them: refused with a `margin`, or when a body does not lie inside it.
+fn given_box(p: &Params, bodies: &[PartBody], far: Point3, margin: Option<f64>) -> Result<Shape> {
+    if margin.is_some() {
+        return Err(p.error("box", "sets the box itself: it takes no `margin`"));
+    }
+    let size = BoxSize::new(far.to_vec()).map_err(|e| p.error("box", e.to_string()))?;
+    let inside = bodies.iter().flat_map(|b| b.body.positions.iter()).all(|q| (0..3).all(|d| q[d] > 0.0 && q[d] < far[d]));
+    if !inside {
+        return Err(p.error("box", "every body must lie inside the box, from the design's origin to this corner"));
+    }
+    Ok(Shape::Box { size })
 }
 
 pub fn feature(s: &mut Session, p: &Params) -> Result<Value> {

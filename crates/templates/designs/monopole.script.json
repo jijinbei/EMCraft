@@ -1,0 +1,61 @@
+{
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "Monopole"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "l",
+        "expression": "7",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "ground",
+        "expression": "40",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "r_wire",
+        "expression": "0.5",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "solid.box",
+      "params": {
+        "length": "ground",
+        "width": "ground",
+        "height": 1,
+        "body_name": "ground",
+        "corner": [
+          "35 - ground / 2",
+          "35 - ground / 2",
+          19
+        ]
+      }
+    },
+    {
+      "command": "solid.cylinder",
+      "params": {
+        "radius": "r_wire",
+        "height": "l - 0.5",
+        "body_name": "wire",
+        "base": [
+          35,
+          35,
+          20.5
+        ]
+      }
+    }
+  ]
+}

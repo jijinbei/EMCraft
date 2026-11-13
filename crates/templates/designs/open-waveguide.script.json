@@ -1,0 +1,42 @@
+{
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "Open-ended guide"
+      }
+    },
+    {
+      "command": "solid.box",
+      "params": {
+        "length": 26.86,
+        "width": 14.16,
+        "height": 20,
+        "body_name": "guide",
+        "corner": [
+          26.57,
+          32.92,
+          22
+        ]
+      }
+    },
+    {
+      "command": "solid.box",
+      "params": {
+        "length": 22.86,
+        "width": 10.16,
+        "height": 18,
+        "body_name": "channel",
+        "corner": [
+          28.57,
+          34.92,
+          25
+        ],
+        "operation": "cut",
+        "targets": [
+          "guide"
+        ]
+      }
+    }
+  ]
+}

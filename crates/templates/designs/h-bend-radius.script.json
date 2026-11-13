@@ -1,0 +1,141 @@
+{
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "H-plane bend with a radius"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "a",
+        "expression": "22.86",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "b",
+        "expression": "10.16",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "l",
+        "expression": "20",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "r",
+        "expression": "28.6",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "sketch.create",
+      "params": {
+        "plane": "XY",
+        "name": "outline"
+      }
+    },
+    {
+      "command": "sketch.line",
+      "params": {
+        "points": [
+          [
+            0,
+            "l"
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            "a",
+            0
+          ],
+          [
+            "a",
+            "l"
+          ]
+        ]
+      }
+    },
+    {
+      "command": "sketch.arc.center_point",
+      "params": {
+        "center": [
+          "a + r",
+          "l"
+        ],
+        "start": [
+          "a",
+          "l"
+        ],
+        "end": [
+          "a + r",
+          "l + r"
+        ],
+        "clockwise": true
+      }
+    },
+    {
+      "command": "sketch.line",
+      "params": {
+        "points": [
+          [
+            "a + r",
+            "l + r"
+          ],
+          [
+            "a + r + l",
+            "l + r"
+          ],
+          [
+            "a + r + l",
+            "l + r + a"
+          ],
+          [
+            "a + r",
+            "l + r + a"
+          ]
+        ]
+      }
+    },
+    {
+      "command": "sketch.arc.center_point",
+      "params": {
+        "center": [
+          "a + r",
+          "l"
+        ],
+        "start": [
+          "a + r",
+          "l + r + a"
+        ],
+        "end": [
+          0,
+          "l"
+        ]
+      }
+    },
+    {
+      "command": "sketch.finish",
+      "params": {}
+    },
+    {
+      "command": "solid.extrude",
+      "params": {
+        "distance": "b",
+        "body_name": "bend"
+      }
+    }
+  ]
+}

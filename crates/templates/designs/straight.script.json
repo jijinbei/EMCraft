@@ -1,0 +1,43 @@
+{
+  "commands": [
+    {
+      "command": "file.new",
+      "params": {
+        "name": "Straight guide"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "a",
+        "expression": "22.86",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "b",
+        "expression": "10.16",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "name": "l",
+        "expression": "50",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "solid.box",
+      "params": {
+        "length": "a",
+        "width": "b",
+        "height": "l",
+        "body_name": "guide"
+      }
+    }
+  ]
+}
