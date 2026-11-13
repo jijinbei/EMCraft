@@ -31,7 +31,7 @@ mod tdr;
 pub use commands::field_view;
 pub use dispersion::dispersion_chart;
 pub use field::{Component, Field, FieldView, Part, Phasors, Plane, PlaneSamples, Probe, Probed, field_plot, fields_at, robust_peak, sample_plane};
-pub use pattern::{Cut, FarComponent, FarQuantity, PatternView, pattern_chart, pattern_chart_in, pattern_chart_of};
+pub use pattern::{Cut, FarComponent, FarQuantity, PatternView, RANGES, pattern_chart, pattern_chart_in, pattern_chart_of};
 pub use port_mode::port_mode_plot;
 pub(crate) use reference::X11_PRIME;
 pub use reference::{ExactLine, MODE_MATCHING_MODES, Reference, reference, section_cutoffs, te10_line};

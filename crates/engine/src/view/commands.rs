@@ -215,6 +215,8 @@ pub fn pattern_view(p: &Params) -> Result<super::PatternView> {
         points: p.integer("points", 13..=721).or(91)?,
         solver: p.choice("solver").optional()?,
         frequency: p.frequency("frequency").optional()?,
+        range: p.number("range").check(|r| (10.0..=100.0).contains(r), "10 to 100 dB").or(super::RANGES[0])?,
+        polar: p.flag("polar").or(false)?,
     })
 }
 

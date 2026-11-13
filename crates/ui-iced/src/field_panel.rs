@@ -59,7 +59,9 @@ pub fn view(app: &App, width: f32) -> Option<Element<'_, Message>> {
     let v = &app.view3d.field;
     let idle = app.job.is_none();
     // The power at the field's frequency (a sweep's, not a mode's).
-    let power = (v.mode.is_none() && s.results().sweep.is_some()).then(|| match emcraft_engine::power::at(s, v.frequency, v.excitation) {
+    // The frequency the bar shows: the solved one nearest the field's.
+    let solved = s.results().sweep.as_ref().and_then(|sw| sw.at(v.frequency, true)).map_or(v.frequency, |r| r.frequency);
+    let power = (v.mode.is_none() && s.results().sweep.is_some()).then(|| match emcraft_engine::power::at(s, solved, v.excitation) {
         Ok(report) => {
             let (table, rest) = fields::power(&report);
             Column::with_children([heading(t, t!("POWER DISTRIBUTION")), crate::table::view(t, &table), line(t, rest)]).spacing(t.space_4).boxed()

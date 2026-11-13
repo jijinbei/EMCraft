@@ -45,18 +45,28 @@ impl TdrView {
 }
 
 /// The far-field cut: θ varying at an azimuth φ, or φ varying at a polar angle θ; the angle
-/// (degrees); what it measures; the total or one polarization's share.
+/// (degrees); what it measures; the total or one polarization's share; the dB drawn below its
+/// top, and whether it is drawn round a centre.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PatternCut {
     pub cut: Cut,
     pub angle: f64,
     pub quantity: FarQuantity,
     pub component: FarComponent,
+    pub range: f64,
+    pub polar: bool,
 }
 
 impl Default for PatternCut {
     fn default() -> Self {
-        PatternCut { cut: Cut::Phi, angle: 0.0, quantity: FarQuantity::Directivity, component: FarComponent::Total }
+        PatternCut {
+            cut: Cut::Phi,
+            angle: 0.0,
+            quantity: FarQuantity::Directivity,
+            component: FarComponent::Total,
+            range: emcraft_engine::view::RANGES[0],
+            polar: false,
+        }
     }
 }
 
@@ -78,7 +88,15 @@ impl PatternCut {
     pub fn chart(&self, s: &Session) -> emcraft_engine::Result<emcraft_render::chart::Chart> {
         let (lo, hi, _) = self.range();
         let angle = if self.angle.is_finite() { self.angle.clamp(lo, hi) } else { lo };
-        let view = PatternView { cut: self.cut, angle, quantity: self.quantity, component: self.component, ..PatternView::default() };
+        let view = PatternView {
+            cut: self.cut,
+            angle,
+            quantity: self.quantity,
+            component: self.component,
+            range: self.range,
+            polar: self.polar,
+            ..PatternView::default()
+        };
         emcraft_engine::view::pattern_chart_in(s, &view)
     }
 }

@@ -484,10 +484,7 @@ fn results<'a>(app: &'a App, states: &[StepState]) -> Vec<Element<'a, Message>> 
         .boxed()
     });
     if !app.session.results().any() {
-        return stale_note
-            .into_iter()
-            .chain(std::iter::once(small(t, tr(t!("No results yet: Run (step 6). The view tabs over the viewport show them.")), t.text_dim)))
-            .collect();
+        return stale_note.into_iter().chain(std::iter::once(small(t, tr(t!("No results yet: Run (step 6).")), t.text_dim))).collect();
     }
     if app.session.results().sweep.is_none() {
         return stale_note.into_iter().collect();

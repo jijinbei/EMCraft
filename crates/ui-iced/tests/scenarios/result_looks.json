@@ -1,0 +1,17 @@
+[
+  {"note": "Results drawn readably: the S-parameters' legend in Japanese with its entries apart; a far field drawn along an axis or round a centre, its dynamic range chosen; a lossy cavity's resonances over the band above its table"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 6, "stop": 9, "points": 5, "order": 1}}},
+  {"call": "ui.set", "params": {"page": "sparameters"}},
+  {"shot": "sparameters"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "dipole", "solve": true}}},
+  {"call": "ui.set", "params": {"page": "far_field"}},
+  {"expect": {"handles": ["pattern:polar", "pattern:range:20", "pattern:range:60"]}},
+  {"click": "pattern:range:20"},
+  {"shot": "pattern-20db"},
+  {"click": "pattern:polar"},
+  {"shot": "pattern-polar"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "cavity", "solve": true}}},
+  {"call": "ui.set", "params": {"page": "eigenmodes"}},
+  {"shot": "eigenmodes"}
+]

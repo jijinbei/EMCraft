@@ -70,9 +70,7 @@ fn start(app: &App) -> Element<'_, Message> {
     });
     column![
         text(tr(t!("A chain from the antenna to the receiver"))).size(t.font_heading + 4.0),
-        text(tr(t!("Add its stages in order: an LNA, a filter's S-parameters (a Touchstone file or a sweep), lines, more amplifiers.")))
-            .size(t.font_body)
-            .color(t.text_dim),
+        text(tr(t!("Add the stages in order: amplifiers, filters, lines."))).size(t.font_body).color(t.text_dim),
         row(kinds).spacing(t.space_8),
     ]
     .spacing(t.space_8)

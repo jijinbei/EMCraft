@@ -1683,6 +1683,8 @@ Writes a PNG of a cut through the far-field pattern: against θ at azimuth `phi`
 | `component` | string |  | no | `total` (default), or a polarization's share: `theta` (E_θ), `phi` (E_φ), `rhcp`, `lhcp`, `co` or `cross` (Ludwig 3) |
 | `co_polar` | number |  | no | the co-polar direction of Ludwig-3 co- and cross-polar, in degrees from x toward y at the pole (default 0: x) |
 | `points` | integer |  | no | angles along the cut, 13 to 721 (default 91) |
+| `range` | number |  | no | the dB below the pattern's top drawn, 10 to 100 (default 40) |
+| `polar` | boolean |  | no | drawn round a centre: the cut's angle around it, the dB outwards (default false: along an axis) |
 | `width` | integer |  | no | pixels (default 1000) |
 | `height` | integer |  | no | pixels (default 600) |
 | `solver` | string |  | no | `fem` (solve.radiation) or `time_domain` (solve.time_domain); default whichever there is, the FEM's first |

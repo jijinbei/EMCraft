@@ -80,6 +80,9 @@ pub enum RAct {
     Angle(f64),
     Quantity(FarQuantity),
     Component(FarComponent),
+    /// The pattern's dB below its top, and whether it is drawn round a centre.
+    Range(u8),
+    Polar(bool),
     /// A pulse field typed, by name; its chirp, wave and what is charted; Run.
     Pulse(&'static str, String),
     Chirp(&'static str),
@@ -108,6 +111,10 @@ impl App {
             RAct::Angle(a) => self.pattern.angle = a,
             RAct::Quantity(q) => self.pattern.quantity = q,
             RAct::Component(c) => self.pattern.component = c,
+            RAct::Range(k) => {
+                self.pattern.range = emcraft_engine::view::RANGES.get(usize::from(k)).copied().unwrap_or(emcraft_engine::view::RANGES[0])
+            }
+            RAct::Polar(on) => self.pattern.polar = on,
             RAct::Pulse(name, s) => match name {
                 "frequency" => self.pulse.frequency = bounded(&s),
                 "width" => self.pulse.width = bounded(&s),
@@ -201,6 +208,13 @@ fn tdr(app: &App) -> Element<'_, Message> {
         .boxed()
 }
 
+/// The dynamic ranges offered, by their place, smallest first.
+fn ranges() -> impl Iterator<Item = (u8, f64)> {
+    let mut all: Vec<(u8, f64)> = emcraft_engine::view::RANGES.iter().enumerate().map(|(k, r)| (k as u8, *r)).collect();
+    all.sort_by(|a, b| a.1.total_cmp(&b.1));
+    all.into_iter()
+}
+
 /// The far-field cut, its angle, what it measures and the polarization.
 fn pattern(app: &App) -> Element<'_, Message> {
     let t = app.look.tokens;
@@ -211,7 +225,10 @@ fn pattern(app: &App) -> Element<'_, Message> {
     let said = text(format!("{name} {:.0}", p.angle)).size(t.font_body);
     let quantities = FarQuantity::ALL.into_iter().map(|q| chip(t, lookup(q.label()), p.quantity == q, Some(send(RAct::Quantity(q)))));
     let components = FarComponent::ALL.into_iter().map(|c| chip(t, lookup(c.label()), p.component == c, Some(send(RAct::Component(c)))));
-    row(cuts.chain([angle.boxed(), said.boxed()]).chain(quantities).chain(components))
+    // How it is drawn: round a centre or along an axis, and the dB below its top.
+    let polar = chip(t, tr(t!("Polar")), p.polar, Some(send(RAct::Polar(!p.polar))));
+    let ranges = ranges().map(|(k, r)| chip(t, format!("{r:.0} dB"), p.range == r, Some(send(RAct::Range(k)))));
+    row(cuts.chain([angle.boxed(), said.boxed()]).chain(quantities).chain(components).chain(std::iter::once(polar)).chain(ranges))
         .spacing(t.space_8)
         .align_y(Alignment::Center)
         .wrap()
@@ -287,6 +304,8 @@ pub fn handles(app: &App) -> Vec<(String, Message)> {
             .into_iter()
             .map(|c| (format!("pattern:cut:{}", c.id()), send(RAct::Cut(c))))
             .chain(FarQuantity::ALL.into_iter().map(|q| (format!("pattern:quantity:{}", q.id()), send(RAct::Quantity(q)))))
+            .chain([("pattern:polar".to_owned(), send(RAct::Polar(!app.pattern.polar)))])
+            .chain(ranges().map(|(k, r)| (format!("pattern:range:{r:.0}"), send(RAct::Range(k)))))
             .chain(FarComponent::ALL.into_iter().map(|c| (format!("pattern:component:{}", c.id()), send(RAct::Component(c)))))
             .collect(),
         View::Pulse => CHIRPS

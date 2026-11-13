@@ -155,6 +155,8 @@ pub fn param_label(command: &str, name: &'static str) -> &'static str {
         (_, "plane") => t!("Plane").en(),
         (_, "playing") => t!("Playing").en(),
         (_, "points") => t!("Points").en(),
+        ("view.pattern", "range") => t!("Dynamic range").en(),
+        (_, "polar") => t!("Polar").en(),
         (_, "polarization") => t!("Polarization").en(),
         (_, "polygon") => t!("Polygon").en(),
         (_, "port") => t!("Port").en(),

@@ -13,9 +13,6 @@ use iced::{Color, Pixels, Point, Rectangle, Renderer, Size, Theme, Vector, align
 
 use crate::app::Message;
 
-/// A label's em for its size (as [`emcraft_render::text`] sets DejaVu Sans: 9 pixels a scale).
-const EM_PER_SCALE: f32 = 9.0;
-
 /// The face the labels are set in: the pictures' own (loaded with the window,
 /// [`emcraft_render::text::face_bytes`]), so they take the room the layout gave them; what it
 /// lacks comes from the window's fonts.
@@ -68,7 +65,7 @@ fn put(frame: &mut Frame, shape: &Shape) {
                 font: FACE,
                 position,
                 color: colour(*color, 1.0),
-                size: Pixels(EM_PER_SCALE * (*scale).clamp(1, 16) as f32),
+                size: Pixels(emcraft_render::text::em_pixels((*scale).clamp(1, 16))),
                 line_height: LineHeight::Relative(1.0),
                 align_x: align(*a),
                 align_y: alignment::Vertical::Top,

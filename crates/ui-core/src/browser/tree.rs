@@ -630,7 +630,15 @@ fn domain(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
                 (words(t!("inside {name} · {material}"), args!(name = name, material = material)), Act::Edit("model.background"))
             }
             other => {
-                (words(t!("{shape} · {material}"), args!(shape = other.kind().to_lowercase(), material = material)), Act::Edit("model.background"))
+                // The shape's kind by its name in the window's language (a box: 箱).
+                let kind = other.kind().to_lowercase();
+                let named = crate::param_labels::value_label(&kind).map_or_else(|| kind.clone(), |l| lang::lookup(l).to_owned());
+                let template = t!("{shape} · {material}");
+                let detail = Both {
+                    en: lang::fill(template.en(), args!(shape = kind, material = material)),
+                    shown: lang::fill(lang::tr(template), args!(shape = named, material = material)),
+                };
+                (detail, Act::Edit("model.background"))
             }
         };
         rows.push(node("region", words(t!("Region"), &[]), Some(detail), Glyph::Region, act).picks(Pick::Solid));

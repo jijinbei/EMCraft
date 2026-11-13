@@ -77,7 +77,21 @@ pub struct PatternView {
     pub solver: Option<FarSolver>,
     /// The time domain's frequency (Hz; the nearest solved).
     pub frequency: Option<f64>,
+    /// The dB below the pattern's top drawn ([`RANGES`]).
+    pub range: f64,
+    /// Drawn round a centre (the cut's angle around it, the dB outwards) rather than along an
+    /// axis.
+    pub polar: bool,
 }
+
+/// The dynamic ranges offered (dB below a pattern's top), the default first.
+pub const RANGES: [f64; 4] = [40.0, 20.0, 30.0, 60.0];
+
+/// The rings of a polar pattern: this many, evenly in dB from its floor to its top.
+const RINGS: usize = 4;
+
+/// A polar pattern's spokes, every this many degrees.
+const SPOKE: f64 = 30.0;
 
 impl Default for PatternView {
     fn default() -> PatternView {
@@ -90,6 +104,8 @@ impl Default for PatternView {
             points: 91,
             solver: None,
             frequency: None,
+            range: RANGES[0],
+            polar: false,
         }
     }
 }
@@ -199,5 +215,38 @@ pub fn pattern_chart_in(s: &Session, view: &PatternView) -> Result<Chart> {
         Cut::Theta => format!("θ = {angle}°"),
     };
     let title = format!("Far field at {} {}, {held}", s.show_frequency(f), s.display.frequency.symbol());
-    Ok(Chart::new(title, Axis::new(&format!("{along} (degrees)"), 0.0, span), Axis::new(label, top - 40.0, top), series))
+    let range = if view.range.is_finite() { view.range.clamp(10.0, 100.0) } else { RANGES[0] };
+    if view.polar {
+        return Ok(polar(title, label, series, view.cut, top, range));
+    }
+    Ok(Chart::new(title, Axis::new(&format!("{along} (degrees)"), 0.0, span), Axis::new(label, top - range, top), series))
+}
+
+/// A cut drawn round a centre: each point at its angle (θ from the vertical for a φ cut, φ from
+/// the right for a θ cut), `range` dB below `top` at the centre and `top` at the outer ring;
+/// rings every quarter of the range and spokes every 30° under it, its label naming the rings.
+fn polar(title: String, label: &str, series: Vec<Series>, cut: Cut, top: f64, range: f64) -> Chart {
+    let place = |angle: f64, db: f64| {
+        let r = ((db - (top - range)) / range).clamp(0.0, 1.0);
+        let a = angle.to_radians();
+        match cut {
+            Cut::Phi => [r * a.sin(), r * a.cos()],
+            Cut::Theta => [r * a.cos(), r * a.sin()],
+        }
+    };
+    let grid = |points: Vec<[f64; 2]>| Series { width: Some(0.8), ..Series::new("grid", "", Pen::Muted, Style::Line, points) };
+    let circle = |r: f64| grid((0..=72).map(|k| f64::from(k) * 5.0_f64.to_radians()).map(|a| [r * a.cos(), r * a.sin()]).collect());
+    let rings = (1..=RINGS).map(|k| circle(k as f64 / RINGS as f64));
+    let spokes = (0..(360.0 / SPOKE) as usize).map(|k| {
+        let a = (k as f64 * SPOKE).to_radians();
+        grid(vec![[0.0, 0.0], [a.cos(), a.sin()]])
+    });
+    let placed = series.into_iter().map(|s| Series { points: s.points.iter().map(|p| place(p[0], p[1])).collect(), ..s });
+    let step = range / RINGS as f64;
+    let named = format!("{label}: rings every {step} dB, outer {top}");
+    let mut chart = Chart::new(title, Axis::new("", -1.08, 1.08), Axis::new(&named, -1.08, 1.08), rings.chain(spokes).chain(placed).collect());
+    chart.look.grid = false;
+    chart.look.equal = true;
+    chart.look.frame = false;
+    chart
 }

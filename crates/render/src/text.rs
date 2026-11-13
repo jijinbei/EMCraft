@@ -229,6 +229,45 @@ pub fn width(text: &str, scale: usize) -> f64 {
     }
 }
 
+/// The em, in pixels, of the labels set at `scale`: a window that sets them with its own text
+/// layout gives this as their size, so they take the room laid out for them here (the size
+/// here is the height of DejaVu Sans' line, ascent to descent, which is more than its em).
+///
+/// ```
+/// let em = emcraft_render::text::em_pixels(2);
+/// assert!(em > 10.0 && em < 18.0);
+/// ```
+pub fn em_pixels(scale: usize) -> f32 {
+    match face() {
+        Some(f) if f.height_unscaled() > 0.0 => em(scale) * f.units_per_em().unwrap_or_else(|| f.height_unscaled()) / f.height_unscaled(),
+        _ => em(scale),
+    }
+}
+
+/// Width in pixels of `text` at `scale` set glyph by glyph — each character in DejaVu Sans when
+/// it has it, else in the fallback — as a window's text layout sets a mixed line (a translation's
+/// kana among Latin letters), with neither kerning nor TeX's smaller scripts: the room a label
+/// may take there, at least [`width`]'s.
+///
+/// ```
+/// let w = emcraft_render::text::width("S21 FEM (order 2)", 2);
+/// assert!(emcraft_render::text::width_glyph_by_glyph("S21 FEM (order 2)", 2) >= w - 1e-9);
+/// ```
+pub fn width_glyph_by_glyph(text: &str, scale: usize) -> f64 {
+    let Some(f) = face() else { return width(text, scale) };
+    let size = em(scale);
+    let alt = fallback();
+    let shown: String = math::to_unicode(text).chars().take(MAX_CHARS).collect();
+    let advance = |ch: char| {
+        let id = f.glyph_id(ch);
+        match alt.as_deref() {
+            Some(a) if id.0 == 0 && a.glyph_id(ch).0 != 0 => a.as_scaled(PxScale::from(size)).h_advance(a.glyph_id(ch)),
+            _ => f.as_scaled(PxScale::from(size)).h_advance(id),
+        }
+    };
+    f64::from(shown.chars().map(advance).sum::<f32>()).max(width(text, scale))
+}
+
 /// Calls `plot(u, v, coverage)` for every pixel `text` covers, `u` along the text from its
 /// start and `v` down from the top of its box, in whole pixels. `$…$` is TeX math
 /// ([`crate::math`]).

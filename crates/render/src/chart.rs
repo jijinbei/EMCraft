@@ -80,11 +80,13 @@ pub struct Look {
     /// One unit as long along x as along y (a Smith chart's circles round): the shorter
     /// side's range widened about its middle to match the picture.
     pub equal: bool,
+    /// The axes' frame, ticks and numbers drawn (a polar pattern draws its own rings instead).
+    pub frame: bool,
 }
 
 impl Default for Look {
     fn default() -> Look {
-        Look { grid: true, legend: Legend::Below, equal: false }
+        Look { grid: true, legend: Legend::Below, equal: false, frame: true }
     }
 }
 
@@ -249,7 +251,13 @@ pub fn drawing(chart: &Chart, width: usize, height: usize, palette: &Palette) ->
         (ax.min, ax.max) = layout.x;
         (ay.min, ay.max) = layout.y;
     }
-    let frame = axes::frame_shapes([x0, y0, pw, ph], &ax, &ay, ink, chart.look.grid.then_some(palette.grid));
+    // Without its frame, a chart keeps its axes' names, under it.
+    let frame = if chart.look.frame {
+        axes::frame_shapes([x0, y0, pw, ph], &ax, &ay, ink, chart.look.grid.then_some(palette.grid))
+    } else {
+        let named = [&ax.label, &ay.label].into_iter().filter(|l| !l.is_empty()).map(String::as_str).collect::<Vec<_>>().join(" · ");
+        vec![Shape::Text { at: [x0 + pw / 2.0, y0 + ph + 30.0], text: named, scale: 2, color: ink, align: Align::Center, up: false }]
+    };
     let marks = chart.marks.iter().filter(|(x, _)| x.is_finite() && *x > xa && *x < xb).flat_map(|(x, label)| {
         let px = to_px([*x, layout.y.0])[0];
         let dashes = std::iter::successors(Some(y0), |y| Some(y + 10.0)).take_while(move |y| *y < y0 + ph);
@@ -297,7 +305,8 @@ pub fn drawing(chart: &Chart, width: usize, height: usize, palette: &Palette) ->
 fn legend(chart: &Chart, area: [f64; 4], width: usize, palette: &Palette) -> Vec<Shape> {
     let [x0, y0, pw, ph] = area;
     let named: Vec<&Series> = chart.series.iter().filter(|s| !s.label.is_empty()).collect();
-    let item = |s: &Series| 52.0 + Canvas::text_width(&s.label, 2) as f64;
+    // The room each label takes however a window sets a mixed line (crate::text).
+    let item = |s: &Series| 52.0 + crate::text::width_glyph_by_glyph(&s.label, 2).ceil();
     let label = |at: [f64; 2], s: &Series| Shape::Text { at, text: s.label.clone(), scale: 2, color: palette.ink, align: Align::Left, up: false };
     let row = |s: &Series, at: [f64; 2]| sample(s, at, palette.pen(s.pen)).into_iter().chain(std::iter::once(label([at[0] + 32.0, at[1]], s)));
     match chart.look.legend {
@@ -402,7 +411,7 @@ mod tests {
         let plain = draw(&base, 400, 300, &light);
         let mut styled = base.clone();
         styled.x.log = true;
-        styled.look = Look { grid: false, legend: Legend::TopRight, equal: false };
+        styled.look = Look { grid: false, legend: Legend::TopRight, equal: false, frame: true };
         styled.series[0].pen = Pen::Custom(crate::Rgb(10, 200, 10));
         styled.series[0].width = Some(5.0);
         let other = draw(&styled, 400, 300, &light);

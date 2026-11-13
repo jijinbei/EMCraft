@@ -155,7 +155,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     ];
     let drawing = row(switches.map(|(label, on, flip)| choice(t, tr(label), on, Pref::GpuLook(flip(l))))).spacing(t.space_6).wrap();
     let sections = [
-        section(t, t!("Theme"), tr(t!("The colours of the window, the 3D view and the pictures. It changes at once.")), themes.boxed()),
+        section(t, t!("Theme"), tr(t!("Window, 3D view and pictures; it changes at once.")), themes.boxed()),
         section(
             t,
             t!("Language"),
@@ -172,12 +172,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         ),
         section(t, t!("Mouse"), tr(nav.help), mouse.boxed()),
         section(t, t!("Drawing"), tr(t!("What the 3D view adds to the plain picture, each its own switch.")), drawing.boxed()),
-        section(
-            t,
-            t!("SolidCraft"),
-            tr(t!("Shapes are made in SolidCraft: the program a design opens in (empty: solidcraft on the PATH).")),
-            solidcraft(app),
-        ),
+        section(t, t!("SolidCraft"), tr(t!("The program designs open in (empty: solidcraft on the PATH).")), solidcraft(app)),
         section(t, t!("Crash reports"), tr(t!("Kept on this computer only. Copy one to report it; nothing is sent.")), reports(app)),
     ];
     // The settings at most a reading width wide; the scroll bar at the window's edge.

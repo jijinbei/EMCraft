@@ -46,6 +46,16 @@ fn open_problems_radiate_and_scatter() {
     s.execute("view.pattern", &json!({"path": path, "cut": "theta", "theta": 90, "component": "phi", "points": 37})).unwrap();
     assert!(s.execute("view.pattern", &json!({"path": path, "cut": "theta", "theta": 200})).is_err());
     assert!(s.execute("view.pattern", &json!({"path": path, "component": "z"})).is_err());
+    // Drawn round a centre: every point within the outer ring (the top) and outside the centre
+    // (the range below it), on a frame of rings, no axes; along an axis, the range is the
+    // y axis's span; a range out of bounds refused.
+    let polar = view::pattern_chart_in(&s, &view::PatternView { polar: true, range: 20.0, points: 37, ..Default::default() }).unwrap();
+    assert!(!polar.look.frame && polar.look.equal && polar.series.iter().any(|x| x.key == "grid"));
+    assert!(fem(polar).iter().all(|p| p[0].hypot(p[1]) <= 1.0 + 1e-12));
+    let along = view::pattern_chart_in(&s, &view::PatternView { range: 30.0, points: 37, ..Default::default() }).unwrap();
+    assert!((along.y.max - along.y.min - 30.0).abs() < 1e-9 && along.look.frame);
+    s.execute("view.pattern", &json!({"path": path, "polar": true, "range": 60})).unwrap();
+    assert!(s.execute("view.pattern", &json!({"path": path, "range": 5})).is_err());
     // A plane wave on a conducting sphere: the Mie series' cross-section comes with it.
     s.execute("source.clear", &json!({})).unwrap();
     assert!(s.execute("source.plane_wave", &json!({"direction": [0, 0, 1], "polarization": [0, 0, 1]})).is_err(), "not transverse");

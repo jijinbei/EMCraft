@@ -85,6 +85,9 @@ fn send(edit: Edit) -> Message {
 }
 
 /// A text field sending `edit` with what is typed; Enter is OK.
+/// A vector's part's field's width (points): a number of a few digits.
+const VECTOR_PART: f32 = 72.0;
+
 fn input<'a>(t: Tokens, value: &'a str, edit: impl Fn(String) -> Edit + 'a) -> Element<'a, Message> {
     text_input("", value)
         .size(t.font_body)
@@ -117,12 +120,14 @@ fn editor<'a>(t: Tokens, i: usize, f: &'a Field) -> Element<'a, Message> {
         Kind::Vector(names) => {
             let parts = names.iter().enumerate().map(|(k, n)| {
                 let value = f.parts.get(k).map_or("", String::as_str);
-                row![text(*n).size(t.font_small).color(t.text_dim), input(t, value, move |s| Edit::Part(i, k, s))]
+                let field = container(input(t, value, move |s| Edit::Part(i, k, s))).width(VECTOR_PART);
+                row![text(lang::lookup(n).to_owned()).size(t.font_small).color(t.text_dim), field]
                     .spacing(t.space_4)
                     .align_y(Alignment::Center)
                     .boxed()
             });
-            row(parts).spacing(t.space_8).boxed()
+            // As many on a line as the panel holds.
+            row(parts).spacing(t.space_8).wrap().vertical_spacing(t.space_6).boxed()
         }
         Kind::Table(cols) => {
             let head = row(cols.iter().map(|c| {

@@ -2147,6 +2147,8 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("component", K::String, "`total` (default), or a polarization's share: `theta` (E_θ), `phi` (E_φ), `rhcp`, `lhcp`, `co` or `cross` (Ludwig 3)").one_of(&FarComponent::IDS),
             CO_POLAR,
             opt("points", K::Integer, "angles along the cut, 13 to 721 (default 91)"),
+            opt("range", K::Number, "the dB below the pattern's top drawn, 10 to 100 (default 40)"),
+            opt("polar", K::Boolean, "drawn round a centre: the cut's angle around it, the dB outwards (default false: along an axis)"),
             WIDTH,
             HEIGHT,
             FAR_SOLVER,
