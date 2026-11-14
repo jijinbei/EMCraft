@@ -437,3 +437,29 @@ fn a_guide_ending_in_absorbers_lets_its_waves_out() {
     }
     assert!(pic.energy().electric < 1e-5 * most, "{:e} of {most:e}", pic.energy().electric);
 }
+
+#[test]
+fn a_run_gives_the_same_bits_on_any_number_of_threads() {
+    // The fields by planes and the particles by chunks on the threads, the currents added in the
+    // particles' order: one thread and many agree to the bit.
+    let run = || {
+        let g = Grid::new([axis(6, 1e-3, Wall::Periodic), axis(5, 1.2e-3, Wall::Conductor), axis(40, 0.9e-3, Wall::Conductor)]).unwrap();
+        let mut pic = Pic::new(g, g.time_step(0.9), Pusher::Vay).unwrap();
+        pic.absorb(2, true, 6).unwrap();
+        pic.set_b(1, |_| 0.05);
+        let mut r = Lcg(11);
+        let lengths = g.lengths();
+        let particles = (0..3000)
+            .map(|_| Particle { x: lengths.map(|l| l * (0.05 + 0.9 * r.next())), u: [(); 3].map(|()| C0 * (2.0 * r.next() - 1.0)), w: 1e5 })
+            .collect();
+        pic.add(Population { species: ELECTRON, particles }).unwrap();
+        for _ in 0..60 {
+            pic.step().unwrap();
+        }
+        let e = pic.energy();
+        (e.field.to_bits(), e.kinetic.to_bits(), pic.particles(), pic.gauss().iter().map(|g| g.to_bits()).collect::<Vec<_>>())
+    };
+    let one = rayon::ThreadPoolBuilder::new().num_threads(1).build().unwrap().install(run);
+    let many = rayon::ThreadPoolBuilder::new().num_threads(7).build().unwrap().install(run);
+    assert!(one == many, "one thread and seven differ");
+}

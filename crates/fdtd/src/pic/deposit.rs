@@ -46,9 +46,10 @@ impl Window {
     }
 }
 
-/// Adds the current of `charge` (C) moving from `x0` to `x1` (m, unwrapped across periodic
-/// faces) in `dt` (s) to `j` (A/m², on E's lattices).
-pub(crate) fn current(grid: &Grid, j: &mut [Vec<f64>; 3], x0: [f64; 3], x1: [f64; 3], charge: f64, dt: f64) {
+/// The current of `charge` (C) moving from `x0` to `x1` (m, unwrapped across periodic faces) in
+/// `dt` (s): each addition to J_a (A/m², on E's lattices) at point `id` handed to
+/// `add(a, id, value)`, in a fixed order.
+pub(crate) fn current(grid: &Grid, add: &mut impl FnMut(usize, usize, f64), x0: [f64; 3], x1: [f64; 3], charge: f64, dt: f64) {
     let w: [Window; 3] = std::array::from_fn(|d| Window::of(x0[d], x1[d], grid.axes[d].h));
     let ds = w.each_ref().map(Window::change);
     for a in 0..3 {
@@ -72,9 +73,7 @@ pub(crate) fn current(grid: &Grid, j: &mut [Vec<f64>; 3], x0: [f64; 3], x1: [f64
                     let Some(pa) = axis[a].wrap(w[a].first + ma as isize, false) else { continue };
                     let mut p = [0usize; 3];
                     (p[a], p[b], p[c]) = (pa, pb, pc);
-                    if let Some(v) = j[a].get_mut(lattice.at(p)) {
-                        *v += sum;
-                    }
+                    add(a, lattice.at(p), sum);
                 }
             }
         }

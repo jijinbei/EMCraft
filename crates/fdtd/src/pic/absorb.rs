@@ -29,8 +29,8 @@ pub(crate) struct Absorber {
     cells: [[usize; 2]; 3],
     /// Per axis, the coefficients at its nodes and at its cells' centres, for E's whole step
     /// and B's half steps.
-    e: [[Vec<Cpml>; 2]; 3],
-    b: [[Vec<Cpml>; 2]; 3],
+    pub(crate) e: [[Vec<Cpml>; 2]; 3],
+    pub(crate) b: [[Vec<Cpml>; 2]; 3],
     /// ψ of E_a's two differences (along a + 1 and a + 2) and of B_a's.
     pub(crate) psi_e: [[Vec<f64>; 2]; 3],
     pub(crate) psi_b: [[Vec<f64>; 2]; 3],
@@ -90,12 +90,11 @@ impl Absorber {
             (lo > 0 && p[d] <= lo) || (hi > 0 && p[d] + hi >= grid.axes[d].cells)
         })
     }
+}
 
-    /// The coefficients of a difference along `d` at point `i` of an E lattice (`b`: of a B
-    /// lattice), node or centre along `d`.
-    #[inline]
-    pub(crate) fn at(&self, field_b: bool, d: usize, node: bool, i: usize) -> Cpml {
-        let set = if field_b { &self.b } else { &self.e };
-        set[d][usize::from(!node)].get(i).copied().unwrap_or(Cpml::NONE)
-    }
+/// The coefficients in `set` (an absorber's `e` or `b`) of a difference along `d` at point `i`
+/// of a lattice, node or centre along `d`.
+#[inline]
+pub(crate) fn at(set: &[[Vec<Cpml>; 2]; 3], d: usize, node: bool, i: usize) -> Cpml {
+    set[d][usize::from(!node)].get(i).copied().unwrap_or(Cpml::NONE)
 }

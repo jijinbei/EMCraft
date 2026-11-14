@@ -22,10 +22,12 @@
 //! other two axes are periodic: the gap's mean current is returned by a uniform current, whose
 //! field — a uniform E along the axis — has no curl or divergence.
 //!
-//! **Determinism.** Particles are pushed in a fixed order on one thread and emitted at
-//! quasi-random places of a fixed sequence, so a run gives the same bits every time.
+//! **Determinism.** The fields are advanced plane by plane on the threads, each value written by
+//! one; the particles are pushed chunk by chunk on them and their currents then added in their
+//! order, as one thread would; emission takes quasi-random places of a fixed sequence. A run
+//! gives the same bits every time, on any number of threads.
 
-use emcraft_model::units::{C0, EPS0, MU0};
+use emcraft_model::units::{EPS0, MU0};
 use emcraft_particles::{Pusher, Species, V3, push, velocity};
 
 use crate::{FdtdError, Result, invalid};
@@ -33,6 +35,7 @@ use crate::{FdtdError, Result, invalid};
 mod absorb;
 mod deposit;
 mod emit;
+mod fields;
 mod filter;
 mod grid;
 mod media;
@@ -485,8 +488,7 @@ impl Pic {
         self.j.iter_mut().for_each(|j| j.fill(0.0));
         let Pic { grid, dt, pusher, e, b, j, populations, media, surface, .. } = self;
         for pop in populations.iter_mut() {
-            let species = pop.species;
-            pop.particles.retain_mut(|p| advance((grid, media.as_ref()), [e, b], (j, surface), (species, *pusher, *dt), p, &mut moved));
+            advance_all((grid, media.as_ref()), [e, b], (j, surface), (*pusher, *dt), pop, &mut moved);
         }
         for (a, values) in self.j.iter_mut().enumerate() {
             filter::smooth(&self.grid, self.grid.e(a), values, self.smoothing);
@@ -495,9 +497,9 @@ impl Pic {
             let mean = self.j[a].iter().sum::<f64>() / self.j[a].len().max(1) as f64;
             self.j[a].iter_mut().for_each(|v| *v -= mean);
         }
-        faraday(&self.grid, &self.e, &mut self.b, 0.5 * self.dt, self.absorber.as_mut());
-        ampere(&self.grid, &mut self.e, &self.b, &self.j, self.dt, (self.media.as_ref(), self.absorber.as_mut()));
-        faraday(&self.grid, &self.e, &mut self.b, 0.5 * self.dt, self.absorber.as_mut());
+        fields::faraday(&self.grid, &self.e, &mut self.b, 0.5 * self.dt, self.absorber.as_mut());
+        fields::ampere(&self.grid, &mut self.e, (&self.b, &self.j), self.dt, (self.media.as_ref(), self.absorber.as_mut()));
+        fields::faraday(&self.grid, &self.e, &mut self.b, 0.5 * self.dt, self.absorber.as_mut());
         self.steps += 1;
         Ok(moved)
     }
@@ -542,37 +544,41 @@ impl Pic {
     }
 }
 
-/// Pushes and moves particle `p`, deposits its current; false when it is gone (absorbed on a
-/// wall, or no longer a number).
+/// What became of a particle in a step.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Fate {
+    Kept,
+    /// Its momentum stopped being a number: dropped.
+    Lost,
+    /// Absorbed at `at` (m) on a wall (its axis and end) or, none, in a body's metal, carrying
+    /// its kinetic energy (J).
+    Absorbed {
+        wall: Option<(usize, bool)>,
+        at: V3,
+        kinetic: f64,
+    },
+}
+
+/// Pushes and moves particle `p`, handing its current's additions to `add` (J_a's point, value)
+/// in order.
 fn advance(
     (grid, metal): (&Grid, Option<&media::Media>),
     [e, b]: [&[Vec<f64>; 3]; 2],
-    (j, surface): (&mut [Vec<f64>; 3], &mut Vec<f64>),
     (species, pusher, dt): (Species, Pusher, f64),
     p: &mut Particle,
-    moved: &mut Moved,
-) -> bool {
+    add: &mut impl FnMut(usize, usize, f64),
+) -> Fate {
     let field = |f: &[Vec<f64>; 3], lattice: fn(&Grid, usize) -> grid::Lattice| [0, 1, 2].map(|a| grid.interpolate(lattice(grid, a), &f[a], p.x));
     let u = push(pusher, species, p.u, field(e, Grid::e), field(b, Grid::b), dt);
     if !u.iter().all(|v| v.is_finite()) {
-        moved.lost += 1;
-        return false;
+        return Fate::Lost;
     }
     let v = velocity(u);
     let x1 = [0, 1, 2].map(|d| p.x[d] + v[d] * dt);
     let (to, hit) = clip(grid, p.x, x1);
-    deposit::current(grid, j, p.x, to, species.charge * p.w, dt);
-    if let Some((axis, high)) = hit {
-        moved.collected[axis][usize::from(high)] += species.charge * p.w;
-        deposit::charge(grid, surface, to, species.charge * p.w);
-        moved.kinetic_out += p.w * species.kinetic(u);
-        return false;
-    }
-    if metal.is_some_and(|m| m.at(grid, to)) {
-        moved.metal += species.charge * p.w;
-        deposit::charge(grid, surface, to, species.charge * p.w);
-        moved.kinetic_out += p.w * species.kinetic(u);
-        return false;
+    deposit::current(grid, add, p.x, to, species.charge * p.w, dt);
+    if hit.is_some() || metal.is_some_and(|m| m.at(grid, to)) {
+        return Fate::Absorbed { wall: hit, at: to, kinetic: p.w * species.kinetic(u) };
     }
     for d in 0..3 {
         if grid.axes[d].wall == Wall::Periodic {
@@ -582,7 +588,66 @@ fn advance(
         }
     }
     p.u = u;
-    true
+    Fate::Kept
+}
+
+/// Particles pushed together on the threads (each chunk on one); their currents are then added
+/// one particle after another in their order, as one thread would add them.
+const CHUNK: usize = 256;
+const WAVE: usize = 64 * CHUNK;
+
+/// Advances `pop`'s particles: pushed and moved on the threads, their currents, the charge
+/// they leave on walls and bodies and what they do to `moved` then added in their order
+/// (the same bits on any number of threads), the absorbed and lost taken out.
+fn advance_all(
+    (grid, media): (&Grid, Option<&media::Media>),
+    fields: [&[Vec<f64>; 3]; 2],
+    (j, surface): (&mut [Vec<f64>; 3], &mut Vec<f64>),
+    (pusher, dt): (Pusher, f64),
+    pop: &mut Population,
+    moved: &mut Moved,
+) {
+    use rayon::prelude::*;
+    let species = pop.species;
+    let mut fates: Vec<Fate> = Vec::with_capacity(pop.particles.len());
+    for wave in pop.particles.chunks_mut(WAVE) {
+        let batches: Vec<(Vec<(u8, u32, f64)>, Vec<Fate>)> = wave
+            .par_chunks_mut(CHUNK)
+            .map(|chunk| {
+                let mut adds = Vec::with_capacity(chunk.len() * 64);
+                let fates = chunk
+                    .iter_mut()
+                    .map(|p| advance((grid, media), fields, (species, pusher, dt), p, &mut |a, id, v| adds.push((a as u8, id as u32, v))))
+                    .collect();
+                (adds, fates)
+            })
+            .collect();
+        for (adds, batch) in batches {
+            for (a, id, v) in adds {
+                if let Some(x) = j.get_mut(usize::from(a)).and_then(|j| j.get_mut(id as usize)) {
+                    *x += v;
+                }
+            }
+            fates.extend(batch);
+        }
+    }
+    for (p, fate) in pop.particles.iter().zip(&fates) {
+        match *fate {
+            Fate::Kept => {}
+            Fate::Lost => moved.lost += 1,
+            Fate::Absorbed { wall, at, kinetic } => {
+                let q = species.charge * p.w;
+                match wall {
+                    Some((axis, high)) => moved.collected[axis][usize::from(high)] += q,
+                    None => moved.metal += q,
+                }
+                deposit::charge(grid, surface, at, q);
+                moved.kinetic_out += kinetic;
+            }
+        }
+    }
+    let mut kept = fates.iter().map(|f| *f == Fate::Kept);
+    pop.particles.retain(|_| kept.next().unwrap_or(true));
 }
 
 /// The move from `x0` to `x1` cut where it first meets a conducting wall, and that wall (its
@@ -618,87 +683,4 @@ fn clip(grid: &Grid, x0: V3, x1: V3) -> (V3, Option<(usize, bool)>) {
         to[d] = if high { grid.axes[d].length() } else { 0.0 };
     }
     (to, hit)
-}
-
-/// B advanced by `dt` (s): ∂B/∂t = −∇ × E, on every face (those normal to a wall keep the zero
-/// they start with, the tangential E about them being zero).
-fn faraday(grid: &Grid, e: &[Vec<f64>; 3], b: &mut [Vec<f64>; 3], dt: f64, mut absorber: Option<&mut absorb::Absorber>) {
-    let axes = grid.axes;
-    for a in 0..3 {
-        let (q, r) = ((a + 1) % 3, (a + 2) % 3);
-        let (lattice, eq, er) = (grid.b(a), grid.e(q), grid.e(r));
-        for p in lattice.points() {
-            // ∂_q E_r − ∂_r E_q, E's nodes p and p + 1 along q and r.
-            let (Some(nq), Some(nr)) = (axes[q].wrap(p[q] as isize + 1, true), axes[r].wrap(p[r] as isize + 1, true)) else { continue };
-            let (mut pq, mut pr) = (p, p);
-            (pq[q], pr[r]) = (nq, nr);
-            let (mut dq, mut dr) = ((e[r][er.at(pq)] - e[r][er.at(p)]) / axes[q].h, (e[q][eq.at(pr)] - e[q][eq.at(p)]) / axes[r].h);
-            let id = lattice.at(p);
-            if let Some(ab) = absorber.as_deref_mut() {
-                (dq, dr) = stretched(ab, true, (a, [q, r]), (lattice, p, id), [dq, dr]);
-            }
-            b[a][id] -= dt * (dq - dr);
-        }
-    }
-}
-
-/// The differences `d` along `axes` at point `p` (index `id`) of component a's lattice (`field_b`:
-/// B's) through the absorber's layers: each ∂ + ψ, ψ advanced.
-fn stretched(
-    ab: &mut absorb::Absorber,
-    field_b: bool,
-    (a, axes): (usize, [usize; 2]),
-    (lattice, p, id): (grid::Lattice, [usize; 3], usize),
-    d: [f64; 2],
-) -> (f64, f64) {
-    let mut out = d;
-    for k in 0..2 {
-        let c = ab.at(field_b, axes[k], lattice.node[axes[k]], p[axes[k]]);
-        if c == crate::yee::Cpml::NONE {
-            continue;
-        }
-        let psi = if field_b { &mut ab.psi_b[a][k] } else { &mut ab.psi_e[a][k] };
-        if let Some(v) = psi.get_mut(id) {
-            *v = c.psi(*v, d[k]);
-            out[k] += *v;
-        }
-    }
-    (out[0], out[1])
-}
-
-/// E advanced by `dt` (s): ∂E/∂t = c²∇ × B − J/ε₀, off the walls it is tangential to and the
-/// edges metal holds at zero.
-fn ampere(
-    grid: &Grid,
-    e: &mut [Vec<f64>; 3],
-    b: &[Vec<f64>; 3],
-    j: &[Vec<f64>; 3],
-    dt: f64,
-    (metal, mut absorber): (Option<&media::Media>, Option<&mut absorb::Absorber>),
-) {
-    let axes = grid.axes;
-    for a in 0..3 {
-        let (q, r) = ((a + 1) % 3, (a + 2) % 3);
-        let (lattice, bq, br) = (grid.e(a), grid.b(q), grid.b(r));
-        for p in lattice.points() {
-            if grid.e_on_wall(a, p) {
-                continue;
-            }
-            // ∂_q B_r − ∂_r B_q, B's centres p − ½ and p + ½ along q and r.
-            let (Some(mq), Some(mr)) = (axes[q].wrap(p[q] as isize - 1, false), axes[r].wrap(p[r] as isize - 1, false)) else { continue };
-            let (mut pq, mut pr) = (p, p);
-            (pq[q], pr[r]) = (mq, mr);
-            let (mut dq, mut dr) = ((b[r][br.at(p)] - b[r][br.at(pq)]) / axes[q].h, (b[q][bq.at(p)] - b[q][bq.at(pr)]) / axes[r].h);
-            let id = lattice.at(p);
-            if let Some(ab) = absorber.as_deref_mut() {
-                (dq, dr) = stretched(ab, false, (a, [q, r]), (lattice, p, id), [dq, dr]);
-            }
-            let curl = dq - dr;
-            if metal.is_some_and(|m| m.edge(a, id)) {
-                continue;
-            }
-            let eps = metal.map_or(1.0, |m| m.eps(a, id));
-            e[a][id] += dt / eps * (C0 * C0 * curl - j[a][id] / EPS0);
-        }
-    }
 }
