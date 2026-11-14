@@ -11,6 +11,50 @@ use emcraft_model::units::C0;
 
 pub use emcraft_fem::bessel::{j, jp, zeros};
 
+/// Trapezoid panels of the modified Bessel functions' integrals: their integrands are smooth
+/// (periodic for I₀, decaying doubly exponentially for K₀), so the rule converges geometrically
+/// and is exact to rounding far below this.
+const PANELS: usize = 400;
+
+/// The modified Bessel function I₀(x) = (1/π)∫₀^π e^{x cos θ} dθ (M. Abramowitz, I. A. Stegun,
+/// *Handbook of Mathematical Functions*, 1964, 9.6.19), by the trapezoid rule; none past
+/// |x| = 700, where it overflows.
+///
+/// ```
+/// use emcraft_theory::bessel::i0;
+/// assert!((i0(1.0).unwrap() - 1.266_065_877_752_008).abs() < 1e-14);
+/// assert!(i0(f64::NAN).is_none());
+/// ```
+pub fn i0(x: f64) -> Option<f64> {
+    if !(x.is_finite() && x.abs() <= 700.0) {
+        return None;
+    }
+    let h = PI / PANELS as f64;
+    let f = |k: usize| (x * (k as f64 * h).cos()).exp();
+    let inner: f64 = (1..PANELS).map(f).sum();
+    Some((inner + 0.5 * (f(0) + f(PANELS))) * h / PI)
+}
+
+/// The modified Bessel function K₀(x) = ∫₀^∞ e^{−x cosh t} dt, x > 0 (Abramowitz & Stegun
+/// 9.6.24), by the trapezoid rule out to where the integrand is below 1e-300 of its start.
+///
+/// ```
+/// use emcraft_theory::bessel::k0;
+/// assert!((k0(1.0).unwrap() - 0.421_024_438_240_708_3).abs() < 1e-14);
+/// assert!(k0(0.0).is_none());
+/// ```
+pub fn k0(x: f64) -> Option<f64> {
+    if !(x.is_finite() && x > 0.0 && x <= 700.0) {
+        return None;
+    }
+    // e^{−x(cosh t − 1)} < 1e-300 beyond cosh t = 1 + 691/x.
+    let end = (1.0 + 691.0 / x).acosh();
+    let h = end / PANELS as f64;
+    let f = |k: usize| (-x * (k as f64 * h).cosh()).exp();
+    let inner: f64 = (1..PANELS).map(f).sum();
+    Some((inner + 0.5 * (f(0) + f(PANELS))) * h)
+}
+
 /// The spherical Bessel function j_n(x), x > 0.
 pub fn sph_j(n: usize, x: f64) -> f64 {
     let (s, c) = x.sin_cos();

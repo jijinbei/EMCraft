@@ -39,6 +39,7 @@
 
 pub mod bend;
 pub mod bessel;
+pub mod bwo;
 pub mod coupled;
 pub mod curved;
 pub mod floquet;

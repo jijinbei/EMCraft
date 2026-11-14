@@ -776,5 +776,12 @@ overlap tests).
   Cherenkov radiation of relativistic beams on the Yee grid, and binomial smoothing of the
   current against it (`emcraft-fdtd::pic::Pic::smooth`).
 - J. P. Verboncoeur, *Symmetric spline weighting for charge and current density in particle simulation*, J. Comput. Phys. 174:421–427, 2001; Birdsall & Langdon §14-11 — particle-in-cell in cylindrical r–z: rings of charge, the fields as circulations over the rings' faces (`emcraft-fdtd::axi`, with Esirkepov's deposition in the indices and the faces' areas).
+- H. R. Johnson, *Backward-wave oscillators*, Proc. IRE 43:684–697, 1955; J. R. Pierce,
+  *Traveling-Wave Tubes*, Van Nostrand 1950, ch. II — the backward-wave oscillator's start of
+  oscillation CN = 0.314, b = 1.522 from Pierce's three waves (`emcraft-theory::bwo`).
+- B. Levush, T. M. Antonsen, A. Bromborsky, W. R. Lou, Y. Carmel, *Theory of relativistic
+  backward-wave oscillators with end reflections*, IEEE Trans. Plasma Sci. 20(3):263–280, 1992 —
+  the relativistic gain parameter (the longitudinal mass γ³m) and how end reflections move the
+  start current (`emcraft-theory::bwo::start_current`).
 - M. Roberts, *The unreasonable effectiveness of quasirandom sequences*, 2018 — the R₂ sequence
   that spreads emitted particles across a wall's nodes, the same every run.

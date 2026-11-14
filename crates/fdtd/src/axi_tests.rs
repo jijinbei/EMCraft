@@ -185,3 +185,210 @@ fn hostile_axisymmetric_settings_are_refused() {
     pic.set(2, |_, _| f64::INFINITY);
     assert_eq!(pic.step().unwrap().lost, 1);
 }
+
+/// The slow-wave structure of the BWO tests: a tube 10 mm inside its teeth, grooves 5 mm wide to
+/// 13 mm, period 10 mm (grooves at the period's first half).
+const TEETH: f64 = 0.010;
+const GROOVES: f64 = 0.013;
+const PERIOD: f64 = 0.010;
+
+fn corrugated(r: f64, s: f64) -> bool {
+    r > if (s.rem_euclid(1.0) - 0.25).abs() < 0.25 { GROOVES } else { TEETH }
+}
+
+/// A TM01 mode of the corrugated tube: its Bloch phase per period (rad), frequency (Hz), Pierce
+/// impedance of its backward harmonic k = (2π − ψ)/d at each asked radius (Ω), group velocity.
+struct ColdMode {
+    psi: f64,
+    f: f64,
+    impedance: Vec<f64>,
+    vg: f64,
+}
+
+/// The structure's cold TM01 band on a periodic stretch of `periods` (cells of `h`), at the
+/// Bloch phases 2πm/periods for `modes`: E_z = J₀(x₀₁r/a) cos(kz) let ring, its strongest line
+/// over 8–15 GHz found, then every component's phasor there accumulated; the stored energy
+/// W = ¼∫(ε₀|Ê|² + |B̂|²/μ₀) dV, half of it each of the two waves ±ψ; the harmonic's amplitude E
+/// the spatial transform of Ê_z along z; v_g = dω/dk from the neighbouring phases; then
+/// K = E²/(2k²P), P = v_g (W/2)/L (Pierce 1950, ch. II).
+fn cold_band(h: f64, periods: usize, modes: std::ops::RangeInclusive<usize>, radii: &[f64]) -> Vec<ColdMode> {
+    use emcraft_model::units::{EPS0, MU0};
+    use emcraft_theory::bessel::j;
+    use num_complex::Complex64 as Z;
+    let lz = periods as f64 * PERIOD;
+    let nz = (lz / h).round() as usize;
+    let g = AxiGrid::new((GROOVES / h).round() as usize, nz, h, lz / nz as f64, Wall::Periodic).unwrap();
+    let dt = g.time_step(0.95);
+    let x01 = 2.404_825_557_695_773;
+    let zero = Z::new(0.0, 0.0);
+    let mut out: Vec<(f64, f64, Vec<f64>, f64)> = Vec::new();
+    for m in modes {
+        let k = 2.0 * PI * m as f64 / lz;
+        let start = || {
+            let mut pic = AxiPic::new(g, dt, Pusher::Boris).unwrap();
+            pic.set(2, |r, z| if r < TEETH { j(0, x01 * r / TEETH) * (k * z).cos() } else { 0.0 });
+            pic.set_metal(|r, z| corrugated(r, z / PERIOD));
+            pic
+        };
+        let mut pic = start();
+        let freqs: Vec<f64> = (0..=700).map(|i| 8e9 + 0.01e9 * i as f64).collect();
+        let mut sums = vec![zero; freqs.len()];
+        for _ in 0..(30e-9 / dt) as usize {
+            pic.step().unwrap();
+            let (e, t) = (pic.field_at(0.009, 0.3 * PERIOD).0[2], pic.time());
+            for (s, f) in sums.iter_mut().zip(&freqs) {
+                *s += Z::from_polar(e, -2.0 * PI * f * t);
+            }
+        }
+        let f = sums.iter().zip(&freqs).fold((0.0, 0.0), |a, (s, f)| if s.norm() > a.0 { (s.norm(), *f) } else { a }).1;
+        let mut pic = start();
+        let mut ph: [Vec<Z>; 6] = std::array::from_fn(|w| vec![zero; pic.lats[w].len()]);
+        let steps = (40e-9 / dt) as usize;
+        for _ in 0..steps {
+            pic.step().unwrap();
+            let rot = Z::from_polar(2.0 / steps as f64, -2.0 * PI * f * pic.time());
+            let fields = [&pic.f.er, &pic.f.ez, &pic.f.et, &pic.f.br, &pic.f.bz, &pic.f.bt];
+            for (p, v) in ph.iter_mut().zip(fields) {
+                for (a, b) in p.iter_mut().zip(v.iter()) {
+                    *a += rot * b;
+                }
+            }
+        }
+        let mut w = 0.0;
+        for (which, p) in ph.iter().enumerate() {
+            let lat = pic.lats[which];
+            let coefficient = if which < 3 { 0.25 * EPS0 } else { 0.25 / MU0 };
+            for kk in 0..lat.nz {
+                for i in 0..lat.nr {
+                    let r = (i as f64 + if lat.r_node { 0.0 } else { 0.5 }) * h;
+                    let ring = if lat.r_node && i == 0 { PI * 0.25 * h * h } else { 2.0 * PI * r * h };
+                    w += coefficient * p[lat.at(i, kk)].norm_sqr() * ring * g.dz;
+                }
+            }
+        }
+        let kb = 2.0 * PI / PERIOD - k;
+        let lez = pic.lats[EZ];
+        let amplitudes = radii
+            .iter()
+            .map(|rb| {
+                let i = (rb / h).round() as usize;
+                (0..lez.nz).map(|kk| ph[EZ][lez.at(i, kk)] * Z::from_polar(g.dz / lz, -kb * (kk as f64 + 0.5) * g.dz)).sum::<Z>().norm()
+            })
+            .collect();
+        out.push((k * PERIOD, f, amplitudes, w));
+    }
+    let n = out.len();
+    (0..n)
+        .map(|m| {
+            let (psi, f, ref a, w) = out[m];
+            let (lo, hi) = (m.saturating_sub(1), (m + 1).min(n - 1));
+            let vg = 2.0 * PI * (out[hi].1 - out[lo].1) / ((out[hi].0 - out[lo].0) / PERIOD);
+            let kb = (2.0 * PI - psi) / PERIOD;
+            let p = vg.abs() * 0.5 * w / lz;
+            ColdMode { psi, f, impedance: a.iter().map(|a| a * a / (2.0 * kb * kb * p)).collect(), vg }
+        })
+        .collect()
+}
+
+/// A BWO in a body of revolution: `periods` of the corrugated tube between 20 mm of smooth tube
+/// at the grooves' radius each end (matched: far above its cut-off) and a 10-cell absorber; a
+/// ring beam (7.5–8.5 mm) of `current` A at 100 kV held by 2 T through the cathode end. Each ns,
+/// the strongest line of E_z over 10–15 GHz near the structure's cathode end (the window's mean,
+/// the beam's own static field, taken out) and its frequency.
+fn bwo(periods: usize, current: f64, time: f64, h: f64) -> Vec<(f64, f64)> {
+    use num_complex::Complex64 as Z;
+    let (layer, buffer) = (10usize, 0.02f64);
+    let cells = periods as f64;
+    let lz = cells * PERIOD + 2.0 * (layer as f64 * h + buffer);
+    let nz = (lz / h).round() as usize;
+    let g = AxiGrid::new((GROOVES / h).round() as usize, nz, h, lz / nz as f64, Wall::Conductor).unwrap();
+    let dt = g.time_step(0.95);
+    let mut pic = AxiPic::new(g, dt, Pusher::Boris).unwrap();
+    let z0 = layer as f64 * h + buffer;
+    pic.set_metal(|r, z| {
+        let s = (z - z0) / PERIOD;
+        if s > 0.0 && s < cells { corrugated(r, s) } else { r > GROOVES }
+    });
+    pic.absorb(false, layer).unwrap();
+    pic.absorb(true, layer).unwrap();
+    pic.set(5, |_, _| 2.0);
+    let k = pic.add(Rings { species: ELECTRON, rings: Vec::new() }).unwrap();
+    let pulse = Pulse::Steady { current, rise: 1e-9 };
+    pic.inject(Injection { high: false, population: k, pulse, inner: 0.0075, radius: 0.0085, energy: 1e5 * -ELECTRON.charge, per_step: 8 }).unwrap();
+    let (pr, pz) = (0.009, z0 + 0.25 * PERIOD);
+    let window = (1e-9 / dt) as usize;
+    let freqs: Vec<f64> = (0..=100).map(|i| 10e9 + 0.05e9 * i as f64).collect();
+    let zero = Z::new(0.0, 0.0);
+    let (mut sums, mut basis, mut mean) = (vec![zero; freqs.len()], vec![zero; freqs.len()], 0.0);
+    let mut out = Vec::new();
+    for n in 0..(time / dt) as usize {
+        pic.step().unwrap();
+        let (e, t) = (pic.field_at(pr, pz).0[2], pic.time());
+        mean += e;
+        for ((s, b), f) in sums.iter_mut().zip(basis.iter_mut()).zip(&freqs) {
+            let w = Z::from_polar(1.0, -2.0 * PI * f * t);
+            *s += w * e;
+            *b += w;
+        }
+        if (n + 1) % window == 0 {
+            let m = mean / window as f64;
+            let lines = sums.iter().zip(&basis).zip(&freqs).map(|((s, b), f)| ((s - b * m).norm() / window as f64, *f));
+            out.push(lines.fold((0.0, 0.0), |a, b| if b.0 > a.0 { b } else { a }));
+            sums.iter_mut().chain(basis.iter_mut()).for_each(|s| *s = zero);
+            mean = 0.0;
+        }
+    }
+    out
+}
+
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn a_backward_wave_oscillator_starts_near_johnsons_current() {
+    // Johnson (Proc. IRE 43:684, 1955) with Pierce's space charge (Branch & Mihran's reduction for
+    // a thin ring) and the relativistic C³ (Levush et al. 1992): the tube's own cold band and
+    // impedance on this grid give the synchronism of the 100 kV beam with the backward harmonic
+    // and the start current of 24 periods. Below it (0.6 of it) nothing grows in 100 ns; at 2.5
+    // times it oscillates at Johnson's frequency, the band where v_p = v₀/(1 + bC). The measured
+    // start lies at 1.4–1.9 times Johnson's here (9–12 A against 6.3 A; 12 periods ≈ 100 A
+    // against 65 A, the L⁻³ scaling kept to 15 %): the ends still reflect, which moves it
+    // (Levush et al.; with the drift tubes at the teeth's radius, near their cut-off, the start
+    // fell to 5 A).
+    use emcraft_theory::bwo::{Oscillator, Ring, johnson_start};
+    let h = 0.5e-3;
+    let band = cold_band(h, 18, 4..=6, &[0.0075, 0.008, 0.0085]);
+    let gamma0 = 1.0 + 1e5 / ELECTRON.rest_energy() * -ELECTRON.charge;
+    let v0 = C0 * (1.0 - 1.0 / (gamma0 * gamma0)).sqrt();
+    // Where the band f(ψ) meets the beam line f = v₀(2π − ψ)/(2πd) (shifted by 1 + bC), linearly
+    // between the cold phases; the impedance averaged over the ring's area (Simpson, r-weighted).
+    let meet = |shift: f64| -> (f64, f64) {
+        let line = |psi: f64| v0 / shift * (2.0 * PI - psi) / (2.0 * PI * PERIOD);
+        let pair = band.windows(2).find(|w| (w[0].f - line(w[0].psi)) * (w[1].f - line(w[1].psi)) <= 0.0).unwrap();
+        let (a, b) = (&pair[0], &pair[1]);
+        let t = (line(a.psi) - a.f) / ((b.f - a.f) - (line(b.psi) - line(a.psi)));
+        let mean = |m: &ColdMode| (7.5 * m.impedance[0] + 32.0 * m.impedance[1] + 8.5 * m.impedance[2]) / 48.0;
+        (a.f + t * (b.f - a.f), (mean(a).ln() + t * (mean(b).ln() - mean(a).ln())).exp())
+    };
+    let (f_sync, impedance) = meet(1.0);
+    let ring = Ring { radius: 0.008, thickness: 0.001, tube: TEETH };
+    let o =
+        Oscillator { impedance, length: 24.0 * PERIOD, frequency: f_sync, gamma0, charge: ELECTRON.charge, mass: ELECTRON.mass, ring: Some(ring) };
+    let start = o.start_current().unwrap();
+    let start_c = (start * -ELECTRON.charge * impedance / (2.0 * gamma0.powi(3) * ELECTRON.mass * v0 * v0)).cbrt();
+    let b = johnson_start(o.space_charge(start).unwrap()).unwrap().b;
+    let (f_johnson, _) = meet(1.0 + b * start_c);
+    assert!(band.iter().all(|m| m.vg > 0.0) && (5.0..8.0).contains(&start), "start {start} A, K {impedance} Ω, f {f_sync}");
+    let [below, above] = std::thread::scope(|s| [0.6, 2.5].map(|x| s.spawn(move || bwo(24, x * start, 100e-9, h))).map(|t| t.join().unwrap()));
+    // The strongest line over a stretch of ns, and its frequency.
+    let peak = |r: &[(f64, f64)], from: usize, to: usize| r[from..to].iter().copied().fold((0.0, 0.0), |a, b| if b.0 > a.0 { b } else { a });
+    let noise = peak(&below, 10, 30).0;
+    assert!(peak(&below, 80, 100).0 < 3.0 * noise, "below the start: {below:?}");
+    let (top, f) = peak(&above, 0, 100);
+    assert!(top > 100.0 * noise, "above the start: {above:?}");
+    assert!((f / f_johnson - 1.0).abs() < 0.01, "{} GHz against Johnson's {} GHz", f * 1e-9, f_johnson * 1e-9);
+    println!(
+        "start {start:.2} A (K {impedance:.3} Ω, sync {:.3} GHz), oscillating at {:.3} GHz against Johnson's {:.3} GHz, {top:.2e} V/m over noise {noise:.2e}",
+        f_sync * 1e-9,
+        f * 1e-9,
+        f_johnson * 1e-9
+    );
+}
