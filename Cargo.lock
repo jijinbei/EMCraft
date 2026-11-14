@@ -2082,6 +2082,7 @@ dependencies = [
  "emcraft-particles",
  "emcraft-theory",
  "num-complex",
+ "rstest",
  "thiserror 2.0.21",
 ]
 
