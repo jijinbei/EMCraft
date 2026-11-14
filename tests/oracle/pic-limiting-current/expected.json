@@ -1,0 +1,31 @@
+{
+ "title": "A ring beam in a drift tube in particle-in-cell: its space-charge depression and the limiting current",
+ "kind": "theory",
+ "source": "A thin annular electron beam of radius r_b in a grounded pipe of radius R, held on its lines by a strong axial magnetic field and injected at γ₀ through a grounded plane, slows to γ_b with I = I₀(γ₀ − γ_b)β_b/(2 ln(R/r_b)), I₀ = 4πε₀mc³/e = 17.045 kA; no more than the limiting current I_L = I₀(γ₀^{2/3} − 1)^{3/2}/(2 ln(R/r_b)) passes, the rest turned back by a virtual cathode (L. S. Bogdankevich, A. A. Rukhadze, Sov. Phys. Usp. 14:163, 1971; R. B. Miller, An Introduction to the Physics of Intense Charged Particle Beams, Plenum 1982, §3.2). γ₀ = 1.25 (127.75 keV), R = 10 mm, r_b = 6 mm: I_L = 1071.7 A; at 750 A, γ_b = 1.16166 (the faster root, by bisection). Evaluated apart from the code under test (CODATA 2018 constants)",
+ "quantities": [
+  {
+   "id": "depressed_gamma",
+   "quantity": "the beam's γ in the middle third of the tube at 750 A (0.7 of the limiting current)",
+   "measure": {"step": "below", "pointer": "/mid_gamma"},
+   "value": 1.1616622648397872,
+   "tolerance": {"relative": 0.005},
+   "reason": "the ring a cell thick (5.5 to 6.5 mm) and the tube a staircase of 1 mm cells: the depression γ₀ − γ_b 2.7 % deeper than a thin ring's, 0.2 % of γ"
+  },
+  {
+   "id": "passed_below",
+   "quantity": "the current reaching the far end at 750 A (A; electrons arriving: negative)",
+   "measure": {"step": "below", "pointer": "/walls/z+/current"},
+   "value": -750.0,
+   "tolerance": {"relative": 0.02},
+   "reason": "below the limiting current all of it passes: 99.2 % over the run's second half, the field still settling"
+  },
+  {
+   "id": "passed_above",
+   "quantity": "the current reaching the far end at 1400 A (1.3 of the limiting current; A)",
+   "measure": {"step": "above", "pointer": "/walls/z+/current"},
+   "value": -1071.7459303561216,
+   "tolerance": {"relative": 0.1},
+   "reason": "above the limit a virtual cathode forms and turns back the excess (367 A back to the cathode here); what passes it, 0.975 of the limiting current, oscillates about it rather than equalling it"
+  }
+ ]
+}

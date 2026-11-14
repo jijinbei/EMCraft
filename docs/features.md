@@ -526,6 +526,21 @@ A Gaussian bunch of electrons sent in through a conducting face of the particle 
 | `delay` | number |  | no | when its peak enters, in ps (default five of its rms durations) |
 | `per_step` | integer |  | no | macro-particles a step, 1 to 64 (default 8) |
 
+## `particles.beam` — Electron beam
+
+A steady beam of electrons sent in through a conducting face of the particle run's box, along its normal: `current` at `energy`, spread evenly over the ring between `inner` and `radius` about `at` (a point of the face; default its centre; a disc when `inner` is 0), reached linearly over `rise`. With a strong axial magnetic field (particles.magnetic) and the box's conductors a drift tube, its own charge slows it to the γ_b of I = I₀(γ₀ − γ_b)β_b/(2 ln(R/r_b)) and no more than the limiting current passes (Bogdankevich & Rukhadze, Sov. Phys. Usp. 14:163, 1971); the reply's `mid_gamma` is the beam's γ in the middle third of the box. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `face` | string |  | yes | the face it enters through: x-, x+, y-, y+, z- or z+ |
+| `current` | number |  | yes | its current in A |
+| `energy` | number |  | yes | the electrons' energy in eV |
+| `radius` | number | length | no | its outer radius (default 0: on a line) |
+| `inner` | number | length | no | its inner radius (default 0: a disc) |
+| `at` | array | length | no | the point of the face it enters at [x, y, z] (default the face's centre) |
+| `rise` | number |  | no | the time it takes to reach its current, in ps (default 0) |
+| `per_step` | integer |  | no | macro-particles a step, 1 to 64 (default 16) |
+
 ## `particles.voltage` — Gap voltage
 
 A voltage held across the conducting walls of `axis` by the outer circuit, the high wall `volts` above the low one: a uniform field at the start, the gap's mean current returned through the circuit as particles cross it. The other two axes must be periodic. Without `volts`, none. Undo goes back.

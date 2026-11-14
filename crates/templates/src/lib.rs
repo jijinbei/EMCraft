@@ -790,6 +790,22 @@ pub const TEMPLATES: &[Template] = &[
         group: Group::Particles,
     },
     Template {
+        name: "drift-tube",
+        label: "A ring beam in a drift tube by particle-in-cell: 750 A of 128 keV electrons on a 6 mm ring in a grounded tube 10 mm in radius, held by 10 T along it; its space charge slows it to γ 1.162, below the limiting current of 1.07 kA (Bogdankevich & Rukhadze)",
+        script: include_str!("../scripts/drift-tube.json"),
+        marks: "{}",
+        kinds: &[Analysis::Particles],
+        group: Group::Particles,
+    },
+    Template {
+        name: "two-stream",
+        label: "The two-stream instability by particle-in-cell: two cold electron streams of 10¹⁶ m⁻³ at ±3·10⁷ m/s in a periodic box one wavelength long; the wave between them grows at ω_b/2 = 2.8·10⁹ /s until they trap it",
+        script: include_str!("../scripts/two-stream.json"),
+        marks: "{}",
+        kinds: &[Analysis::Particles],
+        group: Group::Particles,
+    },
+    Template {
         name: "plasma-oscillation",
         label: "A cold plasma by particle-in-cell: 10¹⁶ electrons per m³, periodic along every axis, a velocity wave along it; its field rings at the plasma frequency ω_p/2π = 0.898 GHz",
         script: include_str!("../scripts/plasma-oscillation.json"),

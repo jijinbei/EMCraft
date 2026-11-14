@@ -32,12 +32,13 @@ use crate::{FdtdError, Result, invalid};
 
 mod deposit;
 mod emit;
+mod filter;
 mod grid;
 mod media;
 #[cfg(test)]
 mod tests;
 
-pub use emit::{Bunch, Emission, Emitter, MAX_PER_NODE};
+pub use emit::{Bunch, Emission, Emitter, MAX_PER_NODE, Pulse};
 pub use grid::{Axis, Grid, Wall};
 pub use media::Medium;
 
@@ -146,12 +147,46 @@ pub struct Pic {
     j: [Vec<f64>; 3],
     populations: Vec<Population>,
     background: f64,
+    /// The charge the walls and bodies hold (C/m³ on the nodes): what particles brought onto
+    /// them, less what left them.
+    surface: Vec<f64>,
+    /// Binomial passes over the current each step.
+    smoothing: usize,
     hold: Option<usize>,
     emitters: Vec<Emitter>,
     bunches: Vec<Bunch>,
     media: Option<media::Media>,
     emitted: u64,
     steps: usize,
+}
+
+/// The rate (1/s) an instability grows at: the slope of ½ ln W over the stretch where the
+/// energy `w` (J, at `t`, s) first rises from e⁻¹² to e⁻⁴ of its peak — past the start's
+/// transient, before saturation (a field amplitude growing as e^{γt}, its energy as e^{2γt}).
+/// None without five records there.
+///
+/// ```
+/// use emcraft_fdtd::pic::growth_rate;
+/// let t: Vec<f64> = (0..400).map(|n| n as f64 * 1e-11).collect();
+/// // e^{2γt} up to saturation, γ = 2e9/s.
+/// let w: Vec<f64> = t.iter().map(|t| (2.0 * 2e9 * t).exp().min(1e12)).collect();
+/// assert!((growth_rate(&t, &w).unwrap() / 2e9 - 1.0).abs() < 1e-9);
+/// ```
+pub fn growth_rate(t: &[f64], w: &[f64]) -> Option<f64> {
+    let peak = w.iter().copied().filter(|x| x.is_finite()).fold(0.0, f64::max);
+    if !(peak > 0.0) {
+        return None;
+    }
+    let first = |level: f64| w.iter().position(|x| *x >= level);
+    let (a, b) = (first(peak * (-12f64).exp())?, first(peak * (-4f64).exp())?);
+    let pts: Vec<(f64, f64)> = t.iter().zip(w).take(b + 1).skip(a).filter(|(_, x)| **x > 0.0).map(|(t, x)| (*t, 0.5 * x.ln())).collect();
+    if pts.len() < 5 {
+        return None;
+    }
+    let n = pts.len() as f64;
+    let (mt, my) = (pts.iter().map(|p| p.0).sum::<f64>() / n, pts.iter().map(|p| p.1).sum::<f64>() / n);
+    let var = pts.iter().map(|p| (p.0 - mt).powi(2)).sum::<f64>();
+    (var > 0.0).then(|| pts.iter().map(|p| (p.0 - mt) * (p.1 - my)).sum::<f64>() / var)
 }
 
 /// `n` zeros, refused when there is no memory for them.
@@ -195,6 +230,8 @@ impl Pic {
             j: [j0?, j1?, j2?],
             populations: Vec::new(),
             background: 0.0,
+            surface: zeros(grid.nodes().len())?,
+            smoothing: 0,
             hold: None,
             emitters: Vec::new(),
             bunches: Vec::new(),
@@ -311,6 +348,13 @@ impl Pic {
         true
     }
 
+    /// Smooths the current by `passes` binomial passes along each axis each step (1-2-1, Birdsall
+    /// & Langdon §8-6), against the numerical Cherenkov radiation of particles faster than the
+    /// grid's shortest waves; Gauss's law then holds for the charge smoothed alike. At most 8.
+    pub fn smooth(&mut self, passes: usize) {
+        self.smoothing = passes.min(filter::MAX_PASSES);
+    }
+
     /// Adds `bunch`, checked against the grid and the populations.
     pub fn inject(&mut self, bunch: Bunch) -> Result<()> {
         bunch.check(&self.grid, self.populations.len())?;
@@ -379,12 +423,13 @@ impl Pic {
     /// holds.
     pub fn gauss(&self) -> Vec<f64> {
         let nodes = self.grid.nodes();
-        let mut rho = vec![self.background; nodes.len()];
+        let mut rho: Vec<f64> = self.surface.iter().map(|s| s + self.background).collect();
         for pop in &self.populations {
             for p in &pop.particles {
                 deposit::charge(&self.grid, &mut rho, p.x, pop.species.charge * p.w);
             }
         }
+        filter::smooth(&self.grid, nodes, &mut rho, self.smoothing);
         let axes = self.grid.axes;
         nodes
             .points()
@@ -412,10 +457,13 @@ impl Pic {
         let mut moved = Moved::default();
         self.emit_step(&mut moved)?;
         self.j.iter_mut().for_each(|j| j.fill(0.0));
-        let Pic { grid, dt, pusher, e, b, j, populations, media, .. } = self;
+        let Pic { grid, dt, pusher, e, b, j, populations, media, surface, .. } = self;
         for pop in populations.iter_mut() {
             let species = pop.species;
-            pop.particles.retain_mut(|p| advance((grid, media.as_ref()), [e, b], j, (species, *pusher, *dt), p, &mut moved));
+            pop.particles.retain_mut(|p| advance((grid, media.as_ref()), [e, b], (j, surface), (species, *pusher, *dt), p, &mut moved));
+        }
+        for (a, values) in self.j.iter_mut().enumerate() {
+            filter::smooth(&self.grid, self.grid.e(a), values, self.smoothing);
         }
         if let Some(a) = self.hold {
             let mean = self.j[a].iter().sum::<f64>() / self.j[a].len().max(1) as f64;
@@ -458,6 +506,10 @@ impl Pic {
             let species = pop.species;
             moved.emitted += new.iter().map(|p| species.charge * p.w).sum::<f64>();
             moved.kinetic_in += new.iter().map(|p| p.w * species.kinetic(p.u)).sum::<f64>();
+            // What leaves a wall leaves its opposite charge there.
+            for p in &new {
+                deposit::charge(&self.grid, &mut self.surface, p.x, -species.charge * p.w);
+            }
             pop.particles.extend(new);
         }
         Ok(())
@@ -469,7 +521,7 @@ impl Pic {
 fn advance(
     (grid, metal): (&Grid, Option<&media::Media>),
     [e, b]: [&[Vec<f64>; 3]; 2],
-    j: &mut [Vec<f64>; 3],
+    (j, surface): (&mut [Vec<f64>; 3], &mut Vec<f64>),
     (species, pusher, dt): (Species, Pusher, f64),
     p: &mut Particle,
     moved: &mut Moved,
@@ -486,11 +538,13 @@ fn advance(
     deposit::current(grid, j, p.x, to, species.charge * p.w, dt);
     if let Some((axis, high)) = hit {
         moved.collected[axis][usize::from(high)] += species.charge * p.w;
+        deposit::charge(grid, surface, to, species.charge * p.w);
         moved.kinetic_out += p.w * species.kinetic(u);
         return false;
     }
     if metal.is_some_and(|m| m.at(grid, to)) {
         moved.metal += species.charge * p.w;
+        deposit::charge(grid, surface, to, species.charge * p.w);
         moved.kinetic_out += p.w * species.kinetic(u);
         return false;
     }

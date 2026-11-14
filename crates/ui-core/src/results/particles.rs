@@ -16,17 +16,9 @@ use crate::lang::{args, tr, trf};
 /// The axes' names.
 const AXES: [&str; 3] = ["x", "y", "z"];
 
-/// The axis the particles run along: the first emitter's normal, else a plasma's wave's, else
-/// the held voltage's, else z.
+/// The axis the particles run along (emcraft_engine::particles::along).
 pub fn along(s: &Session) -> usize {
-    let m = &s.model().particles;
-    m.emitters
-        .first()
-        .map(|e| e.face.axis)
-        .or_else(|| m.plasmas.iter().find_map(|p| p.wave.map(|w| w.axis)))
-        .or_else(|| m.voltage.map(|v| v.axis))
-        .unwrap_or(2)
-        .min(2)
+    emcraft_engine::particles::along(s)
 }
 
 /// The span of `values` with a little room, never empty.

@@ -101,6 +101,7 @@ const STEP_ADDS: &[(Step, &[&str])] = &[
             "particles.emitter",
             "particles.plasma",
             "particles.bunch",
+            "particles.beam",
             "particles.voltage",
             "particles.magnetic",
             "particles.walls",

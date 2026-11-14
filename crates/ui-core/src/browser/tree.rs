@@ -777,6 +777,11 @@ fn particle_sources(s: &emcraft_engine::Session, f: &Fmt) -> Vec<Row> {
         );
         node(format!("bunch:{}", i + 1), words(t!("Bunch {face}"), args!(face = b.face.name())), Some(detail), Glyph::Radiation, Act::None)
     }));
+    rows.extend(m.beams.iter().enumerate().map(|(i, b)| {
+        let detail =
+            words(t!("{current} A · {energy} eV"), args!(current = crate::number::value(b.current), energy = crate::number::value(b.energy)));
+        node(format!("beam:{}", i + 1), words(t!("Beam {face}"), args!(face = b.face.name())), Some(detail), Glyph::Radiation, Act::None)
+    }));
     rows.extend(m.plasmas.iter().enumerate().map(|(i, p)| {
         let detail =
             words(t!("{density} m⁻³ · {n} a cell"), args!(density = crate::number::value(p.density), n = p.per_cell.iter().product::<usize>()));

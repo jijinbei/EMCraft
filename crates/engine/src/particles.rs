@@ -141,6 +141,7 @@ pub(crate) fn sources_reply(s: &Session) -> Value {
         "walls": {"x": m.walls[0].id(), "y": m.walls[1].id(), "z": m.walls[2].id()},
         "emitters": m.emitters,
         "bunches": m.bunches,
+        "beams": m.beams,
         "plasmas": m.plasmas,
         "voltage": m.voltage.map(|v| json!({"axis": AXES[v.axis.min(2)], "volts": v.volts})),
         "magnetic": m.magnetic,
@@ -351,6 +352,9 @@ fn build(s: &Session, grid: Grid, origin: [f64; 3], dt: f64, pusher: Pusher) -> 
     for b in &m.bunches {
         run.inject(bunch(&grid, origin, b, emitted)).map_err(|err| EngineError::failed(format!("the bunch through {}: {err}", b.face.name())))?;
     }
+    for b in &m.beams {
+        run.inject(beam(&grid, origin, b, emitted)).map_err(|err| EngineError::failed(format!("the beam through {}: {err}", b.face.name())))?;
+    }
     Ok(run)
 }
 
@@ -369,14 +373,48 @@ fn bunch(grid: &Grid, origin: [f64; 3], b: &emcraft_model::particles::Bunch, pop
         axis,
         high: b.face.high,
         population,
-        charge: b.charge,
-        t0: b.delay.unwrap_or(5.0 * sigma),
-        sigma,
+        pulse: pic::Pulse::Gaussian { charge: b.charge, t0: b.delay.unwrap_or(5.0 * sigma), sigma },
         centre,
         radius: b.radius,
+        inner: 0.0,
         energy,
         per_step: b.per_step,
     }
+}
+
+/// A steady beam on the grid: its centre the point given or the face's centre.
+fn beam(grid: &Grid, origin: [f64; 3], b: &emcraft_model::particles::Beam, population: usize) -> pic::Bunch {
+    let axis = b.face.axis.min(2);
+    let across = [(axis + 1) % 3, (axis + 2) % 3];
+    let lengths = grid.lengths();
+    pic::Bunch {
+        axis,
+        high: b.face.high,
+        population,
+        pulse: pic::Pulse::Steady { current: b.current, rise: b.rise },
+        centre: across.map(|d| b.at.map_or(0.5 * lengths[d], |x| x[d] - origin[d])),
+        radius: b.radius,
+        inner: b.inner,
+        energy: b.energy * EV,
+        per_step: b.per_step,
+    }
+}
+
+/// `particles.beam`: a steady beam of electrons sent in through a conducting face.
+pub fn beam_command(s: &mut Session, p: &Params) -> Result<Value> {
+    let name = p.string("face").required()?;
+    let face = Face::parse(name).ok_or_else(|| p.error("face", "x-, x+, y-, y+, z- or z+"))?;
+    let current = p.number("current").required()?;
+    let energy = p.positive("energy").required()?;
+    let radius = p.length("radius").or(0.0)?;
+    let inner = p.length("inner").or(0.0)?;
+    let at = p.point("at").optional()?.map(|x| [x.x, x.y, x.z]);
+    let rise = p.number("rise").or(0.0)? * 1e-12;
+    let per_step = p.integer("per_step", 1..=emcraft_model::particles::MAX_PER_NODE).or(16)?;
+    change(s, |m| {
+        m.beams.push(emcraft_model::particles::Beam { face, current, energy, radius, inner, at, rise, per_step });
+        Ok(())
+    })
 }
 
 /// `particles.bunch`: a Gaussian bunch of electrons sent in through a conducting face.
@@ -432,7 +470,7 @@ pub fn solve(s: &mut Session, p: &Params) -> Result<Value> {
     let mut run = build(s, grid, origin, dt, pusher)?;
     let field_before = run.energy().field;
     let m = &s.model.particles;
-    let only_bunches = !m.bunches.is_empty() && m.emitters.is_empty() && m.plasmas.is_empty();
+    let only_bunches = !m.bunches.is_empty() && m.emitters.is_empty() && m.plasmas.is_empty() && m.beams.is_empty();
     let probes: Vec<[f64; 3]> = s.model.particles.probes.iter().map(|x| std::array::from_fn(|d| x[d] - origin[d])).collect();
     let (every, probe_every) = (steps.div_ceil(HISTORY), steps.div_ceil(PROBE_SAMPLES));
     let mut history = Vec::new();
@@ -524,6 +562,22 @@ fn snapshot(run: &Pic, origin: [f64; 3]) -> Vec<Snap> {
         .collect()
 }
 
+/// The axis the particles run along: the first beam's, bunch's or emitter's normal, else a plasma
+/// wave's, else z.
+pub fn along(s: &Session) -> usize {
+    let m = &s.model.particles;
+    let face = m.beams.first().map(|b| b.face).or_else(|| m.bunches.first().map(|b| b.face)).or_else(|| m.emitters.first().map(|e| e.face));
+    face.map(|f| f.axis).or_else(|| m.plasmas.iter().find_map(|p| p.wave.map(|w| w.axis))).or_else(|| m.voltage.map(|v| v.axis)).unwrap_or(2).min(2)
+}
+
+/// The mean γ of the last particles in the middle third of the box along `axis` (none there:
+/// none), a beam's after its space charge has slowed it.
+fn mid_gamma(r: &PicResult, axis: usize) -> Option<f64> {
+    let (lo, l) = (r.origin[axis], r.cells[axis] as f64 * r.h[axis]);
+    let mid: Vec<f64> = r.snapshot.iter().filter(|p| p.x[axis] > lo + l / 3.0 && p.x[axis] < lo + 2.0 * l / 3.0).map(|p| gamma(p.u)).collect();
+    (!mid.is_empty()).then(|| mid.iter().sum::<f64>() / mid.len() as f64)
+}
+
 /// A run's reply in display units: its grid, the particles at the end, each conducting wall's
 /// current and density over the second half and the bodies', each probe's frequency, and with
 /// bunches alone the loss factor (V/pC).
@@ -557,6 +611,8 @@ pub(crate) fn reply(s: &Session, r: &PicResult) -> Value {
         "fastest_ev": fastest,
         "gamma_max": r.snapshot.iter().map(|p| gamma(p.u)).fold(1.0, f64::max),
         "metal": r.metal,
+        "mid_gamma": mid_gamma(r, along(s)),
+        "growth_rate": pic::growth_rate(&r.history.iter().map(|h| h.t).collect::<Vec<_>>(), &r.history.iter().map(|h| h.field).collect::<Vec<_>>()),
         "loss_factor_v_per_pc": r.loss_factor.map(|k| k * 1e-12),
     })
 }

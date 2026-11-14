@@ -70,6 +70,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("particles.emitter", Some(t!("Emitter").en()), Some(Glyph::Radiation), false),
     ui("particles.plasma", Some(t!("Plasma").en()), Some(Glyph::Dielectric), false),
     ui("particles.bunch", Some(t!("Bunch").en()), Some(Glyph::Radiation), false),
+    ui("particles.beam", Some(t!("Beam").en()), Some(Glyph::Radiation), false),
     ui("particles.voltage", Some(t!("Gap voltage").en()), Some(Glyph::Lumped), false),
     ui("particles.magnetic", Some(t!("Magnetic field").en()), Some(Glyph::FieldLines), false),
     ui("particles.probe", Some(t!("Field probe").en()), Some(Glyph::Chart), false),

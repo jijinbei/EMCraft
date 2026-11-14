@@ -162,6 +162,28 @@ pub struct Bunch {
     pub per_step: usize,
 }
 
+/// A steady beam of electrons sent in through a conducting face: `current` (A, its size) at
+/// `energy` (eV) along the face's normal, spread evenly over the ring between `inner` and `radius`
+/// (m; a disc when `inner` is 0) about `at` (m, a point of the face; none: its centre), reached
+/// linearly over `rise` (s), `per_step` macro-particles a step.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Beam {
+    pub face: Face,
+    pub current: f64,
+    pub energy: f64,
+    pub radius: f64,
+    #[serde(default)]
+    pub inner: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<[f64; 3]>,
+    #[serde(default)]
+    pub rise: f64,
+    pub per_step: usize,
+}
+
+/// The largest beam current (A).
+pub const MAX_BEAM_CURRENT: f64 = 1e8;
+
 /// The largest bunch charge (C) and length (m).
 pub const MAX_BUNCH_CHARGE: f64 = 1e3;
 pub const MAX_LENGTH: f64 = 1e3;
@@ -185,6 +207,8 @@ pub struct Particles {
     pub plasmas: Vec<Plasma>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bunches: Vec<Bunch>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub beams: Vec<Beam>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voltage: Option<Voltage>,
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -209,9 +233,9 @@ impl Particles {
         *self == Particles::default()
     }
 
-    /// Whether something puts particles in the box: an emitter, a plasma or a bunch.
+    /// Whether something puts particles in the box: an emitter, a plasma, a bunch or a beam.
     pub fn has_sources(&self) -> bool {
-        !(self.emitters.is_empty() && self.plasmas.is_empty() && self.bunches.is_empty())
+        !(self.emitters.is_empty() && self.plasmas.is_empty() && self.bunches.is_empty() && self.beams.is_empty())
     }
 
     /// The sources checked: their counts and every number within its bounds.
@@ -231,6 +255,26 @@ impl Particles {
             || self.bunches.len() > MAX_EMITTERS
         {
             return Err(invalid("particles", format!("at most {MAX_EMITTERS} emitters and bunches, {MAX_PLASMAS} plasmas and {MAX_PROBES} probes")));
+        }
+        if self.beams.len() > MAX_EMITTERS {
+            return Err(invalid("particles", format!("at most {MAX_EMITTERS} beams")));
+        }
+        for b in &self.beams {
+            let at = b.at.is_none_or(|x| x.iter().all(|c| c.is_finite()));
+            let ok = b.face.axis <= 2
+                && within(b.current, MAX_BEAM_CURRENT, false)
+                && within(b.energy, MAX_ENERGY, false)
+                && b.energy > 0.0
+                && within(b.radius, MAX_LENGTH, false)
+                && within(b.inner, b.radius, false)
+                && within(b.rise, 1.0, false)
+                && (1..=MAX_PER_NODE).contains(&b.per_step);
+            if !(ok && at) {
+                return Err(invalid(
+                    "beam",
+                    format!("{b:?}: a face, a current ≥ 0, an energy > 0, radii 0 ≤ inner ≤ outer, a rise ≥ 0, 1 to {MAX_PER_NODE} particles a step"),
+                ));
+            }
         }
         for b in &self.bunches {
             let at = b.at.is_none_or(|x| x.iter().all(|c| c.is_finite()));

@@ -764,5 +764,16 @@ overlap tests).
   e^{−(ωσ_t)²} (`emcraft-theory::wake`, the pillbox's TM0np in closed form).
 - A. Taflove, S. C. Hagness, *Computational Electrodynamics*, 3rd ed., Artech House 2005, §3.6 —
   a perfect conductor as a staircase of cells, the PIC grid's bodies (`emcraft-fdtd::pic`).
+- L. S. Bogdankevich, A. A. Rukhadze, Sov. Phys. Usp. 14:163, 1971; R. B. Miller, *An
+  Introduction to the Physics of Intense Charged Particle Beams*, Plenum 1982, §3.2 — a
+  magnetized annular beam's space-charge depression and limiting current
+  (`emcraft-theory::plasma::AnnularBeam`).
+- F. F. Chen, *Introduction to Plasma Physics and Controlled Fusion*, 3rd ed., Springer 2016,
+  §6.6; Birdsall & Langdon §5-6 — the two-stream and beam–plasma instabilities of cold streams
+  (`emcraft-theory::plasma::two_stream_growth`).
+- B. B. Godfrey, J.-L. Vay, *Numerical stability of relativistic beam multidimensional PIC
+  simulations employing the Esirkepov algorithm*, J. Comput. Phys. 248:33–46, 2013 — numerical
+  Cherenkov radiation of relativistic beams on the Yee grid, and binomial smoothing of the
+  current against it (`emcraft-fdtd::pic::Pic::smooth`).
 - M. Roberts, *The unreasonable effectiveness of quasirandom sequences*, 2018 — the R₂ sequence
   that spreads emitted particles across a wall's nodes, the same every run.

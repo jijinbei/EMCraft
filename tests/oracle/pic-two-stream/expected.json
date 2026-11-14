@@ -1,0 +1,15 @@
+{
+ "title": "Two cold streams in particle-in-cell: the two-stream instability's growth rate",
+ "kind": "theory",
+ "source": "Two cold electron streams of density n each at ±v₀ on a neutralising background: a longitudinal wave of wavenumber k grows as the largest imaginary root of 1 = ω_b²/(ω − kv₀)² + ω_b²/(ω + kv₀)², ω_b² = ne²/(ε₀m); with a = (kv₀)², γ = √(√(ω_b⁴ + 4aω_b²) − a − ω_b²), the most ω_b/2 at kv₀ = (√3/2)ω_b (C. K. Birdsall, A. B. Langdon, Plasma Physics via Computer Simulation, 1991, §5-6; F. F. Chen, Introduction to Plasma Physics, 3rd ed., 2016, §6.6). n = 10¹⁶ m⁻³, v₀ = 3·10⁷ m/s, the box one wavelength at the fastest k: γ = 2.8207·10⁹ /s. Evaluated apart from the code under test (CODATA 2018 constants)",
+ "quantities": [
+  {
+   "id": "growth_rate",
+   "quantity": "the field energy's growth, as ½ d ln W/dt from e⁻¹² to e⁻⁴ of its peak (1/s)",
+   "measure": {"step": "run", "pointer": "/growth_rate"},
+   "value": 2820730115.5902524,
+   "tolerance": {"relative": 0.05},
+   "reason": "32 cells a wavelength, 16 particles a cell, the streams at β = 0.1 (their relativistic shift below 1 %), the fit over the field's whole energy past the seed's transient: 2.5 % low here; the fundamental's own amplitude grows within 2.7 % (emcraft_fdtd::pic's test)"
+  }
+ ]
+}

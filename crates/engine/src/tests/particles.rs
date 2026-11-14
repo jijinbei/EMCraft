@@ -174,3 +174,22 @@ fn particle_runs_take_lossless_dielectrics_only() {
     let e = s.execute("solve.particles", &json!({"time": 0.1, "cell": 1})).unwrap_err().to_string();
     assert!(e.contains("lossy") && e.contains("not supported yet"), "{e}");
 }
+
+#[test]
+fn beams_are_checked_and_reply_their_gamma() {
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 5, "length": 10})).unwrap();
+    for p in [
+        json!({"face": "z-", "current": -1, "energy": 1e5}),
+        json!({"face": "z-", "current": 1, "energy": 0}),
+        json!({"face": "z-", "current": 1, "energy": 1e5, "radius": 1, "inner": 2}),
+        json!({"face": "z-", "current": 1, "energy": 1e5, "rise": -5}),
+    ] {
+        assert!(s.execute("particles.beam", &p).is_err(), "{p}");
+    }
+    s.execute("particles.beam", &json!({"face": "z-", "current": 10, "energy": 1e5, "radius": 2})).unwrap();
+    let r = s.execute("solve.particles", &json!({"time": 0.1, "cell": 1})).unwrap();
+    // 100 keV: γ = 1.196 at the start, a little less where the beam has got to.
+    let g = r["mid_gamma"].as_f64().unwrap();
+    assert!(g > 1.18 && g < 1.1958, "{g}");
+}

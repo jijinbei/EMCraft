@@ -1,0 +1,8 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "box", "size": [38.581486847166964, 1.2056714639739676, 1.2056714639739676]}},
+ {"command": "project.analysis", "params": {"kind": "particles"}},
+ {"command": "particles.walls", "params": {"x": "periodic", "y": "periodic", "z": "periodic"}},
+ {"command": "particles.plasma", "params": {"density": 1e16, "per_cell": [16, 1, 1], "drift": [3e7, 0, 0], "wave": 3e4}},
+ {"command": "particles.plasma", "params": {"density": 1e16, "per_cell": [16, 1, 1], "drift": [-3e7, 0, 0]}},
+ {"command": "project.setup", "params": {"kind": "particles", "time": 6, "cell": 1.2056714639739676}}
+]

@@ -169,22 +169,53 @@ impl Emitter {
     }
 }
 
-/// A Gaussian bunch sent in through a conducting wall: `charge` (C, its size) whose current
-/// through the wall rises and falls as e^{−(t − t₀)²/2σ²}, spread evenly over a disc of
-/// `radius` (m) about `centre` (m, the two coordinates across the wall in the axes' order after
-/// `axis`), each particle at `energy` (J) along the wall's normal. The charge of a step is the
-/// Gaussian at the step's middle times Δt; `per_step` macro-particles carry it, placed by the
+/// How much a bunch or beam sends in, in time.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Pulse {
+    /// `charge` (C, its size) whose current through the wall rises and falls as
+    /// e^{−(t − t₀)²/2σ²}.
+    Gaussian { charge: f64, t0: f64, sigma: f64 },
+    /// A steady `current` (A, its size), reached linearly over `rise` (s; 0: at once).
+    Steady { current: f64, rise: f64 },
+}
+
+impl Pulse {
+    /// The charge (C) it sends over the step from `t` of `dt` (s): the current at the step's
+    /// middle times Δt; none past six σ of a Gaussian's peak.
+    fn charge(self, t: f64, dt: f64) -> f64 {
+        let mid = t + 0.5 * dt;
+        match self {
+            Pulse::Gaussian { charge, t0, sigma } if (mid - t0).abs() <= BUNCH_SIGMAS * sigma => {
+                charge * dt * (-0.5 * ((mid - t0) / sigma).powi(2)).exp() / (sigma * (2.0 * std::f64::consts::PI).sqrt())
+            }
+            Pulse::Gaussian { .. } => 0.0,
+            Pulse::Steady { current, rise } => current * dt * if rise > 0.0 { (mid / rise).min(1.0) } else { 1.0 },
+        }
+    }
+
+    fn valid(self) -> bool {
+        let ok = |x: f64| x.is_finite() && x >= 0.0;
+        match self {
+            Pulse::Gaussian { charge, t0, sigma } => ok(charge) && ok(t0) && sigma.is_finite() && sigma > 0.0,
+            Pulse::Steady { current, rise } => ok(current) && ok(rise),
+        }
+    }
+}
+
+/// A bunch or a beam sent in through a conducting wall as `pulse` says, spread evenly over the
+/// ring between `inner` and `radius` (m; a disc when `inner` is 0) about `centre` (m, the two
+/// coordinates across the wall in the axes' order after `axis`), each particle at `energy` (J)
+/// along the wall's normal; `per_step` macro-particles carry each step's charge, placed by the
 /// R₂ sequence.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bunch {
     pub axis: usize,
     pub high: bool,
     pub population: usize,
-    pub charge: f64,
-    pub t0: f64,
-    pub sigma: f64,
+    pub pulse: Pulse,
     pub centre: [f64; 2],
     pub radius: f64,
+    pub inner: f64,
     pub energy: f64,
     pub per_step: usize,
 }
@@ -202,8 +233,11 @@ impl Bunch {
             return Err(invalid("bunch", format!("population {} of {populations}", self.population)));
         }
         let ok = |x: f64| x.is_finite() && x >= 0.0;
-        if !(ok(self.charge) && ok(self.t0) && ok(self.radius) && ok(self.energy) && self.sigma.is_finite() && self.sigma > 0.0) {
-            return Err(invalid("bunch", "its charge, time, radius and energy must be finite numbers ≥ 0, its length > 0"));
+        if !(self.pulse.valid() && ok(self.radius) && ok(self.inner) && self.inner <= self.radius && ok(self.energy)) {
+            return Err(invalid(
+                "bunch",
+                "its charge or current, times, radii (inner ≤ outer) and energy must be finite numbers ≥ 0, a Gaussian's length > 0",
+            ));
         }
         if self.per_step == 0 || self.per_step > MAX_PER_NODE {
             return Err(invalid("bunch", format!("1 to {MAX_PER_NODE} particles a step")));
@@ -216,11 +250,10 @@ impl Bunch {
 
     /// The particles of `population` the bunch sends in over the step from `t` (s) of `dt`.
     pub(crate) fn emit(&self, grid: &Grid, population: &Population, t: f64, dt: f64, count: &mut u64) -> Vec<Particle> {
-        let mid = t + 0.5 * dt - self.t0;
-        if mid.abs() > BUNCH_SIGMAS * self.sigma {
+        let q = self.pulse.charge(t, dt);
+        if q <= 0.0 {
             return Vec::new();
         }
-        let q = self.charge * dt * (-0.5 * (mid / self.sigma).powi(2)).exp() / (self.sigma * (2.0 * std::f64::consts::PI).sqrt());
         let species = population.species;
         let w = q / (species.charge.abs() * self.per_step as f64);
         let sigma = if self.high { -1.0 } else { 1.0 };
@@ -233,7 +266,8 @@ impl Bunch {
                 *count += 1;
                 let n = *count as f64;
                 let [s1, s2] = R2.map(|r| (0.5 + n * r).fract());
-                let (r, phi) = (self.radius * s1.sqrt(), 2.0 * std::f64::consts::PI * s2);
+                let r = (self.inner * self.inner + s1 * (self.radius * self.radius - self.inner * self.inner)).sqrt();
+                let phi = 2.0 * std::f64::consts::PI * s2;
                 let mut x = [0.0; 3];
                 x[self.axis] = wall;
                 x[b] = (self.centre[0] + r * phi.cos()).clamp(0.0, grid.axes[b].length());

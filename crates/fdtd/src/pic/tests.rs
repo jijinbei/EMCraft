@@ -45,8 +45,10 @@ fn a_standing_wave_in_vacuum_rings_at_the_yee_grids_frequency() {
     }
 }
 
-#[test]
-fn charge_is_conserved_at_every_node_to_rounding() {
+#[rstest::rstest]
+#[case::raw(0)]
+#[case::smoothed(2)]
+fn charge_is_conserved_at_every_node_to_rounding(#[case] smoothing: usize) {
     // Electrons and positrons in all directions up to γ ≈ 3 in a static B, through periodic
     // faces along x and z and onto conducting walls along y: ε₀∇·E − ρ stays where it started.
     let g = Grid::new([axis(5, 1e-3, Wall::Periodic), axis(4, 1.3e-3, Wall::Conductor), axis(6, 0.8e-3, Wall::Periodic)]).unwrap();
@@ -60,6 +62,7 @@ fn charge_is_conserved_at_every_node_to_rounding() {
         pic.add(Population { species, particles }).unwrap();
     }
     pic.set_b(2, |_| 0.1);
+    pic.smooth(smoothing);
     let before = pic.gauss();
     let scale = before.iter().fold(0.0f64, |m, v| m.max(v.abs()));
     let mut collected = 0.0;
@@ -209,11 +212,10 @@ fn a_bunch_through_a_pillbox_leaves_its_loss_factor() {
         axis: 2,
         high: false,
         population: k,
-        charge: 1e-9,
-        t0: 5.0 * sigma,
-        sigma,
+        pulse: Pulse::Gaussian { charge: 1e-9, t0: 5.0 * sigma, sigma },
         centre: [a, a],
         radius: 0.0,
+        inner: 0.0,
         energy: 1e10 * -ELECTRON.charge,
         per_step: 8,
     };
@@ -233,7 +235,7 @@ fn a_bunch_through_a_pillbox_leaves_its_loss_factor() {
     let drift = before.iter().zip(pic.gauss()).fold(0.0f64, |m, (x, y)| m.max((x - y).abs()));
     assert!(drift < 1e-12 * 1e-9 / g.cell_volume(), "{drift:e}");
     // A bunch through a periodic face, or with no length, is refused.
-    let bad = Bunch { sigma: 0.0, ..bunch };
+    let bad = Bunch { pulse: Pulse::Gaussian { charge: 1e-9, t0: 0.0, sigma: 0.0 }, ..bunch };
     assert!(pic.inject(bad).is_err() && pic.inject(Bunch { axis: 9, ..bunch }).is_err());
 }
 
@@ -256,11 +258,10 @@ fn a_bunch_through_a_dielectric_pillbox_leaves_the_dielectric_modes_loss_factor(
         axis: 2,
         high: false,
         population: k,
-        charge: 1e-12,
-        t0: 5.0 * sigma,
-        sigma,
+        pulse: Pulse::Gaussian { charge: 1e-12, t0: 5.0 * sigma, sigma },
         centre: [a, a],
         radius: 0.0,
+        inner: 0.0,
         energy: 1e10 * -ELECTRON.charge,
         per_step: 8,
     })
@@ -275,4 +276,96 @@ fn a_bunch_through_a_dielectric_pillbox_leaves_the_dielectric_modes_loss_factor(
     assert!((k / want - 1.0).abs() < 0.015, "{k:e} V/C against {want:e}");
     let drift = before.iter().zip(pic.gauss()).fold(0.0f64, |m, (x, y)| m.max((x - y).abs()));
     assert!(drift < 1e-12 * 1e-12 / g.cell_volume(), "{drift:e}");
+}
+
+/// A ring beam of `current` (A) at γ₀ = 1.25 through a grounded drift tube 5 mm in radius (the
+/// ring at 3 mm, a cell thick) and 30 mm long in a 10 T axial field, 0.5 mm cells: the mean γ
+/// in its middle third and the current reaching the far end over the run's second half (A).
+fn drift_tube(current: f64) -> (f64, f64) {
+    let (r, rb, l, h) = (5e-3, 3e-3, 30e-3, 0.5e-3);
+    let across = |len: f64| axis((len / h).round() as usize, len / (len / h).round(), Wall::Conductor);
+    let g = Grid::new([across(2.0 * r), across(2.0 * r), across(l)]).unwrap();
+    let dt = g.time_step(0.95);
+    let mut pic = Pic::new(g, dt, Pusher::Boris).unwrap();
+    pic.set_metal(|x| (x[0] - r).powi(2) + (x[1] - r).powi(2) > r * r);
+    pic.set_b(2, |_| 10.0);
+    let k = pic.add(Population::new(ELECTRON)).unwrap();
+    let pulse = Pulse::Steady { current, rise: 0.1e-9 };
+    let energy = 0.25 * ELECTRON.rest_energy();
+    pic.inject(Bunch { axis: 2, high: false, population: k, pulse, centre: [r, r], radius: rb + 0.5 * h, inner: rb - 0.5 * h, energy, per_step: 16 })
+        .unwrap();
+    let steps = (0.8e-9 / dt) as usize;
+    let mut out = 0.0;
+    for n in 0..steps {
+        let m = pic.step().unwrap();
+        if n >= steps / 2 {
+            out += m.collected[2][1];
+        }
+    }
+    let mid: Vec<f64> =
+        pic.populations()[k].particles.iter().filter(|p| p.x[2] > l / 3.0 && p.x[2] < 2.0 * l / 3.0).map(|p| emcraft_particles::gamma(p.u)).collect();
+    (mid.iter().sum::<f64>() / mid.len().max(1) as f64, out.abs() / ((steps - steps / 2) as f64 * dt))
+}
+
+#[test]
+fn a_ring_beam_in_a_drift_tube_sinks_by_its_space_charge() {
+    // Bogdankevich & Rukhadze (Sov. Phys. Usp. 14:163, 1971; Miller 1982, §3.2): the beam slows
+    // to γ_b with I = I₀(γ₀ − γ_b)β_b/(2 ln(R/r_b)); at 0.7 of the limiting current
+    // I₀(γ₀^{2/3} − 1)^{3/2}/(2 ln(R/r_b)) = 1.07 kA it all passes and γ_b = 1.1616 (1.3 % off
+    // here; above the limit, oracle pic-limiting-current). At γ₀ = 1.25 the beam (β = 0.6) is slower than the
+    // grid's shortest waves: no numerical Cherenkov drag.
+    let beam = emcraft_theory::plasma::AnnularBeam { gamma0: 1.25, ratio: 5.0 / 3.0, charge: ELECTRON.charge, mass: ELECTRON.mass };
+    let limit = beam.limiting().unwrap();
+    let want = beam.depressed(0.7 * limit).unwrap();
+    let (g, passed) = drift_tube(0.7 * limit);
+    assert!(((1.25 - g) / (1.25 - want) - 1.0).abs() < 0.05, "γ_b {g} against {want}");
+    assert!((passed / (0.7 * limit) - 1.0).abs() < 0.03, "{passed} A of {}", 0.7 * limit);
+}
+
+/// The growth rate (1/s) of the fundamental of E_x along a periodic box one wavelength 2π/k long,
+/// 32 cells, `per` macro-particles a cell for each population of (density m⁻³, velocity m/s,
+/// seed): fitted as `growth_rate` fits |E₁|², from e⁻⁶ to e⁻² of its peak amplitude.
+fn growth(k: f64, streams: &[(f64, f64, f64)], per: usize, time: f64) -> f64 {
+    let cells = 32;
+    let h = 2.0 * PI / k / cells as f64;
+    let g = Grid::new([axis(cells, h, Wall::Periodic), axis(1, 10.0 * h, Wall::Periodic), axis(1, 10.0 * h, Wall::Periodic)]).unwrap();
+    let dt = g.time_step(0.95);
+    let mut pic = Pic::new(g, dt, Pusher::Boris).unwrap();
+    for &(n, v, seed) in streams {
+        pic.add(Population::uniform(&g, ELECTRON, n, [per, 1, 1], |x| [v + seed * (k * x[0]).sin(), 0.0, 0.0]).unwrap()).unwrap();
+    }
+    pic.neutralise();
+    let (mut t, mut w) = (Vec::new(), Vec::new());
+    for _ in 0..(time / dt) as usize {
+        pic.step().unwrap();
+        let (c, s) = (0..cells).fold((0.0, 0.0), |(c, s), i| {
+            let x = (i as f64 + 0.5) * h;
+            let e = pic.e_at([x, 0.0, 0.0])[0];
+            (c + e * (k * x).cos(), s + e * (k * x).sin())
+        });
+        t.push(pic.time());
+        w.push(c * c + s * s);
+    }
+    growth_rate(&t, &w).unwrap_or(0.0)
+}
+
+#[test]
+fn two_streams_grow_at_the_cold_dispersions_rate() {
+    // Two cold streams at ±v₀ grow fastest, at ω_b/2 where k v₀ = (√3/2) ω_b; a weak beam (1 %
+    // of the plasma's density) through a plasma at rest at k v₀ = ω_p grows at
+    // ≈ (√3/2)(n_b/2n_p)^{1/3} ω_p, the cube root of Pierce's gain — each against the largest
+    // imaginary root of 1 = Σ ω_s²/(ω − k v_s)² (Birdsall & Langdon §5-6; emcraft_theory::plasma).
+    // β = 0.1 (its relativistic shift below 1 %): 2.7 % and 0.5 % here.
+    let (n, v0) = (1e16, 3e7);
+    let wb = plasma_frequency(n, ELECTRON.charge, ELECTRON.mass);
+    let k = 3f64.sqrt() / 2.0 * wb / v0;
+    let want = emcraft_theory::plasma::two_stream_growth(wb, v0, wb, -v0, k).unwrap();
+    let got = growth(k, &[(n, v0, 1e-3 * v0), (n, -v0, 0.0)], 16, 16.0 / want);
+    assert!((got / want - 1.0).abs() < 0.04, "{got:e} against {want:e}");
+    // The weak beam at k v_b = ω_p.
+    let vb = wb / k;
+    let weak = plasma_frequency(0.01 * n, ELECTRON.charge, ELECTRON.mass);
+    let want = emcraft_theory::plasma::two_stream_growth(wb, 0.0, weak, vb, k).unwrap();
+    let got = growth(k, &[(n, 0.0, 0.0), (0.01 * n, vb, 1e-4 * vb)], 16, 22.0 / want);
+    assert!((got / want - 1.0).abs() < 0.03, "{got:e} against {want:e}");
 }

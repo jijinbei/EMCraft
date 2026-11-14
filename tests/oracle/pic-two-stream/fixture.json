@@ -1,0 +1,9 @@
+{
+  "note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.",
+  "values": {
+    "growth_rate": {
+      "band": 2.8207301155902536,
+      "value": 2750476849.6354866
+    }
+  }
+}
