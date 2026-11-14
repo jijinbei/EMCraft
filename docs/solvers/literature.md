@@ -775,5 +775,6 @@ overlap tests).
   simulations employing the Esirkepov algorithm*, J. Comput. Phys. 248:33–46, 2013 — numerical
   Cherenkov radiation of relativistic beams on the Yee grid, and binomial smoothing of the
   current against it (`emcraft-fdtd::pic::Pic::smooth`).
+- J. P. Verboncoeur, *Symmetric spline weighting for charge and current density in particle simulation*, J. Comput. Phys. 174:421–427, 2001; Birdsall & Langdon §14-11 — particle-in-cell in cylindrical r–z: rings of charge, the fields as circulations over the rings' faces (`emcraft-fdtd::axi`, with Esirkepov's deposition in the indices and the faces' areas).
 - M. Roberts, *The unreasonable effectiveness of quasirandom sequences*, 2018 — the R₂ sequence
   that spreads emitted particles across a wall's nodes, the same every run.
