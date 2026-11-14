@@ -1,0 +1,20 @@
+{
+ "title": "A planar diode's space-charge-limited current at 1 MV in particle-in-cell: the relativistic Child–Langmuir law",
+ "kind": "theory",
+ "source": "Electrons leaving a plane cathode at rest, accelerated by V across a gap d, carry at most J = (ε₀e/(2mₑcd²)) [∫₀^V (γ² − 1)^(−1/4) dφ]², γ = 1 + eφ/(mₑc²), the field at the cathode zero (H. R. Jory, A. W. Trivelpiece, J. Appl. Phys. 40:3924, 1969; C. D. Child, Phys. Rev. 32:492, 1911; I. Langmuir, Phys. Rev. 2:450, 1913): 1.985e7 A/m² at 1 MV across 1 cm, 0.85 of Child's slow-particle law. The integral by Simpson's rule after φ = V s⁴, evaluated apart from the code under test; the current arriving at the anode is the electrons' charge, negative",
+ "quantities": [
+  {
+   "id": "anode_density",
+   "quantity": "the current density collected on the anode over the run's second half (A/m²), 1 MV across 1 cm",
+   "measure": {
+    "step": "run",
+    "pointer": "/walls/z+/density"
+   },
+   "value": -19851979.295519967,
+   "tolerance": {
+    "relative": 0.03
+   },
+   "reason": "the density near a cathode emitting at rest grows as z^(−2/3), so the current converges as h^(2/3): 3.4 % high at 80 cells, 2.2 % at the 160 here (emcraft_fdtd::pic's test extrapolates the two orders to within 0.1 %); Child's law, 15 % higher, is outside"
+  }
+ ]
+}

@@ -21,6 +21,8 @@ emcraft_macros::named_enum! {
         /// A chain of two-ports from a source to a receiver: its gain, noise and linearity
         /// stage by stage (a budget), no field solved.
         System = "system" => "System budget",
+        /// Electrons in the fields that they drive themselves: particle-in-cell in time.
+        Particles = "particles" => "Particles (PIC)",
     }
 }
 

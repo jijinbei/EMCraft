@@ -138,6 +138,8 @@ pub struct Results {
     pub bloch: Option<Arc<Bloch>>,
     /// A system's chain and its budget from `solve.system`.
     pub system: Option<Arc<crate::system::SystemResult>>,
+    /// A particle-in-cell run from `solve.particles`.
+    pub particles: Option<Arc<crate::particles::PicResult>>,
     /// The kinds held that are stale: the model changed after they were solved (without
     /// making them wrong, which drops them). Only kinds held; each solve makes its own fresh.
     stale: std::collections::BTreeSet<ResultKind>,
@@ -157,6 +159,8 @@ pub enum Change {
     /// A system's chain, source or receiver: no result solved from it is wrong, its own budget
     /// stale (read again in a moment).
     System,
+    /// A particle-in-cell run's sources: its run.
+    Particles,
 }
 
 emcraft_macros::named_enum! {
@@ -174,6 +178,7 @@ emcraft_macros::named_enum! {
         Revolution = "revolution",
         Bloch = "bloch",
         System = "system",
+        Particles = "particles",
     }
 }
 
@@ -196,6 +201,7 @@ impl ResultKind {
             Change::Ports => matches!(self, Sweep | TimeDomain | Revolution | Bloch),
             Change::Open => matches!(self, Radiation | TdRadiation),
             Change::System => false,
+            Change::Particles => matches!(self, Particles),
         }
     }
 
@@ -216,6 +222,7 @@ impl ResultKind {
             ResultKind::Revolution => "solve.revolution.frequency",
             ResultKind::Bloch => "solve.bloch",
             ResultKind::System => "solve.system",
+            ResultKind::Particles => "solve.particles",
         }
     }
 }
@@ -234,6 +241,7 @@ impl Results {
             ResultKind::Revolution => self.revolution.is_some(),
             ResultKind::Bloch => self.bloch.is_some(),
             ResultKind::System => self.system.is_some(),
+            ResultKind::Particles => self.particles.is_some(),
         }
     }
 
@@ -285,6 +293,7 @@ impl Results {
                 ResultKind::Revolution => same(self.revolution.as_ref(), before.revolution.as_ref()),
                 ResultKind::Bloch => same(self.bloch.as_ref(), before.bloch.as_ref()),
                 ResultKind::System => same(self.system.as_ref(), before.system.as_ref()),
+                ResultKind::Particles => same(self.particles.as_ref(), before.particles.as_ref()),
             };
             if !unchanged {
                 self.stale.remove(&kind);
@@ -306,6 +315,7 @@ impl Results {
             ResultKind::Revolution => self.revolution = None,
             ResultKind::Bloch => self.bloch = None,
             ResultKind::System => self.system = None,
+            ResultKind::Particles => self.particles = None,
         }
     }
 

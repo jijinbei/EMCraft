@@ -169,7 +169,7 @@ Navigates the PCB workflow (board, net, settings, inspect, results) or selects a
 
 ## `project.setup` — Confirm the run's settings
 
-Confirms the run's settings for the job's kind of analysis (or `kind`), as the Setup step shows them: a sweep's band (`start`, `stop`), `points` and element `order`; the time domain's band, `points`, `cell` and the ports to `excite`; the eigenmodes' `count` near `frequency` (or the lowest, `lowest`) and `order`; a radiation solve's `frequency` and `order`; a system's band, `points` and the `frequency` its budget is shown at. The job is then ready: the Setup step is done and Run (solve.run) runs them. Choosing another kind (project.analysis) takes them back. The band also sets meshing by wavelength (its top) and the port previews. Undo goes back.
+Confirms the run's settings for the job's kind of analysis (or `kind`), as the Setup step shows them: a sweep's band (`start`, `stop`), `points` and element `order`; the time domain's band, `points`, `cell` and the ports to `excite`; the eigenmodes' `count` near `frequency` (or the lowest, `lowest`) and `order`; a radiation solve's `frequency` and `order`; a system's band, `points` and the `frequency` its budget is shown at; a particle run's `time`, `cell` and push (`vay`). The job is then ready: the Setup step is done and Run (solve.run) runs them. Choosing another kind (project.analysis) takes them back. The band also sets meshing by wavelength (its top) and the port previews. Undo goes back.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -183,6 +183,8 @@ Confirms the run's settings for the job's kind of analysis (or `kind`), as the S
 | `lowest` | boolean |  | no | the eigenmodes: the `count` lowest, none left out, instead of those nearest `frequency` (default false) |
 | `cell` | number | length | no | the time domain's cell size (default 1 mm) |
 | `excite` | array |  | no | the time domain's ports to excite, by name (default the first) |
+| `time` | number |  | no | a particle run's time in ns |
+| `vay` | boolean |  | no | a particle run pushed by Vay's scheme rather than Boris's (default false) |
 
 ## `project.analysis` — Analysis
 
@@ -474,6 +476,81 @@ Reads the system's chain — the path its links make from the source — over a 
 | `stop` | number | frequency | no | the band's stop (default the confirmed settings') |
 | `points` | integer |  | no | frequencies from start to stop, 1 to 4001 (default 101) |
 | `frequency` | number | frequency | no | the frequency the budget is shown at (default the band's centre) |
+
+## `particles.walls` — Particle walls
+
+How the particle run's box (the geometry's bounds) ends each axis: `conductor` (perfectly conducting walls at both ends: E tangential to them zero, particles reaching them absorbed, their current counted) or `periodic` (what leaves one end comes back through the other). The axes left out are kept; all are conducting at first. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `x` | string |  | no | `conductor` or `periodic` |
+| `y` | string |  | no | `conductor` or `periodic` |
+| `z` | string |  | no | `conductor` or `periodic` |
+
+## `particles.emitter` — Electron emitter
+
+A conducting face of the particle run's box that emits electrons: as many as the field there draws (space-charge limited: each step the charge that brings the normal field at the wall to zero, by Gauss's law; Birdsall & Langdon §16-5), or a given `current` density. The electrons leave at `energy` along the face's normal, spread over each node of the face. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `face` | string |  | yes | the face: x-, x+, y-, y+, z- or z+ |
+| `current` | number |  | no | the current density in A/m² (default: space-charge limited) |
+| `energy` | number |  | no | the electrons' energy as they leave, in eV (default 0) |
+| `per_node` | integer |  | no | macro-particles from each node a step, 1 to 64 (default 4) |
+
+## `particles.plasma` — Plasma
+
+Electrons of `density` filling the particle run's box at the start, `per_cell` macro-particles a cell on a regular lattice (a quiet start), on a background of immobile ions that makes the box neutral; their velocity is `drift` plus, with `wave`, a wave of that amplitude along `wave_axis`, `modes` wavelengths across the box (a cold plasma's oscillation at ω_p, a beam's). Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `density` | number |  | yes | electrons per m³ |
+| `per_cell` | array |  | no | macro-particles a cell: an integer, or [nx, ny, nz] (default 2 along each axis) |
+| `drift` | array |  | no | the velocity [vx, vy, vz] in m/s (default at rest) |
+| `wave` | number |  | no | the amplitude of a velocity wave in m/s (default none) |
+| `wave_axis` | string |  | no | the wave's axis and direction: x, y or z (default x) |
+| `modes` | integer |  | no | the wave's wavelengths across the box (default 1) |
+
+## `particles.voltage` — Gap voltage
+
+A voltage held across the conducting walls of `axis` by the outer circuit, the high wall `volts` above the low one: a uniform field at the start, the gap's mean current returned through the circuit as particles cross it. The other two axes must be periodic. Without `volts`, none. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `axis` | string |  | no | the axis across whose walls it is held: x, y or z |
+| `volts` | number |  | no | the high wall's voltage over the low one's, in V (default none) |
+
+## `particles.magnetic` — Static magnetic field
+
+A uniform static magnetic field through the particle run's box (a beam's focusing field, a magnetron's). Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `b` | array |  | yes | [Bx, By, Bz] in T |
+
+## `particles.probe` — Field probe
+
+A point whose electric field the particle run records; its reply gives the frequency the field rings at (the zero crossings of its strongest component about its mean). Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `at` | array | length | yes | the point [x, y, z] |
+
+## `particles.clear` — Clear particle sources
+
+Takes away the particle run's emitters, plasmas, voltage, magnetic field and probes (the walls stay). Undo goes back.
+
+No parameters.
+
+## `solve.particles` — Solve particles
+
+Particle-in-cell in time (docs/adr/0012-particles.md): the particles' own fields with the box's, self-consistent. The box is the geometry's bounds in cells of about `cell` along each axis, its walls as particles.walls sets them; E on the cells' edges and B on their faces (Yee), leapfrogged with macro-particles pushed by the relativistic Boris (or `vay`) push; their current deposited by Esirkepov's scheme (Comput. Phys. Commun. 135, 2001), so Gauss's law holds to rounding. Plasmas, emitters, a held voltage and a static magnetic field from particles.*. The reply gives the grid, the particles at the end, each conducting wall's current (A, the charge's rate: negative for electrons arriving) and current density over the run's second half, each probe's frequency, the energies; the run's history, probes and last particles are kept for the window (and the project file).
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `time` | number |  | no | how long to run, in ns (default the confirmed settings') |
+| `cell` | number | length | no | the cell's size (default the confirmed settings') |
+| `vay` | boolean |  | no | push by Vay's scheme rather than Boris's (default the confirmed settings', else false) |
 
 ## `filter.synthesize` — Synthesize filter
 

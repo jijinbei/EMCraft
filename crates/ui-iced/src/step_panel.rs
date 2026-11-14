@@ -362,11 +362,12 @@ pub(crate) fn setup(app: &App) -> Vec<Element<'_, Message>> {
             field(app, "frequency", t!("budget at"), fu),
             small(t, tr(t!("Empty: the band's centre.")), t.text_dim),
         ],
+        Solver::Particles => vec![field(app, "time", t!("time"), "ns"), field(app, "cell", t!("cell"), lu)],
         Solver::Pcb => Vec::new(),
     };
     let order = matches!(solver, Solver::Frequency | Solver::Eigenmodes | Solver::Radiation)
         .then(|| [field(app, "order", t!("Element order"), ""), small(t, tr(t!("Order 2: more accurate, more memory.")), t.text_dim)]);
-    let estimate = (solver != Solver::System).then(|| match (app.session.model().mesh.is_some(), app.estimate()) {
+    let estimate = (!matches!(solver, Solver::System | Solver::Particles)).then(|| match (app.session.model().mesh.is_some(), app.estimate()) {
         (false, _) => small(t, tr(t!("The run's time is estimated once the model is meshed (step 6).")), t.text_dim),
         (true, Some(e)) => estimate_line(t, e),
         (true, None) => Space::new().boxed(),

@@ -1,0 +1,20 @@
+{
+ "title": "A cold plasma's oscillation in particle-in-cell: the plasma frequency",
+ "kind": "theory",
+ "source": "Electrons of density n displaced from a neutralising background are pulled back at ω_p = √(n e²/(ε₀ mₑ)) whatever the wavelength (C. K. Birdsall, A. B. Langdon, Plasma Physics via Computer Simulation, 1991, §4-2; F. F. Chen, Introduction to Plasma Physics and Controlled Fusion, 3rd ed., 2016, §4.3): 0.8979 GHz at 10¹⁶ m⁻³ (CODATA 2018 constants). Evaluated apart from the code under test",
+ "quantities": [
+  {
+   "id": "frequency",
+   "quantity": "the frequency E_x rings at a quarter along the box (GHz), 10¹⁶ electrons per m³",
+   "measure": {
+    "step": "run",
+    "pointer": "/probes/0/frequency"
+   },
+   "value": 0.8978662820487434,
+   "tolerance": {
+    "relative": 0.004
+   },
+   "reason": "the grid's own oscillation: the charge assigned and the field gathered with the first-order shape, each sinc²(kh/2) at kh = 2π/32 (Birdsall & Langdon §8-6), Gauss's difference and the leapfrog at ω_pΔt = 0.052 put it 0.23 % low"
+  }
+ ]
+}

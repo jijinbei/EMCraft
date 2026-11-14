@@ -19,6 +19,8 @@ pub struct Fields {
     pub count: String,
     pub frequency: String,
     pub cell: String,
+    /// A particle run's time (ns).
+    pub time: String,
     pub excite: Vec<String>,
     pub seen: Option<Value>,
     pub touchstone: String,
@@ -28,7 +30,7 @@ pub struct Fields {
 }
 
 /// The form's fields by name, as `project.setup` names them.
-pub const NAMES: [&str; 7] = ["start", "stop", "points", "order", "count", "frequency", "cell"];
+pub const NAMES: [&str; 8] = ["start", "stop", "points", "order", "count", "frequency", "cell", "time"];
 
 impl Fields {
     /// Field `name`'s text.
@@ -41,6 +43,7 @@ impl Fields {
             "count" => &self.count,
             "frequency" => &self.frequency,
             "cell" => &self.cell,
+            "time" => &self.time,
             "touchstone" => &self.touchstone,
             "format" => &self.format,
             _ => "",
@@ -59,6 +62,7 @@ impl Fields {
             "count" => f.count = t,
             "frequency" => f.frequency = t,
             "cell" => f.cell = t,
+            "time" => f.time = t,
             "touchstone" => f.touchstone = t,
             "format" => f.format = t,
             _ => return f,
@@ -210,6 +214,7 @@ pub fn checked(solver: Solver, limit: u64, f: Fields) -> (Result<Value, String>,
         Solver::Eigenmodes => vec![("frequency", number(&f.frequency)), ("count", whole(&f.count, modes)), ("order", whole(&f.order, 2))],
         Solver::Radiation => vec![("frequency", number(&f.frequency)), ("order", whole(&f.order, 2))],
         Solver::Pcb => return (Err(tr(t!("the PCB diagnosis has no run settings")).into()), f),
+        Solver::Particles => vec![("time", number(&f.time)), ("cell", number(&f.cell))],
         Solver::System => {
             let budget = (!f.frequency.trim().is_empty()).then(|| ("frequency", number(&f.frequency)));
             vec![("start", number(&f.start)), ("stop", number(&f.stop)), ("points", whole(&f.points, limit))].into_iter().chain(budget).collect()

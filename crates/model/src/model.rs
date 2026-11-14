@@ -59,6 +59,9 @@ pub struct Model {
     /// A system's chain of stages ([`crate::system`]): changed with its setters.
     #[serde(default, skip_serializing_if = "crate::system::Chain::is_empty")]
     pub system: crate::system::Chain,
+    /// A particle-in-cell run's sources ([`crate::particles`]): changed with its setter.
+    #[serde(default, skip_serializing_if = "crate::particles::Particles::is_empty")]
+    pub particles: crate::particles::Particles,
     /// The mesh of the waveguide (made by `emcraft-mesh`), shared: the copies of the model a
     /// session keeps to undo to share it rather than copy it.
     #[serde(skip)]
@@ -109,6 +112,7 @@ impl Default for Model {
             elements: Vec::new(),
             job: crate::job::Job::Open,
             system: crate::system::Chain::default(),
+            particles: crate::particles::Particles::default(),
             mesh: None,
             faces: crate::faces::Faces::new(),
         }

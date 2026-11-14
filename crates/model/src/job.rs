@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::analysis::Analysis;
 use crate::band::Band;
 use crate::error::{Result, invalid};
-use crate::quantity::{Hertz, Metres};
+use crate::quantity::{Hertz, Metres, Positive};
 
 /// The most eigenmodes a run may ask for.
 pub const MAX_MODES: usize = 50;
@@ -78,6 +78,14 @@ pub enum Setup {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         frequency: Option<Hertz>,
     },
+    /// Particles in the box's fields for `time` (s) on a grid of `cell`, pushed by Vay's scheme
+    /// or (`vay` false) Boris's.
+    Particles {
+        time: Positive,
+        cell: Metres,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        vay: bool,
+    },
 }
 
 impl Setup {
@@ -89,10 +97,12 @@ impl Setup {
             Setup::Radiation { .. } => Analysis::Radiation,
             Setup::TimeDomain { .. } => Analysis::TimeDomain,
             Setup::System { .. } => Analysis::System,
+            Setup::Particles { .. } => Analysis::Particles,
         }
     }
 
-    /// The frequencies the run works over (Hz): the band, or the one frequency twice.
+    /// The frequencies the run works over (Hz): the band, or the one frequency twice; none for
+    /// particles, which run in time.
     ///
     /// ```
     /// use emcraft_model::{Band, Hertz, Order, Setup};
@@ -100,14 +110,15 @@ impl Setup {
     ///
     /// let band = Band::new(Hertz::new(6e9)?, Hertz::new(9e9)?)?; // Hz
     /// let s = Setup::Frequency { band, points: NonZeroUsize::MIN, order: Order::Two };
-    /// assert_eq!(s.range().stop.get(), 9e9);
-    /// assert_eq!(Setup::Radiation { frequency: Hertz::new(1e9)?, order: Order::One }.range().start.get(), 1e9);
+    /// assert_eq!(s.range().map(|b| b.stop.get()), Some(9e9));
+    /// assert_eq!(Setup::Radiation { frequency: Hertz::new(1e9)?, order: Order::One }.range().map(|b| b.start.get()), Some(1e9));
     /// # Ok::<(), emcraft_model::ModelError>(())
     /// ```
-    pub fn range(&self) -> Band {
+    pub fn range(&self) -> Option<Band> {
         match self {
-            Setup::Frequency { band, .. } | Setup::TimeDomain { band, .. } | Setup::System { band, .. } => *band,
-            Setup::Eigenmodes { near: f, .. } | Setup::Radiation { frequency: f, .. } => Band { start: *f, stop: *f },
+            Setup::Frequency { band, .. } | Setup::TimeDomain { band, .. } | Setup::System { band, .. } => Some(*band),
+            Setup::Eigenmodes { near: f, .. } | Setup::Radiation { frequency: f, .. } => Some(Band { start: *f, stop: *f }),
+            Setup::Particles { .. } => None,
         }
     }
 }
@@ -145,7 +156,7 @@ impl Job {
 
     /// The frequencies the confirmed run works over (Hz), if any.
     pub fn range(&self) -> Option<Band> {
-        self.setup().map(Setup::range)
+        self.setup().and_then(Setup::range)
     }
 
     /// The job with kind `a` chosen (`None`: open again): confirmed settings of that kind stay.

@@ -193,6 +193,7 @@ impl View {
             R::Study => View::Study,
             R::Bloch => View::Pulse,
             R::System => View::System,
+            R::Particles => View::Model,
         }
     }
 

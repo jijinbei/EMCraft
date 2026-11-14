@@ -43,6 +43,7 @@ pub mod mesh;
 pub mod model;
 pub mod nurbs;
 pub mod open;
+pub mod particles;
 pub mod periodic;
 pub mod port;
 pub mod prism;

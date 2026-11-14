@@ -26,6 +26,7 @@ pub fn card(kind: Solver) -> KindCard {
         Solver::Pcb => (Glyph::Chart, t!("PCB signal and return path"), t!("Signal quality and ground continuity on a routed net")),
         Solver::TimeDomain => (Glyph::KindPulse, t!("Time domain"), t!("A pulse sent through, and what comes back in time")),
         Solver::System => (Glyph::Table, t!("System budget"), t!("Gain, noise and sensitivity along a receiver chain")),
+        Solver::Particles => (Glyph::FieldLines, t!("Particles (PIC)"), t!("Electrons in the fields they drive themselves, in time")),
     };
     KindCard { glyph, name, plain }
 }

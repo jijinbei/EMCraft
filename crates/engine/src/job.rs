@@ -66,6 +66,11 @@ pub fn parse(s: &Session, p: &Params) -> Result<Setup> {
         Analysis::Radiation => Setup::Radiation { frequency: p.hertz("frequency").required()?, order: order()? },
         Analysis::Pcb => return Err(p.error("kind", "the PCB diagnosis has no run settings: its conditions are pcb.inspect's")),
         Analysis::System => Setup::System { band: band()?, points: points()?, frequency: p.hertz("frequency").optional()? },
+        Analysis::Particles => Setup::Particles {
+            time: emcraft_model::Positive::new(p.positive("time").required()? * 1e-9)?,
+            cell: p.metres("cell").required()?,
+            vay: p.flag("vay").or(false)?,
+        },
     };
     Ok(setup)
 }
@@ -86,6 +91,7 @@ pub fn setup_reply(s: &Session) -> Value {
         }
         Setup::Radiation { frequency, order: o } => json!({"frequency": f(*frequency), "order": order(*o)}),
         Setup::System { band, points, frequency } => system(s, *band, *points, *frequency),
+        Setup::Particles { time, cell, vay } => particles(s, *time, *cell, *vay),
     };
     v["kind"] = json!(setup.analysis().id());
     v
@@ -118,6 +124,7 @@ pub fn solve_of(s: &Session, setup: &Setup) -> (&'static str, Value) {
         }
         Setup::Radiation { frequency, order } => ("solve.radiation", json!({"frequency": f(*frequency), "order": u8::from(*order)})),
         Setup::System { band, points, frequency } => ("solve.system", system(s, *band, *points, *frequency)),
+        Setup::Particles { time, cell, vay } => ("solve.particles", particles(s, *time, *cell, *vay)),
     }
 }
 
@@ -126,6 +133,15 @@ fn system(s: &Session, band: Band, points: std::num::NonZeroUsize, frequency: Op
     let mut v = json!({"start": s.show_frequency(band.start.get()), "stop": s.show_frequency(band.stop.get()), "points": points.get()});
     if let Some(h) = frequency {
         v["frequency"] = json!(s.show_frequency(h.get()));
+    }
+    v
+}
+
+/// A particle run's settings as its solve takes them: the time in ns, the cell in display units.
+fn particles(s: &Session, time: emcraft_model::Positive, cell: emcraft_model::Metres, vay: bool) -> Value {
+    let mut v = json!({"time": time.get() * 1e9, "cell": s.show_length(cell.get())});
+    if vay {
+        v["vay"] = json!(true);
     }
     v
 }

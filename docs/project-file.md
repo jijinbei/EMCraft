@@ -71,7 +71,9 @@ history/<id>/s.c64           a kept solve's S-parameters (complex: real then ima
   diagram, the study's table (every row, its predictions, the surrogate), the open problem
   (its lumped ports, feed, Huygens samples and field), the open time domain and a system's
   budget (`system`: every frequency's S and each stage's row, as JSON, checked when read —
-  a row a stage, every number finite, at most 32 stages and 4001 frequencies). Each result's
+  a row a stage, every number finite, at most 32 stages and 4001 frequencies) and a particle
+  run (`particles`: its grid, history, probes and last particles, as JSON, checked when read —
+  every number finite, at most 2000 records, 20000 particles and 16 probes). Each result's
   shape is here and its numbers a stream in `results/`, read back in the order written. No
   system is written: a sweep's, the eigenmodes' and an open problem's are built again from the
   model and its mesh (an assembly, no factorization) and the vectors read must fit it. A result

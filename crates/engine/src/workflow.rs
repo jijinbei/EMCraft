@@ -227,6 +227,14 @@ pub const ANALYSES: [AnalysisSpec; Analysis::COUNT] = {
             not_needed: &[Excitation, Boundaries, Mesh],
             results: &[R::System],
         },
+        AnalysisSpec {
+            analysis: Analysis::Particles,
+            solve: "solve.particles",
+            // The box is the geometry's bounds; its walls and sources are the excitation's.
+            required: &[Geometry, Excitation, Setup],
+            not_needed: &[Boundaries, Mesh],
+            results: &[R::Particles],
+        },
     ]
 };
 
@@ -456,6 +464,14 @@ fn lossy_terminal_port(m: &emcraft_model::Model, p: &emcraft_model::Port) -> boo
 fn excitation(s: &Session) -> StepState {
     let m = &s.model;
     let mut st = StepState::new(Step::Excitation);
+    if m.job.chosen() == Some(Analysis::Particles) {
+        if !has_geometry(s) {
+            st.note(Status::Waiting, emcraft_i18n::text!("waits for the geometry"), Some("geometry.solid"));
+        } else if !m.particles.has_sources() {
+            st.note(Status::Todo, emcraft_i18n::text!("nothing puts particles in the box yet: an emitter or a plasma"), Some("particles.emitter"));
+        }
+        return st;
+    }
     if let Some(p) = m.ports.iter().find(|p| lossy_terminal_port(m, p)) {
         st.note_with(
             Status::Warning,

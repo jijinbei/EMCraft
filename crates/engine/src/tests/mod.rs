@@ -12,6 +12,7 @@ mod items;
 mod junctions;
 mod network;
 mod open;
+mod particles;
 mod pcb_fem;
 mod project;
 mod properties;

@@ -1,0 +1,8 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "box", "size": [0.0625, 0.0625, 10]}},
+ {"command": "project.analysis", "params": {"kind": "particles"}},
+ {"command": "particles.walls", "params": {"x": "periodic", "y": "periodic"}},
+ {"command": "particles.voltage", "params": {"axis": "z", "volts": 1e6}},
+ {"command": "particles.emitter", "params": {"face": "z-"}},
+ {"command": "solve.particles", "params": {"time": 2, "cell": 0.0625}, "id": "run"}
+]

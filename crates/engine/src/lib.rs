@@ -53,6 +53,7 @@ mod nrw;
 mod numbers;
 pub mod open;
 pub mod params;
+pub mod particles;
 pub mod periodic;
 pub mod progress;
 pub mod project;

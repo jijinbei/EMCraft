@@ -229,7 +229,7 @@ pub fn play(step: Step) -> Option<&'static str> {
 /// Whether a command belongs to a job of this kind of analysis: those of the other kinds are left
 /// out of the ＋ lists once a kind is chosen (the search still finds them).
 pub fn fits(kind: Analysis, id: &str) -> bool {
-    use Analysis::{Eigenmodes, Frequency, Pcb, Radiation, System, TimeDomain};
+    use Analysis::{Eigenmodes, Frequency, Particles, Pcb, Radiation, System, TimeDomain};
     if kind == Pcb {
         return id.starts_with("pcb.") || id.starts_with("file.") || matches!(id, "project.variable" | "project.analysis" | "units.set");
     }
@@ -241,6 +241,9 @@ pub fn fits(kind: Analysis, id: &str) -> bool {
     if id.starts_with("pcb.") || id.starts_with("system.") || id == "solve.system" {
         return false;
     }
+    if id.starts_with("particles.") || id == "solve.particles" {
+        return kind == Particles;
+    }
     match id {
         "solve.frequency" => kind == Frequency,
         "solve.eigenmodes" | "solve.dispersion" | "view.dispersion" | "results.cavity" | "results.track" => kind == Eigenmodes,
@@ -250,8 +253,8 @@ pub fn fits(kind: Analysis, id: &str) -> bool {
         "model.open" | "view.pattern" | "source.dipole" | "source.plane_wave" | "source.clear" => matches!(kind, Radiation | TimeDomain),
         // S-parameters between ports.
         "results.touchstone" | "view.sparameters" | "results.tdr" | "results.compare" | "results.check" => matches!(kind, Frequency | TimeDomain),
-        // Nothing drives a resonator.
-        "model.port.create" | "model.port.lumped" | "solve.port_modes" | "model.element.create" => kind != Eigenmodes,
+        // Nothing drives a resonator; particles are their own sources.
+        "model.port.create" | "model.port.lumped" | "solve.port_modes" | "model.element.create" => !matches!(kind, Eigenmodes | Particles),
         _ => true,
     }
 }

@@ -149,6 +149,10 @@ pub struct StoredSession {
     /// A system's chain read over the band: small, kept as it is (checked when read).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     system: Option<crate::system::SystemResult>,
+    /// A particle-in-cell run: its records, probes and last particles, kept as they are
+    /// (checked when read).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    particles: Option<crate::particles::PicResult>,
 }
 
 /// The bytes the results' field vectors take.
@@ -179,6 +183,7 @@ impl StoredSession {
             revolution: r.revolution.as_deref().map(|b| StoredRevolution::write(b, w)).transpose()?,
             bloch: r.bloch.as_deref().map(|b| StoredBloch::write(b, w)).transpose()?,
             system: r.system.as_deref().cloned(),
+            particles: r.particles.as_deref().cloned(),
         })
     }
 
@@ -221,6 +226,9 @@ impl StoredSession {
         }
         if let Some(x) = self.system {
             keep("the system's budget", x.check().map(|()| out.system = Some(Arc::new(x))));
+        }
+        if let Some(x) = self.particles {
+            keep("the particle run", x.check().map(|()| out.particles = Some(Arc::new(x))));
         }
         (out, dropped)
     }
