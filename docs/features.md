@@ -550,6 +550,15 @@ A voltage held across the conducting walls of `axis` by the outer circuit, the h
 | `axis` | string |  | no | the axis across whose walls it is held: x, y or z |
 | `volts` | number |  | no | the high wall's voltage over the low one's, in V (default none) |
 
+## `particles.open` — Open face
+
+Leaves a face of the particle run's box open: a convolutional perfectly matched layer of 10 cells beyond it (Roden & Gedney, Microw. Opt. Technol. Lett. 27(5), 2000) absorbs the waves that reach it, the geometry carried on into it as it is at the face (a guide stays a guide: its end matched), and particles leaving through it are counted on the wall behind the layer. Its axis must be closed by walls; nothing is emitted through it. With `closed`, the face is closed again. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `face` | string |  | yes | the face: x-, x+, y-, y+, z- or z+ |
+| `closed` | boolean |  | no | close it again (default false) |
+
 ## `particles.magnetic` — Static magnetic field
 
 A uniform static magnetic field through the particle run's box (a beam's focusing field, a magnetron's). Undo goes back.

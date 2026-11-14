@@ -30,6 +30,7 @@ use emcraft_particles::{Pusher, Species, V3, push, velocity};
 
 use crate::{FdtdError, Result, invalid};
 
+mod absorb;
 mod deposit;
 mod emit;
 mod filter;
@@ -38,6 +39,7 @@ mod media;
 #[cfg(test)]
 mod tests;
 
+pub use absorb::MAX_LAYER;
 pub use emit::{Bunch, Emission, Emitter, MAX_PER_NODE, Pulse};
 pub use grid::{Axis, Grid, Wall};
 pub use media::Medium;
@@ -130,10 +132,11 @@ pub struct Moved {
     pub kinetic_out: f64,
 }
 
-/// The energy on the grid (J): the field's and the particles'.
+/// The energy on the grid (J): the field's, its electric part, and the particles'.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Energy {
     pub field: f64,
+    pub electric: f64,
     pub kinetic: f64,
 }
 
@@ -158,6 +161,7 @@ pub struct Pic {
     media: Option<media::Media>,
     emitted: u64,
     steps: usize,
+    absorber: Option<absorb::Absorber>,
 }
 
 /// The rate (1/s) an instability grows at: the slope of ½ ln W over the stretch where the
@@ -238,6 +242,7 @@ impl Pic {
             media: None,
             emitted: 0,
             steps: 0,
+            absorber: None,
         })
     }
 
@@ -355,6 +360,19 @@ impl Pic {
         self.smoothing = passes.min(filter::MAX_PASSES);
     }
 
+    /// Opens a face: a convolutional perfectly matched layer of `cells` inside the conducting wall
+    /// of `axis` at its `high` end or its low one absorbs what reaches it (the module `absorb`'s
+    /// docs), the box open there inside the layer.
+    pub fn absorb(&mut self, axis: usize, high: bool, cells: usize) -> Result<()> {
+        let mut absorber = match self.absorber.take() {
+            Some(a) => a,
+            None => absorb::Absorber::new(&self.grid)?,
+        };
+        let done = absorber.layer(&self.grid, axis, high, cells, self.dt);
+        self.absorber = Some(absorber);
+        done
+    }
+
     /// Adds `bunch`, checked against the grid and the populations.
     pub fn inject(&mut self, bunch: Bunch) -> Result<()> {
         bunch.check(&self.grid, self.populations.len())?;
@@ -416,7 +434,11 @@ impl Pic {
         let eps = |a: usize, id: usize| self.media.as_ref().map_or(1.0, |m| m.eps(a, id));
         let electric: f64 = (0..3).map(|a| self.e[a].iter().enumerate().map(|(id, x)| eps(a, id) * x * x).sum::<f64>()).sum();
         let magnetic: f64 = self.b.iter().flatten().map(|x| x * x).sum();
-        Energy { field: v * (0.5 * EPS0 * electric + 0.5 / MU0 * magnetic), kinetic: self.populations.iter().map(Population::kinetic).sum() }
+        Energy {
+            field: v * (0.5 * EPS0 * electric + 0.5 / MU0 * magnetic),
+            electric: v * 0.5 * EPS0 * electric,
+            kinetic: self.populations.iter().map(Population::kinetic).sum(),
+        }
     }
 
     /// ε₀∇·(εr E) − ρ (C/m³) at each node off the walls and the metal: zero where Gauss's law
@@ -433,7 +455,11 @@ impl Pic {
         let axes = self.grid.axes;
         nodes
             .points()
-            .filter(|p| (0..3).all(|d| !axes[d].on_wall(p[d])) && !self.media.as_ref().is_some_and(|m| m.near_node(&self.grid, *p)))
+            .filter(|p| {
+                (0..3).all(|d| !axes[d].on_wall(p[d]))
+                    && !self.media.as_ref().is_some_and(|m| m.near_node(&self.grid, *p))
+                    && !self.absorber.as_ref().is_some_and(|a| a.inside(&self.grid, *p))
+            })
             .map(|p| {
                 let div: f64 = (0..3)
                     .map(|a| {
@@ -469,9 +495,9 @@ impl Pic {
             let mean = self.j[a].iter().sum::<f64>() / self.j[a].len().max(1) as f64;
             self.j[a].iter_mut().for_each(|v| *v -= mean);
         }
-        faraday(&self.grid, &self.e, &mut self.b, 0.5 * self.dt);
-        ampere(&self.grid, &mut self.e, &self.b, &self.j, self.dt, self.media.as_ref());
-        faraday(&self.grid, &self.e, &mut self.b, 0.5 * self.dt);
+        faraday(&self.grid, &self.e, &mut self.b, 0.5 * self.dt, self.absorber.as_mut());
+        ampere(&self.grid, &mut self.e, &self.b, &self.j, self.dt, (self.media.as_ref(), self.absorber.as_mut()));
+        faraday(&self.grid, &self.e, &mut self.b, 0.5 * self.dt, self.absorber.as_mut());
         self.steps += 1;
         Ok(moved)
     }
@@ -596,7 +622,7 @@ fn clip(grid: &Grid, x0: V3, x1: V3) -> (V3, Option<(usize, bool)>) {
 
 /// B advanced by `dt` (s): ∂B/∂t = −∇ × E, on every face (those normal to a wall keep the zero
 /// they start with, the tangential E about them being zero).
-fn faraday(grid: &Grid, e: &[Vec<f64>; 3], b: &mut [Vec<f64>; 3], dt: f64) {
+fn faraday(grid: &Grid, e: &[Vec<f64>; 3], b: &mut [Vec<f64>; 3], dt: f64, mut absorber: Option<&mut absorb::Absorber>) {
     let axes = grid.axes;
     for a in 0..3 {
         let (q, r) = ((a + 1) % 3, (a + 2) % 3);
@@ -606,15 +632,50 @@ fn faraday(grid: &Grid, e: &[Vec<f64>; 3], b: &mut [Vec<f64>; 3], dt: f64) {
             let (Some(nq), Some(nr)) = (axes[q].wrap(p[q] as isize + 1, true), axes[r].wrap(p[r] as isize + 1, true)) else { continue };
             let (mut pq, mut pr) = (p, p);
             (pq[q], pr[r]) = (nq, nr);
-            let curl = (e[r][er.at(pq)] - e[r][er.at(p)]) / axes[q].h - (e[q][eq.at(pr)] - e[q][eq.at(p)]) / axes[r].h;
-            b[a][lattice.at(p)] -= dt * curl;
+            let (mut dq, mut dr) = ((e[r][er.at(pq)] - e[r][er.at(p)]) / axes[q].h, (e[q][eq.at(pr)] - e[q][eq.at(p)]) / axes[r].h);
+            let id = lattice.at(p);
+            if let Some(ab) = absorber.as_deref_mut() {
+                (dq, dr) = stretched(ab, true, (a, [q, r]), (lattice, p, id), [dq, dr]);
+            }
+            b[a][id] -= dt * (dq - dr);
         }
     }
 }
 
+/// The differences `d` along `axes` at point `p` (index `id`) of component a's lattice (`field_b`:
+/// B's) through the absorber's layers: each ∂ + ψ, ψ advanced.
+fn stretched(
+    ab: &mut absorb::Absorber,
+    field_b: bool,
+    (a, axes): (usize, [usize; 2]),
+    (lattice, p, id): (grid::Lattice, [usize; 3], usize),
+    d: [f64; 2],
+) -> (f64, f64) {
+    let mut out = d;
+    for k in 0..2 {
+        let c = ab.at(field_b, axes[k], lattice.node[axes[k]], p[axes[k]]);
+        if c == crate::yee::Cpml::NONE {
+            continue;
+        }
+        let psi = if field_b { &mut ab.psi_b[a][k] } else { &mut ab.psi_e[a][k] };
+        if let Some(v) = psi.get_mut(id) {
+            *v = c.psi(*v, d[k]);
+            out[k] += *v;
+        }
+    }
+    (out[0], out[1])
+}
+
 /// E advanced by `dt` (s): ∂E/∂t = c²∇ × B − J/ε₀, off the walls it is tangential to and the
 /// edges metal holds at zero.
-fn ampere(grid: &Grid, e: &mut [Vec<f64>; 3], b: &[Vec<f64>; 3], j: &[Vec<f64>; 3], dt: f64, metal: Option<&media::Media>) {
+fn ampere(
+    grid: &Grid,
+    e: &mut [Vec<f64>; 3],
+    b: &[Vec<f64>; 3],
+    j: &[Vec<f64>; 3],
+    dt: f64,
+    (metal, mut absorber): (Option<&media::Media>, Option<&mut absorb::Absorber>),
+) {
     let axes = grid.axes;
     for a in 0..3 {
         let (q, r) = ((a + 1) % 3, (a + 2) % 3);
@@ -627,8 +688,12 @@ fn ampere(grid: &Grid, e: &mut [Vec<f64>; 3], b: &[Vec<f64>; 3], j: &[Vec<f64>; 
             let (Some(mq), Some(mr)) = (axes[q].wrap(p[q] as isize - 1, false), axes[r].wrap(p[r] as isize - 1, false)) else { continue };
             let (mut pq, mut pr) = (p, p);
             (pq[q], pr[r]) = (mq, mr);
-            let curl = (b[r][br.at(p)] - b[r][br.at(pq)]) / axes[q].h - (b[q][bq.at(p)] - b[q][bq.at(pr)]) / axes[r].h;
+            let (mut dq, mut dr) = ((b[r][br.at(p)] - b[r][br.at(pq)]) / axes[q].h, (b[q][bq.at(p)] - b[q][bq.at(pr)]) / axes[r].h);
             let id = lattice.at(p);
+            if let Some(ab) = absorber.as_deref_mut() {
+                (dq, dr) = stretched(ab, false, (a, [q, r]), (lattice, p, id), [dq, dr]);
+            }
+            let curl = dq - dr;
             if metal.is_some_and(|m| m.edge(a, id)) {
                 continue;
             }

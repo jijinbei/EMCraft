@@ -72,6 +72,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("particles.bunch", Some(t!("Bunch").en()), Some(Glyph::Radiation), false),
     ui("particles.beam", Some(t!("Beam").en()), Some(Glyph::Radiation), false),
     ui("particles.voltage", Some(t!("Gap voltage").en()), Some(Glyph::Lumped), false),
+    ui("particles.open", Some(t!("Open face").en()), Some(Glyph::Region), false),
     ui("particles.magnetic", Some(t!("Magnetic field").en()), Some(Glyph::FieldLines), false),
     ui("particles.probe", Some(t!("Field probe").en()), Some(Glyph::Chart), false),
     ui("particles.clear", Some(t!("Clear particle sources").en()), Some(Glyph::Delete), false),

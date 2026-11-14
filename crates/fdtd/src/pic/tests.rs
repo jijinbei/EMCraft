@@ -369,3 +369,71 @@ fn two_streams_grow_at_the_cold_dispersions_rate() {
     let got = growth(k, &[(n, 0.0, 0.0), (0.01 * n, vb, 1e-4 * vb)], 16, 22.0 / want);
     assert!((got / want - 1.0).abs() < 0.03, "{got:e} against {want:e}");
 }
+
+#[test]
+fn an_open_box_lets_a_pulse_out() {
+    // A divergence-free pulse (E the grid's own curl of a Gaussian, so no charge is implied) at
+    // the centre of a box whose six faces are open (CPML, Roden & Gedney 2000): once it has
+    // crossed the box, 1e-8 of its energy is left; with the walls closed, all of it.
+    let (n, h, layer) = (32, 1e-3, 8);
+    let left = |open: bool| {
+        let g = Grid::new([axis(n, h, Wall::Conductor), axis(n, h, Wall::Conductor), axis(n, h, Wall::Conductor)]).unwrap();
+        let dt = g.time_step(0.95);
+        let mut pic = Pic::new(g, dt, Pusher::Boris).unwrap();
+        for a in 0..3 {
+            for high in [false, true] {
+                if open {
+                    pic.absorb(a, high, layer).unwrap();
+                }
+            }
+        }
+        let (c, w) = (0.5 * n as f64 * h, 2.5 * h);
+        let pot = |x: f64, y: f64, z: f64| (-((x - c).powi(2) + (y - c).powi(2) + (z - c).powi(2)) / (w * w)).exp();
+        pic.set_e(0, |x| (pot(x[0], x[1] + 0.5 * h, x[2]) - pot(x[0], x[1] - 0.5 * h, x[2])) / h);
+        pic.set_e(1, |x| -(pot(x[0] + 0.5 * h, x[1], x[2]) - pot(x[0] - 0.5 * h, x[1], x[2])) / h);
+        let e0 = pic.energy().field;
+        for _ in 0..((2.5 * n as f64 * h / C0) / dt) as usize {
+            pic.step().unwrap();
+        }
+        pic.energy().field / e0
+    };
+    let (open, closed) = (left(true), left(false));
+    assert!(open < 1e-6 && closed > 0.97, "{open:e} left open, {closed} closed");
+    // A layer as thick as the axis is refused.
+    let g = Grid::new([axis(8, h, Wall::Conductor), axis(8, h, Wall::Periodic), axis(8, h, Wall::Conductor)]).unwrap();
+    let mut pic = Pic::new(g, g.time_step(0.9), Pusher::Boris).unwrap();
+    assert!(pic.absorb(0, false, 8).is_err() && pic.absorb(1, false, 2).is_err() && pic.absorb(7, true, 2).is_err());
+    assert!(pic.absorb(0, false, 4).is_ok() && pic.absorb(0, true, 4).is_err());
+}
+
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn a_guide_ending_in_absorbers_lets_its_waves_out() {
+    // TM01 waves (Pozar §3.4: E_z ∝ J₀(x₀₁r/a)) of a circular guide 10 mm in radius (1 mm cells), above cut-off
+    // (kz 500/m ± 100), launched both ways from its middle into CPML at both ends: 2 ns later
+    // 1e-6 of their electric energy is left (the B frozen in the staircase's faces by the
+    // perfect conductor counts none of it).
+    use emcraft_theory::bessel::j;
+    let (a, l, h, layer) = (0.01, 0.16, 1e-3, 12);
+    let across = |len: f64| axis((len / h).round() as usize, len / (len / h).round(), Wall::Conductor);
+    let g = Grid::new([across(2.0 * a), across(2.0 * a), across(l)]).unwrap();
+    let dt = g.time_step(0.95);
+    let mut pic = Pic::new(g, dt, Pusher::Boris).unwrap();
+    pic.set_metal(|x| (x[0] - a).powi(2) + (x[1] - a).powi(2) > a * a);
+    pic.absorb(2, false, layer).unwrap();
+    pic.absorb(2, true, layer).unwrap();
+    let x01 = 2.404_825_557_695_773;
+    let pot = |x: f64, y: f64, z: f64| {
+        let r = ((x - a).powi(2) + (y - a).powi(2)).sqrt();
+        if r >= a { 0.0 } else { j(0, x01 * r / a) * (-((z - 0.5 * l) / 0.02).powi(2)).exp() * (500.0 * z).cos() }
+    };
+    let open = |x: [f64; 3]| (x[0] - a).powi(2) + (x[1] - a).powi(2) < (a - h).powi(2);
+    pic.set_b(0, |x| if open(x) { (pot(x[0], x[1] + 0.5 * h, x[2]) - pot(x[0], x[1] - 0.5 * h, x[2])) / h } else { 0.0 });
+    pic.set_b(1, |x| if open(x) { -(pot(x[0] + 0.5 * h, x[1], x[2]) - pot(x[0] - 0.5 * h, x[1], x[2])) / h } else { 0.0 });
+    let mut most = 0.0f64;
+    for _ in 0..(2e-9 / dt) as usize {
+        pic.step().unwrap();
+        most = most.max(pic.energy().electric);
+    }
+    assert!(pic.energy().electric < 1e-5 * most, "{:e} of {most:e}", pic.energy().electric);
+}

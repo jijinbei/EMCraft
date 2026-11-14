@@ -213,6 +213,10 @@ pub struct Particles {
     pub voltage: Option<Voltage>,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub magnetic: [f64; 3],
+    /// Faces left open: what reaches them leaves the box (an absorbing layer beyond them, the
+    /// geometry carried on into it).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub open: Vec<Face>,
     /// Points whose field is recorded (m, the model's coordinates).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub probes: Vec<[f64; 3]>,
@@ -315,6 +319,9 @@ impl Particles {
                     format!("{p:?}: a density ≥ 0, 1 to {MAX_PER_AXIS} particles a cell along each axis ({MAX_PER_CELL} in all), finite speeds"),
                 ));
             }
+        }
+        if self.open.iter().any(|f| f.axis > 2) || self.open.len() > 6 {
+            return Err(invalid("particles", "open faces are among x-, x+, y-, y+, z- and z+"));
         }
         if let Some(v) = self.voltage
             && (v.axis > 2 || !within(v.volts, MAX_VOLTAGE, true))

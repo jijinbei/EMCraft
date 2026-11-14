@@ -41,6 +41,7 @@ pub fn param_label(command: &str, name: &'static str) -> &'static str {
         ("particles.emitter", "current") => t!("Current density (A/m²)").en(),
         ("particles.emitter", "per_node") => t!("Particles a node").en(),
         ("particles.voltage", "volts") => t!("Voltage (V)").en(),
+        ("particles.open", "closed") => t!("Close it again").en(),
         ("particles.bunch", "charge") => t!("Charge (nC)").en(),
         ("particles.bunch", "length") => t!("RMS length").en(),
         ("particles.bunch", "energy") => t!("Energy (eV)").en(),

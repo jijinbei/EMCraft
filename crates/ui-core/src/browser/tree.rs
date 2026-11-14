@@ -761,6 +761,10 @@ fn particle_sources(s: &emcraft_engine::Session, f: &Fmt) -> Vec<Row> {
     let axes = ["x", "y", "z"];
     let walls = (0..3).map(|a| format!("{} {}", axes[a], m.walls[a].id())).collect::<Vec<_>>().join(" · ");
     let mut rows = vec![node("particles:walls", words(t!("Walls"), &[]), Some(own(&walls)), Glyph::Region, Act::Edit("particles.walls"))];
+    if !m.open.is_empty() {
+        let faces = m.open.iter().map(|f| f.name()).collect::<Vec<_>>().join(" · ");
+        rows.push(node("particles:open", words(t!("Open faces"), &[]), Some(own(&faces)), Glyph::Region, Act::Edit("particles.open")));
+    }
     rows.extend(m.emitters.iter().enumerate().map(|(i, e)| {
         let detail = match e.emission {
             Emission::Limited => words(t!("space-charge limited · {energy} eV"), args!(energy = crate::number::value(e.energy))),

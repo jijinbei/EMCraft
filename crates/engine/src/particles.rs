@@ -146,6 +146,7 @@ pub(crate) fn sources_reply(s: &Session) -> Value {
         "voltage": m.voltage.map(|v| json!({"axis": AXES[v.axis.min(2)], "volts": v.volts})),
         "magnetic": m.magnetic,
         "probes": probes,
+        "open": m.open.iter().map(|f| f.name()).collect::<Vec<_>>(),
     })
 }
 
@@ -217,6 +218,20 @@ pub fn voltage(s: &mut Session, p: &Params) -> Result<Value> {
     })
 }
 
+/// `particles.open`: a face left open (or, `closed`, closed again).
+pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
+    let name = p.string("face").required()?;
+    let face = Face::parse(name).ok_or_else(|| p.error("face", "x-, x+, y-, y+, z- or z+"))?;
+    let closed = p.flag("closed").or(false)?;
+    change(s, |m| {
+        m.open.retain(|f| *f != face);
+        if !closed {
+            m.open.push(face);
+        }
+        Ok(())
+    })
+}
+
 /// `particles.magnetic`: the uniform static magnetic field.
 pub fn magnetic(s: &mut Session, p: &Params) -> Result<Value> {
     let b = p.vector("b").required()?;
@@ -260,20 +275,61 @@ fn settings(s: &Session, p: &Params) -> Result<(f64, f64, Pusher)> {
 }
 
 /// The grid of the model's box in cells of about `cell`.
-fn grid(s: &Session, cell: f64) -> Result<(Grid, [f64; 3])> {
+/// The cells of the absorbing layer beyond an open face.
+pub const LAYER: usize = 10;
+
+/// The box the run's grid covers: the geometry's bounds (`lo`, `hi`, m), extended past each open
+/// face by its absorbing layer.
+struct Region {
+    lo: [f64; 3],
+    hi: [f64; 3],
+    /// The grid's lowest corner (m).
+    origin: [f64; 3],
+}
+
+impl Region {
+    /// A point of the grid (m from its corner) as the model has it: carried back onto the
+    /// geometry's box along an axis it was extended along, so the geometry runs on into the
+    /// absorbing layers as it is at the open faces.
+    /// The two coordinates across `axis` (m from the grid's corner) of `at`, else of the
+    /// geometry's centre: where a bunch or beam enters.
+    fn centre(&self, axis: usize, at: Option<[f64; 3]>) -> [f64; 2] {
+        [(axis + 1) % 3, (axis + 2) % 3].map(|d| at.map_or(0.5 * (self.lo[d] + self.hi[d]), |x| x[d]) - self.origin[d])
+    }
+
+    fn model_point(&self, x: V3) -> emcraft_model::Point3 {
+        // Just inside the faces: a solid's own faces are not inside it.
+        let p: V3 = std::array::from_fn(|d| {
+            let inset = 1e-6 * (self.hi[d] - self.lo[d]);
+            (x[d] + self.origin[d]).clamp(self.lo[d] + inset, self.hi[d] - inset)
+        });
+        emcraft_model::Point3::new(p[0], p[1], p[2])
+    }
+}
+
+/// The grid of the model's box in cells of about `cell`, each open face's layer beyond it.
+fn grid(s: &Session, cell: f64) -> Result<(Grid, Region)> {
     let b = s.model.bounds().ok_or_else(|| EngineError::failed("no geometry: the box particles run in is its bounds (geometry.solid)"))?;
     let (lo, hi) = ([b.min.x, b.min.y, b.min.z], [b.max.x, b.max.y, b.max.z]);
-    let walls = s.model.particles.walls;
+    let m = &s.model.particles;
+    if let Some(f) = m.open.iter().find(|f| m.walls[f.axis.min(2)] != Wall::Conductor) {
+        return Err(EngineError::failed(format!("face {} is open but its axis is periodic: open faces are on axes closed by walls", f.name())));
+    }
+    let opened = |d: usize, high: bool| usize::from(m.open.contains(&Face { axis: d, high }));
+    let mut origin = lo;
     let axes: [Axis; 3] = std::array::from_fn(|d| {
         let length = hi[d] - lo[d];
         let cells = (length / cell).round().clamp(1.0, 1e9) as usize;
-        let wall = match walls[d] {
+        let h = length / cells as f64;
+        let (below, above) = (opened(d, false) * LAYER, opened(d, true) * LAYER);
+        origin[d] = lo[d] - below as f64 * h;
+        let wall = match m.walls[d] {
             Wall::Periodic => pic::Wall::Periodic,
             Wall::Conductor => pic::Wall::Conductor,
         };
-        Axis { cells, h: length / cells as f64, wall }
+        Axis { cells: cells + below + above, h, wall }
     });
-    Ok((Grid::new(axes).map_err(fdtd)?, lo))
+    Ok((Grid::new(axes).map_err(fdtd)?, Region { lo, hi, origin }))
 }
 
 fn fdtd(e: emcraft_fdtd::FdtdError) -> EngineError {
@@ -303,9 +359,16 @@ fn load(grid: &Grid, plasma: &Plasma) -> Result<Population> {
 }
 
 /// The run set up from the model's sources.
-fn build(s: &Session, grid: Grid, origin: [f64; 3], dt: f64, pusher: Pusher) -> Result<Pic> {
+fn build(s: &Session, grid: Grid, region: &Region, dt: f64, pusher: Pusher) -> Result<Pic> {
     let m = &s.model.particles;
     let mut run = Pic::new(grid, dt, pusher).map_err(fdtd)?;
+    for f in &m.open {
+        run.absorb(f.axis, f.high, LAYER).map_err(fdtd)?;
+    }
+    let faces = m.emitters.iter().map(|e| e.face).chain(m.bunches.iter().map(|b| b.face)).chain(m.beams.iter().map(|b| b.face));
+    if let Some(f) = faces.into_iter().find(|f| m.open.contains(f)) {
+        return Err(EngineError::failed(format!("face {} is open: nothing is emitted through an open face", f.name())));
+    }
     // The bodies' conductors and whatever lies outside the solid, as staircases of cells; the
     // dielectrics by their permittivity.
     if s.model.domain.solid.is_some() {
@@ -318,7 +381,7 @@ fn build(s: &Session, grid: Grid, origin: [f64; 3], dt: f64, pusher: Pusher) -> 
                 m.name
             )));
         }
-        run.set_media(|x| match s.model.material_at(emcraft_model::Point3::new(x[0] + origin[0], x[1] + origin[1], x[2] + origin[2])) {
+        run.set_media(|x| match s.model.material_at(region.model_point(x)) {
             None => pic::Medium::Metal,
             Some(i) => pic::Medium::Dielectric(materials.get(i).map_or(1.0, |m| m.eps_r.get())),
         });
@@ -350,25 +413,23 @@ fn build(s: &Session, grid: Grid, origin: [f64; 3], dt: f64, pusher: Pusher) -> 
         run.emit(emitter).map_err(|err| EngineError::failed(format!("the emitter on {}: {err}", e.face.name())))?;
     }
     for b in &m.bunches {
-        run.inject(bunch(&grid, origin, b, emitted)).map_err(|err| EngineError::failed(format!("the bunch through {}: {err}", b.face.name())))?;
+        run.inject(bunch(region, b, emitted)).map_err(|err| EngineError::failed(format!("the bunch through {}: {err}", b.face.name())))?;
     }
     for b in &m.beams {
-        run.inject(beam(&grid, origin, b, emitted)).map_err(|err| EngineError::failed(format!("the beam through {}: {err}", b.face.name())))?;
+        run.inject(beam(region, b, emitted)).map_err(|err| EngineError::failed(format!("the beam through {}: {err}", b.face.name())))?;
     }
     Ok(run)
 }
 
 /// A bunch on the grid: its duration from its length at its speed, its peak five durations in
 /// (or at its delay), its centre the point given or the face's centre.
-fn bunch(grid: &Grid, origin: [f64; 3], b: &emcraft_model::particles::Bunch, population: usize) -> pic::Bunch {
+fn bunch(region: &Region, b: &emcraft_model::particles::Bunch, population: usize) -> pic::Bunch {
     let energy = b.energy * EV;
     let u = ELECTRON.momentum(energy, [1.0, 0.0, 0.0]);
     let speed = emcraft_particles::velocity(u)[0].max(1.0);
     let sigma = b.length / speed;
     let axis = b.face.axis.min(2);
-    let across = [(axis + 1) % 3, (axis + 2) % 3];
-    let lengths = grid.lengths();
-    let centre = across.map(|d| b.at.map_or(0.5 * lengths[d], |x| x[d] - origin[d]));
+    let centre = region.centre(axis, b.at);
     pic::Bunch {
         axis,
         high: b.face.high,
@@ -383,16 +444,14 @@ fn bunch(grid: &Grid, origin: [f64; 3], b: &emcraft_model::particles::Bunch, pop
 }
 
 /// A steady beam on the grid: its centre the point given or the face's centre.
-fn beam(grid: &Grid, origin: [f64; 3], b: &emcraft_model::particles::Beam, population: usize) -> pic::Bunch {
+fn beam(region: &Region, b: &emcraft_model::particles::Beam, population: usize) -> pic::Bunch {
     let axis = b.face.axis.min(2);
-    let across = [(axis + 1) % 3, (axis + 2) % 3];
-    let lengths = grid.lengths();
     pic::Bunch {
         axis,
         high: b.face.high,
         population,
         pulse: pic::Pulse::Steady { current: b.current, rise: b.rise },
-        centre: across.map(|d| b.at.map_or(0.5 * lengths[d], |x| x[d] - origin[d])),
+        centre: region.centre(axis, b.at),
         radius: b.radius,
         inner: b.inner,
         energy: b.energy * EV,
@@ -460,14 +519,15 @@ pub fn solve(s: &mut Session, p: &Params) -> Result<Value> {
         return Err(EngineError::failed("nothing puts particles in the box: an emitter (particles.emitter) or a plasma (particles.plasma)"));
     }
     let (time, cell, pusher) = settings(s, p)?;
-    let (grid, origin) = grid(s, cell)?;
+    let (grid, region) = grid(s, cell)?;
+    let origin = region.origin;
     let dt = grid.time_step(COURANT);
     let steps = (time / dt).ceil();
     if !(steps >= 1.0 && steps <= emcraft_fdtd::MAX_STEPS as f64) {
         return Err(p.error("time", format!("{steps} steps of {dt:e} s: 1 to {}", emcraft_fdtd::MAX_STEPS)));
     }
     let steps = steps as usize;
-    let mut run = build(s, grid, origin, dt, pusher)?;
+    let mut run = build(s, grid, &region, dt, pusher)?;
     let field_before = run.energy().field;
     let m = &s.model.particles;
     let only_bunches = !m.bunches.is_empty() && m.emitters.is_empty() && m.plasmas.is_empty() && m.beams.is_empty();

@@ -193,3 +193,31 @@ fn beams_are_checked_and_reply_their_gamma() {
     let g = r["mid_gamma"].as_f64().unwrap();
     assert!(g > 1.18 && g < 1.1958, "{g}");
 }
+
+#[test]
+fn an_open_face_lets_a_beam_and_its_field_out() {
+    // A beam down a tube whose far end is open: it leaves through the absorbing layer (counted on
+    // the wall behind it); an emitter on an open face, or an open face on a periodic axis, is
+    // refused.
+    let mut s = Session::new();
+    run(
+        &mut s,
+        &[
+            ("geometry.solid", json!({"shape": "cylinder", "radius": 5, "length": 20})),
+            ("particles.magnetic", json!({"b": [0, 0, 5]})),
+            ("particles.beam", json!({"face": "z-", "current": 5, "energy": 1e5, "radius": 2, "rise": 20})),
+            ("particles.open", json!({"face": "z+"})),
+        ],
+    );
+    let r = s.execute("solve.particles", &json!({"time": 0.4, "cell": 1})).unwrap();
+    let out = -r["walls"]["z+"]["current"].as_f64().unwrap();
+    assert!((out / 5.0 - 1.0).abs() < 0.05, "{out} A out of 5 A: {r}");
+    assert_eq!(r["cells"], json!([10, 10, 30]), "the layer's 10 cells beyond z+");
+    s.execute("particles.emitter", &json!({"face": "z+"})).unwrap();
+    assert!(s.execute("solve.particles", &json!({"time": 0.1, "cell": 1})).unwrap_err().to_string().contains("open"));
+    s.execute("edit.undo", &json!({})).unwrap();
+    s.execute("particles.walls", &json!({"z": "periodic"})).unwrap();
+    assert!(s.execute("solve.particles", &json!({"time": 0.1, "cell": 1})).unwrap_err().to_string().contains("periodic"));
+    s.execute("particles.open", &json!({"face": "z+", "closed": true})).unwrap();
+    assert!(s.model.particles.open.is_empty());
+}
