@@ -552,7 +552,7 @@ A voltage held across the conducting walls of `axis` by the outer circuit, the h
 
 ## `particles.open` — Open face
 
-Leaves a face of the particle run's box open: a convolutional perfectly matched layer of 10 cells beyond it (Roden & Gedney, Microw. Opt. Technol. Lett. 27(5), 2000) absorbs the waves that reach it, the geometry carried on into it as it is at the face (a guide stays a guide: its end matched), and particles leaving through it are counted on the wall behind the layer. Its axis must be closed by walls; nothing is emitted through it. With `closed`, the face is closed again. Undo goes back.
+Leaves a face of the particle run's box open: a convolutional perfectly matched layer of 10 cells beyond it (Roden & Gedney, Microw. Opt. Technol. Lett. 27(5), 2000) absorbs the waves that reach it, the geometry carried on into it as it is at the face (a guide stays a guide: its end matched), and particles leaving through it are counted on the wall behind the layer. Its axis must be closed by walls; nothing is emitted through it. Keep a smooth stretch of guide (a few of its radii) between a periodic structure and an open face: the layer amplifies the backward and evanescent waves of a corrugation that reaches it. With `closed`, the face is closed again. Undo goes back.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|

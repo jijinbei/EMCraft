@@ -7,6 +7,12 @@
 //! it, so the box is open on that axis. Particles go on through the layer to the wall and are
 //! absorbed there, their current deposited all the way (the charge stays conserved; Gauss's law
 //! is not kept inside the layer, whose curl is not the grid's).
+//!
+//! **Keep periodic structures out of it.** The layer stretches no coordinate (κ = 1): a
+//! corrugated guide running into it, or ending right at it, feeds it backward and evanescent
+//! waves it amplifies rather than absorbs (a corrugated tube ending at the layer grew from
+//! round-off within 20 ns; with 20 mm of smooth tube between them it stayed bounded). Leave a
+//! smooth stretch of guide, a few of its radii, before an open face.
 
 use emcraft_model::units::C0;
 
