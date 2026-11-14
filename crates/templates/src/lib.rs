@@ -775,7 +775,7 @@ pub const TEMPLATES: &[Template] = &[
     },
     Template {
         name: "plasma-oscillation",
-        label: "A cold plasma of 10¹⁶ electrons per m³ by particle-in-cell, periodic along every axis, a velocity wave along it: its field rings at the plasma frequency ω_p/2π = 0.898 GHz",
+        label: "A cold plasma by particle-in-cell: 10¹⁶ electrons per m³, periodic along every axis, a velocity wave along it; its field rings at the plasma frequency ω_p/2π = 0.898 GHz",
         script: include_str!("../scripts/plasma-oscillation.json"),
         marks: "{}",
         kinds: &[Analysis::Particles],

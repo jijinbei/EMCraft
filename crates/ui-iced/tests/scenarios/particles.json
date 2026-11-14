@@ -5,6 +5,7 @@
   {"expect": {"handles": ["command:particles.emitter", "command:particles.plasma", "command:particles.probe"]}},
   {"expect": {"hidden": ["command:model.port.create"]}},
   {"key": "Escape"},
+  {"expect": {"handles": ["row:particles:walls", "row:plasma:1", "row:probe:1"]}},
   {"call": "engine.execute", "params": {"command": "project.setup", "params": {"kind": "particles", "time": 4, "cell": 5}}},
   {"click": "play:run"},
   {"until": {"inspect": {"job": null}}, "timeout": 120},

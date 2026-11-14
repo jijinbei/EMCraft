@@ -746,6 +746,59 @@ fn excitation(s: &emcraft_engine::Session, f: &Fmt) -> Vec<Row> {
             }
         }
     }));
+    if m.analysis() == emcraft_model::Analysis::Particles {
+        rows.extend(particle_sources(s, f));
+    }
+    rows
+}
+
+/// A particle run's sources (docs/adr/0012-particles.md): the walls, each emitter and plasma,
+/// the held voltage, the static magnetic field and each probe; the settings of one kind edit
+/// in their command's dialog.
+fn particle_sources(s: &emcraft_engine::Session, f: &Fmt) -> Vec<Row> {
+    use emcraft_model::particles::Emission;
+    let m = &s.model().particles;
+    let axes = ["x", "y", "z"];
+    let walls = (0..3).map(|a| format!("{} {}", axes[a], m.walls[a].id())).collect::<Vec<_>>().join(" · ");
+    let mut rows = vec![node("particles:walls", words(t!("Walls"), &[]), Some(own(&walls)), Glyph::Region, Act::Edit("particles.walls"))];
+    rows.extend(m.emitters.iter().enumerate().map(|(i, e)| {
+        let detail = match e.emission {
+            Emission::Limited => words(t!("space-charge limited · {energy} eV"), args!(energy = crate::number::value(e.energy))),
+            Emission::Current { density } => {
+                words(t!("{density} A/m² · {energy} eV"), args!(density = crate::number::value(density), energy = crate::number::value(e.energy)))
+            }
+        };
+        node(format!("emitter:{}", i + 1), words(t!("Emitter {face}"), args!(face = e.face.name())), Some(detail), Glyph::Radiation, Act::None)
+    }));
+    rows.extend(m.plasmas.iter().enumerate().map(|(i, p)| {
+        let detail =
+            words(t!("{density} m⁻³ · {n} a cell"), args!(density = crate::number::value(p.density), n = p.per_cell.iter().product::<usize>()));
+        node(format!("plasma:{}", i + 1), words(t!("Plasma"), &[]), Some(detail), Glyph::Dielectric, Act::None)
+    }));
+    if let Some(v) = m.voltage {
+        let detail = words(t!("{volts} V across {axis}"), args!(volts = crate::number::value(v.volts), axis = axes[v.axis.min(2)]));
+        rows.push(node("particles:voltage", words(t!("Gap voltage"), &[]), Some(detail), Glyph::Lumped, Act::Edit("particles.voltage")));
+    }
+    if m.magnetic.iter().any(|b| *b != 0.0) {
+        let [x, y, z] = m.magnetic;
+        rows.push(node(
+            "particles:magnetic",
+            words(t!("Magnetic field"), &[]),
+            Some(own(&format!("[{x}, {y}, {z}] T"))),
+            Glyph::FieldLines,
+            Act::Edit("particles.magnetic"),
+        ));
+    }
+    rows.extend(m.probes.iter().enumerate().map(|(i, x)| {
+        let at = x.map(|c| f.len(c)).join(", ");
+        node(
+            format!("probe:{}", i + 1),
+            words(t!("Probe {n}"), args!(n = i + 1)),
+            Some(own(&format!("({at}) {}", f.unit()))),
+            Glyph::Chart,
+            Act::None,
+        )
+    }));
     rows
 }
 
