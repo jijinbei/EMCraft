@@ -2079,6 +2079,7 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "emcraft-model",
+ "emcraft-particles",
  "emcraft-theory",
  "num-complex",
  "thiserror 2.0.21",

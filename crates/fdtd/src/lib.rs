@@ -72,6 +72,7 @@ pub mod device;
 mod dispersion;
 mod guide;
 pub mod open;
+pub mod pic;
 mod planewave;
 mod solid;
 mod surface;

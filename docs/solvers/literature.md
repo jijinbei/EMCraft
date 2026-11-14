@@ -746,3 +746,17 @@ overlap tests).
   ed., §12.2–12.3 (gyration, E×B drift) — the closed forms the pushes are checked against.
 - T. P. Wangler, *RF Linear Accelerators*, 2nd ed., Wiley 2008, §2.2–2.3 — the energy a particle
   gains crossing a gap, qV₀T cos φ, that tracking through a pillbox's TM010 is checked against.
+- C. K. Birdsall, A. B. Langdon, *Plasma Physics via Computer Simulation*, IOP 1991, §4-2,
+  §8-6, §15-2, §16-5 — the particle-in-cell loop on the Yee grid (`emcraft-fdtd::pic`): fields
+  and positions at whole steps, momenta at half steps, B by half updates either side of the
+  push; the cold plasma's oscillation at ω_p and its grid corrections (the shape's sinc², the
+  leapfrog); emission from a wall by Gauss's law.
+- T. Zh. Esirkepov, *Exact charge conservation scheme for particle-in-cell simulation with an
+  arbitrary form-factor*, Comput. Phys. Commun. 135:144–153, 2001 — the current deposited from
+  the change of a particle's node weights, so that Gauss's law holds to rounding.
+- C. D. Child, Phys. Rev. 32:492, 1911; I. Langmuir, Phys. Rev. 2:450, 1913; H. R. Jory,
+  A. W. Trivelpiece, *Exact relativistic solution for the one-dimensional diode*, J. Appl. Phys.
+  40:3924, 1969 — a planar diode's space-charge-limited current, slow and at any speed
+  (`emcraft-theory::plasma`).
+- M. Roberts, *The unreasonable effectiveness of quasirandom sequences*, 2018 — the R₂ sequence
+  that spreads emitted particles across a wall's nodes, the same every run.

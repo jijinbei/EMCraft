@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 emcraft-model = { workspace = true }
+emcraft-particles = { workspace = true }
 emcraft-theory = { workspace = true }
 num-complex = { workspace = true }
 thiserror = { workspace = true }

@@ -78,11 +78,13 @@ impl Species {
 }
 
 /// γ of momentum `u` = γv (m/s).
+#[inline]
 pub fn gamma(u: V3) -> f64 {
     (1.0 + dot(u, u) / (C0 * C0)).sqrt()
 }
 
 /// The velocity (m/s) of momentum `u`.
+#[inline]
 pub fn velocity(u: V3) -> V3 {
     scale(u, 1.0 / gamma(u))
 }
@@ -105,6 +107,7 @@ pub enum Pusher {
 /// let turned = push(Pusher::Boris, ELECTRON, u, [0.0; 3], [0.0, 0.0, 0.1], 1e-12);
 /// assert!((gamma(turned) - gamma(u)).abs() < 1e-15 && turned[1] != 0.0);
 /// ```
+#[inline]
 pub fn push(pusher: Pusher, species: Species, u: V3, e: V3, b: V3, dt: f64) -> V3 {
     let k = species.charge * dt / species.mass;
     match pusher {
