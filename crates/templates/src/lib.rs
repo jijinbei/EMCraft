@@ -66,11 +66,13 @@ pub enum Group {
     Boards,
     /// Chains of stages from an antenna to a receiver: their budget.
     Systems,
+    /// Electrons in their own fields: diodes, plasmas and beams (particle-in-cell).
+    Particles,
 }
 
 impl Group {
     /// Every group, in the start page's order.
-    pub const ALL: [Group; 12] = [
+    pub const ALL: [Group; 13] = [
         Group::Filters,
         Group::Lines,
         Group::Junctions,
@@ -83,6 +85,7 @@ impl Group {
         Group::Scattering,
         Group::Boards,
         Group::Systems,
+        Group::Particles,
     ];
 
     /// Its name in `file.templates`' replies.
@@ -104,6 +107,7 @@ impl Group {
             Group::Scattering => "scattering",
             Group::Boards => "boards",
             Group::Systems => "systems",
+            Group::Particles => "particles",
         }
     }
 }
@@ -760,6 +764,22 @@ pub const TEMPLATES: &[Template] = &[
         marks: "{}",
         kinds: &[Analysis::System],
         group: Group::Systems,
+    },
+    Template {
+        name: "planar-diode",
+        label: "A planar diode by particle-in-cell: a cathode emitting electrons at rest as the field allows, an anode 10 mm away held 100 kV above it; the current settles near the space-charge limit, Jory & Trivelpiece's 7.2e5 A/m² (relativistic Child–Langmuir)",
+        script: include_str!("../scripts/planar-diode.json"),
+        marks: "{}",
+        kinds: &[Analysis::Particles],
+        group: Group::Particles,
+    },
+    Template {
+        name: "plasma-oscillation",
+        label: "A cold plasma of 10¹⁶ electrons per m³ by particle-in-cell, periodic along every axis, a velocity wave along it: its field rings at the plasma frequency ω_p/2π = 0.898 GHz",
+        script: include_str!("../scripts/plasma-oscillation.json"),
+        marks: "{}",
+        kinds: &[Analysis::Particles],
+        group: Group::Particles,
     },
 ];
 

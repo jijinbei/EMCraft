@@ -56,6 +56,7 @@ fn solved(id: &str, s: &Session, step: Option<Step>) -> Option<View> {
         "solve.dispersion" => Some(View::Dispersion),
         "solve.eigenmodes" => Some(View::Eigenmodes),
         "solve.radiation" => Some(View::FarField),
+        "solve.particles" => Some(View::Particles),
         "solve.time_domain" if s.results().td_radiation.is_some() => Some(View::FarField),
         "solve.time_domain" => Some(View::SParameters),
         // The Excitation step tabulates them in its panel, beside the 3D view.

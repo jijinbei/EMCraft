@@ -1,6 +1,6 @@
 # ADR 0012: Electrons in the fields — tracking first, then particle-in-cell
 
-Status: accepted (2026-11-14); stage A done (2026-11-14: results.track, the pillbox-tracking oracle case, the electron-pillbox template); stage B's grid and engine done (2026-11-14: emcraft_fdtd::pic, the analysis `particles`, solve.particles, the pic-plasma-oscillation and pic-child-langmuir oracle cases), its views next.
+Status: accepted (2026-11-14); stage A done (2026-11-14: results.track, the pillbox-tracking oracle case, the electron-pillbox template); stage B done (2026-11-14: emcraft_fdtd::pic, the analysis `particles`, solve.particles, the pic-plasma-oscillation and pic-child-langmuir oracle cases, the Particles page and the planar-diode and plasma-oscillation templates); stage C next.
 
 ## Context
 

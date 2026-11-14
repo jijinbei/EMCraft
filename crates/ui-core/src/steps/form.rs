@@ -111,6 +111,7 @@ impl Fields {
             count: text("count", self.count),
             frequency: text("frequency", self.frequency),
             cell: text("cell", self.cell),
+            time: text("time", self.time),
             excite,
             errors: Vec::new(),
             ..self
@@ -133,21 +134,23 @@ impl Fields {
     pub fn drafts(&self) -> Value {
         json!({
             "start": self.start, "stop": self.stop, "points": self.points, "order": self.order, "count": self.count,
-            "frequency": self.frequency, "cell": self.cell, "touchstone": self.touchstone, "format": self.format, "excite": self.excite,
+            "frequency": self.frequency, "cell": self.cell, "time": self.time, "touchstone": self.touchstone, "format": self.format, "excite": self.excite,
         })
     }
 
     /// The fields typed as [`Fields::drafts`] wrote them (a text missing or not one left as it is).
     pub fn with_drafts(self, v: &Value) -> Fields {
-        let f = ["start", "stop", "points", "order", "count", "frequency", "cell", "touchstone", "format"].into_iter().fold(self, |f, k| {
-            match v.get(k).and_then(Value::as_str) {
+        let f =
+            ["start", "stop", "points", "order", "count", "frequency", "cell", "time", "touchstone", "format"].into_iter().fold(self, |f, k| match v
+                .get(k)
+                .and_then(Value::as_str)
+            {
                 Some(t) => {
                     let errors = f.errors.clone();
                     Fields { errors, ..f.typed(k, t) }
                 }
                 None => f,
-            }
-        });
+            });
         match v.get("excite").and_then(Value::as_array) {
             Some(list) => Fields { excite: list.iter().filter_map(Value::as_str).take(1024).map(crate::dialogs::bounded).collect(), ..f },
             None => f,

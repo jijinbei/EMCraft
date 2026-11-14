@@ -31,7 +31,7 @@ mod surface;
 pub use extras::{along, port_normal, port_quad, quad_centre};
 pub use field::normal_axis;
 pub use geometry::{BOX_EDGES, box_corner};
-pub use particles::{tracking, trajectories};
+pub use particles::{cloud, tracking, trajectories};
 pub use style::{Colours, material_rgb};
 
 emcraft_macros::named_enum! {
@@ -438,6 +438,7 @@ pub fn build_with(session: &Session, overlay: Overlay, colours: &Colours, fields
         .merge(extras::symmetry_planes(colours, session, bounds))
         .merge(extras::extras(colours, m, session.driven_port(), overlay, bounds))
         .merge(particles::trajectories(colours, session))
+        .merge(particles::cloud(colours, session))
         .merge(Built { legend: legend::legend(colours, session, overlay), ..Built::default() })
         .merge(field_planes(colours, session, overlay, fields, bounds));
     highlighted(colours, Built { bounds, ..built }, selected)

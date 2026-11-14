@@ -83,6 +83,7 @@ pub fn group_title(group: Group) -> crate::lang::Text {
         Group::Scattering => t!("Scattering"),
         Group::Boards => t!("Board checks"),
         Group::Systems => t!("Systems"),
+        Group::Particles => t!("Electrons and plasmas"),
     }
 }
 

@@ -1,0 +1,15 @@
+[
+  {"note": "A particle-in-cell run (docs/adr/0012-particles.md, stage B): the cold plasma's template opened, the Excitation step's ＋ offers the particle sources (no ports), Run runs it, the window goes to the Particles page — the run's table and its charts, the probe ringing near 0.9 GHz — and the model draws the particles in their see-through box"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "plasma-oscillation"}}},
+  {"click": "add:excitation"},
+  {"expect": {"handles": ["command:particles.emitter", "command:particles.plasma", "command:particles.probe"]}},
+  {"expect": {"hidden": ["command:model.port.create"]}},
+  {"key": "Escape"},
+  {"call": "engine.execute", "params": {"command": "project.setup", "params": {"kind": "particles", "time": 4, "cell": 5}}},
+  {"click": "play:run"},
+  {"until": {"inspect": {"job": null}}, "timeout": 120},
+  {"expect": {"inspect": {"page": "particles", "error": null}}},
+  {"shot": "particles-page"},
+  {"call": "ui.set", "params": {"page": "model"}},
+  {"shot": "particles-model"}
+]

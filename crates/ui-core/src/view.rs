@@ -27,6 +27,8 @@ emcraft_macros::named_enum! {
         Analyses = "analyses" => "Analyses",
         /// A system's chain, its block diagram and budget.
         System = "system" => "System",
+        /// A particle run: its energies, currents, phase space and probes.
+        Particles = "particles" => "Particles",
     }
 }
 emcraft_macros::named_serde!(View);
@@ -109,6 +111,7 @@ impl View {
             View::Study => Glyph::ParamSweep,
             View::Dispersion => Glyph::Dispersion,
             View::System => Glyph::Table,
+            View::Particles => Glyph::Time,
         }
     }
 
@@ -130,6 +133,7 @@ impl View {
             View::Eigenmodes => Some(t!("No eigenmodes yet: Run (step 6).")),
             View::Study => Some(t!("No study yet: define a variable, then Sweep or Optimize (step 5).")),
             View::Dispersion => Some(t!("No dispersion diagram yet: periodic boundaries (step 4), then Dispersion (step 5).")),
+            View::Particles => Some(t!("No particle run yet: Run (step 6).")),
             View::Analyses | View::System => None,
         }
     }
@@ -173,6 +177,7 @@ impl View {
             View::Dispersion => r.dispersion.is_some(),
             View::Analyses => r.sweep.is_some() || replies.analysis.is_some(),
             View::System => analysis == Solver::System || r.system.is_some(),
+            View::Particles => r.particles.is_some(),
         }
     }
 
@@ -193,7 +198,7 @@ impl View {
             R::Study => View::Study,
             R::Bloch => View::Pulse,
             R::System => View::System,
-            R::Particles => View::Model,
+            R::Particles => View::Particles,
         }
     }
 
@@ -238,6 +243,6 @@ mod tests {
         }
         assert_eq!(View::Tdr.label(), "TDR");
         assert_eq!(View::PortModes.id(), "port_modes");
-        assert_eq!(View::COUNT, 13);
+        assert_eq!(View::COUNT, 14);
     }
 }

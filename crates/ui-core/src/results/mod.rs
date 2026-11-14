@@ -3,6 +3,7 @@
 //! round it. Each window draws them; the engine draws the charts.
 
 pub mod fields;
+pub mod particles;
 pub mod sparameters;
 pub mod study;
 pub mod style;

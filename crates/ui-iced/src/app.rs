@@ -645,6 +645,7 @@ impl App {
             _ if self.home => crate::start::view(self),
             View::Model => crate::model::view(self),
             View::Eigenmodes => crate::eigenmodes::view(self),
+            View::Particles => crate::particles::view(self),
             View::PortModes => crate::port_modes::view(self),
             View::Pcb => crate::pcb::view(self),
             View::SParameters => crate::sparameters::view(self),

@@ -182,8 +182,8 @@ fn solid(colours: &Colours, m: &Model, tint: &dyn Fn(&str) -> Rgb, see_through: 
     let paint = |color: Rgb, alpha: u8| Paint { color, alpha, edge: colours.scene.edge };
     let mat = |name: &str| m.materials.iter().position(|x| x.name == name).unwrap_or(0);
     let hollow = !m.inclusions().is_empty() || m.features().iter().any(|f| f.combine != Combine::Add);
-    let alpha = if m.domain.open.is_some() {
-        // The air around an open problem.
+    let alpha = if m.domain.open.is_some() || m.analysis() == emcraft_model::Analysis::Particles {
+        // The air around an open problem; a particle run's box, its particles inside.
         20
     } else if see_through || hollow {
         90

@@ -89,7 +89,24 @@ const STEP_ADDS: &[(Step, &[&str])] = &[
     // No shapes are made here (docs/adr/0010-geometry-from-solidcraft.md): they come from a
     // SolidCraft design or a template.
     (Step::Geometry, &["geometry.import", "model.background", "model.material.create"]),
-    (Step::Excitation, &["model.port.create", "model.port.lumped", "model.element.create", "source.dipole", "source.plane_wave", "source.clear"]),
+    (
+        Step::Excitation,
+        &[
+            "model.port.create",
+            "model.port.lumped",
+            "model.element.create",
+            "source.dipole",
+            "source.plane_wave",
+            "source.clear",
+            "particles.emitter",
+            "particles.plasma",
+            "particles.voltage",
+            "particles.magnetic",
+            "particles.walls",
+            "particles.probe",
+            "particles.clear",
+        ],
+    ),
     (Step::Setup, &["units.set"]),
     (Step::Boundaries, &["model.region", "model.walls", "model.open", "model.symmetry.auto", "model.symmetry", "model.rotation", "model.periodic"]),
     (Step::Mesh, &["mesh.adapt"]),
