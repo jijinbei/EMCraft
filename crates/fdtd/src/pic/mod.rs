@@ -33,12 +33,13 @@ use crate::{FdtdError, Result, invalid};
 mod deposit;
 mod emit;
 mod grid;
-mod metal;
+mod media;
 #[cfg(test)]
 mod tests;
 
 pub use emit::{Bunch, Emission, Emitter, MAX_PER_NODE};
 pub use grid::{Axis, Grid, Wall};
+pub use media::Medium;
 
 /// The most macro-particles a run holds.
 pub const MAX_PARTICLES: usize = 20_000_000;
@@ -148,7 +149,7 @@ pub struct Pic {
     hold: Option<usize>,
     emitters: Vec<Emitter>,
     bunches: Vec<Bunch>,
-    metal: Option<metal::Metal>,
+    media: Option<media::Media>,
     emitted: u64,
     steps: usize,
 }
@@ -197,7 +198,7 @@ impl Pic {
             hold: None,
             emitters: Vec::new(),
             bunches: Vec::new(),
-            metal: None,
+            media: None,
             emitted: 0,
             steps: 0,
         })
@@ -271,7 +272,7 @@ impl Pic {
     pub fn set_e(&mut self, a: usize, f: impl Fn(V3) -> f64) {
         let Some(values) = self.e.get_mut(a) else { return };
         let lattice = self.grid.e(a);
-        let metal = self.metal.as_ref();
+        let metal = self.media.as_ref();
         for p in lattice.points() {
             let id = lattice.at(p);
             if !self.grid.e_on_wall(a, p)
@@ -287,9 +288,16 @@ impl Pic {
     /// (a position in m) becomes metal, E on the edges touching it held at zero from now on.
     /// Returns whether any cell is.
     pub fn set_metal(&mut self, metal: impl Fn(V3) -> bool) -> bool {
-        let m = metal::Metal::new(&self.grid, metal);
+        self.set_media(|x| if metal(x) { Medium::Metal } else { Medium::Dielectric(1.0) })
+    }
+
+    /// What fills each cell, as `medium` says at its centre (m): metal (E on the edges touching
+    /// it held at zero from now on) or a dielectric. Returns whether any cell is other than
+    /// vacuum.
+    pub fn set_media(&mut self, medium: impl Fn(V3) -> Medium) -> bool {
+        let m = media::Media::new(&self.grid, medium);
         if !m.any() {
-            self.metal = None;
+            self.media = None;
             return false;
         }
         for a in 0..3 {
@@ -299,7 +307,7 @@ impl Pic {
                 }
             }
         }
-        self.metal = Some(m);
+        self.media = Some(m);
         true
     }
 
@@ -358,14 +366,17 @@ impl Pic {
         values.iter().sum::<f64>() * self.grid.axes[axis].h / across.max(1) as f64
     }
 
-    /// The energy on the grid: the field's ½ε₀E² + B²/2μ₀ over the cells, the particles'.
+    /// The energy on the grid: the field's ½ε₀εrE² + B²/2μ₀ over the cells, the particles'.
     pub fn energy(&self) -> Energy {
         let v = self.grid.cell_volume();
-        let sum = |f: &[Vec<f64>; 3]| f.iter().flatten().map(|x| x * x).sum::<f64>();
-        Energy { field: v * (0.5 * EPS0 * sum(&self.e) + 0.5 / MU0 * sum(&self.b)), kinetic: self.populations.iter().map(Population::kinetic).sum() }
+        let eps = |a: usize, id: usize| self.media.as_ref().map_or(1.0, |m| m.eps(a, id));
+        let electric: f64 = (0..3).map(|a| self.e[a].iter().enumerate().map(|(id, x)| eps(a, id) * x * x).sum::<f64>()).sum();
+        let magnetic: f64 = self.b.iter().flatten().map(|x| x * x).sum();
+        Energy { field: v * (0.5 * EPS0 * electric + 0.5 / MU0 * magnetic), kinetic: self.populations.iter().map(Population::kinetic).sum() }
     }
 
-    /// ε₀∇·E − ρ (C/m³) at each node off the walls: zero where Gauss's law holds.
+    /// ε₀∇·(εr E) − ρ (C/m³) at each node off the walls and the metal: zero where Gauss's law
+    /// holds.
     pub fn gauss(&self) -> Vec<f64> {
         let nodes = self.grid.nodes();
         let mut rho = vec![self.background; nodes.len()];
@@ -377,14 +388,18 @@ impl Pic {
         let axes = self.grid.axes;
         nodes
             .points()
-            .filter(|p| (0..3).all(|d| !axes[d].on_wall(p[d])) && !self.metal.as_ref().is_some_and(|m| m.near_node(&self.grid, *p)))
+            .filter(|p| (0..3).all(|d| !axes[d].on_wall(p[d])) && !self.media.as_ref().is_some_and(|m| m.near_node(&self.grid, *p)))
             .map(|p| {
                 let div: f64 = (0..3)
                     .map(|a| {
                         let lattice = self.grid.e(a);
                         let mut below = p;
                         below[a] = axes[a].clamp(p[a] as isize - 1, false);
-                        (self.e[a][lattice.at(p)] - self.e[a][lattice.at(below)]) / axes[a].h
+                        let d = |q: [usize; 3]| {
+                            let id = lattice.at(q);
+                            self.media.as_ref().map_or(1.0, |m| m.eps(a, id)) * self.e[a][id]
+                        };
+                        (d(p) - d(below)) / axes[a].h
                     })
                     .sum();
                 EPS0 * div - rho[nodes.at(p)]
@@ -397,17 +412,17 @@ impl Pic {
         let mut moved = Moved::default();
         self.emit_step(&mut moved)?;
         self.j.iter_mut().for_each(|j| j.fill(0.0));
-        let Pic { grid, dt, pusher, e, b, j, populations, metal, .. } = self;
+        let Pic { grid, dt, pusher, e, b, j, populations, media, .. } = self;
         for pop in populations.iter_mut() {
             let species = pop.species;
-            pop.particles.retain_mut(|p| advance((grid, metal.as_ref()), [e, b], j, (species, *pusher, *dt), p, &mut moved));
+            pop.particles.retain_mut(|p| advance((grid, media.as_ref()), [e, b], j, (species, *pusher, *dt), p, &mut moved));
         }
         if let Some(a) = self.hold {
             let mean = self.j[a].iter().sum::<f64>() / self.j[a].len().max(1) as f64;
             self.j[a].iter_mut().for_each(|v| *v -= mean);
         }
         faraday(&self.grid, &self.e, &mut self.b, 0.5 * self.dt);
-        ampere(&self.grid, &mut self.e, &self.b, &self.j, self.dt, self.metal.as_ref());
+        ampere(&self.grid, &mut self.e, &self.b, &self.j, self.dt, self.media.as_ref());
         faraday(&self.grid, &self.e, &mut self.b, 0.5 * self.dt);
         self.steps += 1;
         Ok(moved)
@@ -433,7 +448,7 @@ impl Pic {
             })
             .collect();
         for (k, mut new) in made.into_iter().chain(sent) {
-            if let Some(m) = &self.metal {
+            if let Some(m) = &self.media {
                 new.retain(|p| !m.at(&self.grid, p.x));
             }
             if self.particles().saturating_add(new.len()) > MAX_PARTICLES {
@@ -452,7 +467,7 @@ impl Pic {
 /// Pushes and moves particle `p`, deposits its current; false when it is gone (absorbed on a
 /// wall, or no longer a number).
 fn advance(
-    (grid, metal): (&Grid, Option<&metal::Metal>),
+    (grid, metal): (&Grid, Option<&media::Media>),
     [e, b]: [&[Vec<f64>; 3]; 2],
     j: &mut [Vec<f64>; 3],
     (species, pusher, dt): (Species, Pusher, f64),
@@ -545,7 +560,7 @@ fn faraday(grid: &Grid, e: &[Vec<f64>; 3], b: &mut [Vec<f64>; 3], dt: f64) {
 
 /// E advanced by `dt` (s): ∂E/∂t = c²∇ × B − J/ε₀, off the walls it is tangential to and the
 /// edges metal holds at zero.
-fn ampere(grid: &Grid, e: &mut [Vec<f64>; 3], b: &[Vec<f64>; 3], j: &[Vec<f64>; 3], dt: f64, metal: Option<&metal::Metal>) {
+fn ampere(grid: &Grid, e: &mut [Vec<f64>; 3], b: &[Vec<f64>; 3], j: &[Vec<f64>; 3], dt: f64, metal: Option<&media::Media>) {
     let axes = grid.axes;
     for a in 0..3 {
         let (q, r) = ((a + 1) % 3, (a + 2) % 3);
@@ -563,7 +578,8 @@ fn ampere(grid: &Grid, e: &mut [Vec<f64>; 3], b: &[Vec<f64>; 3], j: &[Vec<f64>; 
             if metal.is_some_and(|m| m.edge(a, id)) {
                 continue;
             }
-            e[a][id] += dt * (C0 * C0 * curl - j[a][id] / EPS0);
+            let eps = metal.map_or(1.0, |m| m.eps(a, id));
+            e[a][id] += dt / eps * (C0 * C0 * curl - j[a][id] / EPS0);
         }
     }
 }

@@ -1,0 +1,23 @@
+{
+ "title": "Bunches through a dielectric-filled pillbox in particle-in-cell: Cherenkov's threshold in the loss factor",
+ "kind": "theory",
+ "source": "A closed pillbox (radius 10 mm, length 39.18 mm) filled with a lossless dielectric of εr = 2.25 (n = 1.5): its TM0np modes at ω = c|k|/n, each loss factor k = |V|²/(4U) with U carrying ε₀εr, a Gaussian bunch (σ_z = 2 mm, σ_t = σ_z/βc) leaving Σ k_n e^{−(ω_n σ_t)²} (P. B. Wilson, SLAC-PUB-4547, 1989; T. P. Wangler, RF Linear Accelerators, 2nd ed., 2008, §11.6). At β = 1 > 1/n the bunch radiates Cherenkov light all along and the loss grows with the length (9.41 V/pC at 13.06 mm, 25.71 at 39.18); at β = 0.5 < 1/n it does not (0.89, then 0.74). Bessel functions by Bessel's integral, evaluated apart from the code under test",
+ "quantities": [
+  {
+   "id": "above",
+   "quantity": "loss factor at 10 GeV (β = 1, above Cherenkov's threshold), 39.18 mm long (V/pC)",
+   "measure": {"step": "fast", "pointer": "/loss_factor_v_per_pc"},
+   "value": 25.710412275931066,
+   "tolerance": {"relative": 0.02},
+   "reason": "the cylinder a staircase of 0.5 mm cells, the grid's dispersion in the dielectric's shorter wavelengths: 0.65 % here (0.9 % for the 13.06 mm pillbox, 0.25 % at 0.25 mm)"
+  },
+  {
+   "id": "below",
+   "quantity": "loss factor at 79 keV (β = 0.4999, below Cherenkov's threshold), 39.18 mm long (V/pC)",
+   "measure": {"step": "slow", "pointer": "/loss_factor_v_per_pc"},
+   "value": 0.7373194170085511,
+   "tolerance": {"relative": 0.02},
+   "reason": "the same staircase; 1 pC so the bunch's own loss leaves its speed as it is: 0.3 % here"
+  }
+ ]
+}

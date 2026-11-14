@@ -782,6 +782,14 @@ pub const TEMPLATES: &[Template] = &[
         group: Group::Particles,
     },
     Template {
+        name: "cherenkov-pillbox",
+        label: "Cherenkov light in a dielectric-filled pillbox by particle-in-cell: a 1 pC bunch at 10 GeV along a perfectly conducting cavity 10 mm in radius and 39.18 mm long filled with εr = 2.25, faster than light there (β > 1/n); its loss, 25.7 V/pC, grows with the length",
+        script: include_str!("../scripts/cherenkov-pillbox.json"),
+        marks: "{}",
+        kinds: &[Analysis::Particles],
+        group: Group::Particles,
+    },
+    Template {
         name: "plasma-oscillation",
         label: "A cold plasma by particle-in-cell: 10¹⁶ electrons per m³, periodic along every axis, a velocity wave along it; its field rings at the plasma frequency ω_p/2π = 0.898 GHz",
         script: include_str!("../scripts/plasma-oscillation.json"),

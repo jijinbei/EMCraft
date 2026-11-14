@@ -14,6 +14,11 @@
 //! (pπ/L)²), x_n the n-th zero of J₀. With E₀ = 1, U = (ε₀/2) π a² J₁(x_n)² L (c_p +
 //! ½ (pπa/(L x_n))²), c_p = 1 for p = 0 and ½ otherwise, and
 //! V = ∫₀^L cos(pπz/L) e^{jκz} dz, κ = ω/(βc), in closed form.
+//!
+//! **Filled with a dielectric** of εr (n = √εr) the modes are the same at ω = c|k|/n and U carries
+//! ε₀εr. A bunch faster than light there (β > 1/n) radiates Cherenkov light all along: its loss
+//! grows with the cavity's length, where below the threshold it does not (I. M. Frank,
+//! I. E. Tamm, Dokl. Akad. Nauk SSSR 14:109, 1937, the radiation; here its share in the modes).
 
 use num_complex::Complex64 as C;
 use std::f64::consts::PI;
@@ -39,71 +44,89 @@ fn phase_integral(s: f64, l: f64) -> C {
     (C::from_polar(1.0, s * l) - 1.0) / C::new(0.0, s)
 }
 
-/// The TM0np modes of a pillbox of radius `a` and length `l` (m) up to `f_max` (Hz), each with its
-/// loss factor (V/C) to a charge crossing on the axis at `beta` c; empty for sizes or speeds
-/// that are not finite numbers > 0 (β ≤ 1).
-///
-/// ```
-/// use emcraft_theory::wake::pillbox_modes;
-/// // TM010 of a 10 mm, 13.06 mm pillbox: 11.47 GHz; to a charge at c,
-/// // k = L T²/(2π ε₀ a² J₁(x₀₁)²) ≈ 3.5 V/pC.
-/// let m = pillbox_modes(0.01, 0.01306, 1.0, 20e9);
-/// assert!((m[0].frequency / 11.474e9 - 1.0).abs() < 1e-3);
-/// assert!((m[0].k * 1e-12 - 3.54).abs() < 0.02);
-/// assert!(pillbox_modes(-1.0, 0.01, 1.0, 20e9).is_empty());
-/// ```
-pub fn pillbox_modes(a: f64, l: f64, beta: f64, f_max: f64) -> Vec<ModeLoss> {
-    let ok = |x: f64| x.is_finite() && x > 0.0;
-    if !(ok(a) && ok(l) && ok(beta) && beta <= 1.0 && ok(f_max)) {
-        return Vec::new();
-    }
-    let k_max = 2.0 * PI * f_max / C0;
-    let roots = zeros(|x| j(0, x), 400, (k_max * a + 3.0).min(1300.0));
-    let mut out = Vec::new();
-    for (n, x) in roots.iter().enumerate() {
-        let kr = x / a;
-        if kr > k_max {
-            break;
-        }
-        let j1 = j(1, *x);
-        for p in 0..=((k_max * l / PI) as usize).min(2000) {
-            let kz = p as f64 * PI / l;
-            let omega = C0 * (kr * kr + kz * kz).sqrt();
-            if omega > C0 * k_max {
-                break;
-            }
-            let kappa = omega / (beta * C0);
-            // cos(kz z) = (e^{j kz z} + e^{−j kz z})/2.
-            let v = 0.5 * (phase_integral(kappa + kz, l) + phase_integral(kappa - kz, l));
-            let cp = if p == 0 { 1.0 } else { 0.5 };
-            let u = 0.5 * EPS0 * PI * a * a * j1 * j1 * l * (cp + 0.5 * (kz / kr).powi(2));
-            out.push(ModeLoss { n: n + 1, p, frequency: omega / (2.0 * PI), k: v.norm_sqr() / (4.0 * u) });
-        }
-    }
-    out.sort_by(|x, y| x.frequency.total_cmp(&y.frequency));
-    out
+/// A closed pillbox: its radius and length (m), filled with a lossless dielectric of relative
+/// permittivity `eps` (1: vacuum).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pillbox {
+    pub radius: f64,
+    pub length: f64,
+    pub eps: f64,
 }
 
-/// The energy per charge squared (V/C) a Gaussian bunch of rms duration `sigma_t` (s) at
-/// `beta` c leaves in the pillbox: Σ k_n e^{−(ω_n σ_t)²}, the modes taken until the bunch's
-/// spectrum has fallen below e^{−40}.
-///
-/// ```
-/// use emcraft_theory::wake::{pillbox_loss_factor, pillbox_modes};
-/// // A long bunch sees TM010 alone, a short one more modes.
-/// let k010 = pillbox_modes(0.01, 0.01306, 1.0, 12e9)[0].k;
-/// let long = pillbox_loss_factor(0.01, 0.01306, 1.0, 60e-12).unwrap();
-/// assert!(long < k010 * 1e-3);
-/// let short = pillbox_loss_factor(0.01, 0.01306, 1.0, 1e-12).unwrap();
-/// assert!(short > k010);
-/// ```
-pub fn pillbox_loss_factor(a: f64, l: f64, beta: f64, sigma_t: f64) -> Option<f64> {
-    if !(sigma_t.is_finite() && sigma_t > 0.0) {
-        return None;
+impl Pillbox {
+    /// An empty pillbox.
+    pub fn new(radius: f64, length: f64) -> Pillbox {
+        Pillbox { radius, length, eps: 1.0 }
     }
-    let f_max = 40f64.sqrt() / (2.0 * PI * sigma_t);
-    let modes = pillbox_modes(a, l, beta, f_max);
-    (!modes.is_empty()).then(|| modes.iter().map(|m| m.k * (-(2.0 * PI * m.frequency * sigma_t).powi(2)).exp()).sum())
+
+    /// Its TM0np modes up to `f_max` (Hz), each with its loss factor (V/C) to a charge crossing
+    /// on the axis at `beta` c; empty for sizes, a permittivity or a speed that are not finite
+    /// numbers > 0 (β ≤ 1, εr ≥ 1). In the dielectric ω = c|k|/√εr and U carries ε₀εr.
+    ///
+    /// ```
+    /// use emcraft_theory::wake::Pillbox;
+    /// // TM010 of a 10 mm, 13.06 mm pillbox: 11.47 GHz; to a charge at c,
+    /// // k = L T²/(2π ε₀ a² J₁(x₀₁)²) ≈ 3.5 V/pC.
+    /// let m = Pillbox::new(0.01, 0.01306).modes(1.0, 20e9);
+    /// assert!((m[0].frequency / 11.474e9 - 1.0).abs() < 1e-3);
+    /// assert!((m[0].k * 1e-12 - 3.54).abs() < 0.02);
+    /// assert!(Pillbox::new(-1.0, 0.01).modes(1.0, 20e9).is_empty());
+    /// ```
+    pub fn modes(&self, beta: f64, f_max: f64) -> Vec<ModeLoss> {
+        let Pillbox { radius: a, length: l, eps } = *self;
+        let ok = |x: f64| x.is_finite() && x > 0.0;
+        if !(ok(a) && ok(l) && ok(beta) && beta <= 1.0 && ok(f_max) && eps.is_finite() && eps >= 1.0) {
+            return Vec::new();
+        }
+        let speed = C0 / eps.sqrt();
+        let omega_max = 2.0 * PI * f_max;
+        let k_max = omega_max / speed;
+        let roots = zeros(|x| j(0, x), 400, (k_max * a + 3.0).min(1300.0));
+        let mut out = Vec::new();
+        for (n, x) in roots.iter().enumerate() {
+            let kr = x / a;
+            if kr > k_max {
+                break;
+            }
+            let j1 = j(1, *x);
+            for p in 0..=((k_max * l / PI) as usize).min(2000) {
+                let kz = p as f64 * PI / l;
+                let omega = speed * (kr * kr + kz * kz).sqrt();
+                if omega > omega_max {
+                    break;
+                }
+                let kappa = omega / (beta * C0);
+                // cos(kz z) = (e^{j kz z} + e^{−j kz z})/2.
+                let v = 0.5 * (phase_integral(kappa + kz, l) + phase_integral(kappa - kz, l));
+                let cp = if p == 0 { 1.0 } else { 0.5 };
+                let u = 0.5 * EPS0 * eps * PI * a * a * j1 * j1 * l * (cp + 0.5 * (kz / kr).powi(2));
+                out.push(ModeLoss { n: n + 1, p, frequency: omega / (2.0 * PI), k: v.norm_sqr() / (4.0 * u) });
+            }
+        }
+        out.sort_by(|x, y| x.frequency.total_cmp(&y.frequency));
+        out
+    }
+
+    /// The energy per charge squared (V/C) a Gaussian bunch of rms duration `sigma_t` (s) at
+    /// `beta` c leaves in it: Σ k_n e^{−(ω_n σ_t)²}, the modes taken until the bunch's spectrum
+    /// has fallen below e^{−40}.
+    ///
+    /// ```
+    /// use emcraft_theory::wake::Pillbox;
+    /// let p = Pillbox::new(0.01, 0.01306);
+    /// // A long bunch sees TM010 alone, a short one more modes.
+    /// let k010 = p.modes(1.0, 12e9)[0].k;
+    /// assert!(p.loss_factor(1.0, 60e-12).unwrap() < k010 * 1e-3);
+    /// assert!(p.loss_factor(1.0, 1e-12).unwrap() > k010);
+    /// ```
+    pub fn loss_factor(&self, beta: f64, sigma_t: f64) -> Option<f64> {
+        if !(sigma_t.is_finite() && sigma_t > 0.0) {
+            return None;
+        }
+        let f_max = 40f64.sqrt() / (2.0 * PI * sigma_t);
+        let modes = self.modes(beta, f_max);
+        (!modes.is_empty()).then(|| modes.iter().map(|m| m.k * (-(2.0 * PI * m.frequency * sigma_t).powi(2)).exp()).sum())
+    }
 }
 
 #[cfg(test)]
@@ -115,7 +138,7 @@ mod tests {
         // k = L T²/(2π ε₀ a² J₁(x₀₁)²), T = sin(x)/x, x = ωL/(2βc) (Wangler §2.3, §11.6).
         let (a, l) = (0.01, 0.01306);
         for beta in [1.0, 0.8] {
-            let m = pillbox_modes(a, l, beta, 12e9)[0];
+            let m = Pillbox::new(a, l).modes(beta, 12e9)[0];
             let x = 2.0 * PI * m.frequency * l / (2.0 * beta * C0);
             let t = x.sin() / x;
             let x01 = 2.404_825_557_695_773;
@@ -126,7 +149,7 @@ mod tests {
 
     #[test]
     fn the_sum_converges() {
-        let k = |s: f64| pillbox_loss_factor(0.01, 0.01306, 1.0, s).unwrap_or(0.0);
+        let k = |s: f64| Pillbox::new(0.01, 0.01306).loss_factor(1.0, s).unwrap_or(0.0);
         // Shorter bunches lose more; the sum is settled well inside its cut.
         assert!(k(3e-12) > k(6e-12) && k(6e-12) > k(12e-12));
     }

@@ -305,9 +305,22 @@ fn load(grid: &Grid, plasma: &Plasma) -> Result<Population> {
 fn build(s: &Session, grid: Grid, origin: [f64; 3], dt: f64, pusher: Pusher) -> Result<Pic> {
     let m = &s.model.particles;
     let mut run = Pic::new(grid, dt, pusher).map_err(fdtd)?;
-    // The bodies' conductors and whatever lies outside the solid, as staircases of cells.
+    // The bodies' conductors and whatever lies outside the solid, as staircases of cells; the
+    // dielectrics by their permittivity.
     if s.model.domain.solid.is_some() {
-        run.set_metal(|x| s.model.material_at(emcraft_model::Point3::new(x[0] + origin[0], x[1] + origin[1], x[2] + origin[2])).is_none());
+        let materials = &s.model.materials;
+        if let Some(m) = materials.iter().find(|m| {
+            m.mu_r.get() != 1.0 || !m.loss_tangent.is_zero() || !m.magnetic_loss_tangent.is_zero() || !m.dispersion.is_empty() || m.ferrite.is_some()
+        }) {
+            return Err(EngineError::failed(format!(
+                "not supported yet: particle runs in a lossy, dispersive or magnetic material (`{}`): lossless dielectrics only",
+                m.name
+            )));
+        }
+        run.set_media(|x| match s.model.material_at(emcraft_model::Point3::new(x[0] + origin[0], x[1] + origin[1], x[2] + origin[2])) {
+            None => pic::Medium::Metal,
+            Some(i) => pic::Medium::Dielectric(materials.get(i).map_or(1.0, |m| m.eps_r.get())),
+        });
     }
     let emitted = run.add(Population::new(ELECTRON)).map_err(fdtd)?;
     for plasma in &m.plasmas {

@@ -1,0 +1,7 @@
+[
+ {"command": "model.material.create", "params": {"name": "n1.5", "eps_r": 2.25}},
+ {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 10, "length": 39.18, "material": "n1.5"}},
+ {"command": "project.analysis", "params": {"kind": "particles"}},
+ {"command": "particles.bunch", "params": {"face": "z-", "charge": 0.001, "length": 2, "energy": 1e10}},
+ {"command": "project.setup", "params": {"kind": "particles", "time": 0.25, "cell": 0.5}}
+]

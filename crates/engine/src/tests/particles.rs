@@ -145,7 +145,7 @@ fn a_bunch_through_a_closed_pillbox_leaves_its_loss_factor() {
         ],
     );
     let r = s.execute("solve.particles", &json!({"time": 0.12, "cell": 0.5})).unwrap();
-    let want = emcraft_theory::wake::pillbox_loss_factor(0.01, 0.01306, 1.0, 2e-3 / 299_792_458.0).unwrap() * 1e-12;
+    let want = emcraft_theory::wake::Pillbox::new(0.01, 0.01306).loss_factor(1.0, 2e-3 / 299_792_458.0).unwrap() * 1e-12;
     let k = r["loss_factor_v_per_pc"].as_f64().unwrap();
     assert!((k / want - 1.0).abs() < 4e-3, "{k} V/pC against {want}");
     assert_eq!((r["particles"].as_u64(), r["walls"]["z+"]["current"].as_f64().map(f64::is_sign_negative)), (Some(0), Some(true)));
@@ -157,4 +157,20 @@ fn a_bunch_through_a_closed_pillbox_leaves_its_loss_factor() {
     ] {
         assert!(s.execute("particles.bunch", &p).is_err(), "{p}");
     }
+}
+
+#[test]
+fn particle_runs_take_lossless_dielectrics_only() {
+    // A lossy filling is refused rather than run as if lossless.
+    let mut s = Session::new();
+    run(
+        &mut s,
+        &[
+            ("model.material.create", json!({"name": "lossy", "eps_r": 2.25, "loss_tangent": 0.01})),
+            ("geometry.solid", json!({"shape": "cylinder", "radius": 10, "length": 13.06, "material": "lossy"})),
+            ("particles.bunch", json!({"face": "z-", "charge": 0.001, "length": 2})),
+        ],
+    );
+    let e = s.execute("solve.particles", &json!({"time": 0.1, "cell": 1})).unwrap_err().to_string();
+    assert!(e.contains("lossy") && e.contains("not supported yet"), "{e}");
 }
