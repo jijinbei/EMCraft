@@ -33,10 +33,11 @@ use crate::{FdtdError, Result, invalid};
 mod deposit;
 mod emit;
 mod grid;
+mod metal;
 #[cfg(test)]
 mod tests;
 
-pub use emit::{Emission, Emitter, MAX_PER_NODE};
+pub use emit::{Bunch, Emission, Emitter, MAX_PER_NODE};
 pub use grid::{Axis, Grid, Wall};
 
 /// The most macro-particles a run holds.
@@ -114,12 +115,17 @@ impl Population {
 }
 
 /// What a step did: the charge emitted (C), the charge absorbed on each wall (C; by axis, low
-/// and high), and the particles dropped because their momentum stopped being a number.
+/// and high) and on the bodies inside, the particles dropped because their momentum stopped
+/// being a number, and the kinetic energy (J) the particles emitted brought in and those
+/// absorbed took out.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Moved {
     pub emitted: f64,
     pub collected: [[f64; 2]; 3],
+    pub metal: f64,
     pub lost: usize,
+    pub kinetic_in: f64,
+    pub kinetic_out: f64,
 }
 
 /// The energy on the grid (J): the field's and the particles'.
@@ -141,6 +147,8 @@ pub struct Pic {
     background: f64,
     hold: Option<usize>,
     emitters: Vec<Emitter>,
+    bunches: Vec<Bunch>,
+    metal: Option<metal::Metal>,
     emitted: u64,
     steps: usize,
 }
@@ -188,6 +196,8 @@ impl Pic {
             background: 0.0,
             hold: None,
             emitters: Vec::new(),
+            bunches: Vec::new(),
+            metal: None,
             emitted: 0,
             steps: 0,
         })
@@ -261,13 +271,43 @@ impl Pic {
     pub fn set_e(&mut self, a: usize, f: impl Fn(V3) -> f64) {
         let Some(values) = self.e.get_mut(a) else { return };
         let lattice = self.grid.e(a);
+        let metal = self.metal.as_ref();
         for p in lattice.points() {
+            let id = lattice.at(p);
             if !self.grid.e_on_wall(a, p)
-                && let Some(v) = values.get_mut(lattice.at(p))
+                && !metal.is_some_and(|m| m.edge(a, id))
+                && let Some(v) = values.get_mut(id)
             {
                 *v = f(self.grid.position(lattice, p));
             }
         }
+    }
+
+    /// Conducting bodies inside the box: each cell whose centre `metal` says is in a conductor
+    /// (a position in m) becomes metal, E on the edges touching it held at zero from now on.
+    /// Returns whether any cell is.
+    pub fn set_metal(&mut self, metal: impl Fn(V3) -> bool) -> bool {
+        let m = metal::Metal::new(&self.grid, metal);
+        if !m.any() {
+            self.metal = None;
+            return false;
+        }
+        for a in 0..3 {
+            for (id, v) in self.e[a].iter_mut().enumerate() {
+                if m.edge(a, id) {
+                    *v = 0.0;
+                }
+            }
+        }
+        self.metal = Some(m);
+        true
+    }
+
+    /// Adds `bunch`, checked against the grid and the populations.
+    pub fn inject(&mut self, bunch: Bunch) -> Result<()> {
+        bunch.check(&self.grid, self.populations.len())?;
+        self.bunches.push(bunch);
+        Ok(())
     }
 
     /// B_a (T) set to `f` at each point of its lattice.
@@ -337,7 +377,7 @@ impl Pic {
         let axes = self.grid.axes;
         nodes
             .points()
-            .filter(|p| (0..3).all(|d| !axes[d].on_wall(p[d])))
+            .filter(|p| (0..3).all(|d| !axes[d].on_wall(p[d])) && !self.metal.as_ref().is_some_and(|m| m.near_node(&self.grid, *p)))
             .map(|p| {
                 let div: f64 = (0..3)
                     .map(|a| {
@@ -357,35 +397,53 @@ impl Pic {
         let mut moved = Moved::default();
         self.emit_step(&mut moved)?;
         self.j.iter_mut().for_each(|j| j.fill(0.0));
-        let Pic { grid, dt, pusher, e, b, j, populations, .. } = self;
+        let Pic { grid, dt, pusher, e, b, j, populations, metal, .. } = self;
         for pop in populations.iter_mut() {
             let species = pop.species;
-            pop.particles.retain_mut(|p| advance(grid, [e, b], j, (species, *pusher, *dt), p, &mut moved));
+            pop.particles.retain_mut(|p| advance((grid, metal.as_ref()), [e, b], j, (species, *pusher, *dt), p, &mut moved));
         }
         if let Some(a) = self.hold {
             let mean = self.j[a].iter().sum::<f64>() / self.j[a].len().max(1) as f64;
             self.j[a].iter_mut().for_each(|v| *v -= mean);
         }
         faraday(&self.grid, &self.e, &mut self.b, 0.5 * self.dt);
-        ampere(&self.grid, &mut self.e, &self.b, &self.j, self.dt);
+        ampere(&self.grid, &mut self.e, &self.b, &self.j, self.dt, self.metal.as_ref());
         faraday(&self.grid, &self.e, &mut self.b, 0.5 * self.dt);
         self.steps += 1;
         Ok(moved)
     }
 
-    /// The walls' emission at the step's start.
+    /// The walls' emission and the bunches at the step's start; none into a metal cell.
     fn emit_step(&mut self, moved: &mut Moved) -> Result<()> {
-        for emitter in self.emitters.clone() {
-            let Some(pop) = self.populations.get(emitter.population) else { continue };
-            let new = emitter.emit(&self.grid, &self.e[emitter.axis], pop, self.dt, &mut self.emitted);
+        let t = self.time();
+        let made: Vec<(usize, Vec<Particle>)> = self
+            .emitters
+            .iter()
+            .filter_map(|em| {
+                let pop = self.populations.get(em.population)?;
+                Some((em.population, em.emit(&self.grid, &self.e[em.axis], pop, self.dt, &mut self.emitted)))
+            })
+            .collect();
+        let sent: Vec<(usize, Vec<Particle>)> = self
+            .bunches
+            .iter()
+            .filter_map(|bu| {
+                let pop = self.populations.get(bu.population)?;
+                Some((bu.population, bu.emit(&self.grid, pop, t, self.dt, &mut self.emitted)))
+            })
+            .collect();
+        for (k, mut new) in made.into_iter().chain(sent) {
+            if let Some(m) = &self.metal {
+                new.retain(|p| !m.at(&self.grid, p.x));
+            }
             if self.particles().saturating_add(new.len()) > MAX_PARTICLES {
                 return Err(invalid("particles", format!("the emission would hold more than {MAX_PARTICLES}")));
             }
+            let Some(pop) = self.populations.get_mut(k) else { continue };
             let species = pop.species;
             moved.emitted += new.iter().map(|p| species.charge * p.w).sum::<f64>();
-            if let Some(pop) = self.populations.get_mut(emitter.population) {
-                pop.particles.extend(new);
-            }
+            moved.kinetic_in += new.iter().map(|p| p.w * species.kinetic(p.u)).sum::<f64>();
+            pop.particles.extend(new);
         }
         Ok(())
     }
@@ -394,7 +452,7 @@ impl Pic {
 /// Pushes and moves particle `p`, deposits its current; false when it is gone (absorbed on a
 /// wall, or no longer a number).
 fn advance(
-    grid: &Grid,
+    (grid, metal): (&Grid, Option<&metal::Metal>),
     [e, b]: [&[Vec<f64>; 3]; 2],
     j: &mut [Vec<f64>; 3],
     (species, pusher, dt): (Species, Pusher, f64),
@@ -413,6 +471,12 @@ fn advance(
     deposit::current(grid, j, p.x, to, species.charge * p.w, dt);
     if let Some((axis, high)) = hit {
         moved.collected[axis][usize::from(high)] += species.charge * p.w;
+        moved.kinetic_out += p.w * species.kinetic(u);
+        return false;
+    }
+    if metal.is_some_and(|m| m.at(grid, to)) {
+        moved.metal += species.charge * p.w;
+        moved.kinetic_out += p.w * species.kinetic(u);
         return false;
     }
     for d in 0..3 {
@@ -479,8 +543,9 @@ fn faraday(grid: &Grid, e: &[Vec<f64>; 3], b: &mut [Vec<f64>; 3], dt: f64) {
     }
 }
 
-/// E advanced by `dt` (s): ∂E/∂t = c²∇ × B − J/ε₀, off the walls it is tangential to.
-fn ampere(grid: &Grid, e: &mut [Vec<f64>; 3], b: &[Vec<f64>; 3], j: &[Vec<f64>; 3], dt: f64) {
+/// E advanced by `dt` (s): ∂E/∂t = c²∇ × B − J/ε₀, off the walls it is tangential to and the
+/// edges metal holds at zero.
+fn ampere(grid: &Grid, e: &mut [Vec<f64>; 3], b: &[Vec<f64>; 3], j: &[Vec<f64>; 3], dt: f64, metal: Option<&metal::Metal>) {
     let axes = grid.axes;
     for a in 0..3 {
         let (q, r) = ((a + 1) % 3, (a + 2) % 3);
@@ -495,6 +560,9 @@ fn ampere(grid: &Grid, e: &mut [Vec<f64>; 3], b: &[Vec<f64>; 3], j: &[Vec<f64>; 
             (pq[q], pr[r]) = (mq, mr);
             let curl = (b[r][br.at(p)] - b[r][br.at(pq)]) / axes[q].h - (b[q][bq.at(p)] - b[q][bq.at(pr)]) / axes[r].h;
             let id = lattice.at(p);
+            if metal.is_some_and(|m| m.edge(a, id)) {
+                continue;
+            }
             e[a][id] += dt * (C0 * C0 * curl - j[a][id] / EPS0);
         }
     }

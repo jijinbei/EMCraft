@@ -189,3 +189,50 @@ fn hostile_settings_are_refused_and_nothing_panics() {
     let moved = pic.step().unwrap();
     assert_eq!((moved.lost, pic.particles()), (1, 0));
 }
+
+#[test]
+fn a_bunch_through_a_pillbox_leaves_its_loss_factor() {
+    // A 1 nC bunch, σ_z = 2 mm, at 10 GeV along the axis of a perfectly conducting pillbox (10 mm
+    // by 13.06 mm, a staircase of 0.5 mm cells) entering through one end wall and leaving through
+    // the other: the energy left in the cavity is q² Σ k_n e^{−(ω_n σ_t)²} over its TM0np modes
+    // (Wilson 1989; emcraft_theory::wake), 5.81 V/pC — within 0.2 % at this cell, 0.07 % at 0.25 mm.
+    let (a, l, sz) = (0.01, 0.01306, 2e-3);
+    let h = 0.5e-3;
+    let across = |len: f64| axis((len / h).round() as usize, len / (len / h).round(), Wall::Conductor);
+    let g = Grid::new([across(2.0 * a), across(2.0 * a), across(l)]).unwrap();
+    let dt = g.time_step(0.95);
+    let mut pic = Pic::new(g, dt, Pusher::Boris).unwrap();
+    assert!(pic.set_metal(|x| (x[0] - a).powi(2) + (x[1] - a).powi(2) > a * a));
+    let k = pic.add(Population::new(ELECTRON)).unwrap();
+    let sigma = sz / C0;
+    let bunch = Bunch {
+        axis: 2,
+        high: false,
+        population: k,
+        charge: 1e-9,
+        t0: 5.0 * sigma,
+        sigma,
+        centre: [a, a],
+        radius: 0.0,
+        energy: 1e10 * -ELECTRON.charge,
+        per_step: 8,
+    };
+    pic.inject(bunch).unwrap();
+    let before = pic.gauss();
+    let steps = ((10.0 * sigma + l / C0) / dt).ceil() as usize + 10;
+    let mut q = 0.0;
+    for _ in 0..steps {
+        q += pic.step().unwrap().emitted;
+    }
+    assert_eq!(pic.particles(), 0, "the bunch has gone");
+    assert!((q / -1e-9 - 1.0).abs() < 1e-6, "{q} C sent");
+    let k = pic.energy().field / (q * q);
+    let want = emcraft_theory::wake::pillbox_loss_factor(a, l, 1.0, sigma).unwrap();
+    assert!((k / want - 1.0).abs() < 4e-3, "{k:e} V/C against {want:e}");
+    // Gauss's law held off the metal while the bunch went through.
+    let drift = before.iter().zip(pic.gauss()).fold(0.0f64, |m, (x, y)| m.max((x - y).abs()));
+    assert!(drift < 1e-12 * 1e-9 / g.cell_volume(), "{drift:e}");
+    // A bunch through a periodic face, or with no length, is refused.
+    let bad = Bunch { sigma: 0.0, ..bunch };
+    assert!(pic.inject(bad).is_err() && pic.inject(Bunch { axis: 9, ..bunch }).is_err());
+}

@@ -129,3 +129,32 @@ fn a_run_saved_opens_with_its_sources_and_result() {
     bad.dt = f64::NAN;
     assert!(bad.check().is_err());
 }
+
+#[test]
+fn a_bunch_through_a_closed_pillbox_leaves_its_loss_factor() {
+    // The perfectly conducting pillbox's outside as metal cells, a 1 nC bunch (σ_z = 2 mm, 10 GeV)
+    // through it on the axis: q² Σ k_n e^{−(ω_n σ_t)²} left in it (P. B. Wilson, SLAC-PUB-4547,
+    // 1989, §3; emcraft_theory::wake).
+    let mut s = Session::new();
+    run(
+        &mut s,
+        &[
+            ("geometry.solid", json!({"shape": "cylinder", "radius": 10, "length": 13.06})),
+            ("project.analysis", json!({"kind": "particles"})),
+            ("particles.bunch", json!({"face": "z-", "charge": 1, "length": 2, "energy": 1e10})),
+        ],
+    );
+    let r = s.execute("solve.particles", &json!({"time": 0.12, "cell": 0.5})).unwrap();
+    let want = emcraft_theory::wake::pillbox_loss_factor(0.01, 0.01306, 1.0, 2e-3 / 299_792_458.0).unwrap() * 1e-12;
+    let k = r["loss_factor_v_per_pc"].as_f64().unwrap();
+    assert!((k / want - 1.0).abs() < 4e-3, "{k} V/pC against {want}");
+    assert_eq!((r["particles"].as_u64(), r["walls"]["z+"]["current"].as_f64().map(f64::is_sign_negative)), (Some(0), Some(true)));
+    // Hostile bunches are refused.
+    for p in [
+        json!({"face": "z-", "charge": -1, "length": 2}),
+        json!({"face": "z-", "charge": 1, "length": 0}),
+        json!({"face": "q", "charge": 1, "length": 1}),
+    ] {
+        assert!(s.execute("particles.bunch", &p).is_err(), "{p}");
+    }
+}

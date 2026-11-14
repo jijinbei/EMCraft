@@ -758,5 +758,11 @@ overlap tests).
   A. W. Trivelpiece, *Exact relativistic solution for the one-dimensional diode*, J. Appl. Phys.
   40:3924, 1969 — a planar diode's space-charge-limited current, slow and at any speed
   (`emcraft-theory::plasma`).
+- P. B. Wilson, *Introduction to wakefields and wake potentials*, SLAC-PUB-4547, 1989, §3;
+  T. P. Wangler, *RF Linear Accelerators*, 2nd ed., Wiley 2008, §11.6 — the energy a bunch
+  leaves in a cavity's modes, its loss factor k = ω(R/Q)/4 and the bunch's form factor
+  e^{−(ωσ_t)²} (`emcraft-theory::wake`, the pillbox's TM0np in closed form).
+- A. Taflove, S. C. Hagness, *Computational Electrodynamics*, 3rd ed., Artech House 2005, §3.6 —
+  a perfect conductor as a staircase of cells, the PIC grid's bodies (`emcraft-fdtd::pic`).
 - M. Roberts, *The unreasonable effectiveness of quasirandom sequences*, 2018 — the R₂ sequence
   that spreads emitted particles across a wall's nodes, the same every run.

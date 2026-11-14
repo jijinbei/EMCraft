@@ -1,0 +1,20 @@
+{
+ "title": "A bunch through a closed pillbox in particle-in-cell: the energy it leaves, its loss factor",
+ "kind": "theory",
+ "source": "A charge q crossing a closed cavity at speed βc leaves each mode q² k_n, k_n = |V_n|²/(4U_n) = ω_n(R/Q)_n/4, V_n = ∫E_z e^{jω_n z/βc} dz on its line; a Gaussian bunch of rms duration σ_t leaves q² Σ k_n e^{−(ω_n σ_t)²} (P. B. Wilson, Introduction to wakefields and wake potentials, SLAC-PUB-4547, 1989; T. P. Wangler, RF Linear Accelerators, 2nd ed., 2008, §11.6). For the pillbox (radius a = 10 mm, length L = 13.06 mm) on its axis the modes are TM0np, E_z = J₀(x_n r/a) cos(pπz/L), each V and U in closed form; σ_z = 2 mm at β = 1: 5.805 V/pC, summed over the modes up to ωσ_t = √40. The Bessel functions by Bessel's integral and their zeros by bisection, evaluated apart from the code under test",
+ "quantities": [
+  {
+   "id": "loss_factor",
+   "quantity": "the field's energy left in the pillbox per bunch charge squared (V/pC), σ_z = 2 mm, 10 GeV electrons on the axis",
+   "measure": {
+    "step": "run",
+    "pointer": "/loss_factor_v_per_pc"
+   },
+   "value": 5.805225090624618,
+   "tolerance": {
+    "relative": 0.01
+   },
+   "reason": "the cylinder a staircase of 0.25 mm cells (40 across its radius) and the Yee grid's dispersion: 0.07 % here, 0.17 % at 0.5 mm"
+  }
+ ]
+}

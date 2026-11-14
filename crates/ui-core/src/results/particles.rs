@@ -167,6 +167,12 @@ pub fn summary(s: &Session) -> Option<Table> {
             }
         }
     }
+    if r.metal != 0.0 {
+        rows.push(vec![tr(t!("Current into the bodies")).to_owned(), format!("{} A", crate::number::value(r.metal))]);
+    }
+    if let Some(k) = r.loss_factor {
+        rows.push(vec![tr(t!("Loss factor")).to_owned(), format!("{} V/pC", crate::number::value(k * 1e-12))]);
+    }
     for (k, p) in r.probes.iter().enumerate() {
         let f = p.frequency.map_or_else(|| "–".to_owned(), |f| format!("{} {}", crate::number::frequency(fu.from_si(f)), fu.symbol()));
         rows.push(vec![trf(t!("Probe {n} rings at"), args!(n = (k + 1))), f]);

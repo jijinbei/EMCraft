@@ -53,6 +53,7 @@ pub mod slab;
 pub mod stripline;
 pub mod taper;
 pub mod tee;
+pub mod wake;
 pub mod wall;
 
 pub use modematch::{EPlaneLine, ESection, HPlaneLine, HSection};

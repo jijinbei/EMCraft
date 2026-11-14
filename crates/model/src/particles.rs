@@ -142,6 +142,30 @@ pub struct Plasma {
     pub wave: Option<Wave>,
 }
 
+/// A Gaussian bunch of electrons sent in through a conducting face: `charge` (C, its size), rms
+/// length `length` (m) along the face's normal at its speed, `energy` (eV), spread over a disc
+/// of `radius` (m) about `at` (m, a point of the face; none: its centre), its peak entering
+/// `delay` (s) after the start (none: five of its rms durations), `per_step` macro-particles a
+/// step.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Bunch {
+    pub face: Face,
+    pub charge: f64,
+    pub length: f64,
+    pub energy: f64,
+    #[serde(default)]
+    pub radius: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<[f64; 3]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delay: Option<f64>,
+    pub per_step: usize,
+}
+
+/// The largest bunch charge (C) and length (m).
+pub const MAX_BUNCH_CHARGE: f64 = 1e3;
+pub const MAX_LENGTH: f64 = 1e3;
+
 /// A voltage held across the walls of `axis` by the outer circuit: the high wall `volts` above
 /// the low one.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -159,6 +183,8 @@ pub struct Particles {
     pub emitters: Vec<Emitter>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub plasmas: Vec<Plasma>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bunches: Vec<Bunch>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voltage: Option<Voltage>,
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -183,9 +209,9 @@ impl Particles {
         *self == Particles::default()
     }
 
-    /// Whether something puts particles in the box.
+    /// Whether something puts particles in the box: an emitter, a plasma or a bunch.
     pub fn has_sources(&self) -> bool {
-        !(self.emitters.is_empty() && self.plasmas.is_empty())
+        !(self.emitters.is_empty() && self.plasmas.is_empty() && self.bunches.is_empty())
     }
 
     /// The sources checked: their counts and every number within its bounds.
@@ -199,8 +225,30 @@ impl Particles {
     /// assert!(p.check().is_err());
     /// ```
     pub fn check(&self) -> Result<()> {
-        if self.emitters.len() > MAX_EMITTERS || self.plasmas.len() > MAX_PLASMAS || self.probes.len() > MAX_PROBES {
-            return Err(invalid("particles", format!("at most {MAX_EMITTERS} emitters, {MAX_PLASMAS} plasmas and {MAX_PROBES} probes")));
+        if self.emitters.len() > MAX_EMITTERS
+            || self.plasmas.len() > MAX_PLASMAS
+            || self.probes.len() > MAX_PROBES
+            || self.bunches.len() > MAX_EMITTERS
+        {
+            return Err(invalid("particles", format!("at most {MAX_EMITTERS} emitters and bunches, {MAX_PLASMAS} plasmas and {MAX_PROBES} probes")));
+        }
+        for b in &self.bunches {
+            let at = b.at.is_none_or(|x| x.iter().all(|c| c.is_finite()));
+            let delay = b.delay.is_none_or(|d| within(d, 1.0, false));
+            let ok = b.face.axis <= 2
+                && within(b.charge, MAX_BUNCH_CHARGE, false)
+                && within(b.length, MAX_LENGTH, false)
+                && b.length > 0.0
+                && within(b.energy, MAX_ENERGY, false)
+                && b.energy > 0.0
+                && within(b.radius, MAX_LENGTH, false)
+                && (1..=MAX_PER_NODE).contains(&b.per_step);
+            if !(ok && at && delay) {
+                return Err(invalid(
+                    "bunch",
+                    format!("{b:?}: a face, a charge ≥ 0, a length and an energy > 0, a radius ≥ 0, 1 to {MAX_PER_NODE} particles a step"),
+                ));
+            }
         }
         for e in &self.emitters {
             let current_ok = match e.emission {

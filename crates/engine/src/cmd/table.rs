@@ -741,6 +741,24 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::particles::plasma,
     },
     CommandSpec {
+        id: "particles.bunch",
+        label: "Electron bunch",
+        doc: "A Gaussian bunch of electrons sent in through a conducting face of the particle run's box, along its normal: `charge`, rms `length` along the way (its duration that over its speed), `energy`, spread over a disc of `radius` about `at` (a point of the face; default its centre), its peak entering `delay` after the start (default five of its durations). With bunches the run's only source, its reply gives the loss factor: the field's energy gained per charge squared, what the bunch leaves in a closed cavity once it has gone, q² Σ k_n e^{−(ω_n σ_t)²} over the modes, k_n = ω_n (R/Q)_n /4 (Wilson, SLAC-PUB-4547). Undo goes back.",
+        params: &[
+            req("face", K::String, "the face it enters through: x-, x+, y-, y+, z- or z+").one_of(&["x-", "x+", "y-", "y+", "z-", "z+"]),
+            req("charge", K::Number, "the bunch's charge in nC"),
+            req("length", K::Number, "its rms length").of(L),
+            opt("energy", K::Number, "the electrons' energy in eV (default 1e9)"),
+            opt("radius", K::Number, "the disc it is spread over (default 0: on a line)").of(L),
+            opt("at", K::Array, "the point of the face it enters at [x, y, z] (default the face's centre)").of(L),
+            opt("delay", K::Number, "when its peak enters, in ps (default five of its rms durations)"),
+            opt("per_step", K::Integer, "macro-particles a step, 1 to 64 (default 8)"),
+        ],
+        effect: Effect::Record,
+        invalidates: Some(Change::Particles),
+        run: crate::particles::bunch_command,
+    },
+    CommandSpec {
         id: "particles.voltage",
         label: "Gap voltage",
         doc: "A voltage held across the conducting walls of `axis` by the outer circuit, the high wall `volts` above the low one: a uniform field at the start, the gap's mean current returned through the circuit as particles cross it. The other two axes must be periodic. Without `volts`, none. Undo goes back.",
@@ -782,7 +800,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "solve.particles",
         label: "Solve particles",
-        doc: "Particle-in-cell in time (docs/adr/0012-particles.md): the particles' own fields with the box's, self-consistent. The box is the geometry's bounds in cells of about `cell` along each axis, its walls as particles.walls sets them; E on the cells' edges and B on their faces (Yee), leapfrogged with macro-particles pushed by the relativistic Boris (or `vay`) push; their current deposited by Esirkepov's scheme (Comput. Phys. Commun. 135, 2001), so Gauss's law holds to rounding. Plasmas, emitters, a held voltage and a static magnetic field from particles.*. The reply gives the grid, the particles at the end, each conducting wall's current (A, the charge's rate: negative for electrons arriving) and current density over the run's second half, each probe's frequency, the energies; the run's history, probes and last particles are kept for the window (and the project file).",
+        doc: "Particle-in-cell in time (docs/adr/0012-particles.md): the particles' own fields with the box's, self-consistent. The box is the geometry's bounds in cells of about `cell` along each axis, its walls as particles.walls sets them; E on the cells' edges and B on their faces (Yee), leapfrogged with macro-particles pushed by the relativistic Boris (or `vay`) push; their current deposited by Esirkepov's scheme (Comput. Phys. Commun. 135, 2001), so Gauss's law holds to rounding. Plasmas, emitters, bunches, a held voltage and a static magnetic field from particles.*; the solid's outside and its conducting bodies as staircases of cells (E on their edges held at zero, particles reaching them absorbed). The reply gives the grid, the particles at the end, each conducting wall's current (A, the charge's rate: negative for electrons arriving) and current density over the run's second half, each probe's frequency, the energies, the current into the bodies, and with bunches alone the loss factor (V/pC); the run's history, probes and last particles are kept for the window (and the project file).",
         params: &[
             opt("time", K::Number, "how long to run, in ns (default the confirmed settings')"),
             opt("cell", K::Number, "the cell's size (default the confirmed settings')").of(L),

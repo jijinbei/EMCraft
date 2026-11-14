@@ -774,6 +774,14 @@ pub const TEMPLATES: &[Template] = &[
         group: Group::Particles,
     },
     Template {
+        name: "pillbox-wake",
+        label: "A bunch through a closed pillbox by particle-in-cell: 1 nC, σ_z = 2 mm, 10 GeV electrons on the axis of a perfectly conducting cavity 10 mm in radius and 13.06 mm long; the energy it leaves, its loss factor, 5.8 V/pC over the TM0np modes",
+        script: include_str!("../scripts/pillbox-wake.json"),
+        marks: "{}",
+        kinds: &[Analysis::Particles],
+        group: Group::Particles,
+    },
+    Template {
         name: "plasma-oscillation",
         label: "A cold plasma by particle-in-cell: 10¹⁶ electrons per m³, periodic along every axis, a velocity wave along it; its field rings at the plasma frequency ω_p/2π = 0.898 GHz",
         script: include_str!("../scripts/plasma-oscillation.json"),

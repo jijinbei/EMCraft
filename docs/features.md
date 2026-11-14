@@ -511,6 +511,21 @@ Electrons of `density` filling the particle run's box at the start, `per_cell` m
 | `wave_axis` | string |  | no | the wave's axis and direction: x, y or z (default x) |
 | `modes` | integer |  | no | the wave's wavelengths across the box (default 1) |
 
+## `particles.bunch` — Electron bunch
+
+A Gaussian bunch of electrons sent in through a conducting face of the particle run's box, along its normal: `charge`, rms `length` along the way (its duration that over its speed), `energy`, spread over a disc of `radius` about `at` (a point of the face; default its centre), its peak entering `delay` after the start (default five of its durations). With bunches the run's only source, its reply gives the loss factor: the field's energy gained per charge squared, what the bunch leaves in a closed cavity once it has gone, q² Σ k_n e^{−(ω_n σ_t)²} over the modes, k_n = ω_n (R/Q)_n /4 (Wilson, SLAC-PUB-4547). Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `face` | string |  | yes | the face it enters through: x-, x+, y-, y+, z- or z+ |
+| `charge` | number |  | yes | the bunch's charge in nC |
+| `length` | number | length | yes | its rms length |
+| `energy` | number |  | no | the electrons' energy in eV (default 1e9) |
+| `radius` | number | length | no | the disc it is spread over (default 0: on a line) |
+| `at` | array | length | no | the point of the face it enters at [x, y, z] (default the face's centre) |
+| `delay` | number |  | no | when its peak enters, in ps (default five of its rms durations) |
+| `per_step` | integer |  | no | macro-particles a step, 1 to 64 (default 8) |
+
 ## `particles.voltage` — Gap voltage
 
 A voltage held across the conducting walls of `axis` by the outer circuit, the high wall `volts` above the low one: a uniform field at the start, the gap's mean current returned through the circuit as particles cross it. The other two axes must be periodic. Without `volts`, none. Undo goes back.
@@ -544,7 +559,7 @@ No parameters.
 
 ## `solve.particles` — Solve particles
 
-Particle-in-cell in time (docs/adr/0012-particles.md): the particles' own fields with the box's, self-consistent. The box is the geometry's bounds in cells of about `cell` along each axis, its walls as particles.walls sets them; E on the cells' edges and B on their faces (Yee), leapfrogged with macro-particles pushed by the relativistic Boris (or `vay`) push; their current deposited by Esirkepov's scheme (Comput. Phys. Commun. 135, 2001), so Gauss's law holds to rounding. Plasmas, emitters, a held voltage and a static magnetic field from particles.*. The reply gives the grid, the particles at the end, each conducting wall's current (A, the charge's rate: negative for electrons arriving) and current density over the run's second half, each probe's frequency, the energies; the run's history, probes and last particles are kept for the window (and the project file).
+Particle-in-cell in time (docs/adr/0012-particles.md): the particles' own fields with the box's, self-consistent. The box is the geometry's bounds in cells of about `cell` along each axis, its walls as particles.walls sets them; E on the cells' edges and B on their faces (Yee), leapfrogged with macro-particles pushed by the relativistic Boris (or `vay`) push; their current deposited by Esirkepov's scheme (Comput. Phys. Commun. 135, 2001), so Gauss's law holds to rounding. Plasmas, emitters, bunches, a held voltage and a static magnetic field from particles.*; the solid's outside and its conducting bodies as staircases of cells (E on their edges held at zero, particles reaching them absorbed). The reply gives the grid, the particles at the end, each conducting wall's current (A, the charge's rate: negative for electrons arriving) and current density over the run's second half, each probe's frequency, the energies, the current into the bodies, and with bunches alone the loss factor (V/pC); the run's history, probes and last particles are kept for the window (and the project file).
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|

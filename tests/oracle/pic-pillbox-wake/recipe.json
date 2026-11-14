@@ -1,0 +1,6 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 10, "length": 13.06}},
+ {"command": "project.analysis", "params": {"kind": "particles"}},
+ {"command": "particles.bunch", "params": {"face": "z-", "charge": 1, "length": 2, "energy": 1e10}},
+ {"command": "solve.particles", "params": {"time": 0.12, "cell": 0.25}, "id": "run"}
+]

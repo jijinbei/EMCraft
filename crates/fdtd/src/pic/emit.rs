@@ -168,3 +168,78 @@ impl Emitter {
         out
     }
 }
+
+/// A Gaussian bunch sent in through a conducting wall: `charge` (C, its size) whose current
+/// through the wall rises and falls as e^{−(t − t₀)²/2σ²}, spread evenly over a disc of
+/// `radius` (m) about `centre` (m, the two coordinates across the wall in the axes' order after
+/// `axis`), each particle at `energy` (J) along the wall's normal. The charge of a step is the
+/// Gaussian at the step's middle times Δt; `per_step` macro-particles carry it, placed by the
+/// R₂ sequence.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bunch {
+    pub axis: usize,
+    pub high: bool,
+    pub population: usize,
+    pub charge: f64,
+    pub t0: f64,
+    pub sigma: f64,
+    pub centre: [f64; 2],
+    pub radius: f64,
+    pub energy: f64,
+    pub per_step: usize,
+}
+
+/// A bunch's current is taken within this many σ of its peak.
+const BUNCH_SIGMAS: f64 = 6.0;
+
+impl Bunch {
+    /// The bunch checked against the grid and the populations.
+    pub(crate) fn check(&self, grid: &Grid, populations: usize) -> Result<()> {
+        if self.axis > 2 || grid.axes[self.axis].wall != Wall::Conductor {
+            return Err(invalid("bunch", "enters through a conducting wall: its axis must be one closed by walls"));
+        }
+        if self.population >= populations {
+            return Err(invalid("bunch", format!("population {} of {populations}", self.population)));
+        }
+        let ok = |x: f64| x.is_finite() && x >= 0.0;
+        if !(ok(self.charge) && ok(self.t0) && ok(self.radius) && ok(self.energy) && self.sigma.is_finite() && self.sigma > 0.0) {
+            return Err(invalid("bunch", "its charge, time, radius and energy must be finite numbers ≥ 0, its length > 0"));
+        }
+        if self.per_step == 0 || self.per_step > MAX_PER_NODE {
+            return Err(invalid("bunch", format!("1 to {MAX_PER_NODE} particles a step")));
+        }
+        if !self.centre.iter().all(|c| c.is_finite()) {
+            return Err(invalid("bunch", "its centre must be finite"));
+        }
+        Ok(())
+    }
+
+    /// The particles of `population` the bunch sends in over the step from `t` (s) of `dt`.
+    pub(crate) fn emit(&self, grid: &Grid, population: &Population, t: f64, dt: f64, count: &mut u64) -> Vec<Particle> {
+        let mid = t + 0.5 * dt - self.t0;
+        if mid.abs() > BUNCH_SIGMAS * self.sigma {
+            return Vec::new();
+        }
+        let q = self.charge * dt * (-0.5 * (mid / self.sigma).powi(2)).exp() / (self.sigma * (2.0 * std::f64::consts::PI).sqrt());
+        let species = population.species;
+        let w = q / (species.charge.abs() * self.per_step as f64);
+        let sigma = if self.high { -1.0 } else { 1.0 };
+        let inward = std::array::from_fn(|d| if d == self.axis { sigma } else { 0.0 });
+        let u = species.momentum(self.energy, inward);
+        let [b, c] = [(self.axis + 1) % 3, (self.axis + 2) % 3];
+        let wall = if self.high { grid.axes[self.axis].length() } else { 0.0 };
+        (0..self.per_step)
+            .map(|_| {
+                *count += 1;
+                let n = *count as f64;
+                let [s1, s2] = R2.map(|r| (0.5 + n * r).fract());
+                let (r, phi) = (self.radius * s1.sqrt(), 2.0 * std::f64::consts::PI * s2);
+                let mut x = [0.0; 3];
+                x[self.axis] = wall;
+                x[b] = (self.centre[0] + r * phi.cos()).clamp(0.0, grid.axes[b].length());
+                x[c] = (self.centre[1] + r * phi.sin()).clamp(0.0, grid.axes[c].length());
+                Particle { x, u, w }
+            })
+            .collect()
+    }
+}

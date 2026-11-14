@@ -88,6 +88,13 @@ pub struct PicResult {
     /// Each wall's current (A) and the current emitted over the run's second half.
     pub collected: [[f64; 2]; 3],
     pub emitted: f64,
+    /// The current (A) into the bodies inside the box over the run's second half.
+    #[serde(default)]
+    pub metal: f64,
+    /// With bunches its only source: the field's energy gained over the run per bunch charge
+    /// squared (V/C), the loss factor once the bunches have gone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loss_factor: Option<f64>,
 }
 
 impl PicResult {
@@ -133,6 +140,7 @@ pub(crate) fn sources_reply(s: &Session) -> Value {
     json!({
         "walls": {"x": m.walls[0].id(), "y": m.walls[1].id(), "z": m.walls[2].id()},
         "emitters": m.emitters,
+        "bunches": m.bunches,
         "plasmas": m.plasmas,
         "voltage": m.voltage.map(|v| json!({"axis": AXES[v.axis.min(2)], "volts": v.volts})),
         "magnetic": m.magnetic,
@@ -294,9 +302,13 @@ fn load(grid: &Grid, plasma: &Plasma) -> Result<Population> {
 }
 
 /// The run set up from the model's sources.
-fn build(s: &Session, grid: Grid, dt: f64, pusher: Pusher) -> Result<Pic> {
+fn build(s: &Session, grid: Grid, origin: [f64; 3], dt: f64, pusher: Pusher) -> Result<Pic> {
     let m = &s.model.particles;
     let mut run = Pic::new(grid, dt, pusher).map_err(fdtd)?;
+    // The bodies' conductors and whatever lies outside the solid, as staircases of cells.
+    if s.model.domain.solid.is_some() {
+        run.set_metal(|x| s.model.material_at(emcraft_model::Point3::new(x[0] + origin[0], x[1] + origin[1], x[2] + origin[2])).is_none());
+    }
     let emitted = run.add(Population::new(ELECTRON)).map_err(fdtd)?;
     for plasma in &m.plasmas {
         run.add(load(&grid, plasma)?).map_err(fdtd)?;
@@ -323,7 +335,52 @@ fn build(s: &Session, grid: Grid, dt: f64, pusher: Pusher) -> Result<Pic> {
             pic::Emitter { axis: e.face.axis, high: e.face.high, population: emitted, emission, energy: e.energy * EV, per_node: e.per_node };
         run.emit(emitter).map_err(|err| EngineError::failed(format!("the emitter on {}: {err}", e.face.name())))?;
     }
+    for b in &m.bunches {
+        run.inject(bunch(&grid, origin, b, emitted)).map_err(|err| EngineError::failed(format!("the bunch through {}: {err}", b.face.name())))?;
+    }
     Ok(run)
+}
+
+/// A bunch on the grid: its duration from its length at its speed, its peak five durations in
+/// (or at its delay), its centre the point given or the face's centre.
+fn bunch(grid: &Grid, origin: [f64; 3], b: &emcraft_model::particles::Bunch, population: usize) -> pic::Bunch {
+    let energy = b.energy * EV;
+    let u = ELECTRON.momentum(energy, [1.0, 0.0, 0.0]);
+    let speed = emcraft_particles::velocity(u)[0].max(1.0);
+    let sigma = b.length / speed;
+    let axis = b.face.axis.min(2);
+    let across = [(axis + 1) % 3, (axis + 2) % 3];
+    let lengths = grid.lengths();
+    let centre = across.map(|d| b.at.map_or(0.5 * lengths[d], |x| x[d] - origin[d]));
+    pic::Bunch {
+        axis,
+        high: b.face.high,
+        population,
+        charge: b.charge,
+        t0: b.delay.unwrap_or(5.0 * sigma),
+        sigma,
+        centre,
+        radius: b.radius,
+        energy,
+        per_step: b.per_step,
+    }
+}
+
+/// `particles.bunch`: a Gaussian bunch of electrons sent in through a conducting face.
+pub fn bunch_command(s: &mut Session, p: &Params) -> Result<Value> {
+    let name = p.string("face").required()?;
+    let face = Face::parse(name).ok_or_else(|| p.error("face", "x-, x+, y-, y+, z- or z+"))?;
+    let charge = p.positive("charge").required()? * 1e-9;
+    let length = p.positive_length("length").required()?;
+    let energy = p.positive("energy").or(1e9)?;
+    let radius = p.length("radius").or(0.0)?;
+    let at = p.point("at").optional()?.map(|x| [x.x, x.y, x.z]);
+    let delay = p.number("delay").optional()?.map(|ps| ps * 1e-12);
+    let per_step = p.integer("per_step", 1..=emcraft_model::particles::MAX_PER_NODE).or(8)?;
+    change(s, |m| {
+        m.bunches.push(emcraft_model::particles::Bunch { face, charge, length, energy, radius, at, delay, per_step });
+        Ok(())
+    })
 }
 
 /// The frequency (Hz) of the upward crossings of `values`' strongest component through its
@@ -359,13 +416,17 @@ pub fn solve(s: &mut Session, p: &Params) -> Result<Value> {
         return Err(p.error("time", format!("{steps} steps of {dt:e} s: 1 to {}", emcraft_fdtd::MAX_STEPS)));
     }
     let steps = steps as usize;
-    let mut run = build(s, grid, dt, pusher)?;
+    let mut run = build(s, grid, origin, dt, pusher)?;
+    let field_before = run.energy().field;
+    let m = &s.model.particles;
+    let only_bunches = !m.bunches.is_empty() && m.emitters.is_empty() && m.plasmas.is_empty();
     let probes: Vec<[f64; 3]> = s.model.particles.probes.iter().map(|x| std::array::from_fn(|d| x[d] - origin[d])).collect();
     let (every, probe_every) = (steps.div_ceil(HISTORY), steps.div_ceil(PROBE_SAMPLES));
     let mut history = Vec::new();
     let mut fields: Vec<Vec<[f64; 3]>> = vec![Vec::new(); probes.len()];
     let (mut since, mut late) = (pic::Moved::default(), pic::Moved::default());
     let mut lost = 0;
+    let mut charge = 0.0;
     let half = steps / 2;
     for n in 0..steps {
         if n % (steps / 200).max(1) == 0 {
@@ -373,8 +434,10 @@ pub fn solve(s: &mut Session, p: &Params) -> Result<Value> {
         }
         let moved = run.step().map_err(fdtd)?;
         lost += moved.lost;
+        charge += moved.emitted;
         for acc in [&mut since].into_iter().chain((n >= half).then_some(&mut late)) {
             acc.emitted += moved.emitted;
+            acc.metal += moved.metal;
             for (a, b) in acc.collected.iter_mut().flatten().zip(moved.collected.iter().flatten()) {
                 *a += b;
             }
@@ -423,6 +486,8 @@ pub fn solve(s: &mut Session, p: &Params) -> Result<Value> {
         lost,
         collected: late.collected.map(|w| w.map(|q| q / span)),
         emitted: late.emitted / span,
+        metal: late.metal / span,
+        loss_factor: (only_bunches && charge != 0.0).then(|| (run.energy().field - field_before) / (charge * charge)),
     };
     let reply = reply(s, &result);
     s.results.particles = Some(Arc::new(result));
@@ -447,7 +512,8 @@ fn snapshot(run: &Pic, origin: [f64; 3]) -> Vec<Snap> {
 }
 
 /// A run's reply in display units: its grid, the particles at the end, each conducting wall's
-/// current and density over the second half, each probe's frequency.
+/// current and density over the second half and the bodies', each probe's frequency, and with
+/// bunches alone the loss factor (V/pC).
 pub(crate) fn reply(s: &Session, r: &PicResult) -> Value {
     let mut walls = serde_json::Map::new();
     for axis in 0..3 {
@@ -477,5 +543,7 @@ pub(crate) fn reply(s: &Session, r: &PicResult) -> Value {
         "probes": probes,
         "fastest_ev": fastest,
         "gamma_max": r.snapshot.iter().map(|p| gamma(p.u)).fold(1.0, f64::max),
+        "metal": r.metal,
+        "loss_factor_v_per_pc": r.loss_factor.map(|k| k * 1e-12),
     })
 }
